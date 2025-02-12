@@ -1,12 +1,12 @@
-use crate::core::error::AppError;
-use crate::service::user::session::UserSession;
-
 use axum::extract::FromRequestParts;
 use socketioxide::extract::State;
 use socketioxide::layer::SocketIoLayer;
 use socketioxide::BroadcastError;
 use socketioxide::{extract::SocketRef, SocketIo};
 use socketioxide_core::adapter::{Room, RoomParam};
+
+use crate::core::error::AppError;
+use crate::service::user::session::UserSession;
 
 #[derive(Clone, Debug)]
 pub struct AppMessengerState;

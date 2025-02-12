@@ -2,11 +2,6 @@ pub mod dto;
 pub mod mail_form_context;
 pub mod session;
 
-use crate::core::db;
-use crate::core::error::AppError;
-use crate::entity::prelude::*;
-use crate::util::crud::{search, Pagination};
-
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::Utc;
 use sea_orm::ActiveValue::*;
@@ -17,6 +12,11 @@ use sea_orm::{
 use sea_orm_crud::Optional;
 use session::{OrganizationData, RoleData, UserData, UserSession};
 use tower_sessions::{cookie::time::Duration, Expiry};
+
+use crate::core::db;
+use crate::core::error::AppError;
+use crate::entity::prelude::*;
+use crate::util::crud::{search, Pagination};
 
 use self::dto::*;
 

@@ -1,11 +1,11 @@
 pub mod dto;
 
+use sea_orm::{EntityTrait, Set, Unchanged};
+use serde_json::json;
+
 use crate::core::db;
 use crate::core::error::AppError;
 use crate::entity::prelude::*;
-
-use sea_orm::{EntityTrait, Set, Unchanged};
-use serde_json::json;
 
 pub async fn get(username: String) -> Result<serde_json::Value, AppError> {
   let db_conn = db::get_connection();

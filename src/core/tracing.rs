@@ -1,7 +1,8 @@
 use std::str::FromStr;
 
-use super::settings;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use super::settings;
 
 pub fn subscribe() {
   let settings = settings::get();

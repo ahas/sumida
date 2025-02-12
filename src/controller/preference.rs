@@ -1,12 +1,11 @@
-use crate::user_guard;
+use axum::extract::State;
+use axum::{routing, Json, Router};
+use serde_json::json;
 
 use crate::core::error::AppError;
 use crate::service::preference as PreferenceService;
 use crate::service::prelude::*;
-
-use axum::extract::State;
-use axum::{routing, Json, Router};
-use serde_json::json;
+use crate::user_guard;
 
 async fn get<S>(
   session: UserSession,

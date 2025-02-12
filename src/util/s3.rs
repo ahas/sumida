@@ -1,11 +1,11 @@
-use crate::core::{aws, settings};
-
 use anyhow::anyhow;
 use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
 #[cfg(feature = "image")]
 use image::{self, DynamicImage, ImageFormat};
 use std::{error::Error, fmt::Display, io::Cursor};
 use tokio::io::AsyncReadExt;
+
+use crate::core::{aws, settings};
 
 pub trait IntoS3Uri {
   fn into_s3_uri(self) -> String;

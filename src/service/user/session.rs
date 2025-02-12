@@ -1,14 +1,13 @@
-use crate::core::db;
-use crate::core::error::AppError;
-
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use chrono::Utc;
+use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use tower_sessions::{Expiry, Session};
 
-use sea_orm::prelude::*;
+use crate::core::db;
+use crate::core::error::AppError;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UserData {

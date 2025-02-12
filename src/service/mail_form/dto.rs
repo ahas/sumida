@@ -1,5 +1,3 @@
-use crate::entity::mail_forms::*;
-
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -8,6 +6,8 @@ use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
 use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::entity::mail_forms::*;
 
 #[derive(Deserialize)]
 pub struct MailFormFilter {

@@ -1,11 +1,11 @@
-use crate::core::db;
-use crate::core::error::AppError;
-
 use lettre::message::{header::ContentType, Message};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
+
+use crate::core::db;
+use crate::core::error::AppError;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "mail_forms")]
