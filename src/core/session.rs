@@ -1,7 +1,7 @@
-use crate::core::settings;
-
 use tower_sessions::cookie::SameSite;
 use tower_sessions::SessionManagerLayer;
+
+use crate::core::settings;
 
 use super::settings::SessionSettings;
 

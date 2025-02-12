@@ -1,12 +1,3 @@
-#[cfg(feature = "aws")]
-use crate::core::aws;
-use crate::core::db;
-use crate::core::error::AppError;
-use crate::core::settings;
-use crate::entity::prelude::*;
-use crate::service::prelude::*;
-use crate::service::user::session::{OrganizationData, RoleData};
-
 use axum::extract::Request;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::middleware::Next;
@@ -15,7 +6,18 @@ use chrono::Utc;
 #[cfg(feature = "jwt")]
 use jsonwebtoken as jwt;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+#[cfg(feature = "jwt")]
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "aws")]
+use crate::core::aws;
+use crate::core::db;
+use crate::core::error::AppError;
+#[cfg(feature = "jwt")]
+use crate::core::settings;
+use crate::entity::prelude::*;
+use crate::service::prelude::*;
+use crate::service::user::session::{OrganizationData, RoleData};
 
 #[macro_export]
 macro_rules! ability_guard {

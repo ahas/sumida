@@ -1,11 +1,10 @@
-use crate::{ability_guard, user_guard};
+use axum::extract::{Path, Query, State};
+use axum::{routing, Json, Router};
 
 use crate::core::error::AppError;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
-
-use axum::extract::{Path, Query, State};
-use axum::{routing, Json, Router};
+use crate::{ability_guard, user_guard};
 
 async fn list<S>(
   State(_state): State<S>,

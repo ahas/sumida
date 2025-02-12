@@ -1,6 +1,6 @@
-use crate::core::error::AppError;
-
 use sea_orm::{prelude::*, ActiveValue::*, DatabaseTransaction};
+
+use crate::core::error::AppError;
 
 use super::users::Entity as Users;
 

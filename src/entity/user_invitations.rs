@@ -1,8 +1,8 @@
-use crate::core::db;
-
 use chrono::{Duration, Utc};
 use sea_orm::prelude::*;
 use sea_orm::ActiveValue::*;
+
+use crate::core::db;
 
 use super::users::Entity as Users;
 

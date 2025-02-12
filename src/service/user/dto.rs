@@ -1,5 +1,3 @@
-use crate::entity::users::*;
-
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -8,6 +6,8 @@ use sea_orm::FromQueryResult;
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
+
+use crate::entity::users::*;
 
 use super::session::{OrganizationData, RoleData};
 

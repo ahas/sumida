@@ -1,10 +1,10 @@
-use crate::entity::user_verifications::*;
-
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use sea_orm::DeriveIntoActiveModel;
 use serde::{Deserialize, Serialize};
+
+use crate::entity::user_verifications::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]

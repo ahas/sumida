@@ -1,5 +1,3 @@
-use crate::entity::user_invitations::*;
-
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -7,6 +5,8 @@ use sea_orm::prelude::*;
 use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::entity::user_invitations::*;
 
 #[derive(Deserialize)]
 pub struct UserInvitationFilter {
