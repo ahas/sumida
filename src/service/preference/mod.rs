@@ -4,17 +4,17 @@ use sea_orm::{EntityTrait, Set, Unchanged};
 use serde_json::json;
 
 use crate::core::db;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::entity::prelude::*;
 
-pub async fn get(username: String) -> Result<serde_json::Value, AppError> {
+pub async fn get(username: String) -> Result<serde_json::Value, SumidaError> {
   let db_conn = db::get_connection();
   let pref = Preferences::find_by_id(username).one(db_conn).await?;
 
   Ok(pref.map(|x| x.data).unwrap_or_else(|| json!({})))
 }
 
-pub async fn update(username: String, data: serde_json::Value) -> Result<(), AppError> {
+pub async fn update(username: String, data: serde_json::Value) -> Result<(), SumidaError> {
   use crate::entity::preferences::ActiveModel;
 
   let db_conn = db::get_connection();

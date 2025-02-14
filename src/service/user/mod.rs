@@ -14,7 +14,7 @@ use session::{OrganizationData, RoleData, UserData, UserSession};
 use tower_sessions::{cookie::time::Duration, Expiry};
 
 use crate::core::db;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::entity::prelude::*;
 use crate::util::crud::{search, Pagination};
 
@@ -23,7 +23,7 @@ use self::dto::*;
 pub async fn list(
   filter: UserFilter,
   pagination: Pagination,
-) -> Result<(Vec<UserListItem>, u64), AppError> {
+) -> Result<(Vec<UserListItem>, u64), SumidaError> {
   use crate::entity::users::Column;
 
   let db_conn = db::get_connection();
@@ -50,11 +50,13 @@ pub async fn list(
   Ok((items, count))
 }
 
-pub async fn get<S: AsRef<str>>(username: S) -> Result<Option<GetUser>, AppError> {
+pub async fn get<S: AsRef<str>>(username: S) -> Result<Option<GetUser>, SumidaError> {
   Ok(Users::find_by_id(username.as_ref()).into_model::<GetUser>().one(db::get_connection()).await?)
 }
 
-pub async fn create(data: CreateUser) -> Result<InsertResult<crate::entity::users::ActiveModel>, AppError> {
+pub async fn create(
+  data: CreateUser,
+) -> Result<InsertResult<crate::entity::users::ActiveModel>, SumidaError> {
   let password = data.password.clone();
 
   let mut active_model = data.into_active_model();
@@ -63,7 +65,10 @@ pub async fn create(data: CreateUser) -> Result<InsertResult<crate::entity::user
   Ok(Users::insert(active_model).exec(db::get_connection()).await?)
 }
 
-pub async fn update(username: String, data: UpdateUser) -> Result<crate::entity::users::Model, AppError> {
+pub async fn update(
+  username: String,
+  data: UpdateUser,
+) -> Result<crate::entity::users::Model, SumidaError> {
   let Optional(password) = data.password.clone();
 
   let mut model: crate::entity::users::ActiveModel = data.into_active_model();
@@ -76,7 +81,7 @@ pub async fn update(username: String, data: UpdateUser) -> Result<crate::entity:
   Ok(Users::update(model).exec(db::get_connection()).await?)
 }
 
-pub async fn delete(username: String) -> Result<DeleteResult, AppError> {
+pub async fn delete(username: String) -> Result<DeleteResult, SumidaError> {
   Ok(Users::delete_by_id(username).exec(db::get_connection()).await?)
 }
 
@@ -93,7 +98,7 @@ pub fn verify_password(password: &str, password_hash: &str) -> bool {
 pub async fn update_my_info(
   session: &UserSession,
   data: UpdateUser,
-) -> Result<crate::entity::users::Model, AppError> {
+) -> Result<crate::entity::users::Model, SumidaError> {
   let username = &session.user_data.username;
   let Optional(password) = data.password.clone();
 
@@ -112,26 +117,28 @@ pub async fn update_my_info(
   Ok(Users::update(model).exec(db::get_connection()).await?)
 }
 
-pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), AppError> {
+pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
   let user = Users::find_by_id(&data.username)
     .filter(crate::entity::users::Column::IsEnabled.eq(true))
     .one(db_conn)
     .await?
-    .ok_or_else(|| AppError::NoUserAccount(data.username.clone()))?;
+    .ok_or_else(|| SumidaError::NoUserAccount(data.username.clone()))?;
   let is_verified = verify_password(&data.password, &user.password);
 
   if !is_verified {
-    return Err(AppError::InvalidPassword(data.password.clone()));
+    return Err(SumidaError::InvalidPassword(data.password.clone()));
   }
 
-  let organization =
-    user.get_organization(db_conn).await?.ok_or_else(|| AppError::NoUserOrganization(user.organization))?;
+  let organization = user
+    .get_organization(db_conn)
+    .await?
+    .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
   let organization = OrganizationData {
     id: organization.id,
     name: organization.name.clone(),
   };
-  let role = user.get_role(db_conn).await?.ok_or_else(|| AppError::NoUserRole(user.role))?;
+  let role = user.get_role(db_conn).await?.ok_or_else(|| SumidaError::NoUserRole(user.role))?;
   let role = RoleData {
     id: role.id,
     name: role.name.clone(),
@@ -174,14 +181,14 @@ pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), AppE
   Ok(())
 }
 
-pub async fn invite(_session: &UserSession, username: String) -> Result<(), AppError> {
+pub async fn invite(_session: &UserSession, username: String) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
 
   let Some(user) = Users::find_by_id(&username).one(db_conn).await? else {
-    return Err(AppError::NoUserAccount(username));
+    return Err(SumidaError::NoUserAccount(username));
   };
   let Some(receiver) = user.email else {
-    return Err(AppError::NoUserEmail(username));
+    return Err(SumidaError::NoUserEmail(username));
   };
 
   let uuid = uuid::Uuid::new_v4();
@@ -202,21 +209,21 @@ pub async fn invite(_session: &UserSession, username: String) -> Result<(), AppE
   Ok(())
 }
 
-pub async fn activate(session: &UserSession, activation: UserActivation) -> Result<(), AppError> {
+pub async fn activate(session: &UserSession, activation: UserActivation) -> Result<(), SumidaError> {
   let username = &activation.username;
   let password = &activation.password;
   let uuid = &activation.uuid;
   let db_conn = db::get_connection();
 
   let Some(user) = Users::find_by_id(username).one(db_conn).await? else {
-    return Err(AppError::NoUserAccount(username.to_owned()));
+    return Err(SumidaError::NoUserAccount(username.to_owned()));
   };
   let Some(_) = UserInvitations::find_by_id(uuid.clone())
     .filter(crate::entity::user_invitations::Column::ExpiredAt.gt(Utc::now()))
     .one(db_conn)
     .await?
   else {
-    return Err(AppError::NoData("UserInvitation".to_owned(), uuid.to_string()));
+    return Err(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()));
   };
 
   let txn = db_conn.begin().await?;
@@ -243,7 +250,7 @@ pub async fn activate(session: &UserSession, activation: UserActivation) -> Resu
   Ok(())
 }
 
-pub async fn change_password(data: ChangePassword) -> Result<(), AppError> {
+pub async fn change_password(data: ChangePassword) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
 
@@ -251,7 +258,7 @@ pub async fn change_password(data: ChangePassword) -> Result<(), AppError> {
 
   if !is_verified {
     txn.rollback().await?;
-    return Err(AppError::VerificationFailed);
+    return Err(SumidaError::VerificationFailed);
   }
 
   let password = Users::hash_password(&data.password).unwrap();

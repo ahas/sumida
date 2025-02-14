@@ -5,7 +5,7 @@ use axum::{
 };
 use tower_sessions::Session;
 
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 use crate::{ability_guard, user_guard};
@@ -14,18 +14,21 @@ async fn list<S>(
   State(_state): State<S>,
   Query(filter): Query<UserFilter>,
   Query(pagination): Query<Pagination>,
-) -> Result<List<UserListItem>, AppError> {
+) -> Result<List<UserListItem>, SumidaError> {
   Ok(UserService::list(filter, pagination).await?.into())
 }
 
-async fn get<S>(State(_state): State<S>, Path(username): Path<String>) -> Result<GetUser, AppError> {
+async fn get<S>(State(_state): State<S>, Path(username): Path<String>) -> Result<GetUser, SumidaError> {
   match UserService::get(&username).await? {
     Some(user) => Ok(user),
-    None => Err(AppError::NoUserAccount(username.to_string())),
+    None => Err(SumidaError::NoUserAccount(username.to_string())),
   }
 }
 
-async fn create<S>(State(_state): State<S>, Json(body): Json<CreateUser>) -> Result<UserCreated, AppError> {
+async fn create<S>(
+  State(_state): State<S>,
+  Json(body): Json<CreateUser>,
+) -> Result<UserCreated, SumidaError> {
   let username = body.username.clone();
   UserService::create(body).await?;
 
@@ -36,12 +39,15 @@ async fn update<S>(
   State(_state): State<S>,
   Path(username): Path<String>,
   Json(body): Json<UpdateUser>,
-) -> Result<UserUpdated, AppError> {
+) -> Result<UserUpdated, SumidaError> {
   UserService::update(username, body).await?;
   Ok(UserUpdated)
 }
 
-async fn delete<S>(State(_state): State<S>, Path(username): Path<String>) -> Result<UserDeleted, AppError> {
+async fn delete<S>(
+  State(_state): State<S>,
+  Path(username): Path<String>,
+) -> Result<UserDeleted, SumidaError> {
   UserService::delete(username).await?;
   Ok(UserDeleted)
 }
@@ -50,17 +56,17 @@ async fn sign_in<S>(
   session: UserSession,
   State(_state): State<S>,
   Json(body): Json<SignInUser>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, SumidaError> {
   UserService::sign_in(&session, body).await?;
   Ok(StatusCode::OK)
 }
 
-async fn sign_out<S>(session: Session, State(_state): State<S>) -> Result<StatusCode, AppError> {
+async fn sign_out<S>(session: Session, State(_state): State<S>) -> Result<StatusCode, SumidaError> {
   session.clear().await;
   Ok(StatusCode::OK)
 }
 
-async fn profile<S>(session: UserSession, State(_state): State<S>) -> Result<UserProfile, AppError> {
+async fn profile<S>(session: UserSession, State(_state): State<S>) -> Result<UserProfile, SumidaError> {
   let user_data = &session.user_data;
 
   Ok(UserProfile {
@@ -76,10 +82,10 @@ async fn profile<S>(session: UserSession, State(_state): State<S>) -> Result<Use
   })
 }
 
-async fn get_my_info<S>(session: UserSession, State(_state): State<S>) -> Result<GetUser, AppError> {
+async fn get_my_info<S>(session: UserSession, State(_state): State<S>) -> Result<GetUser, SumidaError> {
   match UserService::get(&session.user_data.username).await? {
     Some(user) => Ok(user),
-    None => Err(AppError::NoUserAccount(session.user_data.username.to_string())),
+    None => Err(SumidaError::NoUserAccount(session.user_data.username.to_string())),
   }
 }
 
@@ -87,7 +93,7 @@ async fn update_my_info<S>(
   session: UserSession,
   State(_state): State<S>,
   Json(body): Json<UpdateUser>,
-) -> Result<UserUpdated, AppError> {
+) -> Result<UserUpdated, SumidaError> {
   UserService::update_my_info(&session, body).await?;
   Ok(UserUpdated)
 }
@@ -96,7 +102,7 @@ async fn invite<S>(
   session: UserSession,
   State(_state): State<S>,
   Path(username): Path<String>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, SumidaError> {
   UserService::invite(&session, username).await?;
   Ok(StatusCode::OK)
 }
@@ -105,7 +111,7 @@ async fn activate<S>(
   session: UserSession,
   State(_state): State<S>,
   Json(body): Json<UserActivation>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, SumidaError> {
   UserService::activate(&session, body).await?;
   Ok(StatusCode::ACCEPTED)
 }
@@ -114,7 +120,7 @@ async fn change_password<S>(
   _session: UserSession,
   State(_state): State<S>,
   Json(body): Json<ChangePassword>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, SumidaError> {
   UserService::change_password(body).await?;
   Ok(StatusCode::OK)
 }

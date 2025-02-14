@@ -5,7 +5,7 @@ use serde_json::json;
 
 #[cfg(feature = "aws")]
 use crate::core::aws;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::core::settings;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
@@ -17,21 +17,21 @@ async fn list(
   _session: UserSession,
   Query(filter): Query<MailFormFilter>,
   Query(pagination): Query<Pagination>,
-) -> Result<List<MailFormListItem>, AppError> {
+) -> Result<List<MailFormListItem>, SumidaError> {
   Ok(MailFormService::list(filter, pagination).await?.into())
 }
 
-async fn get<S>(State(_state): State<S>, Path(kind): Path<String>) -> Result<GetMailForm, AppError> {
+async fn get<S>(State(_state): State<S>, Path(kind): Path<String>) -> Result<GetMailForm, SumidaError> {
   match MailFormService::get(&kind).await? {
     Some(mail_form) => Ok(mail_form),
-    None => Err(AppError::NoData("MailForm".to_owned(), kind.to_string())),
+    None => Err(SumidaError::NoData("MailForm".to_owned(), kind.to_string())),
   }
 }
 
 async fn create<S>(
   State(_state): State<S>,
   Json(body): Json<CreateMailForm>,
-) -> Result<MailFormCreated, AppError> {
+) -> Result<MailFormCreated, SumidaError> {
   Ok(MailFormCreated {
     kind: MailFormService::create(body).await?.last_insert_id,
   })
@@ -41,17 +41,20 @@ async fn update<S>(
   State(_state): State<S>,
   Path(kind): Path<String>,
   Json(body): Json<UpdateMailForm>,
-) -> Result<MailFormUpdated, AppError> {
+) -> Result<MailFormUpdated, SumidaError> {
   MailFormService::update(kind, body).await?;
   Ok(MailFormUpdated)
 }
 
-async fn delete<S>(State(_state): State<S>, Path(kind): Path<String>) -> Result<MailFormDeleted, AppError> {
+async fn delete<S>(
+  State(_state): State<S>,
+  Path(kind): Path<String>,
+) -> Result<MailFormDeleted, SumidaError> {
   MailFormService::delete(kind).await?;
   Ok(MailFormDeleted)
 }
 
-async fn upload_files(mut multipart: Multipart) -> Result<Json<serde_json::Value>, AppError> {
+async fn upload_files(mut multipart: Multipart) -> Result<Json<serde_json::Value>, SumidaError> {
   while let Some(field) = multipart.next_field().await.unwrap() {
     let name = field.name().unwrap().to_string();
 
@@ -89,7 +92,7 @@ async fn upload_files(mut multipart: Multipart) -> Result<Json<serde_json::Value
     })));
   }
 
-  Err(AppError::Unsupported("could not upload a file".to_owned()))
+  Err(SumidaError::Unsupported("could not upload a file".to_owned()))
 }
 
 pub fn new<S>(state: &S) -> Router<S>

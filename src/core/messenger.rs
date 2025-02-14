@@ -5,20 +5,20 @@ use socketioxide::BroadcastError;
 use socketioxide::{extract::SocketRef, SocketIo};
 use socketioxide_core::adapter::{Room, RoomParam};
 
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::service::user::session::UserSession;
 
 #[derive(Clone, Debug)]
-pub struct AppMessengerState;
+pub struct SumidaMessengerState;
 
 #[derive(Clone, Debug)]
-pub struct AppMessenger {
+pub struct SumidaMessenger {
   pub io: SocketIo,
   pub path: Option<String>,
   pub rooms: Option<Vec<Room>>,
 }
 
-impl AppMessenger {
+impl SumidaMessenger {
   pub fn new(io: SocketIo) -> Self {
     Self {
       io,
@@ -73,13 +73,16 @@ impl AppMessenger {
   }
 }
 
-async fn get_session(socket: &SocketRef, state: &AppMessengerState) -> Result<UserSession, AppError> {
+pub async fn get_session(
+  socket: &SocketRef,
+  state: &SumidaMessengerState,
+) -> Result<UserSession, SumidaError> {
   let mut req_parts = socket.req_parts().to_owned();
 
   UserSession::from_request_parts(&mut req_parts, state).await
 }
 
-async fn on_connect(socket: SocketRef, State(state): State<AppMessengerState>) {
+pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerState>) {
   tracing::info!("connect socket");
 
   let Some(session) = get_session(&socket, &state).await.ok() else {
@@ -107,10 +110,10 @@ async fn on_connect(socket: SocketRef, State(state): State<AppMessengerState>) {
   }
 }
 
-pub fn new_layer() -> (SocketIoLayer, AppMessenger) {
-  let (layer, io) = SocketIo::builder().with_state(AppMessengerState).build_layer();
+pub fn new_layer() -> (SocketIoLayer, SumidaMessenger) {
+  let (layer, io) = SocketIo::builder().with_state(SumidaMessengerState).build_layer();
 
   io.ns("/user", on_connect);
 
-  (layer, AppMessenger::new(io))
+  (layer, SumidaMessenger::new(io))
 }

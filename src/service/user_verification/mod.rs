@@ -7,13 +7,13 @@ use sea_orm::{
 };
 
 use crate::core::db;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::entity::prelude::*;
 use crate::service::user::mail_form_context::*;
 
 use self::dto::*;
 
-pub async fn send(data: SendUserVerification) -> Result<(), AppError> {
+pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
   use crate::entity::user_verifications::Column;
 
   let code: String = {
@@ -50,14 +50,14 @@ pub async fn send(data: SendUserVerification) -> Result<(), AppError> {
 
   let Some(user) = Users::find_by_id(&username).one(&txn).await? else {
     txn.rollback().await?;
-    return Err(AppError::NoUserAccount(username));
+    return Err(SumidaError::NoUserAccount(username));
   };
 
   match kind.as_str() {
     "email" => {
       let Some(email) = user.email else {
         txn.rollback().await?;
-        return Err(AppError::NoUserEmail(user.username));
+        return Err(SumidaError::NoUserEmail(user.username));
       };
 
       MailForms::send("verification", &email, VerificationContext { code }).await?;

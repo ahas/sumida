@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde_json::{json, Map};
 
 use crate::core::db;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::entity::prelude::*;
 use crate::provider::RoleAbilityProvider;
 use crate::util::crud::{search, Pagination};
@@ -19,7 +19,7 @@ use self::dto::*;
 pub async fn list(
   filter: RoleFilter,
   pagination: Pagination,
-) -> Result<(Vec<RoleListItem>, u64), AppError> {
+) -> Result<(Vec<RoleListItem>, u64), SumidaError> {
   use crate::entity::roles::Column;
 
   let db_conn = db::get_connection();
@@ -43,14 +43,14 @@ pub async fn list(
   Ok((items, count))
 }
 
-pub async fn get(id: i32) -> Result<Option<GetRole>, AppError> {
+pub async fn get(id: i32) -> Result<Option<GetRole>, SumidaError> {
   let db_conn = db::get_connection();
   Ok(Roles::find_by_id(id).into_model::<GetRole>().one(db_conn).await?)
 }
 
 pub async fn create<T, R>(
   mut data: CreateRole,
-) -> Result<InsertResult<crate::entity::roles::ActiveModel>, AppError>
+) -> Result<InsertResult<crate::entity::roles::ActiveModel>, SumidaError>
 where
   T: Default + Serialize,
   R: RoleAbilityProvider<T>,
@@ -65,7 +65,7 @@ where
   Ok(Roles::insert(data.into_active_model()).exec(db::get_connection()).await?)
 }
 
-pub async fn update<T, R>(id: i32, mut data: UpdateRole) -> Result<crate::entity::roles::Model, AppError>
+pub async fn update<T, R>(id: i32, mut data: UpdateRole) -> Result<crate::entity::roles::Model, SumidaError>
 where
   T: Default + Serialize,
   R: RoleAbilityProvider<T>,
@@ -83,7 +83,7 @@ where
   Ok(Roles::update(model).exec(db::get_connection()).await?)
 }
 
-pub async fn delete(id: i32) -> Result<DeleteResult, AppError> {
+pub async fn delete(id: i32) -> Result<DeleteResult, SumidaError> {
   let db_conn = db::get_connection();
   Ok(Roles::delete_by_id(id).exec(db_conn).await?)
 }

@@ -7,7 +7,7 @@ use serde_json::{json, Value as JsonValue};
 use tower_sessions::{Expiry, Session};
 
 use crate::core::db;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UserData {
@@ -87,26 +87,26 @@ impl UserSession {
     Ok(())
   }
 
-  pub async fn verify(&self) -> Result<(), AppError> {
+  pub async fn verify(&self) -> Result<(), SumidaError> {
     let mut user_data = self.user_data.clone();
 
     if !user_data.is_authorized {
-      return Err(AppError::NotAuthorized(user_data.username));
+      return Err(SumidaError::NotAuthorized(user_data.username));
     }
 
     let db_conn = db::get_connection();
     let user = crate::entity::users::Entity::find_by_id(&user_data.username)
       .one(db_conn)
       .await?
-      .ok_or_else(|| AppError::NoUserAccount(user_data.username))?;
+      .ok_or_else(|| SumidaError::NoUserAccount(user_data.username))?;
     let organization = crate::entity::organizations::Entity::find_by_id(user.organization)
       .one(db_conn)
       .await?
-      .ok_or_else(|| AppError::NoUserOrganization(user.organization))?;
+      .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
     let role = crate::entity::roles::Entity::find_by_id(user.role)
       .one(db_conn)
       .await?
-      .ok_or_else(|| AppError::NoUserRole(user.role))?;
+      .ok_or_else(|| SumidaError::NoUserRole(user.role))?;
 
     user_data.username = user.username.clone();
     user_data.organization = OrganizationData {
@@ -131,7 +131,7 @@ impl<S> FromRequestParts<S> for UserSession
 where
   S: Send + Sync,
 {
-  type Rejection = AppError;
+  type Rejection = SumidaError;
 
   async fn from_request_parts(req: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
     let session = Session::from_request_parts(req, state).await?;

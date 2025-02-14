@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "aws")]
 use crate::core::aws;
 use crate::core::db;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 #[cfg(feature = "jwt")]
 use crate::core::settings;
 use crate::entity::prelude::*;
@@ -30,17 +30,17 @@ macro_rules! ability_guard {
         let action = stringify!($action);
 
         let Some(ability) = session.user_data.ability.get(topic) else {
-          return Err(AppError::NoAbilityTopic(topic.to_string()));
+          return Err(SumidaError::NoAbilityTopic(topic.to_string()));
         };
 
         let Some(allowed_prop) = ability.get(action) else {
-          return Err(AppError::NoAbilityAction(topic.to_string(), action.to_string()));
+          return Err(SumidaError::NoAbilityAction(topic.to_string(), action.to_string()));
         };
         let allowed = allowed_prop.as_bool().unwrap_or(false);
 
         match allowed {
           true => Ok(next.run(req).await),
-          false => Err(AppError::NoAbilityAction(topic.to_string(), action.to_string())),
+          false => Err(SumidaError::NoAbilityAction(topic.to_string(), action.to_string())),
         }
       },
     )
@@ -69,7 +69,7 @@ pub struct JwtClaims {
 }
 
 #[cfg(feature = "jwt")]
-async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), AppError> {
+async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), SumidaError> {
   let settings = settings::get();
   let secret;
 
@@ -85,7 +85,7 @@ async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), AppError> 
       .unwrap()
       .parameter
       .and_then(|param| param.value)
-      .ok_or(AppError::NoJwtSecret)?;
+      .ok_or(SumidaError::NoJwtSecret)?;
   }
   #[cfg(feature = "jwt-secret-store-static")]
   {
@@ -97,19 +97,19 @@ async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), AppError> 
     &jwt::DecodingKey::from_secret(secret.as_ref()),
     &jwt::Validation::default(),
   )
-  .map_err(|_err| AppError::InvalidJwt(token.to_string()))?;
+  .map_err(|_err| SumidaError::InvalidJwt(token.to_string()))?;
 
   let db_conn = db::get_connection();
   let user = Users::find_by_id(&token.claims.user)
     .one(db_conn)
     .await?
-    .ok_or_else(|| AppError::NoUserAccount(token.claims.user.to_string()))?;
+    .ok_or_else(|| SumidaError::NoUserAccount(token.claims.user.to_string()))?;
   let organization = Organizations::find_by_id(user.organization)
     .one(db_conn)
     .await?
-    .ok_or_else(|| AppError::NoUserOrganization(user.organization))?;
+    .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
   let role =
-    Roles::find_by_id(user.role).one(db_conn).await?.ok_or_else(|| AppError::NoUserRole(user.role))?;
+    Roles::find_by_id(user.role).one(db_conn).await?.ok_or_else(|| SumidaError::NoUserRole(user.role))?;
 
   let mut user_data = session.user_data.clone();
   user_data.username = token.claims.user.clone();
@@ -130,13 +130,13 @@ async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), AppError> 
   Ok(())
 }
 
-async fn verify_api_key(session: &UserSession, token: &str) -> Result<(), AppError> {
+async fn verify_api_key(session: &UserSession, token: &str) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
   let api_key = ApiKeys::find()
     .filter(crate::entity::api_keys::Column::Key.eq(token))
     .one(db_conn)
     .await?
-    .ok_or_else(|| AppError::InvalidApiKey(token.to_string()))?;
+    .ok_or_else(|| SumidaError::InvalidApiKey(token.to_string()))?;
   let mut user_data = session.user_data.clone();
   let user = if let Some(username) = api_key.user {
     Users::find_by_id(&username).one(db_conn).await?
@@ -148,9 +148,9 @@ async fn verify_api_key(session: &UserSession, token: &str) -> Result<(), AppErr
     let organization = Organizations::find_by_id(user.organization)
       .one(db_conn)
       .await?
-      .ok_or_else(|| AppError::NoUserOrganization(user.organization))?;
+      .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
     let role =
-      Roles::find_by_id(user.role).one(db_conn).await?.ok_or_else(|| AppError::NoUserRole(user.role))?;
+      Roles::find_by_id(user.role).one(db_conn).await?.ok_or_else(|| SumidaError::NoUserRole(user.role))?;
 
     user_data.username = user.username.clone();
     user_data.organization = OrganizationData {
@@ -178,12 +178,12 @@ async fn verify_api_key(session: &UserSession, token: &str) -> Result<(), AppErr
   Ok(())
 }
 
-pub async fn verify(session: &UserSession, headers: &HeaderMap<HeaderValue>) -> Result<bool, AppError> {
+pub async fn verify(session: &UserSession, headers: &HeaderMap<HeaderValue>) -> Result<bool, SumidaError> {
   if let Some(v) = headers.get::<String>("Authorization".into()) {
     let pair = v.to_str().unwrap_or_default().split_whitespace().map(str::trim).collect::<Vec<&str>>();
 
     if pair.len() < 2 {
-      return Err(AppError::InvalidAuthorizationToken(v.to_str().unwrap_or("").to_string()));
+      return Err(SumidaError::InvalidAuthorizationToken(v.to_str().unwrap_or("").to_string()));
     }
 
     let method = pair[0];
@@ -193,7 +193,7 @@ pub async fn verify(session: &UserSession, headers: &HeaderMap<HeaderValue>) -> 
       #[cfg(feature = "jwt")]
       "BEARER" => verify_jwt(session, token).await?,
       "APIKEY" => verify_api_key(session, token).await?,
-      _ => return Err(AppError::InvalidAuthorizationMethod(method.to_string())),
+      _ => return Err(SumidaError::InvalidAuthorizationMethod(method.to_string())),
     }
   } else {
     session.verify().await?
@@ -203,16 +203,24 @@ pub async fn verify(session: &UserSession, headers: &HeaderMap<HeaderValue>) -> 
 }
 
 #[allow(unused)]
-pub async fn user_guard_fn(session: UserSession, req: Request, next: Next) -> Result<Response, AppError> {
+pub async fn user_guard_fn(
+  session: UserSession,
+  req: Request,
+  next: Next,
+) -> Result<Response, SumidaError> {
   verify(&session, req.headers()).await?;
 
   Ok(next.run(req).await)
 }
 
 #[allow(unused)]
-pub async fn admin_guard_fn(session: UserSession, req: Request, next: Next) -> Result<Response, AppError> {
+pub async fn admin_guard_fn(
+  session: UserSession,
+  req: Request,
+  next: Next,
+) -> Result<Response, SumidaError> {
   match session.user_data.is_admin {
     true => Ok(next.run(req).await),
-    false => Err(AppError::OnlyAdminAllowed),
+    false => Err(SumidaError::OnlyAdminAllowed),
   }
 }

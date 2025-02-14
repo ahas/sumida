@@ -2,7 +2,7 @@ use axum::extract::State;
 use axum::{routing, Json, Router};
 use serde_json::json;
 
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::service::preference as PreferenceService;
 use crate::service::prelude::*;
 use crate::user_guard;
@@ -10,7 +10,7 @@ use crate::user_guard;
 async fn get<S>(
   session: UserSession,
   State(_state): State<S>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<serde_json::Value>, SumidaError> {
   let username = session.user_data.username.clone();
   let ret = PreferenceService::get(username).await?;
   Ok(Json(ret))
@@ -20,7 +20,7 @@ async fn update<S>(
   session: UserSession,
   State(_state): State<S>,
   Json(body): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<serde_json::Value>, SumidaError> {
   let username = session.user_data.username.clone();
   PreferenceService::update(username, body).await?;
   Ok(Json(json!({})))

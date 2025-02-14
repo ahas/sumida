@@ -4,7 +4,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 use crate::{admin_guard, user_guard};
@@ -14,14 +14,14 @@ async fn list<S>(
   State(_state): State<S>,
   Query(filter): Query<UserInvitationFilter>,
   Query(pagination): Query<Pagination>,
-) -> Result<List<UserInvitationListItem>, AppError> {
+) -> Result<List<UserInvitationListItem>, SumidaError> {
   Ok(UserInvitationService::list(filter, pagination).await?.into())
 }
 
-async fn get<S>(State(_state): State<S>, Path(uuid): Path<Uuid>) -> Result<GetUserInvitation, AppError> {
+async fn get<S>(State(_state): State<S>, Path(uuid): Path<Uuid>) -> Result<GetUserInvitation, SumidaError> {
   match UserInvitationService::get(uuid).await? {
     Some(user_invitation) => Ok(user_invitation),
-    None => Err(AppError::NoData("UserInvitation".to_owned(), uuid.to_string())),
+    None => Err(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string())),
   }
 }
 
@@ -29,7 +29,7 @@ async fn create<S>(
   State(_state): State<S>,
   Path(username): Path<String>,
   Json(_body): Json<CreateUserInvitation>,
-) -> Result<UserInvitationCreated, AppError> {
+) -> Result<UserInvitationCreated, SumidaError> {
   let invitation = UserInvitationService::create(username).await?;
 
   Ok(UserInvitationCreated {
@@ -42,7 +42,7 @@ async fn update<S>(
   State(_state): State<S>,
   Path(username): Path<String>,
   Json(_body): Json<UpdateUserInvitation>,
-) -> Result<UserInvitationUpdated, AppError> {
+) -> Result<UserInvitationUpdated, SumidaError> {
   let invitation = UserInvitationService::update(username).await?;
 
   Ok(UserInvitationUpdated {
@@ -54,7 +54,7 @@ async fn update<S>(
 async fn delete<S>(
   State(_state): State<S>,
   Path(uuid): Path<Uuid>,
-) -> Result<UserInvitationDeleted, AppError> {
+) -> Result<UserInvitationDeleted, SumidaError> {
   UserInvitationService::delete(uuid).await?;
   Ok(UserInvitationDeleted)
 }
