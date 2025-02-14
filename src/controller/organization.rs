@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::{routing, Json, Router};
 
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 use crate::{ability_guard, user_guard};
@@ -10,21 +10,21 @@ async fn list<S>(
   State(_state): State<S>,
   Query(filter): Query<OrganizationFilter>,
   Query(pagination): Query<Pagination>,
-) -> Result<List<OrganizationListItem>, AppError> {
+) -> Result<List<OrganizationListItem>, SumidaError> {
   Ok(OrganizationService::list(filter, pagination).await?.into())
 }
 
-async fn get<S>(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetOrganization, AppError> {
+async fn get<S>(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetOrganization, SumidaError> {
   match OrganizationService::get(id).await? {
     Some(org) => Ok(org),
-    None => Err(AppError::NoData("Organization".to_owned(), id.to_string())),
+    None => Err(SumidaError::NoData("Organization".to_owned(), id.to_string())),
   }
 }
 
 async fn create<S>(
   State(_state): State<S>,
   Json(body): Json<CreateOrganization>,
-) -> Result<OrganizationCreated, AppError> {
+) -> Result<OrganizationCreated, SumidaError> {
   Ok(OrganizationCreated {
     id: OrganizationService::create(body).await?.last_insert_id,
   })
@@ -34,12 +34,15 @@ async fn update<S>(
   State(_state): State<S>,
   Path(id): Path<i32>,
   Json(body): Json<UpdateOrganization>,
-) -> Result<OrganizationUpdated, AppError> {
+) -> Result<OrganizationUpdated, SumidaError> {
   OrganizationService::update(id, body).await?;
   Ok(OrganizationUpdated)
 }
 
-async fn delete<S>(State(_state): State<S>, Path(id): Path<i32>) -> Result<OrganizationDeleted, AppError> {
+async fn delete<S>(
+  State(_state): State<S>,
+  Path(id): Path<i32>,
+) -> Result<OrganizationDeleted, SumidaError> {
   OrganizationService::delete(id).await?;
   Ok(OrganizationDeleted)
 }

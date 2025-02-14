@@ -1,13 +1,13 @@
 use axum::extract::State;
 use axum::{routing, Json, Router};
 
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::service::prelude::*;
 
 async fn send<S>(
   State(_state): State<S>,
   Json(body): Json<SendUserVerification>,
-) -> Result<UserVerificationSent, AppError> {
+) -> Result<UserVerificationSent, SumidaError> {
   UserVerificationService::send(body).await?;
 
   Ok(UserVerificationSent)

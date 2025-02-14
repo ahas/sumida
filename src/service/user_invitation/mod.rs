@@ -6,7 +6,7 @@ use sea_orm::{ColumnTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelec
 use uuid::Uuid;
 
 use crate::core::db;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::entity::prelude::*;
 use crate::util::crud::{search, Pagination};
 
@@ -15,7 +15,7 @@ use self::dto::*;
 pub async fn list(
   filter: UserInvitationFilter,
   pagination: Pagination,
-) -> Result<(Vec<UserInvitationListItem>, u64), AppError> {
+) -> Result<(Vec<UserInvitationListItem>, u64), SumidaError> {
   use crate::entity::user_invitations::Column;
 
   let db_conn = db::get_connection();
@@ -38,7 +38,7 @@ pub async fn list(
   Ok((items, count))
 }
 
-pub async fn get(uuid: Uuid) -> Result<Option<GetUserInvitation>, AppError> {
+pub async fn get(uuid: Uuid) -> Result<Option<GetUserInvitation>, SumidaError> {
   let db_conn = db::get_connection();
 
   Ok(
@@ -50,7 +50,7 @@ pub async fn get(uuid: Uuid) -> Result<Option<GetUserInvitation>, AppError> {
   )
 }
 
-pub async fn create(username: String) -> Result<crate::entity::user_invitations::Model, AppError> {
+pub async fn create(username: String) -> Result<crate::entity::user_invitations::Model, SumidaError> {
   let db_conn = db::get_connection();
   let uuid = Uuid::new_v4();
   let expired_at = Utc::now() + Duration::days(30);
@@ -67,7 +67,7 @@ pub async fn create(username: String) -> Result<crate::entity::user_invitations:
   Ok(UserInvitations::find_by_id(uuid).one(db_conn).await?.unwrap())
 }
 
-pub async fn update(username: String) -> Result<crate::entity::user_invitations::Model, AppError> {
+pub async fn update(username: String) -> Result<crate::entity::user_invitations::Model, SumidaError> {
   let db_conn = db::get_connection();
   let uuid = Uuid::new_v4();
   let expired_at = Utc::now() + Duration::days(30);
@@ -84,7 +84,7 @@ pub async fn update(username: String) -> Result<crate::entity::user_invitations:
   Ok(UserInvitations::find_by_id(uuid).one(db_conn).await?.unwrap())
 }
 
-pub async fn delete(uuid: Uuid) -> Result<DeleteResult, AppError> {
+pub async fn delete(uuid: Uuid) -> Result<DeleteResult, SumidaError> {
   let db_conn = db::get_connection();
   Ok(UserInvitations::delete_by_id(uuid).exec(db_conn).await?)
 }

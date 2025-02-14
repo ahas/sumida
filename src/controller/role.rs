@@ -4,7 +4,7 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 use crate::provider::RoleAbilityProvider;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
@@ -14,21 +14,21 @@ async fn list<S>(
   State(_state): State<S>,
   Query(filter): Query<RoleFilter>,
   Query(pagination): Query<Pagination>,
-) -> Result<List<RoleListItem>, AppError> {
+) -> Result<List<RoleListItem>, SumidaError> {
   Ok(RoleService::list(filter, pagination).await?.into())
 }
 
-async fn get<S>(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetRole, AppError> {
+async fn get<S>(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetRole, SumidaError> {
   match RoleService::get(id).await? {
     Some(role) => Ok(role),
-    None => Err(AppError::NoData("Role".to_owned(), id.to_string())),
+    None => Err(SumidaError::NoData("Role".to_owned(), id.to_string())),
   }
 }
 
 async fn create<S, T, R>(
   State(_state): State<S>,
   Json(body): Json<CreateRole>,
-) -> Result<RoleCreated, AppError>
+) -> Result<RoleCreated, SumidaError>
 where
   T: Default + Serialize + 'static,
   R: RoleAbilityProvider<T> + Clone + Send + Sync + 'static,
@@ -42,7 +42,7 @@ async fn update<S, T, R>(
   State(_state): State<S>,
   Path(id): Path<i32>,
   Json(body): Json<UpdateRole>,
-) -> Result<RoleUpdated, AppError>
+) -> Result<RoleUpdated, SumidaError>
 where
   T: Default + Serialize + 'static,
   R: RoleAbilityProvider<T> + Clone + Send + Sync + 'static,
@@ -51,7 +51,7 @@ where
   Ok(RoleUpdated)
 }
 
-async fn delete<S>(State(_state): State<S>, Path(id): Path<i32>) -> Result<RoleDeleted, AppError> {
+async fn delete<S>(State(_state): State<S>, Path(id): Path<i32>) -> Result<RoleDeleted, SumidaError> {
   RoleService::delete(id).await?;
   Ok(RoleDeleted)
 }

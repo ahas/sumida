@@ -1,6 +1,6 @@
 use sea_orm::{prelude::*, ActiveValue::*, DatabaseTransaction};
 
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 
 use super::users::Entity as Users;
 
@@ -23,7 +23,7 @@ impl Entity {
     username: U,
     code: C,
     txn: &DatabaseTransaction,
-  ) -> Result<bool, AppError>
+  ) -> Result<bool, SumidaError>
   where
     K: AsRef<str>,
     U: AsRef<str>,
@@ -34,7 +34,7 @@ impl Entity {
     let code = code.as_ref();
 
     let Some(_) = Users::find_by_id(username).one(txn).await? else {
-      return Err(AppError::NoUserAccount(username.to_owned()));
+      return Err(SumidaError::NoUserAccount(username.to_owned()));
     };
     let is_verified = Entity::find()
       .filter(Column::Kind.eq(kind))

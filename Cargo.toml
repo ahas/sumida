@@ -28,7 +28,6 @@ storage-local = []
 jsonwebtoken = ["dep:jsonwebtoken"]
 
 messenger = ["socketioxide", "socketioxide-core"]
-socketioxide-core = ["dep:socketioxide-core"]
 
 [dependencies]
 anyhow = "1.0.95"

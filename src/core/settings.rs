@@ -76,7 +76,7 @@ impl Default for ServerSettings {
 
 #[derive(Debug, Deserialize)]
 #[allow(unused)]
-pub struct AppSettings {
+pub struct SumidaSettings {
   pub server: ServerSettings,
   pub database: DatabaseSettings,
   #[cfg(feature = "aws")]
@@ -87,7 +87,7 @@ pub struct AppSettings {
   pub jwt: Option<JwtSettings>,
 }
 
-impl AppSettings {
+impl SumidaSettings {
   pub fn new<'de, T>() -> Result<T, ConfigError>
   where
     T: Deserialize<'de>,
@@ -99,9 +99,9 @@ impl AppSettings {
 }
 
 lazy_static! {
-  pub static ref APP_SETTINGS: AppSettings = AppSettings::new().unwrap();
+  pub static ref SUMIDA_SETTINGS: SumidaSettings = SumidaSettings::new().unwrap();
 }
 
-pub fn get() -> &'static AppSettings {
-  &APP_SETTINGS
+pub fn get() -> &'static SumidaSettings {
+  &SUMIDA_SETTINGS
 }

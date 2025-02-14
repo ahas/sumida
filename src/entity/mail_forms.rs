@@ -5,7 +5,7 @@ use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
 use crate::core::db;
-use crate::core::error::AppError;
+use crate::core::error::SumidaError;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "mail_forms")]
@@ -21,17 +21,17 @@ pub struct Model {
 }
 
 impl Model {
-  pub fn render(&self, context: impl Serialize) -> Result<String, AppError> {
+  pub fn render(&self, context: impl Serialize) -> Result<String, SumidaError> {
     let mut tt = TinyTemplate::new();
     tt.add_template(&self.kind, &self.content)
-      .map_err(|err| AppError::MailFormAddTemplateFailed(err.to_string()))?;
+      .map_err(|err| SumidaError::MailFormAddTemplateFailed(err.to_string()))?;
     let rendered =
-      tt.render(&self.kind, &context).map_err(|err| AppError::MailFormRenderFailed(err.to_string()))?;
+      tt.render(&self.kind, &context).map_err(|err| SumidaError::MailFormRenderFailed(err.to_string()))?;
 
     Ok(rendered)
   }
 
-  pub fn send<R, C>(&self, receiver: R, context: C) -> Result<(), AppError>
+  pub fn send<R, C>(&self, receiver: R, context: C) -> Result<(), SumidaError>
   where
     R: AsRef<str>,
     C: Serialize,
@@ -40,24 +40,24 @@ impl Model {
     let content = self.render(context)?;
 
     let email = Message::builder()
-      .from(self.sender.parse().map_err(|_err| AppError::EmailParseFailed)?)
-      .to(receiver.parse().map_err(|_err| AppError::EmailParseFailed)?)
+      .from(self.sender.parse().map_err(|_err| SumidaError::EmailParseFailed)?)
+      .to(receiver.parse().map_err(|_err| SumidaError::EmailParseFailed)?)
       .subject(&self.subject)
       .header(ContentType::TEXT_HTML)
       .body(content)
-      .map_err(|err| AppError::EmailMessageBuildFailed(err.to_string()))?;
+      .map_err(|err| SumidaError::EmailMessageBuildFailed(err.to_string()))?;
 
     let mailer = SmtpTransport::unencrypted_localhost();
 
     match mailer.send(&email) {
       Ok(_) => Ok(()),
-      Err(err) => Err(AppError::EmailSendFailed(err.to_string())),
+      Err(err) => Err(SumidaError::EmailSendFailed(err.to_string())),
     }
   }
 }
 
 impl Entity {
-  pub async fn send<K, R, C>(kind: K, receiver: R, context: C) -> Result<(), AppError>
+  pub async fn send<K, R, C>(kind: K, receiver: R, context: C) -> Result<(), SumidaError>
   where
     K: AsRef<str>,
     R: AsRef<str>,
@@ -66,7 +66,7 @@ impl Entity {
     let kind = kind.as_ref();
     let db_conn = db::get_connection();
     let Some(form) = Entity::find_by_id(kind).one(db_conn).await? else {
-      return Err(AppError::NoMailForm(kind.to_owned()));
+      return Err(SumidaError::NoMailForm(kind.to_owned()));
     };
 
     form.send(receiver, context)?;
