@@ -96,6 +96,10 @@ fn with_defailt_role_ability(
   let mut result = default_role_ability.as_object().unwrap().clone();
 
   for (key, val) in role_ability {
+    if !val.is_object() {
+      continue;
+    }
+
     let default_ability = Map::new();
     let ability = val.as_object().unwrap_or(&default_ability);
     let ability = json!({
