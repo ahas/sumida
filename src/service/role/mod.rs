@@ -92,24 +92,16 @@ fn with_defailt_role_ability(
   default_role_ability: serde_json::Value,
   role_ability: serde_json::Value,
 ) -> serde_json::Value {
-  let role_ability = role_ability.as_object().unwrap();
-  let mut result = default_role_ability.as_object().unwrap().clone();
+  let default_role_ability = default_role_ability.as_object().unwrap();
+  let mut role_ability = role_ability.as_object().unwrap().clone();
 
-  for (key, val) in role_ability {
-    if !val.is_object() {
+  for (key, val) in default_role_ability {
+    if role_ability.contains_key(key) {
       continue;
     }
 
-    let default_ability = Map::new();
-    let ability = val.as_object().unwrap_or(&default_ability);
-    let ability = json!({
-      "read": ability.get("read").unwrap_or(&json!(false)).as_bool().unwrap_or(false),
-      "create": ability.get("create").unwrap_or(&json!(false)).as_bool().unwrap_or(false),
-      "update": ability.get("update").unwrap_or(&json!(false)).as_bool().unwrap_or(false),
-      "delete": ability.get("delete").unwrap_or(&json!(false)).as_bool().unwrap_or(false),
-    });
-    result.insert(key.clone(), ability);
+    role_ability.insert(key.to_string(), val.clone());
   }
 
-  serde_json::Value::Object(result)
+  serde_json::Value::Object(role_ability)
 }
