@@ -157,3 +157,9 @@ pub struct UserActivation {
   pub password: String,
   pub uuid: Uuid,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Impersonate {
+  pub username: String,
+}

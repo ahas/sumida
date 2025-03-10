@@ -275,3 +275,20 @@ pub async fn change_password(data: ChangePassword) -> Result<(), SumidaError> {
 
   Ok(())
 }
+
+pub async fn impersonate<S>(session: &UserSession, username: S) -> Result<(), SumidaError>
+where
+  S: AsRef<str>,
+{
+  let db_conn = db::get_connection();
+  let username = username.as_ref();
+  let user = Users::find_by_id(username).one(db_conn).await?;
+
+  if let Some(user) = user {
+    session.sign_in(&user, Some(Expiry::OnSessionEnd)).await?;
+
+    return Ok(());
+  }
+
+  Err(SumidaError::NoUserAccount(username.to_owned()))
+}

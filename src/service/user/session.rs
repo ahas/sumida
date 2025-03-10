@@ -125,6 +125,44 @@ impl UserSession {
 
     Ok(())
   }
+
+  pub async fn sign_in(
+    &self,
+    user: &crate::entity::users::Model,
+    expiry: Option<Expiry>,
+  ) -> Result<(), SumidaError> {
+    let db_conn = db::get_connection();
+    let organization = user
+      .get_organization(db_conn)
+      .await?
+      .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
+    let organization = OrganizationData {
+      id: organization.id,
+      name: organization.name.clone(),
+    };
+    let role = user.get_role(db_conn).await?.ok_or_else(|| SumidaError::NoUserRole(user.role))?;
+    let role = RoleData {
+      id: role.id,
+      name: role.name.clone(),
+    };
+
+    Self::update(
+      &self.session,
+      &UserData {
+        is_authorized: true,
+        username: user.username.clone(),
+        full_name: user.full_name.clone().unwrap_or("".to_owned()),
+        organization,
+        role,
+        is_admin: user.is_admin,
+        expiry,
+        ..Default::default()
+      },
+    )
+    .await?;
+
+    Ok(())
+  }
 }
 
 impl<S> FromRequestParts<S> for UserSession
