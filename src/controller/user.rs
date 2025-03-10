@@ -125,6 +125,15 @@ async fn change_password<S>(
   Ok(StatusCode::OK)
 }
 
+async fn impersonate<S>(
+  session: UserSession,
+  State(_state): State<S>,
+  Json(body): Json<Impersonate>,
+) -> Result<StatusCode, SumidaError> {
+  UserService::impersonate(&session, body.username).await?;
+  Ok(StatusCode::ACCEPTED)
+}
+
 pub fn new<S>(state: &S) -> Router<S>
 where
   S: Clone + Send + Sync + 'static,
@@ -156,4 +165,5 @@ where
     .route("/sign-in", routing::post(sign_in::<S>))
     .route("/change-password", routing::post(change_password::<S>))
     .route("/activate", routing::post(activate::<S>))
+    .route("/impersonate", routing::post(impersonate::<S>))
 }
