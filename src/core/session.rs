@@ -27,9 +27,8 @@ async fn new_store(settings: &SessionSettings) -> Result<DynamoDBStore, anyhow::
 #[cfg(feature = "session-store-redis")]
 async fn new_store(_settings: &SessionSettings) -> Result<RedisStore<Pool>, anyhow::Error> {
   let pool = Pool::new(Config::default(), None, None, None, 6)?;
-  let conn = pool.connect();
+  let redis_conn = pool.connect();
   pool.wait_for_connect().await?;
-  conn.await??;
 
   Ok(RedisStore::new(pool))
 }
