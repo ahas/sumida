@@ -91,7 +91,11 @@ impl UserSession {
     let mut user_data = self.user_data.clone();
 
     if !user_data.is_authorized {
-      return Err(SumidaError::NotAuthorized(user_data.username));
+      return Err(if user_data.username.is_empty() {
+        SumidaError::NoCredentials
+      } else {
+        SumidaError::NotAuthorized(user_data.username)
+      });
     }
 
     let db_conn = db::get_connection();

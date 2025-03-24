@@ -32,6 +32,8 @@ pub enum SumidaError {
   NoUserEmail(String),
   #[error("user `{0}` not authorized")]
   NotAuthorized(String),
+  #[error("user credentials required")]
+  NoCredentials,
   #[error("no permission to perform `{0}`")]
   NoAbilityTopic(String),
   #[error("permission `{0}` exists, but action `{1}` is disabled")]
@@ -95,6 +97,7 @@ impl Into<StatusCode> for SumidaError {
       SumidaError::NoUserAccount(_)
       | SumidaError::InvalidPassword(_)
       | SumidaError::NotAuthorized(_)
+      | SumidaError::NoCredentials
       | SumidaError::NoUserOrganization(_)
       | SumidaError::NoUserRole(_)
       | SumidaError::InvalidJwt(_)
@@ -125,18 +128,16 @@ impl Into<StatusCode> for SumidaError {
 impl IntoResponse for SumidaError {
   fn into_response(self) -> axum::response::Response {
     let status_code: StatusCode = self.clone().into();
+    let reason = self.to_string();
+    tracing::error!("SumidaError: {}, {}", status_code, reason);
 
     (
       status_code,
       if cfg!(debug_assertions) {
-        let body = Json(json!({
+        Json(json!({
           "statusCode": status_code.as_u16(),
-          "reason": self.to_string(),
-        }));
-
-        tracing::error!("SumidaError: {}", self.to_string());
-
-        body
+          "reason": reason,
+        }))
       } else {
         Json(json!({
           "statusCode": status_code.as_u16(),
