@@ -184,6 +184,6 @@ impl<T> From<S3Error<T>> for SumidaError {
 
 impl From<anyhow::Error> for SumidaError {
   fn from(value: anyhow::Error) -> Self {
-    SumidaError::Unknown(500, value.backtrace().to_string())
+    SumidaError::Unknown(500, value.to_string())
   }
 }
