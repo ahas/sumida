@@ -11,7 +11,7 @@ fn get_options_from_settings() -> ConnectOptions {
 
   let mut opts = ConnectOptions::new(&config.url);
 
-  tracing::info!("database connection established: {}", config.url);
+  tracing::info!("database connection established");
 
   if let Some(v) = config.max_connections {
     opts.max_connections(v);
