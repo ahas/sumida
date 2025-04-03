@@ -3951,6 +3951,7 @@ dependencies = [
 [[package]]
 name = "sea-orm-crud"
 version = "0.1.0"
+source = "git+https://github.com/ahas/sea-orm-crud.git#823cc3cfd50652a2ccf4bcbf4baea33554c5a5a8"
 dependencies = [
  "sea-orm",
  "serde",
