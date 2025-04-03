@@ -102,15 +102,15 @@ impl UserSession {
     let user = crate::entity::users::Entity::find_by_id(&user_data.username)
       .one(db_conn)
       .await?
-      .ok_or_else(|| SumidaError::NoUserAccount(user_data.username))?;
+      .ok_or(SumidaError::NoUserAccount(user_data.username))?;
     let organization = crate::entity::organizations::Entity::find_by_id(user.organization)
       .one(db_conn)
       .await?
-      .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
+      .ok_or(SumidaError::NoUserOrganization(user.organization))?;
     let role = crate::entity::roles::Entity::find_by_id(user.role)
       .one(db_conn)
       .await?
-      .ok_or_else(|| SumidaError::NoUserRole(user.role))?;
+      .ok_or(SumidaError::NoUserRole(user.role))?;
 
     user_data.username = user.username.clone();
     user_data.organization = OrganizationData {
@@ -136,15 +136,13 @@ impl UserSession {
     expiry: Option<Expiry>,
   ) -> Result<(), SumidaError> {
     let db_conn = db::get_connection();
-    let organization = user
-      .get_organization(db_conn)
-      .await?
-      .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
+    let organization =
+      user.get_organization(db_conn).await?.ok_or(SumidaError::NoUserOrganization(user.organization))?;
     let organization = OrganizationData {
       id: organization.id,
       name: organization.name.clone(),
     };
-    let role = user.get_role(db_conn).await?.ok_or_else(|| SumidaError::NoUserRole(user.role))?;
+    let role = user.get_role(db_conn).await?.ok_or(SumidaError::NoUserRole(user.role))?;
     let role = RoleData {
       id: role.id,
       name: role.name.clone(),

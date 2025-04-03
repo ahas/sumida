@@ -6,12 +6,12 @@ use sea_orm::{
 };
 use sea_orm_crud::Optional;
 use serde::Serialize;
-use serde_json::{json, Map};
+use serde_json::json;
 
 use crate::core::db;
 use crate::core::error::SumidaError;
 use crate::entity::prelude::*;
-use crate::provider::RoleAbilityProvider;
+use crate::provider::RoleProvider;
 use crate::util::crud::{search, Pagination};
 
 use self::dto::*;
@@ -53,7 +53,7 @@ pub async fn create<T, R>(
 ) -> Result<InsertResult<crate::entity::roles::ActiveModel>, SumidaError>
 where
   T: Default + Serialize,
-  R: RoleAbilityProvider<T>,
+  R: RoleProvider<T>,
 {
   let Optional(ability) = data.ability;
   let default_role_ability = serde_json::to_value(R::get()).unwrap_or(json!({}));
@@ -68,7 +68,7 @@ where
 pub async fn update<T, R>(id: i32, mut data: UpdateRole) -> Result<crate::entity::roles::Model, SumidaError>
 where
   T: Default + Serialize,
-  R: RoleAbilityProvider<T>,
+  R: RoleProvider<T>,
 {
   let Optional(ability) = data.ability;
   let default_role_ability = serde_json::to_value(R::get()).unwrap_or(json!({}));

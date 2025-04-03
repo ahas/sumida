@@ -148,9 +148,9 @@ async fn verify_api_key(session: &UserSession, token: &str) -> Result<(), Sumida
     let organization = Organizations::find_by_id(user.organization)
       .one(db_conn)
       .await?
-      .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
+      .ok_or(SumidaError::NoUserOrganization(user.organization))?;
     let role =
-      Roles::find_by_id(user.role).one(db_conn).await?.ok_or_else(|| SumidaError::NoUserRole(user.role))?;
+      Roles::find_by_id(user.role).one(db_conn).await?.ok_or(SumidaError::NoUserRole(user.role))?;
 
     user_data.username = user.username.clone();
     user_data.organization = OrganizationData {
@@ -202,7 +202,7 @@ pub async fn verify(session: &UserSession, headers: &HeaderMap<HeaderValue>) -> 
   Ok(true)
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn user_guard_fn(
   session: UserSession,
   req: Request,
@@ -213,7 +213,7 @@ pub async fn user_guard_fn(
   Ok(next.run(req).await)
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn admin_guard_fn(
   session: UserSession,
   req: Request,

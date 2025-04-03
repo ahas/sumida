@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[allow(dead_code)]
 pub struct SessionSettings {
   pub table: String,
   pub name: Option<String>,
@@ -15,26 +15,26 @@ pub struct SessionSettings {
 
 #[cfg(feature = "jwt")]
 #[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[allow(dead_code)]
 pub struct JwtSettings {
   pub secret: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[allow(dead_code)]
 pub struct AwsS3Settings {
   pub bucket: String,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[allow(dead_code)]
 pub struct AwsSettings {
   pub region: Option<String>,
   pub s3: Option<AwsS3Settings>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[allow(dead_code)]
 pub struct DatabaseSettings {
   pub url: String,
   pub max_connections: Option<u32>,
@@ -47,13 +47,13 @@ pub struct DatabaseSettings {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[allow(dead_code)]
 pub struct Cors {
   pub allow_origins: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[allow(dead_code)]
 pub struct ServerSettings {
   pub host: String,
   pub stage: String,
@@ -75,7 +75,7 @@ impl Default for ServerSettings {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[allow(dead_code)]
 pub struct SumidaSettings {
   pub server: ServerSettings,
   pub database: DatabaseSettings,
@@ -88,7 +88,7 @@ pub struct SumidaSettings {
 }
 
 impl SumidaSettings {
-  pub fn new<'de, T>() -> Result<T, ConfigError>
+  pub fn build<'de, T>() -> Result<T, ConfigError>
   where
     T: Deserialize<'de>,
   {
@@ -99,7 +99,7 @@ impl SumidaSettings {
 }
 
 lazy_static! {
-  pub static ref SUMIDA_SETTINGS: SumidaSettings = SumidaSettings::new().unwrap();
+  pub static ref SUMIDA_SETTINGS: SumidaSettings = SumidaSettings::build().unwrap();
 }
 
 pub fn get() -> &'static SumidaSettings {

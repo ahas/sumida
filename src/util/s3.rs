@@ -17,12 +17,12 @@ impl IntoS3Uri for (String, String) {
   }
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub fn new_client() -> aws_sdk_s3::Client {
   aws_sdk_s3::Client::new(aws::get_sdk_config())
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub fn static_uri(data_type: impl Display, id: impl Display, path: impl Display) -> String {
   format!(
     "s3://{bucket}/static/{stage}/{data_type}/{id}/{path}",
@@ -31,7 +31,7 @@ pub fn static_uri(data_type: impl Display, id: impl Display, path: impl Display)
   )
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub fn get_bucket() -> Result<String, anyhow::Error> {
   let settings = settings::get();
   let ret = settings
@@ -44,7 +44,7 @@ pub fn get_bucket() -> Result<String, anyhow::Error> {
   ret
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub fn parse_uri(uri: String) -> Result<(String, String), anyhow::Error> {
   if let Some(stripped) = uri.strip_prefix("s3://") {
     if let Some(slash_pos) = stripped.find('/') {
@@ -60,7 +60,7 @@ pub fn parse_uri(uri: String) -> Result<(String, String), anyhow::Error> {
   }
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn get_bytes(client: &aws_sdk_s3::Client, uri: String) -> Result<AggregatedBytes, anyhow::Error> {
   let (bucket, key) = parse_uri(uri)?;
   let resp = client.get_object().bucket(&bucket).key(&key).send().await?;
@@ -68,7 +68,7 @@ pub async fn get_bytes(client: &aws_sdk_s3::Client, uri: String) -> Result<Aggre
   Ok(resp.body.collect().await?)
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn get_json(
   client: &aws_sdk_s3::Client,
   uri: String,
@@ -79,7 +79,7 @@ pub async fn get_json(
     .map_err(|err| anyhow!("json parsing failure {uri}: {}", err.to_string()))
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[cfg(feature = "image")]
 pub async fn get_image(client: &aws_sdk_s3::Client, uri: String) -> Option<DynamicImage> {
   let bytes = get_bytes(client, uri.clone()).await.ok();
@@ -90,7 +90,7 @@ pub async fn get_image(client: &aws_sdk_s3::Client, uri: String) -> Option<Dynam
   })
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[cfg(feature = "image")]
 pub async fn put_image(
   client: &aws_sdk_s3::Client,
@@ -112,7 +112,7 @@ pub async fn put_image(
   Ok(())
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn exists(client: &aws_sdk_s3::Client, uri: String) -> bool {
   let (bucket, key) = parse_uri(uri).unwrap();
   let resp = client.head_object().bucket(bucket).key(key).send().await.ok();
@@ -120,7 +120,7 @@ pub async fn exists(client: &aws_sdk_s3::Client, uri: String) -> bool {
   resp.is_some()
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 pub async fn delete(client: &aws_sdk_s3::Client, uri: String) -> Result<(), anyhow::Error> {
   let (bucket, key) = parse_uri(uri)?;
   client.delete_object().bucket(bucket).key(key).send().await?;

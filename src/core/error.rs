@@ -84,9 +84,10 @@ pub enum SumidaError {
   AwsS3SdkError(u16, String),
 }
 
-impl Into<StatusCode> for SumidaError {
-  fn into(self) -> StatusCode {
-    match self {
+// impl Into<StatusCode> for SumidaError {
+impl From<SumidaError> for StatusCode {
+  fn from(err: SumidaError) -> Self {
+    match err {
       SumidaError::Unknown(v, _) => StatusCode::from_u16(v),
 
       // data errors

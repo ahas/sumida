@@ -5,7 +5,7 @@ use axum::{
 use serde::Serialize;
 
 use crate::core::error::SumidaError;
-use crate::provider::RoleAbilityProvider;
+use crate::provider::RoleProvider;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 use crate::{ability_guard, user_guard};
@@ -31,7 +31,7 @@ async fn create<S, T, R>(
 ) -> Result<RoleCreated, SumidaError>
 where
   T: Default + Serialize + 'static,
-  R: RoleAbilityProvider<T> + Clone + Send + Sync + 'static,
+  R: RoleProvider<T> + Clone + Send + Sync + 'static,
 {
   Ok(RoleCreated {
     id: RoleService::create::<T, R>(body).await?.last_insert_id,
@@ -45,7 +45,7 @@ async fn update<S, T, R>(
 ) -> Result<RoleUpdated, SumidaError>
 where
   T: Default + Serialize + 'static,
-  R: RoleAbilityProvider<T> + Clone + Send + Sync + 'static,
+  R: RoleProvider<T> + Clone + Send + Sync + 'static,
 {
   RoleService::update::<T, R>(id, body).await?;
   Ok(RoleUpdated)
@@ -60,7 +60,7 @@ pub fn new<S, T, R>(state: &S) -> Router<S>
 where
   S: Clone + Send + Sync + 'static,
   T: Default + Serialize + 'static,
-  R: RoleAbilityProvider<T> + Clone + Send + Sync + 'static,
+  R: RoleProvider<T> + Clone + Send + Sync + 'static,
 {
   let route_read = Router::new()
     .route("/", routing::get(list::<S>))
