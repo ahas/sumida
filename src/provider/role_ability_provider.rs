@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub trait RoleAbilityProvider<T>
+pub trait RoleProvider<T>
 where
   T: Default + Serialize,
 {

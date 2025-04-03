@@ -130,15 +130,13 @@ pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), Sumi
     return Err(SumidaError::InvalidPassword(data.password.clone()));
   }
 
-  let organization = user
-    .get_organization(db_conn)
-    .await?
-    .ok_or_else(|| SumidaError::NoUserOrganization(user.organization))?;
+  let organization =
+    user.get_organization(db_conn).await?.ok_or(SumidaError::NoUserOrganization(user.organization))?;
   let organization = OrganizationData {
     id: organization.id,
     name: organization.name.clone(),
   };
-  let role = user.get_role(db_conn).await?.ok_or_else(|| SumidaError::NoUserRole(user.role))?;
+  let role = user.get_role(db_conn).await?.ok_or(SumidaError::NoUserRole(user.role))?;
   let role = RoleData {
     id: role.id,
     name: role.name.clone(),
@@ -193,7 +191,7 @@ pub async fn invite(_session: &UserSession, username: String) -> Result<(), Sumi
 
   let uuid = uuid::Uuid::new_v4();
 
-  UserInvitations::create(&username, uuid.clone()).await?;
+  UserInvitations::create(&username, uuid).await?;
 
   MailForms::send(
     "invitation",
@@ -201,7 +199,7 @@ pub async fn invite(_session: &UserSession, username: String) -> Result<(), Sumi
     mail_form_context::InvitationContext {
       username,
       uuid: uuid.to_string(),
-      full_name: user.full_name.unwrap_or_else(|| String::new()),
+      full_name: user.full_name.unwrap_or_else(String::new),
     },
   )
   .await?;
@@ -218,7 +216,7 @@ pub async fn activate(session: &UserSession, activation: UserActivation) -> Resu
   let Some(user) = Users::find_by_id(username).one(db_conn).await? else {
     return Err(SumidaError::NoUserAccount(username.to_owned()));
   };
-  let Some(_) = UserInvitations::find_by_id(uuid.clone())
+  let Some(_) = UserInvitations::find_by_id(*uuid)
     .filter(crate::entity::user_invitations::Column::ExpiredAt.gt(Utc::now()))
     .one(db_conn)
     .await?

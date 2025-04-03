@@ -53,16 +53,13 @@ pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
     return Err(SumidaError::NoUserAccount(username));
   };
 
-  match kind.as_str() {
-    "email" => {
-      let Some(email) = user.email else {
-        txn.rollback().await?;
-        return Err(SumidaError::NoUserEmail(user.username));
-      };
+  if kind == "email" {
+    let Some(email) = user.email else {
+      txn.rollback().await?;
+      return Err(SumidaError::NoUserEmail(user.username));
+    };
 
-      MailForms::send("verification", &email, VerificationContext { code }).await?;
-    }
-    _ => {}
+    MailForms::send("verification", &email, VerificationContext { code }).await?;
   }
 
   txn.commit().await?;

@@ -57,7 +57,7 @@ pub async fn create(username: String) -> Result<crate::entity::user_invitations:
 
   let active_model = crate::entity::user_invitations::ActiveModel {
     username: Set(username.clone()),
-    uuid: Set(uuid.clone()),
+    uuid: Set(uuid),
     expired_at: Set(expired_at.fixed_offset()),
     ..Default::default()
   };
@@ -74,7 +74,7 @@ pub async fn update(username: String) -> Result<crate::entity::user_invitations:
 
   let active_model = crate::entity::user_invitations::ActiveModel {
     username: Unchanged(username.clone()),
-    uuid: Set(uuid.clone()),
+    uuid: Set(uuid),
     expired_at: Set(expired_at.fixed_offset()),
     ..Default::default()
   };
