@@ -20,10 +20,8 @@ pub enum SumidaError {
   NoContent,
 
   // authorization errors
-  #[error("user `{0}` not found")]
-  NoUserAccount(String),
-  #[error("password `{0}` is invalid")]
-  InvalidPassword(String),
+  #[error("invalid account")]
+  InvalidAccount,
   #[error("user organization id '{0}' not found")]
   NoUserOrganization(i32),
   #[error("user role id `{0}` not found")]
@@ -38,14 +36,14 @@ pub enum SumidaError {
   NoAbilityTopic(String),
   #[error("permission `{0}` exists, but action `{1}` is disabled")]
   NoAbilityAction(String, String),
-  #[error("no JWT secret")]
+  #[error("no jwt secret")]
   NoJwtSecret,
-  #[error("invalid jwt `{0}`")]
-  InvalidJwt(String),
-  #[error("invalid api key `{0}`")]
-  InvalidApiKey(String),
-  #[error("invalid authorization token `{0}`")]
-  InvalidAuthorizationToken(String),
+  #[error("invalid jwt")]
+  InvalidJwt,
+  #[error("invalid api key")]
+  InvalidApiKey,
+  #[error("invalid authorization token")]
+  InvalidAuthorizationToken,
   #[error("invalid authorization method `{0}`")]
   InvalidAuthorizationMethod(String),
   #[error("accessible to administrators only")]
@@ -95,16 +93,15 @@ impl From<SumidaError> for StatusCode {
       SumidaError::NoContent => Ok(StatusCode::NO_CONTENT),
 
       // authorization errors
-      SumidaError::NoUserAccount(_)
-      | SumidaError::InvalidPassword(_)
+      SumidaError::InvalidAccount
       | SumidaError::NotAuthorized(_)
       | SumidaError::NoCredentials
       | SumidaError::NoUserOrganization(_)
       | SumidaError::NoUserRole(_)
-      | SumidaError::InvalidJwt(_)
+      | SumidaError::InvalidJwt
       | SumidaError::NoJwtSecret
-      | SumidaError::InvalidApiKey(_)
-      | SumidaError::InvalidAuthorizationToken(_)
+      | SumidaError::InvalidApiKey
+      | SumidaError::InvalidAuthorizationToken
       | SumidaError::OnlyAdminAllowed
       | SumidaError::VerificationFailed => Ok(StatusCode::UNAUTHORIZED),
       SumidaError::NoAbilityTopic(_) | SumidaError::NoAbilityAction(_, _) => Ok(StatusCode::NOT_ACCEPTABLE),

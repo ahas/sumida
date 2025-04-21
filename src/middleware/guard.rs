@@ -97,13 +97,13 @@ async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), SumidaErro
     &jwt::DecodingKey::from_secret(secret.as_ref()),
     &jwt::Validation::default(),
   )
-  .map_err(|_err| SumidaError::InvalidJwt(token.to_string()))?;
+  .map_err(|_err| SumidaError::InvalidJwt)?;
 
   let db_conn = db::get_connection();
   let user = Users::find_by_id(&token.claims.user)
     .one(db_conn)
     .await?
-    .ok_or_else(|| SumidaError::NoUserAccount(token.claims.user.to_string()))?;
+    .ok_or_else(|| SumidaError::InvalidAccount)?;
   let organization = Organizations::find_by_id(user.organization)
     .one(db_conn)
     .await?
@@ -136,7 +136,7 @@ async fn verify_api_key(session: &UserSession, token: &str) -> Result<(), Sumida
     .filter(crate::entity::api_keys::Column::Key.eq(token))
     .one(db_conn)
     .await?
-    .ok_or_else(|| SumidaError::InvalidApiKey(token.to_string()))?;
+    .ok_or_else(|| SumidaError::InvalidApiKey)?;
   let mut user_data = session.user_data.clone();
   let user = if let Some(username) = api_key.user {
     Users::find_by_id(&username).one(db_conn).await?
@@ -183,7 +183,7 @@ pub async fn verify(session: &UserSession, headers: &HeaderMap<HeaderValue>) -> 
     let pair = v.to_str().unwrap_or_default().split_whitespace().map(str::trim).collect::<Vec<&str>>();
 
     if pair.len() < 2 {
-      return Err(SumidaError::InvalidAuthorizationToken(v.to_str().unwrap_or("").to_string()));
+      return Err(SumidaError::InvalidAuthorizationToken);
     }
 
     let method = pair[0];

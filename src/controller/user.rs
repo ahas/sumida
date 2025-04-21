@@ -21,7 +21,7 @@ async fn list<S>(
 async fn get<S>(State(_state): State<S>, Path(username): Path<String>) -> Result<GetUser, SumidaError> {
   match UserService::get(&username).await? {
     Some(user) => Ok(user),
-    None => Err(SumidaError::NoUserAccount(username.to_string())),
+    None => Err(SumidaError::InvalidAccount),
   }
 }
 
@@ -85,7 +85,7 @@ async fn profile<S>(session: UserSession, State(_state): State<S>) -> Result<Use
 async fn get_my_info<S>(session: UserSession, State(_state): State<S>) -> Result<GetUser, SumidaError> {
   match UserService::get(&session.user_data.username).await? {
     Some(user) => Ok(user),
-    None => Err(SumidaError::NoUserAccount(session.user_data.username.to_string())),
+    None => Err(SumidaError::InvalidAccount),
   }
 }
 
