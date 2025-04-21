@@ -34,7 +34,7 @@ impl Entity {
     let code = code.as_ref();
 
     let Some(_) = Users::find_by_id(username).one(txn).await? else {
-      return Err(SumidaError::NoUserAccount(username.to_owned()));
+      return Err(SumidaError::InvalidAccount);
     };
     let is_verified = Entity::find()
       .filter(Column::Kind.eq(kind))

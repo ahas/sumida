@@ -123,11 +123,11 @@ pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), Sumi
     .filter(crate::entity::users::Column::IsEnabled.eq(true))
     .one(db_conn)
     .await?
-    .ok_or_else(|| SumidaError::NoUserAccount(data.username.clone()))?;
+    .ok_or_else(|| SumidaError::InvalidAccount)?;
   let is_verified = verify_password(&data.password, &user.password);
 
   if !is_verified {
-    return Err(SumidaError::InvalidPassword(data.password.clone()));
+    return Err(SumidaError::InvalidAccount);
   }
 
   let organization =
@@ -183,7 +183,7 @@ pub async fn invite(_session: &UserSession, username: String) -> Result<(), Sumi
   let db_conn = db::get_connection();
 
   let Some(user) = Users::find_by_id(&username).one(db_conn).await? else {
-    return Err(SumidaError::NoUserAccount(username));
+    return Err(SumidaError::InvalidAccount);
   };
   let Some(receiver) = user.email else {
     return Err(SumidaError::NoUserEmail(username));
@@ -214,7 +214,7 @@ pub async fn activate(session: &UserSession, activation: UserActivation) -> Resu
   let db_conn = db::get_connection();
 
   let Some(user) = Users::find_by_id(username).one(db_conn).await? else {
-    return Err(SumidaError::NoUserAccount(username.to_owned()));
+    return Err(SumidaError::InvalidAccount);
   };
   let Some(_) = UserInvitations::find_by_id(*uuid)
     .filter(crate::entity::user_invitations::Column::ExpiredAt.gt(Utc::now()))
@@ -288,5 +288,5 @@ where
     return Ok(());
   }
 
-  Err(SumidaError::NoUserAccount(username.to_owned()))
+  Err(SumidaError::InvalidAccount)
 }

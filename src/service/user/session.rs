@@ -102,7 +102,7 @@ impl UserSession {
     let user = crate::entity::users::Entity::find_by_id(&user_data.username)
       .one(db_conn)
       .await?
-      .ok_or(SumidaError::NoUserAccount(user_data.username))?;
+      .ok_or(SumidaError::InvalidAccount)?;
     let organization = crate::entity::organizations::Entity::find_by_id(user.organization)
       .one(db_conn)
       .await?

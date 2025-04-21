@@ -50,7 +50,7 @@ pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
 
   let Some(user) = Users::find_by_id(&username).one(&txn).await? else {
     txn.rollback().await?;
-    return Err(SumidaError::NoUserAccount(username));
+    return Err(SumidaError::InvalidAccount);
   };
 
   if kind == "email" {
