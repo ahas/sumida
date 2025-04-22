@@ -4,6 +4,15 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
+pub struct SmtpSettings {
+  pub username: String,
+  pub password: String,
+  pub server: String,
+  pub auth: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct SessionSettings {
   pub table: String,
   pub name: Option<String>,
@@ -79,6 +88,7 @@ impl Default for ServerSettings {
 pub struct SumidaSettings {
   pub server: ServerSettings,
   pub database: DatabaseSettings,
+  pub smtp: Option<SmtpSettings>,
   #[cfg(feature = "aws")]
   pub aws: Option<AwsSettings>,
   #[cfg(feature = "session")]

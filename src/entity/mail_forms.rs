@@ -1,11 +1,12 @@
 use lettre::message::{header::ContentType, Message};
+use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
-use crate::core::db;
 use crate::core::error::SumidaError;
+use crate::core::{db, settings};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "mail_forms")]
@@ -31,7 +32,7 @@ impl Model {
     Ok(rendered)
   }
 
-  pub fn send<R, C>(&self, receiver: R, context: C) -> Result<(), SumidaError>
+  pub fn send<R, C>(&self, receiver: R, context: C) -> Result<(), anyhow::Error>
   where
     R: AsRef<str>,
     C: Serialize,
@@ -47,11 +48,22 @@ impl Model {
       .body(content)
       .map_err(|err| SumidaError::EmailMessageBuildFailed(err.to_string()))?;
 
-    let mailer = SmtpTransport::unencrypted_localhost();
+    let mailer = if let Some(ref opts) = settings::get().smtp {
+      let cred = Credentials::new(opts.username.clone(), opts.password.clone());
+      let auth = match opts.auth.to_uppercase().as_str() {
+        "PLAIN" => Mechanism::Plain,
+        "LOGIN" => Mechanism::Login,
+        "XOAUTH2" => Mechanism::Xoauth2,
+        _ => Mechanism::Plain,
+      };
+      SmtpTransport::relay(&opts.server)?.credentials(cred).authentication(vec![auth]).build()
+    } else {
+      SmtpTransport::unencrypted_localhost()
+    };
 
     match mailer.send(&email) {
       Ok(_) => Ok(()),
-      Err(err) => Err(SumidaError::EmailSendFailed(err.to_string())),
+      Err(err) => Err(SumidaError::EmailSendFailed(err.to_string()).into()),
     }
   }
 }
