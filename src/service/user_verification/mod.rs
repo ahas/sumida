@@ -53,7 +53,8 @@ pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
     return Err(SumidaError::InvalidAccount);
   };
 
-  if kind == "email" {
+
+  if method == "email" {
     let Some(email) = user.email else {
       txn.rollback().await?;
       return Err(SumidaError::NoUserEmail(user.username));
