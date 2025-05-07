@@ -1,6 +1,7 @@
 use config::{Config, ConfigError, File};
 use lazy_static::lazy_static;
 use serde::Deserialize;
+use tokio::sync::OnceCell;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -57,8 +58,17 @@ pub struct DatabaseSettings {
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub struct Cors {
+pub struct CorsSettings {
   pub allow_origins: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct WebPushSettings {
+  pub audience: String,
+  pub expiration: String,
+  pub subject: String,
+  pub private_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,7 +77,7 @@ pub struct ServerSettings {
   pub host: String,
   pub stage: String,
   pub logging: Option<String>,
-  pub cors: Option<Cors>,
+  pub cors: Option<CorsSettings>,
   pub cdn_url: Option<String>,
 }
 
@@ -84,6 +94,7 @@ impl Default for ServerSettings {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 #[allow(dead_code)]
 pub struct SumidaSettings {
   pub server: ServerSettings,
@@ -95,6 +106,8 @@ pub struct SumidaSettings {
   pub session: SessionSettings,
   #[cfg(feature = "jwt")]
   pub jwt: Option<JwtSettings>,
+  #[cfg(feature = "web-push")]
+  pub web_push: WebPushSettings,
 }
 
 impl SumidaSettings {
@@ -110,6 +123,17 @@ impl SumidaSettings {
 
 lazy_static! {
   pub static ref SUMIDA_SETTINGS: SumidaSettings = SumidaSettings::build().unwrap();
+}
+
+#[cfg(feature = "web-push")]
+lazy_static! {
+  pub static ref WEB_PUSH_PRIVATE_KEY_PEM: jsonwebtoken::EncodingKey = {
+    let pem = std::fs::read_to_string(std::path::Path::new(&SUMIDA_SETTINGS.web_push.private_key))
+      .expect("failed to read web-push private key file");
+    let key = jsonwebtoken::EncodingKey::from_ec_pem(pem.as_bytes())
+      .expect("failed to parse web-push private key file to jwt encoding key");
+    key
+  };
 }
 
 pub fn get() -> &'static SumidaSettings {

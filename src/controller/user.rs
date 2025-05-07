@@ -134,6 +134,11 @@ async fn impersonate<S>(
   Ok(StatusCode::ACCEPTED)
 }
 
+#[cfg(feature = "web-push")]
+async fn get_vapid<S>(session: UserSession, State(_state): State<S>) -> Result<GetVapid, SumidaError> {
+  Ok(UserService::get_vapid(&session).await?)
+}
+
 pub fn new<S>(state: &S) -> Router<S>
 where
   S: Clone + Send + Sync + 'static,
@@ -152,7 +157,7 @@ where
     .route("/{username}", routing::delete(delete::<S>))
     .route_layer(ability_guard!(user, delete));
 
-  Router::new()
+  let router = Router::new()
     .merge(route_read)
     .merge(route_create)
     .merge(route_update)
@@ -165,5 +170,10 @@ where
     .route("/sign-in", routing::post(sign_in::<S>))
     .route("/change-password", routing::post(change_password::<S>))
     .route("/activate", routing::post(activate::<S>))
-    .route("/impersonate", routing::post(impersonate::<S>))
+    .route("/impersonate", routing::post(impersonate::<S>));
+
+  #[cfg(feature = "web-push")]
+  let router = router.route("/vapid", routing::get(get_vapid::<S>));
+
+  router
 }

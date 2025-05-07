@@ -7,6 +7,10 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
+#[cfg(feature = "web-push")]
+use tokio::sync::OnceCell;
+
+use crate::core::settings::WEB_PUSH_PRIVATE_KEY_PEM;
 use crate::entity::users::*;
 
 use super::session::{OrganizationData, RoleData};
@@ -162,4 +166,46 @@ pub struct UserActivation {
 #[serde(rename_all = "camelCase")]
 pub struct Impersonate {
   pub username: String,
+}
+
+#[cfg(feature = "web-push")]
+#[derive(Debug, Serialize)]
+pub struct VapidClaims {
+  pub aud: String,
+  pub exp: usize,
+  pub sub: String,
+}
+
+#[cfg(feature = "web-push")]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetVapid {
+  pub token: String,
+}
+
+#[cfg(feature = "web-push")]
+impl GetVapid {
+  pub async fn new(audience: &str, expiration: &str, subject: &str) -> Self {
+    let expiration = chrono::Utc::now() + humantime::parse_duration(expiration).unwrap();
+    let claims = VapidClaims {
+      aud: audience.to_string(),
+      exp: expiration.timestamp() as usize,
+      sub: subject.to_string(),
+    };
+    let header = jsonwebtoken::Header {
+      alg: jsonwebtoken::Algorithm::ES256,
+      ..Default::default()
+    };
+    let token =
+      jsonwebtoken::encode(&header, &claims, &WEB_PUSH_PRIVATE_KEY_PEM).expect("jwt encoding failed");
+
+    GetVapid { token }
+  }
+}
+
+#[cfg(feature = "web-push")]
+impl IntoResponse for GetVapid {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
+  }
 }

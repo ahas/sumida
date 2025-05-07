@@ -290,3 +290,13 @@ where
 
   Err(SumidaError::InvalidAccount)
 }
+
+#[cfg(feature = "web-push")]
+pub async fn get_vapid(_session: &UserSession) -> Result<GetVapid, SumidaError> {
+  let settings = &crate::core::settings::get().web_push;
+  let audience = &settings.audience;
+  let exp = &settings.expiration;
+  let sub = &settings.subject;
+
+  Ok(GetVapid::new(audience, exp, sub).await)
+}
