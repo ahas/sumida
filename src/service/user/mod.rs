@@ -10,11 +10,12 @@ use sea_orm::{
   QuerySelect, QueryTrait, TransactionTrait, Unchanged,
 };
 use sea_orm_crud::Optional;
-use session::{OrganizationData, RoleData, UserData, UserSession};
-use tower_sessions::{cookie::time::Duration, Expiry};
+use session::{OrganizationData, RoleData, UserProfile, UserSession};
+use time::OffsetDateTime;
+use tower_sessions::Expiry;
 
-use crate::core::db;
 use crate::core::error::SumidaError;
+use crate::core::{db, settings};
 use crate::entity::prelude::*;
 use crate::util::crud::{search, Pagination};
 
@@ -99,7 +100,7 @@ pub async fn update_my_info(
   session: &UserSession,
   data: UpdateUser,
 ) -> Result<crate::entity::users::Model, SumidaError> {
-  let username = &session.user_data.username;
+  let username = &session.profile.username;
   let Optional(password) = data.password.clone();
 
   let mut model: crate::entity::users::ActiveModel = data.into_active_model();
@@ -127,6 +128,7 @@ pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), Sumi
   let is_verified = verify_password(&data.password, &user.password);
 
   if !is_verified {
+    // UserSignInLogs::write(data.username, method, code, user_env, db)
     return Err(SumidaError::InvalidAccount);
   }
 
@@ -144,8 +146,11 @@ pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), Sumi
 
   let expiry = if let Some(keep) = data.remember_me {
     if keep {
-      let duration = Duration::weeks(1);
-      Some(Expiry::OnInactivity(duration))
+      let settings = settings::get();
+      let duration = settings.session.lifetime.clone().unwrap_or("14days".to_owned());
+      let duration = humantime::parse_duration(duration.as_str()).unwrap();
+      let expiry = OffsetDateTime::now_utc() + duration;
+      Some(Expiry::AtDateTime(expiry))
     } else {
       None
     }
@@ -155,7 +160,7 @@ pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), Sumi
 
   Users::update(crate::entity::users::ActiveModel {
     username: Unchanged(data.username.clone()),
-    last_logged_in_at: Set(Some(Utc::now().fixed_offset())),
+    last_sign_in_at: Set(Some(Utc::now().fixed_offset())),
     ..Default::default()
   })
   .exec(db_conn)
@@ -163,7 +168,7 @@ pub async fn sign_in(session: &UserSession, data: SignInUser) -> Result<(), Sumi
 
   UserSession::update(
     &session.session,
-    &UserData {
+    &UserProfile {
       is_authorized: true,
       username: data.username.to_owned(),
       full_name: user.full_name.unwrap_or("".to_owned()).clone(),
@@ -291,7 +296,6 @@ where
   Err(SumidaError::InvalidAccount)
 }
 
-#[cfg(feature = "web-push")]
 pub async fn get_vapid(_session: &UserSession) -> Result<GetVapid, SumidaError> {
   let settings = &crate::core::settings::get().web_push;
   let audience = &settings.audience;

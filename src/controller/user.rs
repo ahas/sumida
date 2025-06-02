@@ -67,7 +67,7 @@ async fn sign_out<S>(session: Session, State(_state): State<S>) -> Result<Status
 }
 
 async fn profile<S>(session: UserSession, State(_state): State<S>) -> Result<UserProfile, SumidaError> {
-  let user_data = &session.user_data;
+  let user_data = &session.profile;
 
   Ok(UserProfile {
     username: user_data.username.clone(),
@@ -83,7 +83,7 @@ async fn profile<S>(session: UserSession, State(_state): State<S>) -> Result<Use
 }
 
 async fn get_my_info<S>(session: UserSession, State(_state): State<S>) -> Result<GetUser, SumidaError> {
-  match UserService::get(&session.user_data.username).await? {
+  match UserService::get(&session.profile.username).await? {
     Some(user) => Ok(user),
     None => Err(SumidaError::InvalidAccount),
   }
@@ -134,7 +134,6 @@ async fn impersonate<S>(
   Ok(StatusCode::ACCEPTED)
 }
 
-#[cfg(feature = "web-push")]
 async fn get_vapid<S>(session: UserSession, State(_state): State<S>) -> Result<GetVapid, SumidaError> {
   Ok(UserService::get_vapid(&session).await?)
 }
@@ -170,10 +169,8 @@ where
     .route("/sign-in", routing::post(sign_in::<S>))
     .route("/change-password", routing::post(change_password::<S>))
     .route("/activate", routing::post(activate::<S>))
-    .route("/impersonate", routing::post(impersonate::<S>));
-
-  #[cfg(feature = "web-push")]
-  let router = router.route("/vapid", routing::get(get_vapid::<S>));
+    .route("/impersonate", routing::post(impersonate::<S>))
+    .route("/vapid", routing::get(get_vapid::<S>));
 
   router
 }

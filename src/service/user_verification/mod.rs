@@ -24,19 +24,19 @@ pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
 
-  let username = data.username.clone();
+  let username = data.user.clone();
   let kind = data.kind.clone();
   let method = data.method.clone();
 
   let mut active_model = data.into_active_model();
-  active_model.username = Set(username.clone());
+  active_model.user = Set(username.clone());
   active_model.kind = Set(kind.clone());
   active_model.code = Set(code.clone());
   active_model.method = Set(method.clone());
   active_model.expired_at = Set((Utc::now() + Duration::minutes(3)).fixed_offset());
 
   let exists = UserVerifications::find()
-    .filter(Column::Username.eq(&username))
+    .filter(Column::User.eq(&username))
     .filter(Column::Kind.eq(&kind))
     .count(db_conn)
     .await?

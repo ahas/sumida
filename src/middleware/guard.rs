@@ -3,17 +3,12 @@ use axum::http::{HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
 use chrono::Utc;
-#[cfg(feature = "jwt")]
 use jsonwebtoken as jwt;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-#[cfg(feature = "jwt")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "aws")]
-use crate::core::aws;
 use crate::core::db;
 use crate::core::error::SumidaError;
-#[cfg(feature = "jwt")]
 use crate::core::settings;
 use crate::entity::prelude::*;
 use crate::service::prelude::*;
@@ -61,14 +56,12 @@ macro_rules! admin_guard {
   };
 }
 
-#[cfg(feature = "jwt")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
   pub user: String,
   pub exp: usize,
 }
 
-#[cfg(feature = "jwt")]
 async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), SumidaError> {
   let settings = settings::get();
   let secret;
@@ -100,10 +93,8 @@ async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), SumidaErro
   .map_err(|_err| SumidaError::InvalidJwt)?;
 
   let db_conn = db::get_connection();
-  let user = Users::find_by_id(&token.claims.user)
-    .one(db_conn)
-    .await?
-    .ok_or_else(|| SumidaError::InvalidAccount)?;
+  let user =
+    Users::find_by_id(&token.claims.user).one(db_conn).await?.ok_or_else(|| SumidaError::InvalidAccount)?;
   let organization = Organizations::find_by_id(user.organization)
     .one(db_conn)
     .await?
@@ -111,7 +102,7 @@ async fn verify_jwt(session: &UserSession, token: &str) -> Result<(), SumidaErro
   let role =
     Roles::find_by_id(user.role).one(db_conn).await?.ok_or_else(|| SumidaError::NoUserRole(user.role))?;
 
-  let mut user_data = session.user_data.clone();
+  let mut user_data = session.profile.clone();
   user_data.username = token.claims.user.clone();
   user_data.organization = OrganizationData {
     id: organization.id,
@@ -137,12 +128,8 @@ async fn verify_api_key(session: &UserSession, token: &str) -> Result<(), Sumida
     .one(db_conn)
     .await?
     .ok_or_else(|| SumidaError::InvalidApiKey)?;
-  let mut user_data = session.user_data.clone();
-  let user = if let Some(username) = api_key.user {
-    Users::find_by_id(&username).one(db_conn).await?
-  } else {
-    None
-  };
+  let mut user_data = session.profile.clone();
+  let user = Users::find_by_id(&api_key.user).one(db_conn).await?;
 
   if let Some(user) = user {
     let organization = Organizations::find_by_id(user.organization)
@@ -164,11 +151,8 @@ async fn verify_api_key(session: &UserSession, token: &str) -> Result<(), Sumida
     user_data.is_admin = user.is_admin;
     user_data.ability = api_key.ability.unwrap_or(role.ability);
   } else {
-    user_data.username = "".to_string();
-    user_data.organization = OrganizationData::default();
-    user_data.role = RoleData::default();
-    user_data.is_admin = false;
-    user_data.ability = api_key.ability.unwrap_or_default();
+    UserSignInLogs::write(user_data.username, SignInMethod::ApiKey, SignInCode::AccountNotFound, user_env, db)
+    return Err(SumidaError::InvalidAccount);
   }
 
   user_data.last_seen_at = Utc::now().into();
@@ -190,7 +174,6 @@ pub async fn verify(session: &UserSession, headers: &HeaderMap<HeaderValue>) -> 
     let token = pair[1];
 
     match method.to_uppercase().as_str() {
-      #[cfg(feature = "jwt")]
       "BEARER" => verify_jwt(session, token).await?,
       "APIKEY" => verify_api_key(session, token).await?,
       _ => return Err(SumidaError::InvalidAuthorizationMethod(method.to_string())),
@@ -219,7 +202,7 @@ pub async fn admin_guard_fn(
   req: Request,
   next: Next,
 ) -> Result<Response, SumidaError> {
-  match session.user_data.is_admin {
+  match session.profile.is_admin {
     true => Ok(next.run(req).await),
     false => Err(SumidaError::OnlyAdminAllowed),
   }

@@ -17,7 +17,7 @@ pub struct Model {
   pub role: i32,
   pub is_admin: bool,
   pub is_enabled: bool,
-  pub last_logged_in_at: Option<DateTimeWithTimeZone>,
+  pub last_sign_in_at: Option<DateTimeWithTimeZone>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -35,18 +35,6 @@ impl Model {
   }
 }
 
-impl Entity {
-  pub fn hash_password<S>(password: S) -> argon2::password_hash::Result<String>
-  where
-    S: AsRef<str>,
-  {
-    let argon2 = Argon2::default();
-    let salt = SaltString::generate(&mut OsRng);
-
-    Ok(argon2.hash_password(password.as_ref().as_bytes(), &salt)?.to_string())
-  }
-}
-
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
   #[sea_orm(has_one = "super::preferences::Entity")]
@@ -60,3 +48,15 @@ impl Related<super::preferences::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Entity {
+  pub fn hash_password<S>(password: S) -> argon2::password_hash::Result<String>
+  where
+    S: AsRef<str>,
+  {
+    let argon2 = Argon2::default();
+    let salt = SaltString::generate(&mut OsRng);
+
+    Ok(argon2.hash_password(password.as_ref().as_bytes(), &salt)?.to_string())
+  }
+}

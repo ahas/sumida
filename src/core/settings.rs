@@ -1,7 +1,6 @@
 use config::{Config, ConfigError, File};
 use lazy_static::lazy_static;
 use serde::Deserialize;
-use tokio::sync::OnceCell;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -21,21 +20,23 @@ pub struct SessionSettings {
   pub path: Option<String>,
   pub same_site: Option<String>,
   pub secure: Option<bool>,
+  pub lifetime: Option<String>,
 }
 
-#[cfg(feature = "jwt")]
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct JwtSettings {
   pub secret: Option<String>,
 }
 
+#[cfg(feature = "aws-s3")]
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct AwsS3Settings {
   pub bucket: String,
 }
 
+#[cfg(feature = "aws")]
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct AwsSettings {
@@ -99,15 +100,12 @@ impl Default for ServerSettings {
 pub struct SumidaSettings {
   pub server: ServerSettings,
   pub database: DatabaseSettings,
+  pub session: SessionSettings,
   pub smtp: Option<SmtpSettings>,
+  pub jwt: Option<JwtSettings>,
+  pub web_push: WebPushSettings,
   #[cfg(feature = "aws")]
   pub aws: Option<AwsSettings>,
-  #[cfg(feature = "session")]
-  pub session: SessionSettings,
-  #[cfg(feature = "jwt")]
-  pub jwt: Option<JwtSettings>,
-  #[cfg(feature = "web-push")]
-  pub web_push: WebPushSettings,
 }
 
 impl SumidaSettings {
@@ -125,7 +123,6 @@ lazy_static! {
   pub static ref SUMIDA_SETTINGS: SumidaSettings = SumidaSettings::build().unwrap();
 }
 
-#[cfg(feature = "web-push")]
 lazy_static! {
   pub static ref WEB_PUSH_PRIVATE_KEY_PEM: jsonwebtoken::EncodingKey = {
     let pem = std::fs::read_to_string(std::path::Path::new(&SUMIDA_SETTINGS.web_push.private_key))

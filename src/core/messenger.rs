@@ -87,17 +87,17 @@ pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerSt
 
   let Some(session) = get_session(&socket, &state).await.ok() else {
     tracing::error!("socket session failed");
-    socket.disconnect();
+    socket.disconnect().ok();
     return;
   };
 
   if session.verify().await.is_err() {
     tracing::error!("socket session verifying failed");
-    socket.disconnect();
+    socket.disconnect().ok();
     return;
   }
 
-  let user_data = session.user_data;
+  let user_data = session.profile;
 
   socket.join([
     format!("org:{}", user_data.organization.id),

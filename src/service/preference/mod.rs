@@ -23,7 +23,7 @@ pub async fn update(username: String, data: serde_json::Value) -> Result<(), Sum
   match pref {
     Some(_) => {
       Preferences::update(ActiveModel {
-        username: Unchanged(username.clone()),
+        user: Unchanged(username.clone()),
         data: Set(data),
       })
       .exec(db_conn)
@@ -31,7 +31,7 @@ pub async fn update(username: String, data: serde_json::Value) -> Result<(), Sum
     }
     None => {
       Preferences::insert(ActiveModel {
-        username: Set(username.clone()),
+        user: Set(username.clone()),
         data: Set(data),
       })
       .exec(db_conn)

@@ -1,3 +1,6 @@
+#![cfg(all(feature = "session-store-redis", feature = "session-store-aws-dynamodb"))]
+compile_error!("You cannot enable both `session-store-redis` and `session-store-aws-dynamodb` features at the same time.");
+
 use tower_sessions::cookie::SameSite;
 use tower_sessions::SessionManagerLayer;
 
