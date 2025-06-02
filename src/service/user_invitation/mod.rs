@@ -22,11 +22,11 @@ pub async fn list(
   let txn = db_conn.begin().await?;
 
   let query = UserInvitations::find()
-    .apply_if(filter.username, |q, v| search(q, Column::Username, v))
+    .apply_if(filter.user, |q, v| search(q, Column::User, v))
     .apply_if(filter.uuid, |q, v| q.filter(Column::Uuid.eq(v)));
   let count = query.clone().select_only().column(Column::Uuid).count(&txn).await?;
   let query = pagination.order_by(query, |col| match col {
-    "username" => Column::Username,
+    "user" => Column::User,
     "uuid" => Column::Uuid,
     _ => Column::CreatedAt,
   });
@@ -56,7 +56,7 @@ pub async fn create(username: String) -> Result<crate::entity::user_invitations:
   let expired_at = Utc::now() + Duration::days(30);
 
   let active_model = crate::entity::user_invitations::ActiveModel {
-    username: Set(username.clone()),
+    user: Set(username.clone()),
     uuid: Set(uuid),
     expired_at: Set(expired_at.fixed_offset()),
     ..Default::default()
@@ -73,7 +73,7 @@ pub async fn update(username: String) -> Result<crate::entity::user_invitations:
   let expired_at = Utc::now() + Duration::days(30);
 
   let active_model = crate::entity::user_invitations::ActiveModel {
-    username: Unchanged(username.clone()),
+    user: Unchanged(username.clone()),
     uuid: Set(uuid),
     expired_at: Set(expired_at.fixed_offset()),
     ..Default::default()

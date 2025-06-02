@@ -68,6 +68,11 @@ impl Model {
   }
 }
 
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
 impl Entity {
   pub async fn send<K, R, C>(kind: K, receiver: R, context: C) -> Result<(), SumidaError>
   where
@@ -86,8 +91,3 @@ impl Entity {
     Ok(())
   }
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
-
-impl ActiveModelBehavior for ActiveModel {}

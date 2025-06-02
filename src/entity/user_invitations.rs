@@ -11,11 +11,31 @@ use super::users::Entity as Users;
 pub struct Model {
   #[sea_orm(primary_key)]
   pub uuid: Uuid,
-  pub username: String,
+  pub user: String,
 
   pub expired_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
 }
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {
+  #[sea_orm(
+    belongs_to = "Users",
+    from = "Column::User",
+    to = "super::users::Column::Username"
+    on_update = "Cascade",
+    on_delete = "Cascade",
+  )]
+  User,
+}
+
+impl Related<Users> for Entity {
+  fn to() -> RelationDef {
+    Relation::User.def()
+  }
+}
+
+impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
   pub async fn create<S>(username: S, uuid: Uuid) -> Result<(), DbErr>
@@ -25,7 +45,7 @@ impl Entity {
     let db_conn = db::get_connection();
     let username = username.as_ref();
     let active_model = ActiveModel {
-      username: Set(username.to_owned()),
+      user: Set(username.to_owned()),
       uuid: Set(uuid),
       expired_at: Set((Utc::now() + Duration::days(30)).fixed_offset()),
       ..Default::default()
@@ -42,23 +62,3 @@ impl Entity {
     Ok(())
   }
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-  #[sea_orm(
-    belongs_to = "Users",
-    from = "Column::Username",
-    to = "super::users::Column::Username"
-    on_update = "Cascade",
-    on_delete = "Cascade",
-  )]
-  Users,
-}
-
-impl Related<Users> for Entity {
-  fn to() -> RelationDef {
-    Relation::Users.def()
-  }
-}
-
-impl ActiveModelBehavior for ActiveModel {}

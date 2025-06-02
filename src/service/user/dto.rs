@@ -7,9 +7,6 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
-#[cfg(feature = "web-push")]
-use tokio::sync::OnceCell;
-
 use crate::core::settings::WEB_PUSH_PRIVATE_KEY_PEM;
 use crate::entity::users::*;
 
@@ -168,7 +165,6 @@ pub struct Impersonate {
   pub username: String,
 }
 
-#[cfg(feature = "web-push")]
 #[derive(Debug, Serialize)]
 pub struct VapidClaims {
   pub aud: String,
@@ -176,14 +172,12 @@ pub struct VapidClaims {
   pub sub: String,
 }
 
-#[cfg(feature = "web-push")]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetVapid {
   pub token: String,
 }
 
-#[cfg(feature = "web-push")]
 impl GetVapid {
   pub async fn new(audience: &str, expiration: &str, subject: &str) -> Self {
     let expiration = chrono::Utc::now() + humantime::parse_duration(expiration).unwrap();
@@ -203,7 +197,6 @@ impl GetVapid {
   }
 }
 
-#[cfg(feature = "web-push")]
 impl IntoResponse for GetVapid {
   fn into_response(self) -> axum::response::Response {
     Json(self).into_response()

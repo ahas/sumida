@@ -10,14 +10,14 @@ use crate::entity::user_invitations::*;
 
 #[derive(Deserialize)]
 pub struct UserInvitationFilter {
-  pub username: Option<String>,
+  pub user: Option<String>,
   pub uuid: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationListItem {
-  pub username: String,
+  pub user: String,
   pub uuid: Uuid,
 
   pub expired_at: DateTimeWithTimeZone,
@@ -27,7 +27,7 @@ pub struct UserInvitationListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetUserInvitation {
-  pub username: String,
+  pub user: String,
   pub uuid: Uuid,
 
   pub expired_at: DateTimeWithTimeZone,

@@ -8,7 +8,7 @@ use super::users::Entity as Users;
 #[sea_orm(table_name = "user_verifications")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub username: String,
+  pub user: String,
   pub kind: String,
   pub method: String,
   pub code: String,
@@ -16,6 +16,26 @@ pub struct Model {
   pub expired_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
 }
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {
+  #[sea_orm(
+    belongs_to = "Users",
+    from = "Column::User",
+    to = "super::users::Column::Username"
+    on_update = "Cascade",
+    on_delete = "Cascade",
+  )]
+  User,
+}
+
+impl Related<Users> for Entity {
+  fn to() -> RelationDef {
+    Relation::User.def()
+  }
+}
+
+impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
   pub async fn verify<K, U, C>(
@@ -38,7 +58,7 @@ impl Entity {
     };
     let is_verified = Entity::find()
       .filter(Column::Kind.eq(kind))
-      .filter(Column::Username.eq(username))
+      .filter(Column::User.eq(username))
       .filter(Column::Code.eq(code))
       .count(txn)
       .await?
@@ -47,7 +67,7 @@ impl Entity {
     if is_verified {
       Self::delete(ActiveModel {
         kind: Set(kind.to_owned()),
-        username: Set(username.to_owned()),
+        user: Set(username.to_owned()),
         code: Set(code.to_owned()),
         ..Default::default()
       })
@@ -58,23 +78,3 @@ impl Entity {
     Ok(is_verified)
   }
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-  #[sea_orm(
-    belongs_to = "Users",
-    from = "Column::Username",
-    to = "super::users::Column::Username"
-    on_update = "Cascade",
-    on_delete = "Cascade",
-  )]
-  Users,
-}
-
-impl Related<Users> for Entity {
-  fn to() -> RelationDef {
-    Relation::Users.def()
-  }
-}
-
-impl ActiveModelBehavior for ActiveModel {}

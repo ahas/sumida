@@ -44,7 +44,7 @@ enum Users {
 #[derive(DeriveIden)]
 enum UserInvitations {
   Table,
-  Username,
+  User,
   Uuid,
   ExpiredAt,
   CreatedAt,
@@ -53,7 +53,7 @@ enum UserInvitations {
 #[derive(DeriveIden)]
 enum UserVerifications {
   Table,
-  Username,
+  User,
   Kind,
   Method,
   Code,
@@ -64,7 +64,7 @@ enum UserVerifications {
 #[derive(DeriveIden)]
 enum Preferences {
   Table,
-  Username,
+  User,
   Data,
 }
 
@@ -257,7 +257,7 @@ impl MigrationTrait for Migration {
         Table::create()
           .if_not_exists()
           .table(Preferences::Table)
-          .col(string(Preferences::Username).primary_key())
+          .col(string(Preferences::User).primary_key())
           .col(json_binary(Preferences::Data).default(json!({})))
           .to_owned(),
       )
@@ -266,7 +266,7 @@ impl MigrationTrait for Migration {
       .create_foreign_key(
         ForeignKey::create()
           .name("preferences_users_fk")
-          .from(Preferences::Table, Preferences::Username)
+          .from(Preferences::Table, Preferences::User)
           .to(Users::Table, Users::Username)
           .on_delete(Cascade)
           .on_update(Cascade)
@@ -277,9 +277,9 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("preferences_username_idx")
+          .name("preferences_user_idx")
           .table(Preferences::Table)
-          .col(Preferences::Username)
+          .col(Preferences::User)
           .index_type(IndexType::BTree)
           .to_owned(),
       )
@@ -293,7 +293,7 @@ impl MigrationTrait for Migration {
           .if_not_exists()
           .table(ApiKeys::Table)
           .col(string(ApiKeys::Key).primary_key())
-          .col(string_null(ApiKeys::User))
+          .col(string(ApiKeys::User))
           .col(json_binary_null(ApiKeys::Ability))
           .col(timestamp_with_time_zone(ApiKeys::CreatedAt).default(Expr::current_timestamp()))
           .to_owned(),
@@ -307,7 +307,7 @@ impl MigrationTrait for Migration {
         Table::create()
           .table(UserInvitations::Table)
           .col(uuid(UserInvitations::Uuid).primary_key().default(Expr::cust("uuid_generate_v4()")))
-          .col(string(UserInvitations::Username))
+          .col(string(UserInvitations::User))
           .col(timestamp_with_time_zone(UserInvitations::ExpiredAt))
           .col(timestamp_with_time_zone(UserInvitations::CreatedAt).default(Expr::current_timestamp()))
           .to_owned(),
@@ -316,8 +316,8 @@ impl MigrationTrait for Migration {
     manager
       .create_foreign_key(
         ForeignKey::create()
-          .name("user_invitations_username_fk")
-          .from(UserInvitations::Table, UserInvitations::Username)
+          .name("user_invitations_user_fk")
+          .from(UserInvitations::Table, UserInvitations::User)
           .to(Users::Table, Users::Username)
           .on_delete(Cascade)
           .on_update(Cascade)
@@ -331,21 +331,21 @@ impl MigrationTrait for Migration {
       .create_table(
         Table::create()
           .table(UserVerifications::Table)
-          .col(string(UserVerifications::Username))
+          .col(string(UserVerifications::User))
           .col(string(UserVerifications::Kind))
           .col(string(UserVerifications::Method))
           .col(string(UserVerifications::Code))
           .col(timestamp_with_time_zone(UserVerifications::ExpiredAt))
           .col(timestamp_with_time_zone(UserVerifications::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().col(UserVerifications::Username).col(UserVerifications::Kind))
+          .primary_key(Index::create().col(UserVerifications::User).col(UserVerifications::Kind))
           .to_owned(),
       )
       .await?;
     manager
       .create_foreign_key(
         ForeignKey::create()
-          .name("user_verifications_username_fk")
-          .from(UserVerifications::Table, UserVerifications::Username)
+          .name("user_verifications_user_fk")
+          .from(UserVerifications::Table, UserVerifications::User)
           .to(Users::Table, Users::Username)
           .on_delete(Cascade)
           .on_update(Cascade)
@@ -389,7 +389,7 @@ impl MigrationTrait for Migration {
       .await?;
     manager
       .drop_index(
-        Index::drop().if_exists().name("preferences_username_idx").table(Preferences::Table).to_owned(),
+        Index::drop().if_exists().name("preferences_user_idx").table(Preferences::Table).to_owned(),
       )
       .await?;
 
@@ -412,13 +412,13 @@ impl MigrationTrait for Migration {
       .await?;
     manager
       .drop_foreign_key(
-        ForeignKey::drop().name("user_invitations_username_fk").table(UserInvitations::Table).to_owned(),
+        ForeignKey::drop().name("user_invitations_user_fk").table(UserInvitations::Table).to_owned(),
       )
       .await?;
     manager
       .drop_foreign_key(
         ForeignKey::drop()
-          .name("user_verifications_username_fk")
+          .name("user_verifications_user_fk")
           .table(UserVerifications::Table)
           .to_owned(),
       )

@@ -9,7 +9,7 @@ use crate::entity::user_verifications::*;
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct SendUserVerification {
-  pub username: String,
+  pub user: String,
   pub kind: String,
   pub method: String,
 }

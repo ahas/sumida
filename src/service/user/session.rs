@@ -1,16 +1,19 @@
-use axum::extract::FromRequestParts;
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::request::Parts;
 use chrono::Utc;
 use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use tower_sessions::{Expiry, Session};
+use uaparser::{Parser, UserAgentParser};
 
 use crate::core::db;
 use crate::core::error::SumidaError;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UserData {
+pub struct UserProfile {
   pub username: String,
   pub full_name: String,
   pub organization: OrganizationData,
@@ -23,7 +26,7 @@ pub struct UserData {
   pub expiry: Option<Expiry>,
 }
 
-impl Default for UserData {
+impl Default for UserProfile {
   fn default() -> Self {
     Self {
       username: "".to_owned(),
@@ -70,36 +73,89 @@ impl Default for RoleData {
   }
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct UserEnvironment {
+  pub ip_address: String,
+  pub user_agent: String,
+
+  pub os_family: String,
+  pub os_major: Option<String>,
+  pub os_minor: Option<String>,
+  pub os_patch: Option<String>,
+  pub os_patch_minor: Option<String>,
+
+  pub device_family: String,
+  pub device_brand: Option<String>,
+  pub device_model: Option<String>,
+}
+
+impl UserEnvironment {
+  pub fn from_request_parts(req: &Parts) -> Result<Self, anyhow::Error> {
+    let user_agent = value
+      .headers
+      .get(axum::http::header::USER_AGENT)
+      .and_then(|ua| ua.to_str().ok())
+      .map(|s| s.to_string())
+      .unwrap_or_default();
+    let ua_regexes_bytes = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ua-regexes.yml"));
+    let ua_parser = UserAgentParser::builder()
+      .build_from_bytes(ua_regexes_bytes)
+      .map_err(|_| SumidaError::InvalidUserAgent)?;
+    let ua_device = ua_parser.parse_device(user_agent.as_str());
+    let ua_os = ua_parser.parse_os(user_agent.as_str());
+
+    Self {
+      ip_address: value.extensions.get::<ConnectInfo<SocketAddr>>().unwrap().ip().to_string(),
+      user_agent,
+      os_family: ua_os.family.to_string(),
+      os_major: ua_os.major.map(|x| x.to_string()),
+      os_minor: ua_os.minor.map(|x| x.to_string()),
+      os_patch: ua_os.patch.map(|x| x.to_string()),
+      os_patch_minor: ua_os.patch_minor.map(|x| x.to_string()),
+      device_family: ua_device.family.to_string(),
+      device_brand: ua_device.brand.map(|x| x.to_string()),
+      device_model: ua_device.model.map(|x| x.to_string()),
+    }
+  }
+}
+
 #[derive(Clone, Debug)]
 pub struct UserSession {
   pub session: Session,
-  pub user_data: UserData,
+  pub profile: UserProfile,
+  pub env: UserEnvironment,
 }
 
 impl UserSession {
-  pub const USER_DATA_KEY: &'static str = "user.data";
+  pub const USER_PROFILE_KEY: &'static str = "user.profile";
+  pub const USER_ENV_KEY: &'static str = "user.env";
 
-  pub async fn update(session: &Session, user_data: &UserData) -> Result<(), anyhow::Error> {
-    session.insert(Self::USER_DATA_KEY, user_data.clone()).await?;
-    session.set_expiry(user_data.expiry);
+  pub async fn update(
+    session: &Session,
+    profile: &UserProfile,
+    env: &UserEnvironment,
+  ) -> Result<(), anyhow::Error> {
+    session.insert(Self::USER_PROFILE_KEY, profile.clone()).await?;
+    session.insert(Self::USER_ENV_KEY, env.clone()).await?;
+    session.set_expiry(profile.expiry);
     session.save().await?;
 
     Ok(())
   }
 
   pub async fn verify(&self) -> Result<(), SumidaError> {
-    let mut user_data = self.user_data.clone();
+    let mut profile = self.profile.clone();
 
-    if !user_data.is_authorized {
-      return Err(if user_data.username.is_empty() {
+    if !profile.is_authorized {
+      return Err(if profile.username.is_empty() {
         SumidaError::NoCredentials
       } else {
-        SumidaError::NotAuthorized(user_data.username)
+        SumidaError::NotAuthorized(profile.username)
       });
     }
 
     let db_conn = db::get_connection();
-    let user = crate::entity::users::Entity::find_by_id(&user_data.username)
+    let user = crate::entity::users::Entity::find_by_id(&profile.username)
       .one(db_conn)
       .await?
       .ok_or(SumidaError::InvalidAccount)?;
@@ -112,20 +168,20 @@ impl UserSession {
       .await?
       .ok_or(SumidaError::NoUserRole(user.role))?;
 
-    user_data.username = user.username.clone();
-    user_data.organization = OrganizationData {
+    profile.username = user.username.clone();
+    profile.organization = OrganizationData {
       id: organization.id,
       name: organization.name.clone(),
     };
-    user_data.role = RoleData {
+    profile.role = RoleData {
       id: role.id,
       name: role.name.clone(),
     };
-    user_data.is_admin = user.is_admin;
-    user_data.last_seen_at = Utc::now().into();
-    user_data.ability = role.ability;
+    profile.is_admin = user.is_admin;
+    profile.last_seen_at = Utc::now().into();
+    profile.ability = role.ability;
 
-    Self::update(&self.session, &user_data).await?;
+    Self::update(&self.session, &profile, &self.env).await?;
 
     Ok(())
   }
@@ -150,7 +206,7 @@ impl UserSession {
 
     Self::update(
       &self.session,
-      &UserData {
+      &UserProfile {
         is_authorized: true,
         username: user.username.clone(),
         full_name: user.full_name.clone().unwrap_or("".to_owned()),
@@ -160,6 +216,7 @@ impl UserSession {
         expiry,
         ..Default::default()
       },
+      &self.env,
     )
     .await?;
 
@@ -176,11 +233,20 @@ where
   async fn from_request_parts(req: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
     let session = Session::from_request_parts(req, state).await?;
 
-    let mut user_data: UserData = session.get(Self::USER_DATA_KEY).await.unwrap().unwrap_or_default();
+    let mut profile: UserProfile = session.get(Self::USER_PROFILE_KEY).await.unwrap().unwrap_or_default();
+    profile.last_seen_at = Utc::now().into();
 
-    user_data.last_seen_at = Utc::now().into();
-    Self::update(&session, &user_data).await?;
+    let user_agent = req
+      .headers
+      .get(axum::http::header::USER_AGENT)
+      .and_then(|ua| ua.to_str().ok())
+      .map(|s| s.to_string())
+      .unwrap_or_default();
 
-    Ok(Self { session, user_data })
+    let env = UserEnvironment::from(req);
+
+    Self::update(&session, &profile, &env).await?;
+
+    Ok(Self { session })
   }
 }

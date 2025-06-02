@@ -48,6 +48,8 @@ pub enum SumidaError {
   InvalidAuthorizationMethod(String),
   #[error("accessible to administrators only")]
   OnlyAdminAllowed,
+  #[error("invalid user agent")]
+  InvalidUserAgent,
 
   #[error("no mail form `{0}`")]
   NoMailForm(String),

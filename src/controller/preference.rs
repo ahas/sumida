@@ -11,7 +11,7 @@ async fn get<S>(
   session: UserSession,
   State(_state): State<S>,
 ) -> Result<Json<serde_json::Value>, SumidaError> {
-  let username = session.user_data.username.clone();
+  let username = session.profile.username.clone();
   let ret = PreferenceService::get(username).await?;
   Ok(Json(ret))
 }
@@ -21,7 +21,7 @@ async fn update<S>(
   State(_state): State<S>,
   Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, SumidaError> {
-  let username = session.user_data.username.clone();
+  let username = session.profile.username.clone();
   PreferenceService::update(username, body).await?;
   Ok(Json(json!({})))
 }

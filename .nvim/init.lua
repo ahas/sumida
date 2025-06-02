@@ -11,12 +11,19 @@ require("telescope").setup({
 	},
 })
 
-require("lspconfig").rust_analyzer.setup({
-	settings = {
-		["rust-analyzer"] = {
-			cargo = {
-				features = "all"
-			},
-		},
-	},
-})
+-- require("lspconfig").rust_analyzer.setup({
+-- 	settings = {
+-- 		["rust-analyzer"] = {
+-- 			cargo = {
+-- 				features = {
+-- 					"aws-dynamodb",
+-- 					"aws-s3",
+-- 					"image",
+-- 					"session-store-redis",
+-- 					"jwt-secret-store-static",
+-- 					"storage-local",
+-- 				},
+-- 			},
+-- 		},
+-- 	},
+-- })
