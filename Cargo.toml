@@ -4,68 +4,98 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["session-store-redis", "jwt-secret-store-static", "storage-local"]
+default = []
+full-local = [
+  "image",
+  "session-store-redis",
+  "jwt-secret-store-static",
+  "storage-local",
+]
+full-aws = [
+  "image",
+  "session-store-aws-dynamodb",
+  "jwt-secret-store-aws-ssm",
+  "storage-aws-s3",
+]
+test-suite = ["full-local"]
 
-aws-dynamodb = ["aws", "aws-sdk-dynamodb"]
-aws-s3 = ["aws", "aws-sdk-s3"]
-aws = ["aws-config"]
-image = ["dep:image"]
+aws-dynamodb = ["core/aws-dynamodb"]
+aws-s3 = ["core/aws-s3", "api/aws-s3"]
+image = ["api/image"]
 
 session = []
-session-store-redis = ["session", "tower-sessions-redis-store"]
-session-store-aws-dynamodb = [
-  "session",
-  "aws-dynamodb",
-  "tower-sessions-dynamodb-store",
-]
+session-store-redis = ["session", "core/session-store-redis"]
+session-store-aws-dynamodb = ["session", "core/session-store-aws-dynamodb"]
 
 jwt = []
-jwt-secret-store-aws-ssm = ["jwt", "aws", "aws-sdk-ssm"]
-jwt-secret-store-static = ["jwt"]
+jwt-secret-store-aws-ssm = ["jwt", "api/jwt-secret-store-aws-ssm"]
+jwt-secret-store-static = ["jwt", "api/jwt-secret-store-static"]
 
-storage-aws-s3 = ["aws", "aws-s3"]
-storage-local = []
+storage-aws-s3 = ["api/storage-aws-s3"]
+storage-local = ["api/storage-local"]
 
-[dependencies]
-anyhow = "1.0.95"
+[workspace]
+resolver = "2"
+members = ["api", "core", "entity"]
+
+[workspace.dependencies]
+anyhow = "1.0.98"
+argon2 = "0.5.3"
+aws-config = "1.6.3"
+aws-sdk-s3 = "1.90.0"
+aws-sdk-ssm = "1.79.0"
+aws-sdk-dynamodb = "1.78.0"
 axum = { version = "0.8.4", features = ["macros", "multipart"] }
-rand = "0.9.0"
-sea-orm = { version = "1.1.10", features = [
+chrono = { version = "0.4.41", features = ["serde"] }
+humantime = "2.2.0"
+image = "0.25.6"
+jsonwebtoken = "9.3.1"
+lettre = "0.11.15"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.138"
+sea-orm = { version = "1.1.12", features = [
   "sqlx-postgres",
   "postgres-array",
   "macros",
   "runtime-tokio-rustls",
 ] }
+sea-orm-migration = { version = "1.1.12", features = ["sqlx-postgres"] }
 sea-orm-crud = { git = "https://github.com/ahas/sea-orm-crud.git" }
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.138"
-tower-sessions = "0.14.0"
-
-# optional
-tower-sessions-redis-store = { version = "0.16.0", optional = true }
-tower-sessions-dynamodb-store = { version = "0.3.0", optional = true }
-aws-config = { version = "1.6.2", optional = true }
-aws-sdk-s3 = { version = "1.84.0", optional = true }
-aws-sdk-ssm = { version = "1.74.0", optional = true }
-aws-sdk-dynamodb = { version = "1.73.0", optional = true }
-jsonwebtoken = "9.3.1"
-image = { version = "0.25.6", optional = true }
-socketioxide = { version = "0.17.0", features = ["state"] }
-socketioxide-core = "0.17.0"
-
-argon2 = "0.5.3"
-chrono = { version = "0.4.41", features = ["serde"] }
-uuid = { version = "1.16.0", features = ["v4", "serde"] }
-lettre = "0.11.15"
 tinytemplate = "1.2.1"
-tokio = "1.45.0"
-tracing = "0.1.41"
-tower-http = { version = "0.6.2", features = ["full"] }
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-config = "0.15.11"
-lazy_static = "1.5.0"
-thiserror = "2.0.12"
-sea-orm-migration = { version = "1.1.10", features = ["sqlx-postgres"] }
-humantime = "2.2.0"
 time = "0.3.41"
-uaparser = "0.6.4"
+
+
+[dependencies]
+api = { path = "./api", default-features = false }
+core = { path = "./core", default-features = false }
+entity = { path = "./entity", default-features = false }
+# anyhow = "1.0.95"
+# axum = { version = "0.8.4", features = ["macros", "multipart"] }
+# rand = "0.9.0"
+# tower-sessions = "0.14.0"
+#
+# # optional
+# tower-sessions-redis-store = { version = "0.16.0", optional = true }
+# tower-sessions-dynamodb-store = { version = "0.3.0", optional = true }
+# aws-config = { version = "1.6.2", optional = true }
+# aws-sdk-s3 = { version = "1.84.0", optional = true }
+# aws-sdk-ssm = { version = "1.74.0", optional = true }
+# aws-sdk-dynamodb = { version = "1.73.0", optional = true }
+# jsonwebtoken = "9.3.1"
+# image = { version = "0.25.6", optional = true }
+# socketioxide = { version = "0.17.0", features = ["state"] }
+# socketioxide-core = "0.17.0"
+#
+# chrono = { version = "0.4.41", features = ["serde"] }
+# uuid = { version = "1.16.0", features = ["v4", "serde"] }
+# tokio = "1.45.0"
+# tracing = "0.1.41"
+# tower-http = { version = "0.6.2", features = ["full"] }
+# tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+# config = "0.15.11"
+# lazy_static = "1.5.0"
+# thiserror = "2.0.12"
+# uaparser = "0.6.4"
+#
+# [dev-dependencies]
+# test-utils = { path = "test-utils" }

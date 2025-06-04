@@ -1,0 +1,173 @@
+use axum::extract::Request;
+use axum::http::{HeaderMap, HeaderValue};
+use axum::middleware::Next;
+use axum::response::Response;
+use jsonwebtoken as jwt;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use serde::{Deserialize, Serialize};
+use tower_sessions::Expiry;
+
+#[cfg(feature = "aws")]
+use crate::core::aws;
+use crate::core::db;
+use crate::core::error::SumidaError;
+use crate::core::settings;
+use crate::entity::prelude::*;
+use crate::service::user::session::UserContext;
+
+#[macro_export]
+macro_rules! ability_guard {
+  ($topic: ident, $action: ident) => {
+    axum::middleware::from_fn(
+      |user_ctx: $crate::service::user::session::UserContext,
+       req: axum::extract::Request,
+       next: axum::middleware::Next| async move {
+        let topic = stringify!($topic);
+        let action = stringify!($action);
+
+        let Some(ability) = user_ctx.profile.ability.get(topic) else {
+          return Err(SumidaError::NoAbilityTopic(topic.to_string()));
+        };
+        let Some(allowed_prop) = ability.get(action) else {
+          return Err(SumidaError::NoAbilityAction(topic.to_string(), action.to_string()));
+        };
+        let allowed = allowed_prop.as_bool().unwrap_or(false);
+
+        match allowed {
+          true => Ok(next.run(req).await),
+          false => Err(SumidaError::NoAbilityAction(topic.to_string(), action.to_string())),
+        }
+      },
+    )
+  };
+}
+
+#[macro_export]
+macro_rules! user_guard {
+  ($state: ident) => {
+    axum::middleware::from_fn_with_state($state.clone(), $crate::middleware::guard::user_guard_fn)
+  };
+}
+
+#[macro_export]
+macro_rules! admin_guard {
+  ($state: ident) => {
+    axum::middleware::from_fn_with_state($state.clone(), $crate::middleware::guard::admin_guard_fn)
+  };
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JwtClaims {
+  pub user: String,
+  pub exp: usize,
+}
+
+async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), SumidaError> {
+  let settings = settings::get();
+  let secret;
+
+  #[cfg(feature = "jwt-secret-store-aws-ssm")]
+  {
+    let ssm_client = aws_sdk_ssm::Client::new(aws::get_sdk_config());
+    secret = ssm_client
+      .get_parameter()
+      .name(format!("/trainer/{}/jwt-secret", settings.server.stage))
+      .with_decryption(true)
+      .send()
+      .await
+      .unwrap()
+      .parameter
+      .and_then(|param| param.value)
+      .ok_or(SumidaError::NoJwtSecret)?;
+  }
+  #[cfg(feature = "jwt-secret-store-static")]
+  {
+    secret = settings.jwt.as_ref().unwrap().secret.clone().unwrap_or_default();
+  }
+
+  let token = jwt::decode::<JwtClaims>(
+    token,
+    &jwt::DecodingKey::from_secret(secret.as_ref()),
+    &jwt::Validation::default(),
+  )
+  .map_err(|_err| SumidaError::InvalidJwt)?;
+  let expiry = settings.jwt.as_ref().unwrap().expiry.access_token_expiry()?;
+
+  user_ctx.sign_in(&token.claims.user, Some(expiry)).await?;
+
+  Ok(())
+}
+
+async fn verify_api_key(user_ctx: &mut UserContext, token: &str) -> Result<(), SumidaError> {
+  let db_conn = db::get_connection();
+  let api_key = ApiKeys::find()
+    .filter(crate::entity::api_keys::Column::Key.eq(token))
+    .one(db_conn)
+    .await?
+    .ok_or_else(|| SumidaError::InvalidApiKey)?;
+  let user = Users::find_by_id(&api_key.user).one(db_conn).await?;
+
+  if let Some(user) = user {
+    user_ctx.sign_in(&user.username, Some(Expiry::OnSessionEnd)).await?;
+  } else {
+    // UserSignInLogs::write(
+    //   user_data.username,
+    //   SignInMethod::ApiKey,
+    //   SignInCode::AccountNotFound,
+    //   user_env,
+    //   db,
+    // );
+    return Err(SumidaError::InvalidAccount);
+  }
+
+  Ok(())
+}
+
+pub async fn verify(
+  user_ctx: &mut UserContext,
+  headers: &HeaderMap<HeaderValue>,
+) -> Result<bool, SumidaError> {
+  if let Some(v) = headers.get::<String>("Authorization".into()) {
+    let pair = v.to_str().unwrap_or_default().split_whitespace().map(str::trim).collect::<Vec<&str>>();
+
+    if pair.len() < 2 {
+      return Err(SumidaError::InvalidAuthorizationToken);
+    }
+
+    let method = pair[0];
+    let token = pair[1];
+
+    match method.to_uppercase().as_str() {
+      "BEARER" => verify_jwt(user_ctx, token).await?,
+      "APIKEY" => verify_api_key(user_ctx, token).await?,
+      _ => return Err(SumidaError::InvalidAuthorizationMethod(method.to_string())),
+    }
+  } else {
+    user_ctx.verify()?;
+  }
+
+  Ok(true)
+}
+
+#[allow(dead_code)]
+pub async fn user_guard_fn(
+  mut user_ctx: UserContext,
+  req: Request,
+  next: Next,
+) -> Result<Response, SumidaError> {
+  verify(&mut user_ctx, req.headers()).await?;
+
+  Ok(next.run(req).await)
+}
+
+#[allow(dead_code)]
+pub async fn admin_guard_fn(
+  user_ctx: UserContext,
+  req: Request,
+  next: Next,
+) -> Result<Response, SumidaError> {
+  match user_ctx.profile.is_admin {
+    true => Ok(next.run(req).await),
+    false => Err(SumidaError::OnlyAdminAllowed),
+  }
+}
