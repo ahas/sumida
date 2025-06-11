@@ -1,20 +1,20 @@
 pub mod dto;
 
 use chrono::{Duration, Utc};
+use core::{db, settings};
+use entity::{mail_forms::MailFormSendOptions, prelude::*};
+use error::SumidaError;
 use rand::Rng;
 use sea_orm::{
   ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set, TransactionTrait,
 };
 
-use crate::core::db;
-use crate::core::error::SumidaError;
-use crate::entity::prelude::*;
 use crate::service::user::mail_form_context::*;
 
 use self::dto::*;
 
 pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
-  use crate::entity::user_verifications::Column;
+  use entity::user_verifications::Column;
 
   let code: String = {
     let mut rng = rand::rng();
@@ -53,14 +53,20 @@ pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
     return Err(SumidaError::InvalidAccount);
   };
 
-
   if method == "email" {
     let Some(email) = user.email else {
       txn.rollback().await?;
       return Err(SumidaError::NoUserEmail(user.username));
     };
+    let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
+      username: opts.username.clone(),
+      password: opts.password.clone(),
+      server: opts.server.clone(),
+      auth: opts.auth.clone(),
+    });
 
-    MailForms::send("verification", &email, VerificationContext { code }).await?;
+    MailForms::send("verification", &email, VerificationContext { code }, opts, db::get_connection())
+      .await?;
   }
 
   txn.commit().await?;

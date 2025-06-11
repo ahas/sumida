@@ -1,24 +1,25 @@
 pub mod dto;
 pub mod mail_form_context;
-pub mod session;
 
 #[cfg(test)]
 pub mod tests;
 
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::Utc;
+use core::session::UserContext;
+use core::{db, settings};
+use entity::mail_forms::MailFormSendOptions;
+use entity::prelude::*;
+use entity::user_sign_in_logs::{SignInCode, SignInMethod};
+use error::SumidaError;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
   QuerySelect, QueryTrait, TransactionTrait, Unchanged,
 };
 use sea_orm_crud::Optional;
-use session::UserContext;
 
-use crate::core::error::SumidaError;
-use crate::core::{db, settings};
-use crate::entity::prelude::*;
-use crate::util::crud::{search, Pagination};
+use crate::util::crud::{Pagination, search};
 
 use self::dto::*;
 
@@ -26,7 +27,7 @@ pub async fn list(
   filter: UserFilter,
   pagination: Pagination,
 ) -> Result<(Vec<UserListItem>, u64), SumidaError> {
-  use crate::entity::users::Column;
+  use entity::users::Column;
 
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
@@ -56,9 +57,7 @@ pub async fn get<S: AsRef<str>>(username: S) -> Result<Option<GetUser>, SumidaEr
   Ok(Users::find_by_id(username.as_ref()).into_model::<GetUser>().one(db::get_connection()).await?)
 }
 
-pub async fn create(
-  data: CreateUser,
-) -> Result<InsertResult<crate::entity::users::ActiveModel>, SumidaError> {
+pub async fn create(data: CreateUser) -> Result<InsertResult<entity::users::ActiveModel>, SumidaError> {
   let password = data.password.clone();
 
   let mut active_model = data.into_active_model();
@@ -67,13 +66,10 @@ pub async fn create(
   Ok(Users::insert(active_model).exec(db::get_connection()).await?)
 }
 
-pub async fn update(
-  username: String,
-  data: UpdateUser,
-) -> Result<crate::entity::users::Model, SumidaError> {
+pub async fn update(username: String, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
   let Optional(password) = data.password.clone();
 
-  let mut model: crate::entity::users::ActiveModel = data.into_active_model();
+  let mut model: entity::users::ActiveModel = data.into_active_model();
   model.username = Set(username);
 
   if let Some(password) = password {
@@ -100,11 +96,11 @@ pub fn verify_password(password: &str, password_hash: &str) -> bool {
 pub async fn update_my_info(
   user_ctx: &UserContext,
   data: UpdateUser,
-) -> Result<crate::entity::users::Model, SumidaError> {
+) -> Result<entity::users::Model, SumidaError> {
   let username = &user_ctx.profile.username;
   let Optional(password) = data.password.clone();
 
-  let mut model: crate::entity::users::ActiveModel = data.into_active_model();
+  let mut model: entity::users::ActiveModel = data.into_active_model();
   model.username = Set(username.clone());
 
   if let Some(ref password) = password {
@@ -121,39 +117,60 @@ pub async fn update_my_info(
 
 pub async fn sign_in(user_ctx: &mut UserContext, data: SignInUser) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
-  let user = Users::find_by_id(&data.username)
-    .filter(crate::entity::users::Column::IsEnabled.eq(true))
-    .one(db_conn)
-    .await?
-    .ok_or_else(|| SumidaError::InvalidAccount)?;
-  let is_verified = verify_password(&data.password, &user.password);
+  let txn = db_conn.begin().await?;
+  let username = Some(data.username.as_str());
 
-  if !is_verified {
-    // UserSignInLogs::write(data.username, method, code, user_env, db)
-    return Err(SumidaError::InvalidAccount);
+  if user_ctx.check_blocked(username, &txn).await? {
+    user_ctx.write_log(username, SignInMethod::Password, SignInCode::AccountBlocked, &txn).await?;
+    return Err(SumidaError::AccountBlocked);
   }
 
-  let expiry = if let Some(remember_me) = data.remember_me {
-    let settings = settings::get();
-
-    Some(if remember_me {
-      settings.session.expiry.remember_me_expiry()?
-    } else {
-      settings.session.expiry.default_expiry()?
-    })
-  } else {
-    None
+  let Some(user) =
+    Users::find_by_id(&data.username).filter(entity::users::Column::IsEnabled.eq(true)).one(&txn).await?
+  else {
+    user_ctx.write_log(username, SignInMethod::Password, SignInCode::AccountNotFound, &txn).await?;
+    return Err(SumidaError::InvalidAccount);
   };
 
-  user_ctx.sign_in(&data.username, expiry).await?;
+  if !user.is_enabled {
+    user_ctx.write_log(username, SignInMethod::Password, SignInCode::AccountInactive, &txn).await?;
+    return Err(SumidaError::InactiveAccount);
+  }
 
-  Ok(())
+  let result = if !verify_password(&data.password, &user.password) {
+    user_ctx.write_log(username, SignInMethod::Password, SignInCode::PasswordMismatch, &txn).await?;
+    let blocked = user_ctx.block_if_exceeded_limit(username, &txn).await?;
+    Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
+  } else {
+    user_ctx.write_log(username, SignInMethod::Password, SignInCode::Success, &txn).await?;
+
+    let expiry = if let Some(remember_me) = data.remember_me {
+      let settings = settings::get();
+
+      Some(if remember_me {
+        settings.session.expiry.remember_me_expiry()?
+      } else {
+        settings.session.expiry.default_expiry()?
+      })
+    } else {
+      None
+    };
+
+    user_ctx.sign_in(&data.username, expiry).await?;
+
+    Ok(())
+  };
+
+  txn.commit().await?;
+
+  result
 }
 
 pub async fn invite(_user_ctx: &UserContext, username: String) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
+  let txn = db_conn.begin().await?;
 
-  let Some(user) = Users::find_by_id(&username).one(db_conn).await? else {
+  let Some(user) = Users::find_by_id(&username).one(&txn).await? else {
     return Err(SumidaError::InvalidAccount);
   };
   let Some(receiver) = user.email else {
@@ -162,7 +179,14 @@ pub async fn invite(_user_ctx: &UserContext, username: String) -> Result<(), Sum
 
   let uuid = uuid::Uuid::new_v4();
 
-  UserInvitations::create(&username, uuid).await?;
+  UserInvitations::create(&username, uuid, &txn).await?;
+
+  let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
+    username: opts.username.clone(),
+    password: opts.password.clone(),
+    auth: opts.auth.clone(),
+    server: opts.server.clone(),
+  });
 
   MailForms::send(
     "invitation",
@@ -172,8 +196,12 @@ pub async fn invite(_user_ctx: &UserContext, username: String) -> Result<(), Sum
       uuid: uuid.to_string(),
       full_name: user.full_name.unwrap_or_else(String::new),
     },
+    opts,
+    &txn,
   )
   .await?;
+
+  txn.commit().await?;
 
   Ok(())
 }
@@ -188,7 +216,7 @@ pub async fn activate(user_ctx: &mut UserContext, activation: UserActivation) ->
     return Err(SumidaError::InvalidAccount);
   };
   let Some(_) = UserInvitations::find_by_id(*uuid)
-    .filter(crate::entity::user_invitations::Column::ExpiredAt.gt(Utc::now()))
+    .filter(entity::user_invitations::Column::ExpiredAt.gt(Utc::now()))
     .one(db_conn)
     .await?
   else {
@@ -232,7 +260,7 @@ pub async fn change_password(data: ChangePassword) -> Result<(), SumidaError> {
 
   let password = Users::hash_password(&data.password).unwrap();
 
-  let active_model = crate::entity::users::ActiveModel {
+  let active_model = entity::users::ActiveModel {
     username: Unchanged(data.username),
     password: Set(password),
     ..Default::default()
@@ -254,9 +282,8 @@ where
   let username = username.as_ref();
   let user = Users::find_by_id(username).one(db_conn).await?;
 
-  if let Some(_) = user {
+  if user.is_some() {
     user_ctx.sign_in(username, Some(settings.session.expiry.default_expiry()?)).await?;
-
     return Ok(());
   }
 
@@ -264,7 +291,7 @@ where
 }
 
 pub async fn get_vapid(_user_ctx: &UserContext) -> Result<GetVapid, SumidaError> {
-  let settings = &crate::core::settings::get().web_push;
+  let settings = &core::settings::get().web_push;
   let audience = &settings.audience;
   let exp = &settings.expiration;
   let sub = &settings.subject;

@@ -1,14 +1,14 @@
 pub mod dto;
 
+use core::db;
+use entity::prelude::*;
+use error::SumidaError;
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
   QuerySelect, QueryTrait, Set, TransactionTrait,
 };
 
-use crate::core::db;
-use crate::core::error::SumidaError;
-use crate::entity::prelude::*;
-use crate::util::crud::{search, Pagination};
+use crate::util::crud::{Pagination, search};
 
 use self::dto::*;
 
@@ -16,7 +16,7 @@ pub async fn list(
   filter: OrganizationFilter,
   pagination: Pagination,
 ) -> Result<(Vec<OrganizationListItem>, u64), SumidaError> {
-  use crate::entity::organizations::Column;
+  use entity::organizations::Column;
 
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
@@ -46,7 +46,7 @@ pub async fn get(id: i32) -> Result<Option<GetOrganization>, SumidaError> {
 
 pub async fn create(
   data: CreateOrganization,
-) -> Result<InsertResult<crate::entity::organizations::ActiveModel>, SumidaError> {
+) -> Result<InsertResult<entity::organizations::ActiveModel>, SumidaError> {
   let db_conn = db::get_connection();
   Ok(Organizations::insert(data.into_active_model()).exec(db_conn).await?)
 }
@@ -54,7 +54,7 @@ pub async fn create(
 pub async fn update(
   id: i32,
   data: UpdateOrganization,
-) -> Result<crate::entity::organizations::Model, SumidaError> {
+) -> Result<entity::organizations::Model, SumidaError> {
   let mut model = data.into_active_model();
   model.id = Set(id);
 

@@ -7,21 +7,44 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-default = []
-aws = []
-aws-s3 = ["aws-sdk-s3"]
+default = ["full-local"]
+aws = ["aws-smithy-types"]
+aws-s3 = ["aws", "aws-sdk-s3", "core/aws-s3"]
 image = ["dep:image"]
 jwt = []
 jwt-secret-store-aws-ssm = ["jwt", "aws", "aws-sdk-ssm"]
 jwt-secret-store-static = ["jwt"]
 storage-aws-s3 = ["aws", "aws-s3"]
 storage-local = []
+full-local = ["aws-s3", "image", "jwt-secret-store-static", "storage-local"]
+full-aws = ["aws-s3", "image", "jwt-secret-store-aws-ssm", "storage-aws-s3"]
 
 [dependencies]
+core = { path = "../core" }
+entity = { path = "../entity" }
+error = { path = "../error" }
+
+anyhow = { workspace = true }
+argon2 = { workspace = true }
 axum = { workspace = true }
+cfg-if = { workspace = true }
+chrono = { workspace = true }
+humantime = { workspace = true }
+jsonwebtoken = { workspace = true }
+rand = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-crud = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tower-sessions = { workspace = true }
+tower-sessions-core = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
 aws-sdk-s3 = { workspace = true, optional = true }
 aws-sdk-ssm = { workspace = true, optional = true }
+aws-smithy-types = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
-jsonwebtoken = { workspace = true }
-sea-orm = { workspace = true }
-serde = { workspace = true }

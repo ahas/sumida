@@ -7,11 +7,14 @@ edition = "2024"
 path = "src/lib.rs"
 
 [dependencies]
-core = { path = "../core" }
+error = { path = "../error" }
 
 anyhow = { workspace = true }
 argon2 = { workspace = true }
 chrono = { workspace = true }
 lettre = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 tinytemplate = { workspace = true }

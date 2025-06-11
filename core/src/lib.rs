@@ -1,6 +1,4 @@
-pub mod cors;
 pub mod db;
-pub mod error;
 pub mod messenger;
 pub mod session;
 pub mod settings;

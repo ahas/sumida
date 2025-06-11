@@ -6,7 +6,7 @@ use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::entity::user_invitations::*;
+use entity::user_invitations::*;
 
 #[derive(Deserialize)]
 pub struct UserInvitationFilter {

@@ -1,8 +1,4 @@
-use aws_config::{
-  meta::region::RegionProviderChain,
-  retry::{RetryConfig, RetryMode},
-  BehaviorVersion,
-};
+use aws_config::{BehaviorVersion, meta::region::RegionProviderChain, retry::RetryConfig};
 use tokio::sync::OnceCell;
 
 static AWS_SDK_CONFIG: OnceCell<aws_config::SdkConfig> = OnceCell::const_new();

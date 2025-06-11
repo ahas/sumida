@@ -1,9 +1,5 @@
 use sea_orm::prelude::*;
-// use sea_orm::InsertResult;
-// use sea_orm::Set;
 use serde::{Deserialize, Serialize};
-
-// use crate::service::user::session::UserEnvironment;
 
 use super::users::Entity as Users;
 
@@ -31,7 +27,7 @@ pub enum SignInCode {
   #[sea_orm(num_value = 2)]
   PasswordMismatch,
   #[sea_orm(num_value = 3)]
-  AccountDisabled,
+  AccountInactive,
   #[sea_orm(num_value = 4)]
   AccountBlocked,
 }
@@ -80,32 +76,3 @@ impl Related<Users> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-
-// impl Entity {
-//   pub async fn write<'db, C: ConnectionTrait>(
-//     username: String,
-//     method: SignInMethod,
-//     code: SignInCode,
-//     user_env: UserEnvironment,
-//     db: &'db C,
-//   ) -> Result<InsertResult<ActiveModel>, DbErr> {
-//     Self::insert(ActiveModel {
-//       user: Set(username),
-//       method: Set(method),
-//       code: Set(code),
-//       ip_address: Set(user_env.ip_address),
-//       user_agent: Set(user_env.user_agent),
-//       device_family: Set(user_env.device_family),
-//       device_brand: Set(user_env.device_brand),
-//       device_model: Set(user_env.device_model),
-//       os_family: Set(user_env.os_family),
-//       os_major: Set(user_env.os_major),
-//       os_minor: Set(user_env.os_minor),
-//       os_patch: Set(user_env.os_patch),
-//       os_patch_minor: Set(user_env.os_patch_minor),
-//       ..Default::default()
-//     })
-//     .exec(db)
-//     .await
-//   }
-// }

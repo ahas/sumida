@@ -1,16 +1,14 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
-use sea_orm::prelude::*;
+use core::session::{UserOrganization, UserRole};
+use core::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
+use entity::users::*;
 use sea_orm::FromQueryResult;
+use sea_orm::prelude::*;
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
-
-use crate::core::settings::WEB_PUSH_PRIVATE_KEY_PEM;
-use crate::entity::users::*;
-
-use super::session::{UserOrganization, UserRole};
+use serde_json::{Value as JsonValue, json};
 
 #[derive(Deserialize)]
 pub struct UserFilter {
@@ -137,8 +135,8 @@ pub struct UserProfile {
   pub last_seen_at: DateTimeWithTimeZone,
 }
 
-impl From<crate::service::user::session::UserProfile> for UserProfile {
-  fn from(value: crate::service::user::session::UserProfile) -> Self {
+impl From<core::session::UserProfile> for UserProfile {
+  fn from(value: core::session::UserProfile) -> Self {
     Self {
       username: value.username.clone(),
       full_name: value.full_name.clone(),

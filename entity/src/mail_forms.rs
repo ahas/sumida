@@ -1,12 +1,10 @@
+use error::SumidaError;
 use lettre::message::{Message, header::ContentType};
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
-
-use core::error::SumidaError;
-use core::{db, settings};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "mail_forms")]
@@ -21,6 +19,27 @@ pub struct Model {
   pub updated_at: DateTimeWithTimeZone,
 }
 
+pub struct MailFormSendOptions {
+  pub username: String,
+  pub password: String,
+  pub auth: String,
+  pub server: String,
+}
+
+impl MailFormSendOptions {
+  pub fn into_smtp_transport(self) -> Result<SmtpTransport, anyhow::Error> {
+    let cred = Credentials::new(self.username.clone(), self.password.clone());
+    let auth = match self.auth.to_uppercase().as_str() {
+      "PLAIN" => Mechanism::Plain,
+      "LOGIN" => Mechanism::Login,
+      "XOAUTH2" => Mechanism::Xoauth2,
+      _ => Mechanism::Plain,
+    };
+
+    Ok(SmtpTransport::relay(&self.server)?.credentials(cred).authentication(vec![auth]).build())
+  }
+}
+
 impl Model {
   pub fn render(&self, context: impl Serialize) -> Result<String, SumidaError> {
     let mut tt = TinyTemplate::new();
@@ -32,7 +51,12 @@ impl Model {
     Ok(rendered)
   }
 
-  pub fn send<R, C>(&self, receiver: R, context: C) -> Result<(), anyhow::Error>
+  pub fn send<R, C>(
+    &self,
+    receiver: R,
+    context: C,
+    options: Option<MailFormSendOptions>,
+  ) -> Result<(), anyhow::Error>
   where
     R: AsRef<str>,
     C: Serialize,
@@ -48,15 +72,8 @@ impl Model {
       .body(content)
       .map_err(|err| SumidaError::EmailMessageBuildFailed(err.to_string()))?;
 
-    let mailer = if let Some(ref opts) = settings::get().smtp {
-      let cred = Credentials::new(opts.username.clone(), opts.password.clone());
-      let auth = match opts.auth.to_uppercase().as_str() {
-        "PLAIN" => Mechanism::Plain,
-        "LOGIN" => Mechanism::Login,
-        "XOAUTH2" => Mechanism::Xoauth2,
-        _ => Mechanism::Plain,
-      };
-      SmtpTransport::relay(&opts.server)?.credentials(cred).authentication(vec![auth]).build()
+    let mailer = if let Some(opts) = options {
+      opts.into_smtp_transport()?
     } else {
       SmtpTransport::unencrypted_localhost()
     };
@@ -74,19 +91,25 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
-  pub async fn send<K, R, C>(kind: K, receiver: R, context: C) -> Result<(), SumidaError>
+  pub async fn send<Kind, Recv, Ctx, Conn>(
+    kind: Kind,
+    receiver: Recv,
+    context: Ctx,
+    options: Option<MailFormSendOptions>,
+    db: &Conn,
+  ) -> Result<(), SumidaError>
   where
-    K: AsRef<str>,
-    R: AsRef<str>,
-    C: Serialize,
+    Kind: AsRef<str>,
+    Recv: AsRef<str>,
+    Ctx: Serialize,
+    Conn: ConnectionTrait,
   {
     let kind = kind.as_ref();
-    let db_conn = db::get_connection();
-    let Some(form) = Entity::find_by_id(kind).one(db_conn).await? else {
+    let Some(form) = Entity::find_by_id(kind).one(db).await? else {
       return Err(SumidaError::NoMailForm(kind.to_owned()));
     };
 
-    form.send(receiver, context)?;
+    form.send(receiver, context, options)?;
 
     Ok(())
   }

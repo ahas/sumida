@@ -5,3 +5,7 @@ pub use super::role as RoleController;
 pub use super::user as UserController;
 pub use super::user_invitation as UserInvitationController;
 pub use super::user_verification as UserVerificationController;
+
+pub use core::session::{UserContext, UserOrganization, UserProfile};
+pub use error::SumidaError;
+pub use tower_sessions::Session;

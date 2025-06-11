@@ -2,24 +2,22 @@ use axum::extract::Request;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
+use cfg_if::cfg_if;
+use core::db;
+use core::session::UserContext;
+use core::settings;
+use entity::prelude::*;
+use error::SumidaError;
 use jsonwebtoken as jwt;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Expiry;
 
-#[cfg(feature = "aws")]
-use crate::core::aws;
-use crate::core::db;
-use crate::core::error::SumidaError;
-use crate::core::settings;
-use crate::entity::prelude::*;
-use crate::service::user::session::UserContext;
-
 #[macro_export]
 macro_rules! ability_guard {
   ($topic: ident, $action: ident) => {
     axum::middleware::from_fn(
-      |user_ctx: $crate::service::user::session::UserContext,
+      |user_ctx: $crate::sumida_core::session::UserContext,
        req: axum::extract::Request,
        next: axum::middleware::Next| async move {
         let topic = stringify!($topic);
@@ -64,26 +62,30 @@ pub struct JwtClaims {
 
 async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), SumidaError> {
   let settings = settings::get();
-  let secret;
+  #[cfg(not(any(feature = "jwt-secret-store-static", feature = "jwt-secret-store-aws-ssm")))]
+  compile_error!("Either `jwt-secret-store-static` or `jwt-secret-store-aws-ssm` feature must be enabled");
 
-  #[cfg(feature = "jwt-secret-store-aws-ssm")]
-  {
-    let ssm_client = aws_sdk_ssm::Client::new(aws::get_sdk_config());
-    secret = ssm_client
-      .get_parameter()
-      .name(format!("/joy/{}/jwt-secret", settings.server.stage))
-      .with_decryption(true)
-      .send()
-      .await
-      .unwrap()
-      .parameter
-      .and_then(|param| param.value)
-      .ok_or(SumidaError::NoJwtSecret)?;
-  }
-  #[cfg(feature = "jwt-secret-store-static")]
-  {
-    secret = settings.jwt.as_ref().unwrap().secret.clone().unwrap_or_default();
-  }
+  #[allow(unused_assignments)]
+  let mut secret = "".to_string();
+
+  cfg_if! {
+    if #[cfg(feature = "jwt-secret-store-static")] {
+      secret = settings.jwt.as_ref().unwrap().secret.clone().unwrap_or_default();
+    } else if #[cfg(feature = "jwt-secret-store-aws-ssm")] {
+      use core::aws;
+      let ssm_client = aws_sdk_ssm::Client::new(aws::get_sdk_config());
+      secret = ssm_client
+        .get_parameter()
+        .name(format!("/joy/{}/jwt-secret", settings.server.stage))
+        .with_decryption(true)
+        .send()
+        .await
+        .unwrap()
+        .parameter
+        .and_then(|param| param.value)
+        .ok_or(SumidaError::NoJwtSecret)?;
+    }
+  };
 
   let token = jwt::decode::<JwtClaims>(
     token,
@@ -101,10 +103,10 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
 async fn verify_api_key(user_ctx: &mut UserContext, token: &str) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
   let api_key = ApiKeys::find()
-    .filter(crate::entity::api_keys::Column::Key.eq(token))
+    .filter(entity::api_keys::Column::Key.eq(token))
     .one(db_conn)
     .await?
-    .ok_or_else(|| SumidaError::InvalidApiKey)?;
+    .ok_or(SumidaError::InvalidApiKey)?;
   let user = Users::find_by_id(&api_key.user).one(db_conn).await?;
 
   if let Some(user) = user {

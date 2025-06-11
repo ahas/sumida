@@ -1,4 +1,5 @@
 pub mod controller;
+pub mod layer;
 pub mod middleware;
 pub mod provider;
 pub mod service;
@@ -12,7 +13,11 @@ use serde::Serialize;
 
 use self::provider::RoleProvider;
 
-pub struct SumidaRouter<'a, StateT, RoleAbilityT, RoleProviderT>
+pub mod sumida_core {
+  pub use ::core::*;
+}
+
+pub struct Sumida<'a, StateT, RoleAbilityT, RoleProviderT>
 where
   StateT: Clone + Send + Sync + 'static,
   RoleAbilityT: Default + Serialize + 'static,
@@ -23,7 +28,7 @@ where
   _role_ability: PhantomData<RoleAbilityT>,
 }
 
-impl<'a, StateT, RoleAbilityT, RoleProviderT> SumidaRouter<'a, StateT, RoleAbilityT, RoleProviderT>
+impl<'a, StateT, RoleAbilityT, RoleProviderT> Sumida<'a, StateT, RoleAbilityT, RoleProviderT>
 where
   StateT: Clone + Send + Sync + 'static,
   RoleAbilityT: Default + Serialize + 'static,
@@ -38,13 +43,26 @@ where
     self
   }
 
-  pub fn set_role(mut self, role: RoleProviderT) -> Self {
+  pub fn set_role_provider(mut self, role: RoleProviderT) -> Self {
     self.role = Some(role);
     self
   }
+
+  pub fn router(self) -> Router<StateT> {
+    let state = self.state.expect("[SumdiaRouter]: state must be set");
+
+    Router::new()
+      .nest("/organizations", OrganizationController::new::<StateT>(state))
+      .nest("/roles", RoleController::new::<StateT, RoleAbilityT, RoleProviderT>(state))
+      .nest("/users", UserController::new::<StateT>(state))
+      .nest("/user-invitations", UserInvitationController::new::<StateT>(state))
+      .nest("/user-verifications", UserVerificationController::new::<StateT>(state))
+      .nest("/preference", PreferenceController::new::<StateT>(state))
+      .nest("/mail-forms", MailFormController::new::<StateT>(state))
+  }
 }
 
-impl<StateT, RoleAbilityT, RoleProviderT> Default for SumidaRouter<'_, StateT, RoleAbilityT, RoleProviderT>
+impl<StateT, RoleAbilityT, RoleProviderT> Default for Sumida<'_, StateT, RoleAbilityT, RoleProviderT>
 where
   StateT: Clone + Send + Sync + 'static,
   RoleAbilityT: Default + Serialize + 'static,
@@ -56,26 +74,5 @@ where
       role: None,
       _role_ability: std::marker::PhantomData,
     }
-  }
-}
-
-impl<StateT, RoleAbilityT, RoleProviderT> From<SumidaRouter<'_, StateT, RoleAbilityT, RoleProviderT>>
-  for Router<StateT>
-where
-  StateT: Clone + Send + Sync + 'static,
-  RoleAbilityT: Default + Serialize + 'static,
-  RoleProviderT: RoleProvider<RoleAbilityT> + Clone + Send + Sync + 'static,
-{
-  fn from(value: SumidaRouter<'_, StateT, RoleAbilityT, RoleProviderT>) -> Self {
-    let state = value.state.expect("[SumdiaRouter]: state must be set");
-
-    Router::new()
-      .nest("/organizations", OrganizationController::new::<StateT>(state))
-      .nest("/roles", RoleController::new::<StateT, RoleAbilityT, RoleProviderT>(state))
-      .nest("/users", UserController::new::<StateT>(state))
-      .nest("/user-invitations", UserInvitationController::new::<StateT>(state))
-      .nest("/user-verifications", UserVerificationController::new::<StateT>(state))
-      .nest("/preference", PreferenceController::new::<StateT>(state))
-      .nest("/mail-forms", MailFormController::new::<StateT>(state))
   }
 }

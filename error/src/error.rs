@@ -1,8 +1,8 @@
 #[cfg(feature = "aws-s3")]
 use aws_sdk_s3::error::SdkError as S3Error;
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use sea_orm::DbErr;
 use serde_json::json;
 use thiserror::Error;
@@ -22,6 +22,10 @@ pub enum SumidaError {
   // authorization errors
   #[error("invalid account")]
   InvalidAccount,
+  #[error("inactive account")]
+  InactiveAccount,
+  #[error("account blocked")]
+  AccountBlocked,
   #[error("user organization id '{0}' not found")]
   NoUserOrganization(i32),
   #[error("user role id `{0}` not found")]
@@ -96,6 +100,8 @@ impl From<SumidaError> for StatusCode {
 
       // authorization errors
       SumidaError::InvalidAccount
+      | SumidaError::InactiveAccount
+      | SumidaError::AccountBlocked
       | SumidaError::NotAuthorized(_)
       | SumidaError::NoCredentials
       | SumidaError::NoUserOrganization(_)
@@ -117,7 +123,7 @@ impl From<SumidaError> for StatusCode {
       // external crate errors
       SumidaError::DatabaseError(v, _) => StatusCode::from_u16(v),
       #[cfg(feature = "aws-s3")]
-      SumidaError::AwsS3SdkError(v, _) | SumidaError::DatabaseError(v, _) => StatusCode::from_u16(v),
+      SumidaError::AwsS3SdkError(v, _) => StatusCode::from_u16(v),
 
       _ => Ok(StatusCode::INTERNAL_SERVER_ERROR),
     }
@@ -184,6 +190,7 @@ impl<T> From<S3Error<T>> for SumidaError {
 
 impl From<anyhow::Error> for SumidaError {
   fn from(value: anyhow::Error) -> Self {
+    tracing::error!("Unknown: {:?}", value.backtrace());
     SumidaError::Unknown(500, value.to_string())
   }
 }

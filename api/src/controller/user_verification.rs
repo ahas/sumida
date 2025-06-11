@@ -1,7 +1,6 @@
 use axum::extract::State;
-use axum::{routing, Json, Router};
+use axum::{Json, Router, routing};
 
-use crate::core::error::SumidaError;
 use crate::service::prelude::*;
 
 async fn send<S>(

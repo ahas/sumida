@@ -1,11 +1,10 @@
 pub mod dto;
 
+use core::db;
+use entity::prelude::*;
+use error::SumidaError;
 use sea_orm::{EntityTrait, Set, Unchanged};
 use serde_json::json;
-
-use crate::core::db;
-use crate::core::error::SumidaError;
-use crate::entity::prelude::*;
 
 pub async fn get(username: String) -> Result<serde_json::Value, SumidaError> {
   let db_conn = db::get_connection();
@@ -15,7 +14,7 @@ pub async fn get(username: String) -> Result<serde_json::Value, SumidaError> {
 }
 
 pub async fn update(username: String, data: serde_json::Value) -> Result<(), SumidaError> {
-  use crate::entity::preferences::ActiveModel;
+  use entity::preferences::ActiveModel;
 
   let db_conn = db::get_connection();
   let pref = Preferences::find_by_id(username.clone()).one(db_conn).await?;

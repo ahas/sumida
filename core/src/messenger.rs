@@ -4,9 +4,9 @@ use socketioxide::layer::SocketIoLayer;
 use socketioxide::BroadcastError;
 use socketioxide::{extract::SocketRef, SocketIo};
 use socketioxide_core::adapter::{Room, RoomParam};
+use error::SumidaError;
 
-use crate::core::error::SumidaError;
-use crate::service::user::session::UserContext;
+use crate::session::UserContext;
 
 #[derive(Clone, Debug)]
 pub struct SumidaMessengerState;
