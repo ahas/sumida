@@ -1,11 +1,11 @@
+#![cfg(feature = "aws-s3")]
+
 use anyhow::anyhow;
-use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
+use aws_smithy_types::byte_stream::{AggregatedBytes, ByteStream};
+use core::{aws, settings};
 #[cfg(feature = "image")]
 use image::{self, DynamicImage, ImageFormat};
-use std::{error::Error, fmt::Display, io::Cursor};
-use tokio::io::AsyncReadExt;
-
-use crate::core::{aws, settings};
+use std::{fmt::Display, io::Cursor};
 
 pub trait IntoS3Uri {
   fn into_s3_uri(self) -> String;
@@ -107,7 +107,7 @@ pub async fn put_image(
     .content_type(image_format.to_mime_type())
     .body(body)
     .send()
-    .await;
+    .await?;
 
   Ok(())
 }

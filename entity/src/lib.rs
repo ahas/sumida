@@ -10,3 +10,5 @@ pub mod user_verifications;
 pub mod users;
 
 pub mod prelude;
+
+pub mod migration;

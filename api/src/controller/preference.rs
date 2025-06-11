@@ -1,8 +1,7 @@
 use axum::extract::State;
-use axum::{routing, Json, Router};
+use axum::{Json, Router, routing};
 use serde_json::json;
 
-use crate::core::error::SumidaError;
 use crate::service::preference as PreferenceService;
 use crate::service::prelude::*;
 use crate::user_guard;

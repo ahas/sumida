@@ -1,10 +1,10 @@
 use axum::{
+  Json, Router,
   extract::{Path, Query, State},
-  routing, Json, Router,
+  routing,
 };
 use serde::Serialize;
 
-use crate::core::error::SumidaError;
 use crate::provider::RoleProvider;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};

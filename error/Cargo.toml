@@ -1,0 +1,20 @@
+[package]
+name = "error"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["full"]
+aws-s3 = ["aws-sdk-s3"]
+full = ["aws-s3"]
+
+[dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true }
+sea-orm = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+aws-sdk-s3 = { workspace = true, optional = true }
+
+thiserror = "2.0.12"

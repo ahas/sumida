@@ -1,15 +1,14 @@
 use axum::extract::Multipart;
 use axum::extract::{Path, Query, State};
-use axum::{routing, Json, Router};
+use axum::{Json, Router, routing};
+#[cfg(feature = "storage-aws-s3")]
+use core::aws;
+use core::settings;
 use serde_json::json;
 
-#[cfg(feature = "aws")]
-use crate::core::aws;
-use crate::core::error::SumidaError;
-use crate::core::settings;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
-#[cfg(feature = "aws-s3")]
+#[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
 use crate::{admin_guard, user_guard};
 

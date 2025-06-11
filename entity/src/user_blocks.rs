@@ -7,7 +7,8 @@ use super::users::Entity as Users;
 pub struct Model {
   #[sea_orm(primary_key)]
   pub id: i32,
-  pub user: String,
+  pub user: Option<String>,
+  pub ip_address: Option<String>,
   pub blocked_at: DateTimeWithTimeZone,
   pub blocked_by: Option<String>,
   pub reason: String,

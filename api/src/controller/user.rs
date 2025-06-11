@@ -1,11 +1,10 @@
 use axum::{
+  Json, Router,
   extract::{Path, Query, State},
   http::StatusCode,
-  routing, Json, Router,
+  routing,
 };
-use tower_sessions::Session;
 
-use crate::core::error::SumidaError;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 use crate::{ability_guard, user_guard};
@@ -62,12 +61,12 @@ async fn sign_in<S>(
 }
 
 async fn sign_out<S>(user_ctx: Session, State(_state): State<S>) -> Result<StatusCode, SumidaError> {
-  user_ctx.clear().await;
+  user_ctx.delete().await.ok();
   Ok(StatusCode::OK)
 }
 
 async fn profile<S>(user_ctx: UserContext, State(_state): State<S>) -> Result<UserProfile, SumidaError> {
-  Ok(user_ctx.profile.into())
+  Ok(user_ctx.profile)
 }
 
 async fn get_my_info<S>(user_ctx: UserContext, State(_state): State<S>) -> Result<GetUser, SumidaError> {
@@ -87,11 +86,11 @@ async fn update_my_info<S>(
 }
 
 async fn invite<S>(
-  mut user_ctx: UserContext,
+  user_ctx: UserContext,
   State(_state): State<S>,
   Path(username): Path<String>,
 ) -> Result<StatusCode, SumidaError> {
-  UserService::invite(&mut user_ctx, username).await?;
+  UserService::invite(&user_ctx, username).await?;
   Ok(StatusCode::OK)
 }
 
@@ -123,7 +122,7 @@ async fn impersonate<S>(
 }
 
 async fn get_vapid<S>(user_ctx: UserContext, State(_state): State<S>) -> Result<GetVapid, SumidaError> {
-  Ok(UserService::get_vapid(&user_ctx).await?)
+  UserService::get_vapid(&user_ctx).await
 }
 
 pub fn new<S>(state: &S) -> Router<S>
@@ -144,7 +143,7 @@ where
     .route("/{username}", routing::delete(delete::<S>))
     .route_layer(ability_guard!(user, delete));
 
-  let router = Router::new()
+  Router::new()
     .merge(route_read)
     .merge(route_create)
     .merge(route_update)
@@ -158,7 +157,5 @@ where
     .route("/change-password", routing::post(change_password::<S>))
     .route("/activate", routing::post(activate::<S>))
     .route("/impersonate", routing::post(impersonate::<S>))
-    .route("/vapid", routing::get(get_vapid::<S>));
-
-  router
+    .route("/vapid", routing::get(get_vapid::<S>))
 }

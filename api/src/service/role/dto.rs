@@ -6,8 +6,7 @@ use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, Set};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-
-use crate::entity::roles::ActiveModel;
+use entity::roles::ActiveModel;
 
 #[derive(Deserialize)]
 pub struct RoleFilter {

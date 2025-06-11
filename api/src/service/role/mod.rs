@@ -1,5 +1,8 @@
 pub mod dto;
 
+use core::db;
+use entity::prelude::*;
+use error::SumidaError;
 use sea_orm::{ActiveValue::*, TransactionTrait};
 use sea_orm::{
   DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, QueryTrait,
@@ -8,11 +11,8 @@ use sea_orm_crud::Optional;
 use serde::Serialize;
 use serde_json::json;
 
-use crate::core::db;
-use crate::core::error::SumidaError;
-use crate::entity::prelude::*;
 use crate::provider::RoleProvider;
-use crate::util::crud::{search, Pagination};
+use crate::util::crud::{Pagination, search};
 
 use self::dto::*;
 
@@ -20,7 +20,7 @@ pub async fn list(
   filter: RoleFilter,
   pagination: Pagination,
 ) -> Result<(Vec<RoleListItem>, u64), SumidaError> {
-  use crate::entity::roles::Column;
+  use entity::roles::Column;
 
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
@@ -50,7 +50,7 @@ pub async fn get(id: i32) -> Result<Option<GetRole>, SumidaError> {
 
 pub async fn create<T, R>(
   mut data: CreateRole,
-) -> Result<InsertResult<crate::entity::roles::ActiveModel>, SumidaError>
+) -> Result<InsertResult<entity::roles::ActiveModel>, SumidaError>
 where
   T: Default + Serialize,
   R: RoleProvider<T>,
@@ -65,7 +65,7 @@ where
   Ok(Roles::insert(data.into_active_model()).exec(db::get_connection()).await?)
 }
 
-pub async fn update<T, R>(id: i32, mut data: UpdateRole) -> Result<crate::entity::roles::Model, SumidaError>
+pub async fn update<T, R>(id: i32, mut data: UpdateRole) -> Result<entity::roles::Model, SumidaError>
 where
   T: Default + Serialize,
   R: RoleProvider<T>,

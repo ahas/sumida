@@ -1,6 +1,5 @@
 use sea_orm::{prelude::*, ActiveValue::*, DatabaseTransaction};
-
-use crate::core::error::SumidaError;
+use error::SumidaError;
 
 use super::users::Entity as Users;
 

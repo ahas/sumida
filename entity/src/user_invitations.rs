@@ -2,8 +2,6 @@ use chrono::{Duration, Utc};
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::*;
 
-// use crate::core::db;
-
 use super::users::Entity as Users;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
@@ -38,7 +36,7 @@ impl Related<Users> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
-  pub async fn create<'db, S, C>(username: S, uuid: Uuid, db: &'db C) -> Result<(), DbErr>
+  pub async fn create<S, C>(username: S, uuid: Uuid, db: &C) -> Result<(), DbErr>
   where
     S: AsRef<str>,
     C: ConnectionTrait,

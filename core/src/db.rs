@@ -2,7 +2,7 @@ use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use std::{str::FromStr, time::Duration};
 use tokio::sync::OnceCell;
 
-use crate::core::settings;
+use crate::settings;
 
 static CONN: OnceCell<DatabaseConnection> = OnceCell::const_new();
 

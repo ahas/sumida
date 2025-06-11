@@ -1,14 +1,14 @@
 pub mod dto;
 
+use core::db;
+use entity::prelude::*;
+use error::SumidaError;
 use sea_orm::{
   DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, QueryTrait, Set,
   TransactionTrait,
 };
 
-use crate::core::db;
-use crate::core::error::SumidaError;
-use crate::entity::prelude::*;
-use crate::util::crud::{search, Pagination};
+use crate::util::crud::{Pagination, search};
 
 use self::dto::*;
 
@@ -16,7 +16,7 @@ pub async fn list(
   filter: MailFormFilter,
   pagination: Pagination,
 ) -> Result<(Vec<MailFormListItem>, u64), SumidaError> {
-  use crate::entity::mail_forms::Column;
+  use entity::mail_forms::Column;
 
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
@@ -48,15 +48,12 @@ where
 
 pub async fn create(
   data: CreateMailForm,
-) -> Result<InsertResult<crate::entity::mail_forms::ActiveModel>, SumidaError> {
+) -> Result<InsertResult<entity::mail_forms::ActiveModel>, SumidaError> {
   let db_conn = db::get_connection();
   Ok(MailForms::insert(data.into_active_model()).exec(db_conn).await?)
 }
 
-pub async fn update<S>(
-  kind: S,
-  data: UpdateMailForm,
-) -> Result<crate::entity::mail_forms::Model, SumidaError>
+pub async fn update<S>(kind: S, data: UpdateMailForm) -> Result<entity::mail_forms::Model, SumidaError>
 where
   S: AsRef<str>,
 {

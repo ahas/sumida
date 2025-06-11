@@ -1,9 +1,8 @@
-use axum::http::{header, Method};
+use axum::http::{Method, header};
+use core::settings;
 use tower_http::cors::CorsLayer;
 
-use super::settings;
-
-pub fn new_layer() -> CorsLayer {
+pub fn new() -> CorsLayer {
   let settings = settings::get();
   let origins = settings
     .server

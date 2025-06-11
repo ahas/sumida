@@ -1,10 +1,10 @@
 use axum::{
+  Json, Router,
   extract::{Path, Query, State},
-  routing, Json, Router,
+  routing,
 };
 use uuid::Uuid;
 
-use crate::core::error::SumidaError;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 use crate::{admin_guard, user_guard};
