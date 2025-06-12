@@ -120,11 +120,13 @@ pub async fn sign_in(user_ctx: &mut UserContext, data: SignInUser) -> Result<(),
   let txn = db_conn.begin().await?;
   let username = Some(data.username.as_str());
 
+  // 1) Check the user is blocked
   if user_ctx.check_blocked(username, &txn).await? {
     user_ctx.write_log(username, SignInMethod::Password, SignInCode::AccountBlocked, &txn).await?;
     return Err(SumidaError::AccountBlocked);
   }
 
+  // 2) Return error if the user does not exist
   let Some(user) =
     Users::find_by_id(&data.username).filter(entity::users::Column::IsEnabled.eq(true)).one(&txn).await?
   else {
@@ -132,16 +134,14 @@ pub async fn sign_in(user_ctx: &mut UserContext, data: SignInUser) -> Result<(),
     return Err(SumidaError::InvalidAccount);
   };
 
+  // 3) Return error if the user is inactive
   if !user.is_enabled {
     user_ctx.write_log(username, SignInMethod::Password, SignInCode::AccountInactive, &txn).await?;
     return Err(SumidaError::InactiveAccount);
   }
 
-  let result = if !verify_password(&data.password, &user.password) {
-    user_ctx.write_log(username, SignInMethod::Password, SignInCode::PasswordMismatch, &txn).await?;
-    let blocked = user_ctx.block_if_exceeded_limit(username, &txn).await?;
-    Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
-  } else {
+  // 4) Check the user password
+  let result = if verify_password(&data.password, &user.password) {
     user_ctx.write_log(username, SignInMethod::Password, SignInCode::Success, &txn).await?;
 
     let expiry = if let Some(remember_me) = data.remember_me {
@@ -156,9 +156,14 @@ pub async fn sign_in(user_ctx: &mut UserContext, data: SignInUser) -> Result<(),
       None
     };
 
-    user_ctx.sign_in(&data.username, expiry).await?;
+    user_ctx.authorize(&data.username, expiry).await?;
 
     Ok(())
+  } else {
+    user_ctx.write_log(username, SignInMethod::Password, SignInCode::PasswordMismatch, &txn).await?;
+    let blocked = user_ctx.block_if_exceeded_limit(username, &txn).await?;
+
+    Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
   };
 
   txn.commit().await?;
@@ -283,7 +288,7 @@ where
   let user = Users::find_by_id(username).one(db_conn).await?;
 
   if user.is_some() {
-    user_ctx.sign_in(username, Some(settings.session.expiry.default_expiry()?)).await?;
+    user_ctx.authorize(username, Some(settings.session.expiry.default_expiry()?)).await?;
     return Ok(());
   }
 

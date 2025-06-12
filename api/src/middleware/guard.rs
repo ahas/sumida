@@ -95,7 +95,7 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
   .map_err(|_err| SumidaError::InvalidJwt)?;
   let expiry = settings.jwt.as_ref().unwrap().expiry.access_token_expiry()?;
 
-  user_ctx.sign_in(&token.claims.user, Some(expiry)).await?;
+  user_ctx.authorize(&token.claims.user, Some(expiry)).await?;
 
   Ok(())
 }
@@ -110,7 +110,7 @@ async fn verify_api_key(user_ctx: &mut UserContext, token: &str) -> Result<(), S
   let user = Users::find_by_id(&api_key.user).one(db_conn).await?;
 
   if let Some(user) = user {
-    user_ctx.sign_in(&user.username, Some(Expiry::OnSessionEnd)).await?;
+    user_ctx.authorize(&user.username, Some(Expiry::OnSessionEnd)).await?;
   } else {
     // UserSignInLogs::write(
     //   user_data.username,
