@@ -21,9 +21,14 @@ pub async fn list(
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
 
-  let query = Organizations::find()
-    .apply_if(filter.name, |q, v| search(q, Column::Name, v))
-    .apply_if(filter.parent, |q, v| q.filter(Column::Parent.eq(v)));
+  let query = Organizations::find().apply_if(filter.name, |q, v| search(q, Column::Name, v));
+
+  let query = if let Some(parent) = filter.parent {
+    query.filter(Column::Parent.eq(parent))
+  } else {
+    query.filter(Column::Parent.is_null())
+  };
+
   let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
   let query = pagination.order_by(query, |col| match col {
     "name" => Column::Name,

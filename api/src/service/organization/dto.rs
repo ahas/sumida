@@ -65,7 +65,7 @@ impl IntoResponse for OrganizationCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateOrganization {
-  pub name: String,
+  pub name: Optional<String>,
   #[serde(default)]
   pub parent: Nullable<i32>,
 }

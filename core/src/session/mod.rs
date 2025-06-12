@@ -201,7 +201,7 @@ impl UserContext {
   pub const USER_ENV_KEY: &'static str = "user.env";
   pub const USER_STATE_KEY: &'static str = "user.state";
 
-  pub async fn sign_in(&mut self, username: &str, expiry: Option<Expiry>) -> Result<(), SumidaError> {
+  pub async fn authorize(&mut self, username: &str, expiry: Option<Expiry>) -> Result<(), SumidaError> {
     self.profile.username = username.to_owned();
     self.profile.is_authorized = true;
     self.profile.expiry = expiry;
@@ -326,23 +326,27 @@ impl UserContext {
     username: Option<&str>,
     db: &C,
   ) -> Result<bool, SumidaError> {
-    let now = Utc::now();
-    let mut condition = Condition::any();
+    let lhs = {
+      let mut cond = Condition::any();
 
-    if let Some(username) = username {
-      condition = condition.add(entity::user_blocks::Column::User.eq(username));
-    }
+      if let Some(username) = username {
+        cond = cond.add(entity::user_blocks::Column::User.eq(username));
+      }
 
-    condition = condition.add(entity::user_blocks::Column::IpAddress.eq(&self.env.ip_address));
-    condition = Condition::all().add(condition);
-    condition = condition.add(entity::user_blocks::Column::LiftedAt.is_null());
-    condition = condition.add(
-      Condition::any()
-        .add(entity::user_blocks::Column::ExpiresAt.is_null())
-        .add(entity::user_blocks::Column::ExpiresAt.lt(now)),
-    );
+      cond.add(entity::user_blocks::Column::IpAddress.eq(&self.env.ip_address))
+    };
+    let rhs = {
+      let now = Utc::now().fixed_offset();
+      let cond = Condition::all().add(entity::user_blocks::Column::LiftedAt.is_null()).add(
+        Condition::any()
+          .add(entity::user_blocks::Column::ExpiresAt.is_null())
+          .add(entity::user_blocks::Column::ExpiresAt.gt(now)),
+      );
+      cond
+    };
+    let cond = Condition::all().add(lhs).add(rhs);
 
-    Ok(UserBlocks::find().filter(condition).count(db).await? > 0)
+    Ok(UserBlocks::find().filter(cond).count(db).await? > 0)
   }
 
   pub fn verify(&self) -> Result<(), SumidaError> {
