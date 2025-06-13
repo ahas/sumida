@@ -1,4 +1,5 @@
-use sea_orm::prelude::*;
+use chrono::{FixedOffset, Utc};
+use sea_orm::{Condition, QuerySelect, QueryTrait, prelude::*, sea_query::SimpleExpr};
 
 use super::users::Entity as Users;
 
@@ -39,3 +40,19 @@ pub enum Relation {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Entity {
+  pub fn exists_expr() -> SimpleExpr {
+    let now = Utc::now().fixed_offset();
+    Expr::exists(
+      Entity::find()
+        .filter(
+          Expr::col(Column::User).eq(Expr::col((super::users::Entity, super::users::Column::Username))),
+        )
+        .filter(Condition::any().add(Column::LiftedAt.is_null()))
+        .filter(Condition::any().add(Column::ExpiresAt.is_null()).add(Column::ExpiresAt.gt(now)))
+        .limit(1)
+        .into_query(),
+    )
+  }
+}

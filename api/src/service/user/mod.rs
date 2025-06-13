@@ -13,6 +13,8 @@ use entity::prelude::*;
 use entity::user_sign_in_logs::{SignInCode, SignInMethod};
 use error::SumidaError;
 use sea_orm::ActiveValue::*;
+use sea_orm::prelude::Expr;
+use sea_orm::sea_query::Asterisk;
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
   QuerySelect, QueryTrait, TransactionTrait, Unchanged,
@@ -33,6 +35,9 @@ pub async fn list(
   let txn = db_conn.begin().await?;
 
   let query = Users::find()
+    .select_only()
+    .expr(Expr::col((Users, Asterisk)))
+    .expr_as(UserBlocks::exists_expr(), "is_blocked")
     .apply_if(filter.username, |q, v| search(q, Column::Username, v))
     .apply_if(filter.name, |q, v| search(q, Column::FullName, v))
     .apply_if(filter.organization, |q, v| q.filter(Column::Organization.eq(v)))
@@ -54,7 +59,11 @@ pub async fn list(
 }
 
 pub async fn get<S: AsRef<str>>(username: S) -> Result<Option<GetUser>, SumidaError> {
-  Ok(Users::find_by_id(username.as_ref()).into_model::<GetUser>().one(db::get_connection()).await?)
+  let query = Users::find_by_id(username.as_ref()) //
+    .select_only()
+    .expr(Expr::col((Users, Asterisk)))
+    .expr_as(UserBlocks::exists_expr(), "is_blocked");
+  Ok(query.into_model::<GetUser>().one(db::get_connection()).await?)
 }
 
 pub async fn create(data: CreateUser) -> Result<InsertResult<entity::users::ActiveModel>, SumidaError> {
