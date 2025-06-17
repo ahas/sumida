@@ -3,7 +3,7 @@ pub mod dto;
 use core::db;
 use entity::prelude::*;
 use error::SumidaError;
-use sea_orm::{ActiveValue::*, TransactionTrait};
+use sea_orm::{ActiveValue::*, QueryFilter, TransactionTrait};
 use sea_orm::{
   DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, QueryTrait,
 };
@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::provider::RoleProvider;
-use crate::util::crud::{Pagination, search};
+use crate::util::crud::{Pagination, ilike_col};
 
 use self::dto::*;
 
@@ -26,8 +26,8 @@ pub async fn list(
   let txn = db_conn.begin().await?;
 
   let query = Roles::find()
-    .apply_if(filter.name, |q, v| search(q, Column::Name, v))
-    .apply_if(filter.description, |q, v| search(q, Column::Description, v));
+    .apply_if(filter.name, |q, v| q.filter(ilike_col(Column::Name, v)))
+    .apply_if(filter.description, |q, v| q.filter(ilike_col(Column::Description, v)));
   let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
   let query = pagination.order_by(query, |col| match col {
     "name" => Column::Name,

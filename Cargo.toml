@@ -65,6 +65,7 @@ sea-orm = { version = "1.1.12", features = [
 ] }
 sea-orm-migration = { version = "1.1.12", features = ["sqlx-postgres"] }
 sea-orm-crud = { git = "https://github.com/ahas/sea-orm-crud.git" }
+# sea-orm-crud = { path = "../sea-orm-crud" }
 tinytemplate = "1.2.1"
 time = "0.3.41"
 tokio = "1.45.0"

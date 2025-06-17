@@ -8,7 +8,7 @@ use sea_orm::{ActiveValue::*, EntityTrait, TransactionTrait};
 use sea_orm::{ColumnTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelect, QueryTrait};
 use uuid::Uuid;
 
-use crate::util::crud::{Pagination, search};
+use crate::util::crud::{Pagination, ilike_col};
 
 use self::dto::*;
 
@@ -22,7 +22,7 @@ pub async fn list(
   let txn = db_conn.begin().await?;
 
   let query = UserInvitations::find()
-    .apply_if(filter.user, |q, v| search(q, Column::User, v))
+    .apply_if(filter.user, |q, v| q.filter(ilike_col(Column::User, v)))
     .apply_if(filter.uuid, |q, v| q.filter(Column::Uuid.eq(v)));
   let count = query.clone().select_only().column(Column::Uuid).count(&txn).await?;
   let query = pagination.order_by(query, |col| match col {

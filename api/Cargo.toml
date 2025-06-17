@@ -48,3 +48,6 @@ aws-sdk-s3 = { workspace = true, optional = true }
 aws-sdk-ssm = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
+
+axum-extra = { version = "0.10.1", features = ["query"] }
+serde_qs = { version = "0.15.0", features = ["axum"] }

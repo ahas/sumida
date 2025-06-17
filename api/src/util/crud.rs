@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 
 use axum::response::IntoResponse;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::SimpleExpr;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{ColumnTrait, EntityTrait, IntoSimpleExpr, Order, QueryOrder, QueryTrait, Select};
 use serde::de::Visitor;
@@ -91,13 +92,12 @@ impl<T> From<(Vec<T>, u64)> for List<T> {
   }
 }
 
-pub fn search<E, C, T>(query: Select<E>, column: C, text: T) -> Select<E>
+pub fn ilike_col<C, S>(col: C, text: S) -> SimpleExpr
 where
-  E: EntityTrait,
   C: ColumnTrait,
-  T: AsRef<str>,
+  S: AsRef<str>,
 {
-  query.filter(Expr::col(column).ilike(format!("%{text}%", text = text.as_ref())))
+  Expr::col(col).ilike(format!("%{text}%", text = text.as_ref()))
 }
 
 pub fn i32_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>

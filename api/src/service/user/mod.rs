@@ -12,16 +12,18 @@ use entity::mail_forms::MailFormSendOptions;
 use entity::prelude::*;
 use entity::user_sign_in_logs::{SignInCode, SignInMethod};
 use error::SumidaError;
-use sea_orm::ActiveValue::*;
 use sea_orm::prelude::Expr;
-use sea_orm::sea_query::Asterisk;
+use sea_orm::sea_query::{
+  Alias, Asterisk, CommonTableExpression, Query, QueryStatementBuilder, UnionType, WithClause,
+};
+use sea_orm::{ActiveValue::*, Condition, JoinType};
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
   QuerySelect, QueryTrait, TransactionTrait, Unchanged,
 };
-use sea_orm_crud::Optional;
+use sea_orm_crud::{OneOrMany, Optional};
 
-use crate::util::crud::{Pagination, search};
+use crate::util::crud::{Pagination, ilike_col};
 
 use self::dto::*;
 
@@ -37,11 +39,52 @@ pub async fn list(
   let query = Users::find()
     .select_only()
     .expr(Expr::col((Users, Asterisk)))
-    .expr_as(UserBlocks::exists_expr(), "is_blocked")
-    .apply_if(filter.username, |q, v| search(q, Column::Username, v))
-    .apply_if(filter.name, |q, v| search(q, Column::FullName, v))
-    .apply_if(filter.organization, |q, v| q.filter(Column::Organization.eq(v)))
+    .expr_as(UserBlocks::exists_expr(), "is_blocked");
+
+  let query = query
+    .apply_if(filter.search, |q, v| {
+      q.filter(
+        Condition::any() //
+          .add(ilike_col(Column::Username, &v))
+          .add(ilike_col(Column::FullName, &v)),
+      )
+    })
+    .apply_if(filter.username, |q, v| q.filter(ilike_col(Column::Username, v)))
+    .apply_if(filter.name, |q, v| q.filter(ilike_col(Column::FullName, v)))
+    // .apply_if(filter.organization, |q, v| q.filter(v.into_simple_expr(Column::Organization)))
     .apply_if(filter.role, |q, v| q.filter(Column::Role.eq(v)));
+
+  let query = if filter.recursive.unwrap_or_default() && filter.organization.is_some() {
+    let org_sel = filter.organization.unwrap();
+    let mut base = org_sel.into_select_statement(Organizations, entity::organizations::Column::Id);
+
+    let recurse = Query::select()
+      .column((Alias::new("org_child"), entity::organizations::Column::Id))
+      .from_as(entity::organizations::Entity, Alias::new("org_child"))
+      .join(
+        JoinType::InnerJoin,
+        Alias::new("org_tree"),
+        Expr::col((Alias::new("org_child"), entity::organizations::Column::Parent))
+          .equals((Alias::new("org_tree"), Alias::new("id"))),
+      )
+      .to_owned();
+
+    let cte_query = base.union(UnionType::All, recurse).to_owned();
+    let mut org_tree_cte = CommonTableExpression::new();
+    org_tree_cte.table_name(Alias::new("org_tree")).query(cte_query);
+
+    let mut with = WithClause::new();
+    with.recursive(true);
+    with.cte(org_tree_cte.clone());
+
+    let mut sub = Query::select().column(Alias::new("id")).from(Alias::new("org_tree")).to_owned();
+    sub.with_cte(with);
+
+    query.filter(Expr::col(Column::Organization).in_subquery(sub))
+  } else {
+    query
+  };
+
   let count = query.clone().select_only().column(Column::Username).count(&txn).await?;
   let query = pagination.order_by(query, |col| match col {
     "name" => Column::FullName,
