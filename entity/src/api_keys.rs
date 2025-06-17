@@ -8,7 +8,7 @@ pub struct Model {
   pub user: String,
   #[sea_orm(column_type = "JsonBinary", nullable)]
   pub ability: Option<Json>,
-  pub expires_at: DateTimeWithTimeZone,
+  pub expires_at: Option<DateTimeWithTimeZone>,
   pub created_at: DateTimeWithTimeZone,
 }
 

@@ -6,16 +6,18 @@ use core::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
 use entity::users::*;
 use sea_orm::FromQueryResult;
 use sea_orm::prelude::*;
-use sea_orm_crud::{Nullable, Optional};
+use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 
 #[derive(Deserialize)]
 pub struct UserFilter {
+  pub search: Option<String>,
   pub username: Option<String>,
   pub name: Option<String>,
-  pub organization: Option<i32>,
+  pub organization: Option<OneOrMany<i32>>,
   pub role: Option<i32>,
+  pub recursive: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]

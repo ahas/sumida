@@ -1,9 +1,10 @@
 use axum::{
   Json, Router,
-  extract::{Path, Query, State},
+  extract::{Path, State},
   http::StatusCode,
   routing,
 };
+use axum_extra::extract::Query;
 
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
