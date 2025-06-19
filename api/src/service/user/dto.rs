@@ -238,7 +238,8 @@ pub struct GetVapid {
 
 impl GetVapid {
   pub async fn new(audience: &str, expiration: &str, subject: &str) -> Self {
-    let expiration = chrono::Utc::now() + humantime::parse_duration(expiration).unwrap();
+    let expiration = chrono::Utc::now()
+      + humantime::parse_duration(expiration).unwrap_or_else(|_| std::time::Duration::from_secs(0));
     let claims = VapidClaims {
       aud: audience.to_string(),
       exp: expiration.timestamp() as usize,

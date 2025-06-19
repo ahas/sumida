@@ -70,7 +70,11 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
 
   cfg_if! {
     if #[cfg(feature = "jwt-secret-store-static")] {
-      secret = settings.jwt.as_ref().unwrap().secret.clone().unwrap_or_default();
+      secret = settings
+        .jwt
+        .as_ref()
+        .and_then(|x| x.secret.clone())
+        .unwrap_or_default();
     } else if #[cfg(feature = "jwt-secret-store-aws-ssm")] {
       use core::aws;
       let ssm_client = aws_sdk_ssm::Client::new(aws::get_sdk_config());
@@ -80,7 +84,7 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
         .with_decryption(true)
         .send()
         .await
-        .unwrap()
+        .map_err(|e| SumidaError::Unsupported(e.to_string()))?
         .parameter
         .and_then(|param| param.value)
         .ok_or(SumidaError::NoJwtSecret)?;
@@ -93,7 +97,12 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
     &jwt::Validation::default(),
   )
   .map_err(|_err| SumidaError::InvalidJwt)?;
-  let expiry = settings.jwt.as_ref().unwrap().expiry.access_token_expiry()?;
+  let expiry = settings
+    .jwt
+    .as_ref()
+    .ok_or(SumidaError::NoJwtSecret)?
+    .expiry
+    .access_token_expiry()?;
 
   user_ctx.authorize(&token.claims.user, Some(expiry)).await?;
 
