@@ -54,8 +54,14 @@ async fn delete<S>(
 }
 
 async fn upload_files(mut multipart: Multipart) -> Result<Json<serde_json::Value>, SumidaError> {
-  while let Some(field) = multipart.next_field().await.unwrap() {
-    let name = field.name().unwrap().to_string();
+  while let Some(field) = multipart
+    .next_field()
+    .await
+    .map_err(|e| SumidaError::Unsupported(e.to_string()))?
+  {
+    let Some(name) = field.name().map(|s| s.to_string()) else {
+      continue;
+    };
 
     if name != "upload" {
       continue;
@@ -68,9 +74,15 @@ async fn upload_files(mut multipart: Multipart) -> Result<Json<serde_json::Value
 
     #[cfg(feature = "storage-aws-s3")]
     {
-      let content_type = field.content_type().unwrap().to_string();
-      let data = field.bytes().await.unwrap();
-      let bucket = s3::get_bucket().unwrap();
+      let content_type = field
+        .content_type()
+        .map(|ct| ct.to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+      let data = field
+        .bytes()
+        .await
+        .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+      let bucket = s3::get_bucket().map_err(|e| SumidaError::Unsupported(e.to_string()))?;
       let client = aws_sdk_s3::Client::new(aws::get_sdk_config());
 
       client

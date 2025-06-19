@@ -92,8 +92,11 @@ fn with_defailt_role_ability(
   default_role_ability: serde_json::Value,
   role_ability: serde_json::Value,
 ) -> serde_json::Value {
-  let default_role_ability = default_role_ability.as_object().unwrap();
-  let mut role_ability = role_ability.as_object().unwrap().clone();
+  let default_role_ability = default_role_ability
+    .as_object()
+    .cloned()
+    .unwrap_or_default();
+  let mut role_ability = role_ability.as_object().cloned().unwrap_or_default();
 
   for (key, val) in default_role_ability {
     if role_ability.contains_key(key) {

@@ -24,7 +24,9 @@ pub fn encode_to_jpeg(img: &DynamicImage, quality: u8) -> Vec<u8> {
   let mut buffer = Vec::new();
   let mut writer = Cursor::new(&mut buffer);
   let encoder = jpeg::JpegEncoder::new_with_quality(&mut writer, quality);
-  img.write_with_encoder(encoder).unwrap();
+  if let Err(err) = img.write_with_encoder(encoder) {
+    tracing::error!("failed to encode jpeg: {}", err);
+  }
 
   buffer
 }
