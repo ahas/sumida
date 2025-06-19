@@ -108,7 +108,9 @@ pub async fn create(data: CreateUser) -> Result<InsertResult<entity::users::Acti
   let password = data.password.clone();
 
   let mut active_model = data.into_active_model();
-  active_model.password = Set(Users::hash_password(password).unwrap());
+  active_model.password = Set(
+    Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?,
+  );
 
   Ok(Users::insert(active_model).exec(db::get_connection()).await?)
 }
@@ -120,7 +122,9 @@ pub async fn update(username: String, data: UpdateUser) -> Result<entity::users:
   model.username = Set(username);
 
   if let Some(password) = password {
-    model.password = Set(Users::hash_password(password).unwrap())
+    model.password = Set(
+      Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?,
+    )
   }
 
   Ok(Users::update(model).exec(db::get_connection()).await?)
@@ -151,7 +155,9 @@ pub async fn update_my_info(
   model.username = Set(username.clone());
 
   if let Some(ref password) = password {
-    model.password = Set(Users::hash_password(password).unwrap())
+    model.password = Set(
+      Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?,
+    )
   }
 
   model.role = NotSet;
@@ -279,7 +285,9 @@ pub async fn activate(user_ctx: &mut UserContext, activation: UserActivation) ->
 
   let mut active_model = user.into_active_model();
   active_model.is_enabled = Set(true);
-  active_model.password = Set(Users::hash_password(password).unwrap());
+  active_model.password = Set(
+    Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?,
+  );
 
   Users::update(active_model).exec(&txn).await?;
   UserInvitations::delete_by_id(*uuid).exec(&txn).await?;
@@ -310,7 +318,8 @@ pub async fn change_password(data: ChangePassword) -> Result<(), SumidaError> {
     return Err(SumidaError::VerificationFailed);
   }
 
-  let password = Users::hash_password(&data.password).unwrap();
+  let password = Users::hash_password(&data.password)
+    .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
 
   let active_model = entity::users::ActiveModel {
     username: Unchanged(data.username),

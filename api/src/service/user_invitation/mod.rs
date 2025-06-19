@@ -64,7 +64,10 @@ pub async fn create(username: String) -> Result<entity::user_invitations::Model,
 
   UserInvitations::insert(active_model).exec(db_conn).await?;
 
-  Ok(UserInvitations::find_by_id(uuid).one(db_conn).await?.unwrap())
+  UserInvitations::find_by_id(uuid)
+    .one(db_conn)
+    .await?
+    .ok_or(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
 }
 
 pub async fn update(username: String) -> Result<entity::user_invitations::Model, SumidaError> {
@@ -81,7 +84,10 @@ pub async fn update(username: String) -> Result<entity::user_invitations::Model,
 
   UserInvitations::update(active_model).exec(db_conn).await?;
 
-  Ok(UserInvitations::find_by_id(uuid).one(db_conn).await?.unwrap())
+  UserInvitations::find_by_id(uuid)
+    .one(db_conn)
+    .await?
+    .ok_or(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
 }
 
 pub async fn delete(uuid: Uuid) -> Result<DeleteResult, SumidaError> {

@@ -8,7 +8,13 @@ pub fn new() -> CorsLayer {
     .server
     .cors
     .as_ref()
-    .map_or_else(Vec::new, |x| x.allow_origins.clone().iter().map(|x| x.parse().unwrap()).collect());
+    .map_or_else(Vec::new, |x| {
+      x.allow_origins
+        .clone()
+        .into_iter()
+        .filter_map(|v| v.parse().ok())
+        .collect()
+    });
 
   tracing::info!("allowed cors origins:");
 

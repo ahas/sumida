@@ -26,7 +26,7 @@ pub fn new_client() -> aws_sdk_s3::Client {
 pub fn static_uri(data_type: impl Display, id: impl Display, path: impl Display) -> String {
   format!(
     "s3://{bucket}/static/{stage}/{data_type}/{id}/{path}",
-    bucket = get_bucket().unwrap(),
+    bucket = get_bucket().unwrap_or_default(),
     stage = &settings::get().server.stage
   )
 }
@@ -85,8 +85,11 @@ pub async fn get_image(client: &aws_sdk_s3::Client, uri: String) -> Option<Dynam
   let bytes = get_bytes(client, uri.clone()).await.ok();
 
   bytes.map(|x| x.into_bytes()).map(Cursor::new).and_then(|x| {
-    let format = ImageFormat::from_path(uri).unwrap();
-    image::load(x, format).ok()
+    if let Ok(format) = ImageFormat::from_path(&uri) {
+      image::load(x, format).ok()
+    } else {
+      None
+    }
   })
 }
 
@@ -97,8 +100,8 @@ pub async fn put_image(
   uri: String,
   body: ByteStream,
 ) -> Result<(), anyhow::Error> {
-  let (bucket, key) = parse_uri(uri).unwrap();
-  let image_format = ImageFormat::from_path(&key).unwrap();
+  let (bucket, key) = parse_uri(uri)?;
+  let image_format = ImageFormat::from_path(&key).map_err(|e| anyhow!(e.to_string()))?;
 
   client
     .put_object()
@@ -114,7 +117,9 @@ pub async fn put_image(
 
 #[allow(dead_code)]
 pub async fn exists(client: &aws_sdk_s3::Client, uri: String) -> bool {
-  let (bucket, key) = parse_uri(uri).unwrap();
+  let Ok((bucket, key)) = parse_uri(uri) else {
+    return false;
+  };
   let resp = client.head_object().bucket(bucket).key(key).send().await.ok();
 
   resp.is_some()

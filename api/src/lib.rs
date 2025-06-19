@@ -49,7 +49,7 @@ where
   }
 
   pub fn router(self) -> Router<StateT> {
-    let state = self.state.expect("[SumdiaRouter]: state must be set");
+    let state = self.state.expect("[SumidaRouter]: state must be set");
 
     Router::new()
       .nest("/organizations", OrganizationController::new::<StateT>(state))

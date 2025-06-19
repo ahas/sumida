@@ -410,8 +410,18 @@ where
 
   async fn from_request_parts(req: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
     let session = Session::from_request_parts(req, state).await?;
-    let profile = session.get(Self::USER_PROFILE_KEY).await.unwrap().unwrap_or_default();
-    let user_state = session.get(Self::USER_STATE_KEY).await.unwrap().unwrap_or_default();
+    let profile = session
+      .get(Self::USER_PROFILE_KEY)
+      .await
+      .ok()
+      .flatten()
+      .unwrap_or_default();
+    let user_state = session
+      .get(Self::USER_STATE_KEY)
+      .await
+      .ok()
+      .flatten()
+      .unwrap_or_default();
     let env = UserEnvironment::from_request_parts(req, state).await?;
 
     let mut user_ctx = Self {
