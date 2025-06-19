@@ -8,7 +8,7 @@ use sea_orm::{
   QueryTrait, Set, TransactionTrait,
 };
 
-use crate::util::crud::{Pagination, ilike_col};
+use crate::util::crud::{Pagination, wrap_ilike_col};
 
 use self::dto::*;
 
@@ -22,8 +22,8 @@ pub async fn list(
   let txn = db_conn.begin().await?;
 
   let query = MailForms::find()
-    .apply_if(filter.sender, |q, v| q.filter(ilike_col(Column::Sender, v)))
-    .apply_if(filter.subject, |q, v| q.filter(ilike_col(Column::Subject, v)));
+    .apply_if(filter.sender, |q, v| q.filter(wrap_ilike_col(Column::Sender, v)))
+    .apply_if(filter.subject, |q, v| q.filter(wrap_ilike_col(Column::Subject, v)));
   let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;
   let query = pagination.order_by(query, |col| match col {
     "sender" => Column::Sender,

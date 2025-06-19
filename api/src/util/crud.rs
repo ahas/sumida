@@ -92,12 +92,19 @@ impl<T> From<(Vec<T>, u64)> for List<T> {
   }
 }
 
-pub fn ilike_col<C, S>(col: C, text: S) -> SimpleExpr
+pub fn wrap_ilike_col<C, S>(col: C, text: S) -> SimpleExpr
 where
   C: ColumnTrait,
   S: AsRef<str>,
 {
   Expr::col(col).ilike(format!("%{text}%", text = text.as_ref()))
+}
+
+pub fn wrap_ilike<S>(col: Expr, text: S) -> SimpleExpr
+where
+  S: AsRef<str>,
+{
+  col.ilike(format!("%{text}%", text = text.as_ref()))
 }
 
 pub fn i32_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>

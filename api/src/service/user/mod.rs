@@ -13,17 +13,15 @@ use entity::prelude::*;
 use entity::user_sign_in_logs::{SignInCode, SignInMethod};
 use error::SumidaError;
 use sea_orm::prelude::Expr;
-use sea_orm::sea_query::{
-  Alias, Asterisk, CommonTableExpression, Query, QueryStatementBuilder, UnionType, WithClause,
-};
-use sea_orm::{ActiveValue::*, Condition, JoinType};
+use sea_orm::sea_query::{Alias, CommonTableExpression, Query, UnionType, WithClause};
+use sea_orm::{ActiveValue::*, Condition, DbBackend, JoinType};
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
   QuerySelect, QueryTrait, TransactionTrait, Unchanged,
 };
-use sea_orm_crud::{OneOrMany, Optional};
+use sea_orm_crud::Optional;
 
-use crate::util::crud::{Pagination, ilike_col};
+use crate::util::crud::{Pagination, wrap_ilike_col};
 
 use self::dto::*;
 
@@ -36,27 +34,21 @@ pub async fn list(
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
 
-  let query = Users::find()
-    .select_only()
-    .expr(Expr::col((Users, Asterisk)))
-    .expr_as(UserBlocks::exists_expr(), "is_blocked");
-
-  let query = query
+  let query = Users::select()
     .apply_if(filter.search, |q, v| {
       q.filter(
         Condition::any() //
-          .add(ilike_col(Column::Username, &v))
-          .add(ilike_col(Column::FullName, &v)),
+          .add(wrap_ilike_col(Column::Username, &v))
+          .add(wrap_ilike_col(Column::FullName, &v)),
       )
     })
-    .apply_if(filter.username, |q, v| q.filter(ilike_col(Column::Username, v)))
-    .apply_if(filter.name, |q, v| q.filter(ilike_col(Column::FullName, v)))
-    // .apply_if(filter.organization, |q, v| q.filter(v.into_simple_expr(Column::Organization)))
+    .apply_if(filter.username, |q, v| q.filter(wrap_ilike_col(Column::Username, v)))
+    .apply_if(filter.name, |q, v| q.filter(wrap_ilike_col(Column::FullName, v)))
     .apply_if(filter.role, |q, v| q.filter(Column::Role.eq(v)));
 
   let query = if filter.recursive.unwrap_or_default() && filter.organization.is_some() {
-    let org_sel = filter.organization.unwrap();
-    let mut base = org_sel.into_select_statement(Organizations, entity::organizations::Column::Id);
+    let mut base =
+      filter.organization.unwrap().into_select_statement(Organizations, entity::organizations::Column::Id);
 
     let recurse = Query::select()
       .column((Alias::new("org_child"), entity::organizations::Column::Id))
@@ -94,6 +86,7 @@ pub async fn list(
     _ => Column::Username,
   });
   let query = pagination.paginate(query);
+
   let items = query.into_model::<UserListItem>().all(&txn).await?;
 
   txn.commit().await?;
@@ -102,11 +95,13 @@ pub async fn list(
 }
 
 pub async fn get<S: AsRef<str>>(username: S) -> Result<Option<GetUser>, SumidaError> {
-  let query = Users::find_by_id(username.as_ref()) //
-    .select_only()
-    .expr(Expr::col((Users, Asterisk)))
-    .expr_as(UserBlocks::exists_expr(), "is_blocked");
-  Ok(query.into_model::<GetUser>().one(db::get_connection()).await?)
+  Ok(
+    Users::select()
+      .filter(entity::users::Column::Username.eq(username.as_ref()))
+      .into_model::<GetUser>()
+      .one(db::get_connection())
+      .await?,
+  )
 }
 
 pub async fn create(data: CreateUser) -> Result<InsertResult<entity::users::ActiveModel>, SumidaError> {
