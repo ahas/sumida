@@ -8,7 +8,7 @@ use sea_orm::{
   QuerySelect, QueryTrait, Set, TransactionTrait,
 };
 
-use crate::util::crud::{Pagination, ilike_col};
+use crate::util::crud::{Pagination, wrap_ilike_col};
 
 use self::dto::*;
 
@@ -21,7 +21,7 @@ pub async fn list(
   let db_conn = db::get_connection();
   let txn = db_conn.begin().await?;
 
-  let query = Organizations::find().apply_if(filter.name, |q, v| q.filter(ilike_col(Column::Name, v)));
+  let query = Organizations::find().apply_if(filter.name, |q, v| q.filter(wrap_ilike_col(Column::Name, v)));
 
   let query = if let Some(parent) = filter.parent {
     query.filter(Column::Parent.eq(parent))

@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use core::session::{UserOrganization, UserRole};
+// use core::session::{UserOrganization, UserRole};
 use core::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
 use entity::users::*;
 use sea_orm::FromQueryResult;
@@ -21,6 +21,40 @@ pub struct UserFilter {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+pub struct UserOrganization {
+  #[sea_orm(from_alias = "org_id")]
+  pub id: i32,
+  #[sea_orm(from_alias = "org_name")]
+  pub name: String,
+}
+
+impl From<core::session::UserOrganization> for UserOrganization {
+  fn from(value: core::session::UserOrganization) -> Self {
+    Self {
+      id: value.id,
+      name: value.name,
+    }
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+pub struct UserRole {
+  #[sea_orm(from_alias = "role_id")]
+  pub id: i32,
+  #[sea_orm(from_alias = "role_name")]
+  pub name: String,
+}
+
+impl From<core::session::UserRole> for UserRole {
+  fn from(value: core::session::UserRole) -> Self {
+    Self {
+      id: value.id,
+      name: value.name,
+    }
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct UserListItem {
   pub username: String,
@@ -29,9 +63,12 @@ pub struct UserListItem {
   pub phone: Option<String>,
   pub is_admin: bool,
   pub is_enabled: bool,
+  #[sea_orm(from_alias = "is_blocked")]
   pub is_blocked: bool,
-  pub organization: i32,
-  pub role: i32,
+  #[sea_orm(nested, alias = "org")]
+  pub organization: UserOrganization,
+  #[sea_orm(nested, alias = "role")]
+  pub role: UserRole,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -45,9 +82,12 @@ pub struct GetUser {
   pub phone: Option<String>,
   pub is_admin: bool,
   pub is_enabled: bool,
+  #[sea_orm(from_alias = "is_blocked")]
   pub is_blocked: bool,
-  pub organization: i32,
-  pub role: i32,
+  #[sea_orm(nested)]
+  pub organization: UserOrganization,
+  #[sea_orm(nested)]
+  pub role: UserRole,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -144,8 +184,8 @@ impl From<core::session::UserProfile> for UserProfile {
     Self {
       username: value.username.clone(),
       full_name: value.full_name.clone(),
-      organization: value.organization.clone(),
-      role: value.role.clone(),
+      organization: UserOrganization::from(value.organization.clone()),
+      role: UserRole::from(value.role.clone()),
       ability: value.ability.clone(),
       is_admin: value.is_admin,
       is_authorized: value.is_authorized,

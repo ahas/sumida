@@ -1,4 +1,4 @@
-use chrono::{FixedOffset, Utc};
+use chrono::Utc;
 use sea_orm::{Condition, QuerySelect, QueryTrait, prelude::*, sea_query::SimpleExpr};
 
 use super::users::Entity as Users;
@@ -39,6 +39,23 @@ pub enum Relation {
   BlockedByUser,
 }
 
+impl Related<Users> for Entity {
+  fn to() -> RelationDef {
+    Relation::User.def()
+  }
+}
+
+pub struct BlockedByLink;
+
+impl Linked for BlockedByLink {
+  type FromEntity = Entity;
+  type ToEntity = Users;
+
+  fn link(&self) -> Vec<RelationDef> {
+    vec![Relation::BlockedByUser.def()]
+  }
+}
+
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
@@ -46,6 +63,8 @@ impl Entity {
     let now = Utc::now().fixed_offset();
     Expr::exists(
       Entity::find()
+        .select_only()
+        .expr(Expr::val(1))
         .filter(
           Expr::col(Column::User).eq(Expr::col((super::users::Entity, super::users::Column::Username))),
         )

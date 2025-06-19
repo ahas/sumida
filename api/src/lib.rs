@@ -55,6 +55,7 @@ where
       .nest("/organizations", OrganizationController::new::<StateT>(state))
       .nest("/roles", RoleController::new::<StateT, RoleAbilityT, RoleProviderT>(state))
       .nest("/users", UserController::new::<StateT>(state))
+      .nest("/user-blocks", UserBlockController::new::<StateT>(state))
       .nest("/user-invitations", UserInvitationController::new::<StateT>(state))
       .nest("/user-verifications", UserVerificationController::new::<StateT>(state))
       .nest("/preference", PreferenceController::new::<StateT>(state))

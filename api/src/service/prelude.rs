@@ -6,7 +6,9 @@ pub use super::organization::{self as OrganizationService, dto::*};
 pub use super::preference::{self as PreferenceService, dto::*};
 pub use super::role::{self as RoleService, dto::*};
 pub use super::user::{self as UserService, dto::*};
+pub use super::user_block::{self as UserBlockService, dto::*};
 pub use super::user_invitation::{self as UserInvitationService, dto::*};
+pub use super::user_sign_in_log::{self as UserSignInLogService, dto::*};
 pub use super::user_verification::{self as UserVerificationService, dto::*};
 
 pub use core::session::{UserContext, UserOrganization, UserProfile};
