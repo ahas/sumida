@@ -4,70 +4,74 @@ use core::db;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter, QuerySelect,
-  QueryTrait, Set, TransactionTrait,
+  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Set,
+  TransactionTrait,
 };
 
-use crate::util::crud::{Pagination, wrap_ilike_col};
+use crate::util::crud::Pagination;
 
 use self::dto::*;
 
-pub async fn list(
-  filter: MailFormFilter,
-  pagination: Pagination,
-) -> Result<(Vec<MailFormListItem>, u64), SumidaError> {
-  use entity::mail_forms::Column;
+pub struct MailFormService;
 
-  let db_conn = db::get_connection();
-  let txn = db_conn.begin().await?;
+impl MailFormService {
+  pub async fn list(
+    filter: MailFormFilter,
+    pagination: Pagination,
+  ) -> Result<(Vec<MailFormListItem>, u64), SumidaError> {
+    use entity::mail_forms::Column;
 
-  let query = MailForms::find()
-    .apply_if(filter.sender, |q, v| q.filter(wrap_ilike_col(Column::Sender, v)))
-    .apply_if(filter.subject, |q, v| q.filter(wrap_ilike_col(Column::Subject, v)));
-  let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;
-  let query = pagination.order_by(query, |col| match col {
-    "sender" => Column::Sender,
-    "subject" => Column::Subject,
-    _ => Column::Kind,
-  });
-  let query = pagination.paginate(query);
-  let items = query.into_model::<MailFormListItem>().all(&txn).await?;
+    let db_conn = db::get_connection();
+    let txn = db_conn.begin().await?;
 
-  txn.commit().await?;
+    let mut query = filter.apply(MailForms::find());
+    let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;
 
-  Ok((items, count))
-}
+    query = pagination.order_by(query, |col| match col {
+      "sender" => Column::Sender,
+      "subject" => Column::Subject,
+      _ => Column::Kind,
+    });
+    query = pagination.paginate(query);
 
-pub async fn get<S>(kind: S) -> Result<Option<GetMailForm>, SumidaError>
-where
-  S: AsRef<str>,
-{
-  let db_conn = db::get_connection();
-  Ok(MailForms::find_by_id(kind.as_ref()).into_model::<GetMailForm>().one(db_conn).await?)
-}
+    let items = query.into_model::<MailFormListItem>().all(&txn).await?;
 
-pub async fn create(
-  data: CreateMailForm,
-) -> Result<InsertResult<entity::mail_forms::ActiveModel>, SumidaError> {
-  let db_conn = db::get_connection();
-  Ok(MailForms::insert(data.into_active_model()).exec(db_conn).await?)
-}
+    txn.commit().await?;
 
-pub async fn update<S>(kind: S, data: UpdateMailForm) -> Result<entity::mail_forms::Model, SumidaError>
-where
-  S: AsRef<str>,
-{
-  let mut model = data.into_active_model();
-  model.kind = Set(kind.as_ref().to_string());
+    Ok((items, count))
+  }
 
-  let db_conn = db::get_connection();
-  Ok(MailForms::update(model).exec(db_conn).await?)
-}
+  pub async fn get<S>(kind: S) -> Result<Option<GetMailForm>, SumidaError>
+  where
+    S: AsRef<str>,
+  {
+    let db_conn = db::get_connection();
+    Ok(MailForms::find_by_id(kind.as_ref()).into_model::<GetMailForm>().one(db_conn).await?)
+  }
 
-pub async fn delete<S>(kind: S) -> Result<DeleteResult, SumidaError>
-where
-  S: AsRef<str>,
-{
-  let db_conn = db::get_connection();
-  Ok(MailForms::delete_by_id(kind.as_ref()).exec(db_conn).await?)
+  pub async fn create(
+    data: CreateMailForm,
+  ) -> Result<InsertResult<entity::mail_forms::ActiveModel>, SumidaError> {
+    let db_conn = db::get_connection();
+    Ok(MailForms::insert(data.into_active_model()).exec(db_conn).await?)
+  }
+
+  pub async fn update<S>(kind: S, data: UpdateMailForm) -> Result<entity::mail_forms::Model, SumidaError>
+  where
+    S: AsRef<str>,
+  {
+    let mut model = data.into_active_model();
+    model.kind = Set(kind.as_ref().to_string());
+
+    let db_conn = db::get_connection();
+    Ok(MailForms::update(model).exec(db_conn).await?)
+  }
+
+  pub async fn delete<S>(kind: S) -> Result<DeleteResult, SumidaError>
+  where
+    S: AsRef<str>,
+  {
+    let db_conn = db::get_connection();
+    Ok(MailForms::delete_by_id(kind.as_ref()).exec(db_conn).await?)
+  }
 }

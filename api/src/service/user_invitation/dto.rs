@@ -1,17 +1,29 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
-use sea_orm::prelude::*;
 use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
+use sea_orm::{QueryTrait, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use entity::user_invitations::*;
 
+use crate::util::crud::wrap_ilike_col;
+
 #[derive(Deserialize)]
 pub struct UserInvitationFilter {
   pub user: Option<String>,
   pub uuid: Option<Uuid>,
+}
+
+impl UserInvitationFilter {
+  pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
+    use entity::user_invitations::Column;
+
+    query
+      .apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
+      .apply_if(self.uuid, |q, v| q.filter(Column::Uuid.eq(v)))
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]

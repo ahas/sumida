@@ -75,6 +75,7 @@ tower-sessions = "0.14.0"
 tower-sessions-core = "0.14.0"
 tracing = "0.1.41"
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 
 [dependencies]
 api = { path = "./api", default-features = false }
@@ -83,4 +84,3 @@ cfg-if.workspace = true
 core = { path = "./core", default-features = false }
 entity = { path = "./entity", default-features = false }
 error = { path = "./error", default-features = false }
-tower.workspace = true

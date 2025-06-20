@@ -5,7 +5,7 @@ pub mod preferences;
 pub mod roles;
 pub mod user_blocks;
 pub mod user_invitations;
-pub mod user_sign_in_logs;
+pub mod user_logs;
 pub mod user_verifications;
 pub mod users;
 

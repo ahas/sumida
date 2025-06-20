@@ -2,16 +2,26 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::mail_forms::*;
-use sea_orm::prelude::*;
 use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
+use sea_orm::{QueryTrait, prelude::*};
 use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct MailFormFilter {
   pub sender: Option<String>,
   pub subject: Option<String>,
+}
+
+impl MailFormFilter {
+  pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
+    query
+      .apply_if(self.sender.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Sender, v)))
+      .apply_if(self.subject.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Subject, v)))
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]

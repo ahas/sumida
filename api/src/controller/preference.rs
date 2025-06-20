@@ -2,35 +2,50 @@ use axum::extract::State;
 use axum::{Json, Router, routing};
 use serde_json::json;
 
-use crate::service::preference as PreferenceService;
 use crate::service::prelude::*;
 use crate::user_guard;
 
-async fn get<S>(
-  user_ctx: UserContext,
-  State(_state): State<S>,
-) -> Result<Json<serde_json::Value>, SumidaError> {
-  let username = user_ctx.profile.username.clone();
-  let ret = PreferenceService::get(username).await?;
-  Ok(Json(ret))
+use super::ApiController;
+
+pub struct PreferenceController<S> {
+  _state: std::marker::PhantomData<S>,
 }
 
-async fn update<S>(
-  user_ctx: UserContext,
-  State(_state): State<S>,
-  Json(body): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, SumidaError> {
-  let username = user_ctx.profile.username.clone();
-  PreferenceService::update(username, body).await?;
-  Ok(Json(json!({})))
+impl<S> PreferenceController<S> {
+  pub fn new() -> Self {
+    Self {
+      _state: std::marker::PhantomData,
+    }
+  }
+
+  async fn get(
+    user_ctx: UserContext,
+    State(_state): State<S>,
+  ) -> Result<Json<serde_json::Value>, SumidaError> {
+    let username = user_ctx.profile.username.clone();
+    let ret = PreferenceService::get(username).await?;
+    Ok(Json(ret))
+  }
+
+  async fn update(
+    user_ctx: UserContext,
+    State(_state): State<S>,
+    Json(body): Json<serde_json::Value>,
+  ) -> Result<Json<serde_json::Value>, SumidaError> {
+    let username = user_ctx.profile.username.clone();
+    PreferenceService::update(username, body).await?;
+    Ok(Json(json!({})))
+  }
 }
 
-pub fn new<S>(state: &S) -> Router<S>
+impl<S> ApiController<S> for PreferenceController<S>
 where
   S: Clone + Send + Sync + 'static,
 {
-  Router::<S>::new()
-    .route("/", routing::get(get::<S>))
-    .route("/", routing::patch(update::<S>))
-    .route_layer(user_guard!(state))
+  fn router(self, state: &S) -> axum::Router<S> {
+    Router::<S>::new()
+      .route("/", routing::get(Self::get))
+      .route("/", routing::patch(Self::update))
+      .route_layer(user_guard!(state))
+  }
 }

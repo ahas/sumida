@@ -3,18 +3,35 @@ use axum::{Json, Router, routing};
 
 use crate::service::prelude::*;
 
-async fn send<S>(
-  State(_state): State<S>,
-  Json(body): Json<SendUserVerification>,
-) -> Result<UserVerificationSent, SumidaError> {
-  UserVerificationService::send(body).await?;
+use super::ApiController;
 
-  Ok(UserVerificationSent)
+pub struct UserVerificationController<S> {
+  _state: std::marker::PhantomData<S>,
 }
 
-pub fn new<S>(_state: &S) -> Router<S>
+impl<S> UserVerificationController<S> {
+  pub fn new() -> Self {
+    Self {
+      _state: std::marker::PhantomData,
+    }
+  }
+
+  async fn send(
+    State(_state): State<S>,
+    Json(body): Json<SendUserVerification>,
+  ) -> Result<UserVerificationSent, SumidaError> {
+    UserVerificationService::send(body).await?;
+
+    Ok(UserVerificationSent)
+  }
+}
+
+impl<S> ApiController<S> for UserVerificationController<S>
 where
   S: Clone + Send + Sync + 'static,
 {
-  Router::<S>::new().route("/", routing::post(send::<S>))
+  fn router(self, _state: &S) -> axum::Router<S> {
+    Router::new() //
+      .route("/", routing::post(Self::send))
+  }
 }

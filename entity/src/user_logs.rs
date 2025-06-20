@@ -20,20 +20,25 @@ pub enum SignInMethod {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "i32", db_type = "Integer")]
 pub enum SignInCode {
+  #[serde(rename = "success")]
   #[sea_orm(num_value = 0)]
   Success,
+  #[serde(rename = "account-not-found")]
   #[sea_orm(num_value = 1)]
   AccountNotFound,
+  #[serde(rename = "password-mismatch")]
   #[sea_orm(num_value = 2)]
   PasswordMismatch,
+  #[serde(rename = "account-inactive")]
   #[sea_orm(num_value = 3)]
   AccountInactive,
+  #[serde(rename = "account-blocked")]
   #[sea_orm(num_value = 4)]
   AccountBlocked,
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "user_sign_in_logs")]
+#[sea_orm(table_name = "user_logs")]
 pub struct Model {
   #[sea_orm(primary_key)]
   pub id: i32,

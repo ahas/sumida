@@ -2,16 +2,35 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::organizations::*;
-use sea_orm::prelude::*;
 use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
+use sea_orm::{QueryTrait, prelude::*};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct OrganizationFilter {
   pub name: Option<String>,
   pub parent: Option<i32>,
+}
+
+impl OrganizationFilter {
+  pub fn apply<E>(&self, mut query: Select<E>) -> Select<E>
+  where
+    E: EntityTrait,
+  {
+    query = query.apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Name, v)));
+
+    query = if let Some(parent) = self.parent {
+      query.filter(Column::Parent.eq(parent))
+    } else {
+      query.filter(Column::Parent.is_null())
+    };
+
+    query
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]

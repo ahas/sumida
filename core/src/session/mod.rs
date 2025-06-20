@@ -10,11 +10,10 @@ use axum::response::IntoResponse;
 use axum_client_ip::ClientIp;
 use chrono::{Duration, Utc};
 use entity::prelude::*;
-use entity::user_sign_in_logs::{SignInCode, SignInMethod};
+use entity::user_logs::{SignInCode, SignInMethod};
 use error::SumidaError;
 use lazy_static::lazy_static;
 use sea_orm::ActiveValue::{Set, Unchanged};
-use sea_orm::sea_query::ExprTrait;
 use sea_orm::{Condition, InsertResult, TransactionTrait, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -213,14 +212,13 @@ impl UserContext {
     Ok(())
   }
 
-  pub async fn write_log<C: ConnectionTrait>(
+  pub async fn write_log(
     &self,
     username: Option<&str>,
     method: SignInMethod,
     code: SignInCode,
-    db: &C,
-  ) -> Result<InsertResult<entity::user_sign_in_logs::ActiveModel>, DbErr> {
-    UserSignInLogs::insert(entity::user_sign_in_logs::ActiveModel {
+  ) -> Result<InsertResult<entity::user_logs::ActiveModel>, DbErr> {
+    UserLogs::insert(entity::user_logs::ActiveModel {
       user: Set(username.map(String::from).unwrap_or_else(|| self.profile.username.clone())),
       method: Set(method),
       code: Set(code),
@@ -236,7 +234,7 @@ impl UserContext {
       os_patch_minor: Set(self.env.os_patch_minor.clone()),
       ..Default::default()
     })
-    .exec(db)
+    .exec(db::get_connection())
     .await
   }
 
@@ -410,18 +408,8 @@ where
 
   async fn from_request_parts(req: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
     let session = Session::from_request_parts(req, state).await?;
-    let profile = session
-      .get(Self::USER_PROFILE_KEY)
-      .await
-      .ok()
-      .flatten()
-      .unwrap_or_default();
-    let user_state = session
-      .get(Self::USER_STATE_KEY)
-      .await
-      .ok()
-      .flatten()
-      .unwrap_or_default();
+    let profile = session.get(Self::USER_PROFILE_KEY).await.ok().flatten().unwrap_or_default();
+    let user_state = session.get(Self::USER_STATE_KEY).await.ok().flatten().unwrap_or_default();
     let env = UserEnvironment::from_request_parts(req, state).await?;
 
     let mut user_ctx = Self {

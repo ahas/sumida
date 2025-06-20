@@ -65,7 +65,7 @@ enum UserInvitations {
 }
 
 #[derive(DeriveIden)]
-enum UserSignInLogs {
+enum UserLogs {
   Table,
   Id,
   User,
@@ -398,31 +398,31 @@ impl MigrationTrait for Migration {
       .await?;
     // END user_invitations table
 
-    // BEGIN user_sign_in_logs
+    // BEGIN user_logs
     manager
       .create_table(
         Table::create()
-          .table(UserSignInLogs::Table)
-          .col(integer(UserSignInLogs::Id).auto_increment())
-          .col(string(UserSignInLogs::User))
-          .col(string(UserSignInLogs::Method))
-          .col(integer(UserSignInLogs::Code))
-          .col(string(UserSignInLogs::IpAddress))
-          .col(string(UserSignInLogs::UserAgent))
-          .col(string(UserSignInLogs::OsFamily))
-          .col(string_null(UserSignInLogs::OsMajor))
-          .col(string_null(UserSignInLogs::OsMinor))
-          .col(string_null(UserSignInLogs::OsPatch))
-          .col(string_null(UserSignInLogs::OsPatchMinor))
-          .col(string(UserSignInLogs::DeviceFamily))
-          .col(string_null(UserSignInLogs::DeviceBrand))
-          .col(string_null(UserSignInLogs::DeviceModel))
-          .col(timestamp_with_time_zone(UserSignInLogs::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_user_sign_in_logs").col(UserSignInLogs::Id))
+          .table(UserLogs::Table)
+          .col(integer(UserLogs::Id).auto_increment())
+          .col(string(UserLogs::User))
+          .col(string(UserLogs::Method))
+          .col(integer(UserLogs::Code))
+          .col(string(UserLogs::IpAddress))
+          .col(string(UserLogs::UserAgent))
+          .col(string(UserLogs::OsFamily))
+          .col(string_null(UserLogs::OsMajor))
+          .col(string_null(UserLogs::OsMinor))
+          .col(string_null(UserLogs::OsPatch))
+          .col(string_null(UserLogs::OsPatchMinor))
+          .col(string(UserLogs::DeviceFamily))
+          .col(string_null(UserLogs::DeviceBrand))
+          .col(string_null(UserLogs::DeviceModel))
+          .col(timestamp_with_time_zone(UserLogs::CreatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_user_logs").col(UserLogs::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_user_sign_in_logs__user")
-              .from(UserSignInLogs::Table, UserSignInLogs::User)
+              .name("fk_user_logs__user")
+              .from(UserLogs::Table, UserLogs::User)
               .to(Users::Table, Users::Username)
               .on_delete(SetNull)
               .on_update(Cascade),
@@ -430,7 +430,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    // END user_sign_in_logs
+    // END user_logs
 
     // BEGIN user_verifications table
     manager
@@ -534,7 +534,7 @@ impl MigrationTrait for Migration {
       .await?;
     manager
       .drop_foreign_key(
-        ForeignKey::drop().name("fk_user_sign_in_logs__user").table(UserSignInLogs::Table).to_owned(),
+        ForeignKey::drop().name("fk_user_logs__user").table(UserLogs::Table).to_owned(),
       )
       .await?;
     manager
@@ -551,7 +551,7 @@ impl MigrationTrait for Migration {
     // Tables
     manager.drop_table(Table::drop().if_exists().table(MailForms::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(UserVerifications::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(UserSignInLogs::Table).to_owned()).await?;
+    manager.drop_table(Table::drop().if_exists().table(UserLogs::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(UserInvitations::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(UserBlocks::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(ApiKeys::Table).to_owned()).await?;

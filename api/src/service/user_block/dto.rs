@@ -1,13 +1,19 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use sea_orm::sea_query::Alias;
+use sea_orm::Condition;
 use sea_orm::DeriveIntoActiveModel;
+use sea_orm::QueryTrait;
 use sea_orm::prelude::*;
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use entity::user_blocks::*;
+
+use crate::util::crud::wrap_ilike;
+use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct UserBlockFilter {
@@ -17,6 +23,25 @@ pub struct UserBlockFilter {
   pub ip_address: Option<String>,
   pub reason: Option<String>,
   pub note: Option<String>,
+}
+
+impl UserBlockFilter {
+  pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
+    let user_alias = Alias::new("u");
+
+    query
+      .apply_if(self.search.as_ref(), |q, v| {
+        q.filter(
+          Condition::any() //
+            .add(wrap_ilike_col(Column::User, &v))
+            .add(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::FullName)), &v)),
+        )
+      })
+      .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
+      .apply_if(self.full_name.as_ref(), |q, v| {
+        q.filter(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::FullName)), v))
+      })
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]

@@ -5,10 +5,8 @@ pub mod provider;
 pub mod service;
 pub mod util;
 
-use std::marker::PhantomData;
-
 use axum::Router;
-use controller::prelude::*;
+use controller::{ApiController, prelude::*};
 use serde::Serialize;
 
 use self::provider::RoleProvider;
@@ -25,7 +23,7 @@ where
 {
   pub state: Option<&'a StateT>,
   pub role: Option<RoleProviderT>,
-  _role_ability: PhantomData<RoleAbilityT>,
+  _role_ability: std::marker::PhantomData<RoleAbilityT>,
 }
 
 impl<'a, StateT, RoleAbilityT, RoleProviderT> Sumida<'a, StateT, RoleAbilityT, RoleProviderT>
@@ -51,15 +49,28 @@ where
   pub fn router(self) -> Router<StateT> {
     let state = self.state.expect("[SumidaRouter]: state must be set");
 
+    let api_key_controller = ApiKeyController::<StateT>::new();
+    let org_controller = OrganizationController::<StateT>::new();
+    let role_controller = RoleController::<StateT, RoleAbilityT, RoleProviderT>::new();
+    let user_controller = UserController::<StateT>::new();
+    let user_block_controller = UserBlockController::<StateT>::new();
+    let user_log_controller = UserLogController::<StateT>::new();
+    let user_invitation_controller = UserInvitationController::<StateT>::new();
+    let user_verification_controller = UserVerificationController::<StateT>::new();
+    let preference_controller = PreferenceController::<StateT>::new();
+    let mail_form_controller = MailFormController::<StateT>::new();
+
     Router::new()
-      .nest("/organizations", OrganizationController::new::<StateT>(state))
-      .nest("/roles", RoleController::new::<StateT, RoleAbilityT, RoleProviderT>(state))
-      .nest("/users", UserController::new::<StateT>(state))
-      .nest("/user-blocks", UserBlockController::new::<StateT>(state))
-      .nest("/user-invitations", UserInvitationController::new::<StateT>(state))
-      .nest("/user-verifications", UserVerificationController::new::<StateT>(state))
-      .nest("/preference", PreferenceController::new::<StateT>(state))
-      .nest("/mail-forms", MailFormController::new::<StateT>(state))
+      .nest("/api-keys", api_key_controller.router(state))
+      .nest("/organizations", org_controller.router(state))
+      .nest("/roles", role_controller.router(state))
+      .nest("/users", user_controller.router(state))
+      .nest("/user-logs", user_log_controller.router(state))
+      .nest("/user-blocks", user_block_controller.router(state))
+      .nest("/user-invitations", user_invitation_controller.router(state))
+      .nest("/user-verifications", user_verification_controller.router(state))
+      .nest("/preference", preference_controller.router(state))
+      .nest("/mail-forms", mail_form_controller.router(state))
   }
 }
 

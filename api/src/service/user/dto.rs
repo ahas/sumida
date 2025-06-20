@@ -1,6 +1,14 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use sea_orm::Condition;
+use sea_orm::JoinType;
+use sea_orm::QueryTrait;
+use sea_orm::sea_query::Alias;
+use sea_orm::sea_query::CommonTableExpression;
+use sea_orm::sea_query::Query;
+use sea_orm::sea_query::UnionType;
+use sea_orm::sea_query::WithClause;
 // use core::session::{UserOrganization, UserRole};
 use core::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
 use entity::users::*;
@@ -9,6 +17,8 @@ use sea_orm::prelude::*;
 use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
+
+use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct UserFilter {
@@ -20,7 +30,56 @@ pub struct UserFilter {
   pub recursive: Option<bool>,
 }
 
+impl UserFilter {
+  pub fn apply<E: EntityTrait>(&self, mut query: Select<E>) -> Select<E> {
+    query = query
+      .apply_if(self.search.as_ref(), |q, v| {
+        q.filter(
+          Condition::any() //
+            .add(wrap_ilike_col(Column::Username, &v))
+            .add(wrap_ilike_col(Column::FullName, &v)),
+        )
+      })
+      .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Username, v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::FullName, v)))
+      .apply_if(self.role, |q, v| q.filter(Column::Role.eq(v)));
+
+    if self.recursive.unwrap_or_default() && self.organization.is_some() {
+      let org: OneOrMany<i32> = self.organization.clone().unwrap();
+      let mut base =
+        org.into_select_statement(entity::organizations::Entity, entity::organizations::Column::Id);
+
+      let recurse = Query::select()
+        .column((Alias::new("org_child"), entity::organizations::Column::Id))
+        .from_as(entity::organizations::Entity, Alias::new("org_child"))
+        .join(
+          JoinType::InnerJoin,
+          Alias::new("org_tree"),
+          Expr::col((Alias::new("org_child"), entity::organizations::Column::Parent))
+            .equals((Alias::new("org_tree"), Alias::new("id"))),
+        )
+        .to_owned();
+
+      let cte_query = base.union(UnionType::All, recurse).to_owned();
+      let mut org_tree_cte = CommonTableExpression::new();
+      org_tree_cte.table_name(Alias::new("org_tree")).query(cte_query);
+
+      let mut with = WithClause::new();
+      with.recursive(true);
+      with.cte(org_tree_cte.clone());
+
+      let mut sub = Query::select().column(Alias::new("id")).from(Alias::new("org_tree")).to_owned();
+      sub.with_cte(with);
+
+      query = query.filter(Expr::col(Column::Organization).in_subquery(sub));
+    }
+
+    query
+  }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[serde(rename_all = "camelCase")]
 pub struct UserOrganization {
   #[sea_orm(from_alias = "org_id")]
   pub id: i32,
@@ -38,6 +97,7 @@ impl From<core::session::UserOrganization> for UserOrganization {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[serde(rename_all = "camelCase")]
 pub struct UserRole {
   #[sea_orm(from_alias = "role_id")]
   pub id: i32,

@@ -1,17 +1,29 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
-use sea_orm::prelude::*;
+use entity::roles::ActiveModel;
 use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, Set};
+use sea_orm::{QueryTrait, prelude::*};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
-use entity::roles::ActiveModel;
+use serde_json::{Value as JsonValue, json};
+
+use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct RoleFilter {
   pub name: Option<String>,
   pub description: Option<String>,
+}
+
+impl RoleFilter {
+  pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
+    use entity::roles::Column;
+
+    query
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Name, v)))
+      .apply_if(self.description.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Description, v)))
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
