@@ -10,14 +10,14 @@ use crate::util::crud::wrap_ilike_col;
 #[derive(Deserialize)]
 pub struct UserLogFilter {
   pub search: Option<String>,
-  pub username: Option<String>,
+  pub user: Option<String>,
 }
 
 impl UserLogFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
     use entity::user_logs::Column;
 
-    query.apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
+    query.apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
   }
 }
 

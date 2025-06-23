@@ -18,7 +18,7 @@ use crate::util::crud::wrap_ilike_col;
 #[derive(Deserialize)]
 pub struct UserBlockFilter {
   pub search: Option<String>,
-  pub username: Option<String>,
+  pub user: Option<String>,
   pub full_name: Option<String>,
   pub ip_address: Option<String>,
   pub reason: Option<String>,
@@ -37,7 +37,7 @@ impl UserBlockFilter {
             .add(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::FullName)), &v)),
         )
       })
-      .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
+      .apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
       .apply_if(self.full_name.as_ref(), |q, v| {
         q.filter(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::FullName)), v))
       })
