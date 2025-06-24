@@ -103,7 +103,7 @@ impl UserService {
   }
 
   pub async fn update_my_info(
-    user_ctx: &UserContext,
+    user_ctx: &mut UserContext,
     data: UpdateUser,
   ) -> Result<entity::users::Model, SumidaError> {
     let username = &user_ctx.profile.username;
@@ -121,6 +121,8 @@ impl UserService {
     model.organization = NotSet;
     model.is_admin = NotSet;
     model.is_enabled = NotSet;
+
+    user_ctx.identify().await?;
 
     Ok(Users::update(model).exec(db::get_connection()).await?)
   }

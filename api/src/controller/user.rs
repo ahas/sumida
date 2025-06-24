@@ -91,11 +91,11 @@ impl<S> UserController<S> {
   }
 
   async fn update_my_info(
-    user_ctx: UserContext,
+    mut user_ctx: UserContext,
     State(_state): State<S>,
     Json(body): Json<UpdateUser>,
   ) -> Result<UserUpdated, SumidaError> {
-    UserService::update_my_info(&user_ctx, body).await?;
+    UserService::update_my_info(&mut user_ctx, body).await?;
     Ok(UserUpdated)
   }
 
