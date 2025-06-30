@@ -44,34 +44,40 @@ impl UserFilter {
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::FullName, v)))
       .apply_if(self.role, |q, v| q.filter(Column::Role.eq(v)));
 
-    if self.recursive.unwrap_or_default() && self.organization.is_some() {
-      let org: OneOrMany<i32> = self.organization.clone().unwrap();
-      let mut base =
-        org.into_select_statement(entity::organizations::Entity, entity::organizations::Column::Id);
+    if let Some(org_id) = &self.organization {
+      if self.recursive.unwrap_or_default() {
+        let mut base =
+          org_id.into_select_statement(entity::organizations::Entity, entity::organizations::Column::Id);
 
-      let recurse = Query::select()
-        .column((Alias::new("org_child"), entity::organizations::Column::Id))
-        .from_as(entity::organizations::Entity, Alias::new("org_child"))
-        .join(
-          JoinType::InnerJoin,
-          Alias::new("org_tree"),
-          Expr::col((Alias::new("org_child"), entity::organizations::Column::Parent))
-            .equals((Alias::new("org_tree"), Alias::new("id"))),
-        )
-        .to_owned();
+        let recurse = Query::select()
+          .column((Alias::new("org_child"), entity::organizations::Column::Id))
+          .from_as(entity::organizations::Entity, Alias::new("org_child"))
+          .join(
+            JoinType::InnerJoin,
+            Alias::new("org_tree"),
+            Expr::col((Alias::new("org_child"), entity::organizations::Column::Parent))
+              .equals((Alias::new("org_tree"), Alias::new("id"))),
+          )
+          .to_owned();
 
-      let cte_query = base.union(UnionType::All, recurse).to_owned();
-      let mut org_tree_cte = CommonTableExpression::new();
-      org_tree_cte.table_name(Alias::new("org_tree")).query(cte_query);
+        let cte_query = base.union(UnionType::All, recurse).to_owned();
+        let mut org_tree_cte = CommonTableExpression::new();
+        org_tree_cte.table_name(Alias::new("org_tree")).query(cte_query);
 
-      let mut with = WithClause::new();
-      with.recursive(true);
-      with.cte(org_tree_cte.clone());
+        let mut with = WithClause::new();
+        with.recursive(true);
+        with.cte(org_tree_cte.clone());
 
-      let mut sub = Query::select().column(Alias::new("id")).from(Alias::new("org_tree")).to_owned();
-      sub.with_cte(with);
+        let mut sub = Query::select().column(Alias::new("id")).from(Alias::new("org_tree")).to_owned();
+        sub.with_cte(with);
 
-      query = query.filter(Expr::col(Column::Organization).in_subquery(sub));
+        query = query.filter(Expr::col(Column::Organization).in_subquery(sub));
+      } else {
+        query = match org_id {
+          OneOrMany::One(v) => query.filter(Column::Organization.eq(*v)),
+          OneOrMany::Many(v) => query.filter(Column::Organization.is_in(v.clone())),
+        };
+      }
     }
 
     query
