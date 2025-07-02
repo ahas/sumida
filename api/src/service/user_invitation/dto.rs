@@ -32,7 +32,7 @@ pub struct UserInvitationListItem {
   pub user: String,
   pub uuid: Uuid,
 
-  pub expired_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -42,7 +42,7 @@ pub struct GetUserInvitation {
   pub user: String,
   pub uuid: Uuid,
 
-  pub expired_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -60,7 +60,7 @@ pub struct CreateUserInvitation {}
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationCreated {
   pub uuid: Uuid,
-  pub expired_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeWithTimeZone,
 }
 
 impl IntoResponse for UserInvitationCreated {
@@ -77,7 +77,7 @@ pub struct UpdateUserInvitation {}
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationUpdated {
   pub uuid: Uuid,
-  pub expired_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeWithTimeZone,
 }
 
 impl IntoResponse for UserInvitationUpdated {

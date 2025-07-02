@@ -12,7 +12,7 @@ pub struct Model {
   pub method: String,
   pub code: String,
 
-  pub expired_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
 }
 

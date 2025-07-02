@@ -36,7 +36,7 @@ impl UserVerificationService {
     active_model.kind = Set(kind.clone());
     active_model.code = Set(code.clone());
     active_model.method = Set(method.clone());
-    active_model.expired_at = Set((Utc::now() + Duration::minutes(3)).fixed_offset());
+    active_model.expires_at = Set((Utc::now() + Duration::minutes(3)).fixed_offset());
 
     let exists = UserVerifications::find()
       .filter(Column::User.eq(&username))

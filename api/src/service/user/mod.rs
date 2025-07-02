@@ -233,7 +233,7 @@ impl UserService {
       return Err(SumidaError::InvalidAccount);
     };
     let Some(_) = UserInvitations::find_by_id(*uuid)
-      .filter(entity::user_invitations::Column::ExpiredAt.gt(Utc::now()))
+      .filter(entity::user_invitations::Column::ExpiresAt.gt(Utc::now()))
       .one(db_conn)
       .await?
     else {

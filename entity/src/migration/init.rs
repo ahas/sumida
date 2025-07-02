@@ -60,7 +60,7 @@ enum UserInvitations {
   Table,
   User,
   Uuid,
-  ExpiredAt,
+  ExpiresAt,
   CreatedAt,
 }
 
@@ -91,7 +91,7 @@ enum UserVerifications {
   Kind,
   Method,
   Code,
-  ExpiredAt,
+  ExpiresAt,
   CreatedAt,
 }
 
@@ -382,7 +382,7 @@ impl MigrationTrait for Migration {
           .table(UserInvitations::Table)
           .col(uuid(UserInvitations::Uuid).default(Expr::cust("uuid_generate_v4()")))
           .col(string(UserInvitations::User))
-          .col(timestamp_with_time_zone(UserInvitations::ExpiredAt))
+          .col(timestamp_with_time_zone(UserInvitations::ExpiresAt))
           .col(timestamp_with_time_zone(UserInvitations::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_user_invitations").col(UserInvitations::Uuid))
           .foreign_key(
@@ -441,7 +441,7 @@ impl MigrationTrait for Migration {
           .col(string(UserVerifications::Kind))
           .col(string(UserVerifications::Method))
           .col(string(UserVerifications::Code))
-          .col(timestamp_with_time_zone(UserVerifications::ExpiredAt))
+          .col(timestamp_with_time_zone(UserVerifications::ExpiresAt))
           .col(timestamp_with_time_zone(UserVerifications::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(
             Index::create()

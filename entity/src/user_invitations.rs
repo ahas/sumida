@@ -11,7 +11,7 @@ pub struct Model {
   pub uuid: Uuid,
   pub user: String,
 
-  pub expired_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -45,7 +45,7 @@ impl Entity {
     let active_model = ActiveModel {
       user: Set(username.to_owned()),
       uuid: Set(uuid),
-      expired_at: Set((Utc::now() + Duration::days(30)).fixed_offset()),
+      expires_at: Set((Utc::now() + Duration::days(30)).fixed_offset()),
       ..Default::default()
     };
 

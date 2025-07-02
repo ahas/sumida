@@ -47,7 +47,7 @@ impl<S> UserInvitationController<S> {
 
     Ok(UserInvitationCreated {
       uuid: invitation.uuid,
-      expired_at: invitation.expired_at,
+      expires_at: invitation.expires_at,
     })
   }
 
@@ -60,7 +60,7 @@ impl<S> UserInvitationController<S> {
 
     Ok(UserInvitationUpdated {
       uuid: invitation.uuid,
-      expired_at: invitation.expired_at,
+      expires_at: invitation.expires_at,
     })
   }
 
