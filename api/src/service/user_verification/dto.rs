@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct SendUserVerification {
-  pub user: String,
+  pub user_id: i32,
   pub kind: String,
   pub method: String,
 }

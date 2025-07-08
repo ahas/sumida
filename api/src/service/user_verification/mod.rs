@@ -27,19 +27,19 @@ impl UserVerificationService {
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
 
-    let username = data.user.clone();
+    let user_id = data.user_id;
     let kind = data.kind.clone();
     let method = data.method.clone();
 
     let mut active_model = data.into_active_model();
-    active_model.user = Set(username.clone());
+    active_model.user_id = Set(user_id);
     active_model.kind = Set(kind.clone());
     active_model.code = Set(code.clone());
     active_model.method = Set(method.clone());
     active_model.expires_at = Set((Utc::now() + Duration::minutes(3)).fixed_offset());
 
     let exists = UserVerifications::find()
-      .filter(Column::User.eq(&username))
+      .filter(Column::UserId.eq(user_id))
       .filter(Column::Kind.eq(&kind))
       .count(db_conn)
       .await?
@@ -51,7 +51,7 @@ impl UserVerificationService {
       UserVerifications::insert(active_model).exec(&txn).await?;
     }
 
-    let Some(user) = Users::find_by_id(&username).one(&txn).await? else {
+    let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
       txn.rollback().await?;
       return Err(SumidaError::InvalidAccount);
     };
@@ -59,7 +59,7 @@ impl UserVerificationService {
     if method == "email" {
       let Some(email) = user.email else {
         txn.rollback().await?;
-        return Err(SumidaError::NoUserEmail(user.username));
+        return Err(SumidaError::NoUserEmail(user.id));
       };
       let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
         username: opts.username.clone(),

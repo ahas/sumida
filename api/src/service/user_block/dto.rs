@@ -1,11 +1,11 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use sea_orm::sea_query::Alias;
 use sea_orm::Condition;
 use sea_orm::DeriveIntoActiveModel;
 use sea_orm::QueryTrait;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::Alias;
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -13,12 +13,11 @@ use serde_json::json;
 use entity::user_blocks::*;
 
 use crate::util::crud::wrap_ilike;
-use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct UserBlockFilter {
   pub search: Option<String>,
-  pub user: Option<String>,
+  pub username: Option<String>,
   pub name: Option<String>,
   pub ip_address: Option<String>,
   pub reason: Option<String>,
@@ -33,11 +32,13 @@ impl UserBlockFilter {
       .apply_if(self.search.as_ref(), |q, v| {
         q.filter(
           Condition::any() //
-            .add(wrap_ilike_col(Column::User, &v))
+            .add(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::Username)), &v))
             .add(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::FullName)), &v)),
         )
       })
-      .apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
+      .apply_if(self.username.as_ref(), |q, v| {
+        q.filter(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::Username)), v))
+      })
       .apply_if(self.name.as_ref(), |q, v| {
         q.filter(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::FullName)), v))
       })
@@ -47,6 +48,7 @@ impl UserBlockFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "entity::users::Entity", alias = "u", from_query_result)]
 pub struct UserBlockUser {
+  pub id: i32,
   pub username: String,
   pub full_name: String,
 }
@@ -54,6 +56,7 @@ pub struct UserBlockUser {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "entity::users::Entity", alias = "b", from_query_result)]
 pub struct UserBlockBlockedBy {
+  pub id: i32,
   pub username: String,
   pub full_name: String,
 }
@@ -63,11 +66,11 @@ pub struct UserBlockBlockedBy {
 #[serde(rename_all = "camelCase")]
 pub struct UserBlockListItem {
   pub id: i32,
-  #[sea_orm(nested)]
+  #[sea_orm(nested, alias = "u")]
   pub user: Option<UserBlockUser>,
   pub ip_address: Option<String>,
   pub blocked_at: DateTimeWithTimeZone,
-  #[sea_orm(nested)]
+  #[sea_orm(nested, alias = "b")]
   pub blocked_by: Option<UserBlockBlockedBy>,
   // pub reason: String,
   pub expires_at: Option<DateTimeWithTimeZone>,
@@ -101,7 +104,7 @@ impl IntoResponse for GetUserBlock {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUserBlock {
-  pub user: Nullable<String>,
+  pub user_id: Nullable<i32>,
   pub ip_address: Nullable<String>,
   pub reason: Optional<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
@@ -123,7 +126,7 @@ impl IntoResponse for UserBlockCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserBlock {
-  pub user: Nullable<String>,
+  pub user_id: Nullable<i32>,
   pub ip_address: Nullable<String>,
   pub reason: Optional<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,

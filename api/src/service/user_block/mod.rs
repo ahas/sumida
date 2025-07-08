@@ -43,7 +43,7 @@ impl UserBlockService {
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
-      "user" => Column::User.into_simple_expr(),
+      "user_id" => Column::UserId.into_simple_expr(),
       "fullName" => Expr::col((user_alias.clone(), entity::users::Column::FullName)).into_simple_expr(),
       _ => Column::BlockedAt.into_simple_expr(),
     });

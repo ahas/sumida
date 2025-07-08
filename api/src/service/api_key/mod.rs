@@ -6,8 +6,7 @@ use entity::prelude::*;
 use error::SumidaError;
 use rand::{TryRngCore, rngs::OsRng};
 use sea_orm::{
-  ActiveValue::Unchanged, DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait,
-  QuerySelect, Set, SqlErr, TransactionTrait,
+  prelude::Expr, sea_query::{Alias, Asterisk}, ActiveValue::Unchanged, DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, PaginatorTrait, QuerySelect, Set, SqlErr, TransactionTrait
 };
 
 use crate::util::crud::Pagination;
@@ -25,14 +24,21 @@ impl ApiKeyService {
 
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
+    let user_alias = Alias::new("u");
+    let username_col = Expr::col((user_alias.clone(), "username"));
 
-    let mut query = filter.apply(ApiKeys::find());
+    let mut query = filter.apply(
+      ApiKeys::find()
+        .expr(Expr::col((ApiKeys, Asterisk)))
+        .expr_as(Expr::col((user_alias.clone(), "id")), "user_id")
+        .expr_as(username_col.clone(), "user_username"),
+    );
     let count = query.clone().select_only().column(Column::Key).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
-      "key" => Column::Key,
-      "user" => Column::User,
-      _ => Column::Key,
+      "key" => Column::Key.into_simple_expr(),
+      "user" => username_col.into_simple_expr(),
+      _ => Column::Key.into_simple_expr(),
     });
     query = pagination.paginate(query);
 

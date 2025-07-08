@@ -8,11 +8,9 @@ use serde_json::json;
 
 use entity::user_invitations::*;
 
-use crate::util::crud::wrap_ilike_col;
-
 #[derive(Deserialize)]
 pub struct UserInvitationFilter {
-  pub user: Option<String>,
+  pub user_id: Option<i32>,
   pub uuid: Option<Uuid>,
 }
 
@@ -20,16 +18,14 @@ impl UserInvitationFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
     use entity::user_invitations::Column;
 
-    query
-      .apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
-      .apply_if(self.uuid, |q, v| q.filter(Column::Uuid.eq(v)))
+    query.apply_if(self.uuid, |q, v| q.filter(Column::Uuid.eq(v)))
   }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationListItem {
-  pub user: String,
+  pub user_id: i32,
   pub uuid: Uuid,
 
   pub expires_at: DateTimeWithTimeZone,
@@ -39,7 +35,7 @@ pub struct UserInvitationListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetUserInvitation {
-  pub user: String,
+  pub user_id: i32,
   pub uuid: Uuid,
 
   pub expires_at: DateTimeWithTimeZone,

@@ -5,25 +5,27 @@ use sea_orm::{FromQueryResult, QueryTrait, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::crud::wrap_ilike_col;
+use crate::util::crud::wrap_ilike;
 
 #[derive(Deserialize)]
 pub struct UserLogFilter {
   pub search: Option<String>,
-  pub user: Option<String>,
+  pub username: Option<String>,
 }
 
 impl UserLogFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
-    use entity::user_logs::Column;
-
-    query.apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
+    query.apply_if(self.username.as_ref(), |q, v| {
+      q.filter(wrap_ilike(Expr::col((entity::users::Entity, entity::users::Column::Username)), v))
+    })
   }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct UserLogUser {
+  #[sea_orm(from_alias = "user_id")]
+  pub id: i32,
   #[sea_orm(from_alias = "user_username")]
   pub username: String,
   #[sea_orm(from_alias = "user_full_name")]
@@ -59,7 +61,8 @@ pub struct UserLogListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetUserLog {
   pub id: i32,
-  pub user: String,
+  #[sea_orm(nested, alias = "user")]
+  pub user: UserLogUser,
   pub method: SignInMethod,
   pub code: SignInCode,
 

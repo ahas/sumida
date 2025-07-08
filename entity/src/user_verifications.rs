@@ -1,5 +1,5 @@
-use sea_orm::{prelude::*, ActiveValue::*, DatabaseTransaction};
 use error::SumidaError;
+use sea_orm::{ActiveValue::*, DatabaseTransaction, prelude::*};
 
 use super::users::Entity as Users;
 
@@ -7,7 +7,7 @@ use super::users::Entity as Users;
 #[sea_orm(table_name = "user_verifications")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub user: String,
+  pub user_id: i32,
   pub kind: String,
   pub method: String,
   pub code: String,
@@ -20,8 +20,8 @@ pub struct Model {
 pub enum Relation {
   #[sea_orm(
     belongs_to = "Users",
-    from = "Column::User",
-    to = "super::users::Column::Username"
+    from = "Column::UserId",
+    to = "super::users::Column::Id"
     on_update = "Cascade",
     on_delete = "Cascade",
   )]
@@ -37,27 +37,25 @@ impl Related<Users> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
-  pub async fn verify<K, U, C>(
+  pub async fn verify<K, C>(
     kind: K,
-    username: U,
+    user_id: i32,
     code: C,
     txn: &DatabaseTransaction,
   ) -> Result<bool, SumidaError>
   where
     K: AsRef<str>,
-    U: AsRef<str>,
     C: AsRef<str>,
   {
     let kind = kind.as_ref();
-    let username = username.as_ref();
     let code = code.as_ref();
 
-    let Some(_) = Users::find_by_id(username).one(txn).await? else {
+    let Some(_) = Users::find_by_id(user_id).one(txn).await? else {
       return Err(SumidaError::InvalidAccount);
     };
     let is_verified = Entity::find()
       .filter(Column::Kind.eq(kind))
-      .filter(Column::User.eq(username))
+      .filter(Column::UserId.eq(user_id))
       .filter(Column::Code.eq(code))
       .count(txn)
       .await?
@@ -66,7 +64,7 @@ impl Entity {
     if is_verified {
       Self::delete(ActiveModel {
         kind: Set(kind.to_owned()),
-        user: Set(username.to_owned()),
+        user_id: Set(user_id),
         code: Set(code.to_owned()),
         ..Default::default()
       })

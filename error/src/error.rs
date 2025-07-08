@@ -30,10 +30,10 @@ pub enum SumidaError {
   NoUserOrganization(i32),
   #[error("user role id `{0}` not found")]
   NoUserRole(i32),
-  #[error("user `{0}` have no email")]
-  NoUserEmail(String),
-  #[error("user `{0}` not authorized")]
-  NotAuthorized(String),
+  #[error("user id `{0}` have no email")]
+  NoUserEmail(i32),
+  #[error("user id `{0}` not authorized")]
+  NotAuthorized(i32),
   #[error("user credentials required")]
   NoCredentials,
   #[error("no permission to perform `{0}`")]

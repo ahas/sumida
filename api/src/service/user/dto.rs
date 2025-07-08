@@ -25,8 +25,8 @@ pub struct UserFilter {
   pub search: Option<String>,
   pub username: Option<String>,
   pub name: Option<String>,
-  pub organization: Option<OneOrMany<i32>>,
-  pub role: Option<i32>,
+  pub organization_id: Option<OneOrMany<i32>>,
+  pub role_id: Option<i32>,
   pub recursive: Option<bool>,
 }
 
@@ -42,9 +42,9 @@ impl UserFilter {
       })
       .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Username, v)))
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::FullName, v)))
-      .apply_if(self.role, |q, v| q.filter(Column::Role.eq(v)));
+      .apply_if(self.role_id, |q, v| q.filter(Column::RoleId.eq(v)));
 
-    if let Some(org_id) = &self.organization {
+    if let Some(org_id) = &self.organization_id {
       if self.recursive.unwrap_or_default() {
         let mut base =
           org_id.into_select_statement(entity::organizations::Entity, entity::organizations::Column::Id);
@@ -55,7 +55,7 @@ impl UserFilter {
           .join(
             JoinType::InnerJoin,
             Alias::new("org_tree"),
-            Expr::col((Alias::new("org_child"), entity::organizations::Column::Parent))
+            Expr::col((Alias::new("org_child"), entity::organizations::Column::ParentId))
               .equals((Alias::new("org_tree"), Alias::new("id"))),
           )
           .to_owned();
@@ -71,11 +71,11 @@ impl UserFilter {
         let mut sub = Query::select().column(Alias::new("id")).from(Alias::new("org_tree")).to_owned();
         sub.with_cte(with);
 
-        query = query.filter(Expr::col(Column::Organization).in_subquery(sub));
+        query = query.filter(Expr::col(Column::OrganizationId).in_subquery(sub));
       } else {
         query = match org_id {
-          OneOrMany::One(v) => query.filter(Column::Organization.eq(*v)),
-          OneOrMany::Many(v) => query.filter(Column::Organization.is_in(v.clone())),
+          OneOrMany::One(v) => query.filter(Column::OrganizationId.eq(*v)),
+          OneOrMany::Many(v) => query.filter(Column::OrganizationId.is_in(v.clone())),
         };
       }
     }
@@ -174,8 +174,8 @@ pub struct CreateUser {
   pub phone: Nullable<String>,
   pub is_admin: Optional<bool>,
   pub is_enabled: Optional<bool>,
-  pub organization: i32,
-  pub role: i32,
+  pub organization_id: i32,
+  pub role_id: i32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -199,8 +199,8 @@ pub struct UpdateUser {
   pub phone: Nullable<String>,
   pub is_admin: Optional<bool>,
   pub is_enabled: Optional<bool>,
-  pub organization: Optional<i32>,
-  pub role: Optional<i32>,
+  pub organization_id: Optional<i32>,
+  pub role_id: Optional<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -278,7 +278,7 @@ pub struct ChangePassword {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserActivation {
-  pub username: String,
+  pub user_id: i32,
   pub password: String,
   pub uuid: Uuid,
 }
@@ -286,7 +286,7 @@ pub struct UserActivation {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Impersonate {
-  pub username: String,
+  pub user_id: i32,
 }
 
 #[derive(Debug, Serialize)]

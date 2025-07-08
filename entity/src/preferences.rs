@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "preferences")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = false)]
-  pub user: String,
+  pub user_id: i32,
   #[sea_orm(column_type = "JsonBinary")]
   pub data: Json,
 }
@@ -13,8 +13,8 @@ pub struct Model {
 pub enum Relation {
   #[sea_orm(
     belongs_to = "super::users::Entity",
-    from = "Column::User",
-    to = "super::users::Column::Username",
+    from = "Column::UserId",
+    to = "super::users::Column::Id",
     on_update = "Cascade",
     on_delete = "Cascade"
   )]

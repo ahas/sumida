@@ -7,17 +7,18 @@ use sea_orm::{prelude::*, sea_query::{Alias, Asterisk}, JoinType, QuerySelect};
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
-  #[sea_orm(primary_key, auto_increment = false)]
+  #[sea_orm(primary_key)]
+  pub id: i32,
+  #[sea_orm(unique)]
   pub username: String,
   pub password: String,
-  pub organization: i32,
   pub email: Option<String>,
   pub full_name: Option<String>,
   pub phone: Option<String>,
-  pub role: i32,
   pub is_admin: bool,
   pub is_enabled: bool,
-  pub last_sign_in_at: Option<DateTimeWithTimeZone>,
+  pub role_id: i32,
+  pub organization_id: i32,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -27,11 +28,11 @@ impl Model {
     &self,
     db_conn: &DatabaseConnection,
   ) -> Result<Option<super::organizations::Model>, DbErr> {
-    super::organizations::Entity::find_by_id(self.organization).one(db_conn).await
+    super::organizations::Entity::find_by_id(self.organization_id).one(db_conn).await
   }
 
   pub async fn get_role(&self, db_conn: &DatabaseConnection) -> Result<Option<super::roles::Model>, DbErr> {
-    super::roles::Entity::find_by_id(self.role).one(db_conn).await
+    super::roles::Entity::find_by_id(self.role_id).one(db_conn).await
   }
 }
 
@@ -41,7 +42,7 @@ pub enum Relation {
   Preference,
   #[sea_orm(
     belongs_to = "super::organizations::Entity",
-    from = "Column::Organization",
+    from = "Column::OrganizationId",
     to = "super::organizations::Column::Id",
     on_update = "Cascade",
     on_delete = "SetNull"
@@ -49,7 +50,7 @@ pub enum Relation {
   Organization,
   #[sea_orm(
     belongs_to = "super::roles::Entity",
-    from = "Column::Role",
+    from = "Column::RoleId",
     to = "super::roles::Column::Id",
     on_update = "Cascade",
     on_delete = "SetNull"

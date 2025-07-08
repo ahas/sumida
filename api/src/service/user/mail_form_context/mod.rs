@@ -3,7 +3,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InvitationContext {
-  pub username: String,
+  pub user_id: i32,
   pub full_name: String,
   pub uuid: String,
 }

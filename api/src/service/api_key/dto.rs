@@ -2,18 +2,20 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::api_keys::*;
+use sea_orm::sea_query::Alias;
 use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
 use sea_orm::{QueryTrait, prelude::*};
 use sea_orm_crud::Nullable;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::crud::wrap_ilike_col;
+use crate::util::crud::{wrap_ilike, wrap_ilike_col};
 
 #[derive(Deserialize)]
 pub struct ApiKeyFilter {
   pub key: Option<String>,
-  pub user: Option<String>,
+  pub user_id: Option<i32>,
+  pub username: Option<String>,
 }
 
 impl ApiKeyFilter {
@@ -25,15 +27,28 @@ impl ApiKeyFilter {
 
     query
       .apply_if(self.key.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Key, v)))
-      .apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
+      .apply_if(self.user_id, |q, v| q.filter(Column::UserId.eq(v)))
+      .apply_if(self.username.as_ref(), |q, v| {
+        q.filter(wrap_ilike(Expr::col((Alias::new("u"), Alias::new("username"))), v))
+      })
   }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "entity::users::Entity", alias = "u", from_query_result)]
+pub struct ApiKeyUser {
+  #[sea_orm(from_alias = "user_id")]
+  pub id: i32,
+  #[sea_orm(from_alias = "user_username")]
+  pub username: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiKeyListItem {
   pub key: String,
-  pub user: String,
+  #[sea_orm(nested, alias = "u")]
+  pub user: ApiKeyUser,
   pub ability: Option<serde_json::Value>,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub created_at: DateTimeWithTimeZone,
@@ -43,7 +58,8 @@ pub struct ApiKeyListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetApiKey {
   pub key: String,
-  pub user: String,
+  #[sea_orm(nested, alias = "u")]
+  pub user: ApiKeyUser,
   pub ability: Option<serde_json::Value>,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub created_at: DateTimeWithTimeZone,
@@ -58,7 +74,7 @@ impl IntoResponse for GetApiKey {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateApiKey {
-  pub user: String,
+  pub user_id: i32,
   #[serde(default)]
   pub ability: Nullable<serde_json::Value>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,

@@ -13,7 +13,7 @@ use crate::util::crud::wrap_ilike_col;
 #[derive(Deserialize)]
 pub struct OrganizationFilter {
   pub name: Option<String>,
-  pub parent: Option<i32>,
+  pub parent_id: Option<i32>,
 }
 
 impl OrganizationFilter {
@@ -23,10 +23,10 @@ impl OrganizationFilter {
   {
     query = query.apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Name, v)));
 
-    query = if let Some(parent) = self.parent {
-      query.filter(Column::Parent.eq(parent))
+    query = if let Some(parent_id) = self.parent_id {
+      query.filter(Column::ParentId.eq(parent_id))
     } else {
-      query.filter(Column::Parent.is_null())
+      query.filter(Column::ParentId.is_null())
     };
 
     query
@@ -39,7 +39,7 @@ pub struct OrganizationListItem {
   pub id: i32,
   pub name: String,
   #[serde(default)]
-  pub parent: Nullable<i32>,
+  pub parent_id: Nullable<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -49,7 +49,7 @@ pub struct OrganizationListItem {
 pub struct GetOrganization {
   pub id: i32,
   pub name: String,
-  pub parent: Option<i32>,
+  pub parent_id: Option<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -66,7 +66,7 @@ pub struct CreateOrganization {
   pub id: Optional<i32>,
   pub name: String,
   #[serde(default)]
-  pub parent: Nullable<i32>,
+  pub parent_id: Nullable<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -86,7 +86,7 @@ impl IntoResponse for OrganizationCreated {
 pub struct UpdateOrganization {
   pub name: Optional<String>,
   #[serde(default)]
-  pub parent: Nullable<i32>,
+  pub parent_id: Nullable<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

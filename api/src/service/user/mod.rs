@@ -54,10 +54,10 @@ impl UserService {
     Ok((items, count))
   }
 
-  pub async fn get<U: AsRef<str>>(username: U) -> Result<Option<GetUser>, SumidaError> {
+  pub async fn get(user_id: i32) -> Result<Option<GetUser>, SumidaError> {
     Ok(
       Users::select()
-        .filter(entity::users::Column::Username.eq(username.as_ref()))
+        .filter(entity::users::Column::Id.eq(user_id))
         .into_model::<GetUser>()
         .one(db::get_connection())
         .await?,
@@ -88,8 +88,8 @@ impl UserService {
     Ok(Users::update(model).exec(db::get_connection()).await?)
   }
 
-  pub async fn delete(username: String) -> Result<DeleteResult, SumidaError> {
-    Ok(Users::delete_by_id(username).exec(db::get_connection()).await?)
+  pub async fn delete(user_id: i32) -> Result<DeleteResult, SumidaError> {
+    Ok(Users::delete_by_id(user_id).exec(db::get_connection()).await?)
   }
 
   pub fn verify_password(password: &str, password_hash: &str) -> bool {
@@ -117,8 +117,8 @@ impl UserService {
         Set(Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
     }
 
-    model.role = NotSet;
-    model.organization = NotSet;
+    model.role_id = NotSet;
+    model.organization_id = NotSet;
     model.is_admin = NotSet;
     model.is_enabled = NotSet;
 
@@ -130,31 +130,33 @@ impl UserService {
   pub async fn sign_in(user_ctx: &mut UserContext, data: SignInUser) -> Result<(), SumidaError> {
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
-    let username = Some(data.username.as_str());
 
-    // 1) Check the user is blocked
-    if user_ctx.check_blocked(username, &txn).await? {
-      user_ctx.write_log(username, SignInMethod::Password, SignInCode::AccountBlocked).await?;
-      return Err(SumidaError::AccountBlocked);
-    }
-
-    // 2) Return error if the user does not exist
-    let Some(user) =
-      Users::find_by_id(&data.username).filter(entity::users::Column::IsEnabled.eq(true)).one(&txn).await?
+    // 1) Return error if the user does not exist
+    let Some(user) = Users::find()
+      .filter(entity::users::Column::Username.eq(&data.username))
+      .filter(entity::users::Column::IsEnabled.eq(true))
+      .one(&txn)
+      .await?
     else {
-      user_ctx.write_log(username, SignInMethod::Password, SignInCode::AccountNotFound).await?;
+      user_ctx.write_log(None, SignInMethod::Password, SignInCode::AccountNotFound).await?;
       return Err(SumidaError::InvalidAccount);
     };
 
+    // 2) Check the user is blocked
+    if user_ctx.check_blocked(Some(user.id), &txn).await? {
+      user_ctx.write_log(Some(user.id), SignInMethod::Password, SignInCode::AccountBlocked).await?;
+      return Err(SumidaError::AccountBlocked);
+    }
+
     // 3) Return error if the user is inactive
     if !user.is_enabled {
-      user_ctx.write_log(username, SignInMethod::Password, SignInCode::AccountInactive).await?;
+      user_ctx.write_log(Some(user.id), SignInMethod::Password, SignInCode::AccountInactive).await?;
       return Err(SumidaError::InactiveAccount);
     }
 
     // 4) Check the user password
     let result = if Self::verify_password(&data.password, &user.password) {
-      user_ctx.write_log(username, SignInMethod::Password, SignInCode::Success).await?;
+      user_ctx.write_log(Some(user.id), SignInMethod::Password, SignInCode::Success).await?;
 
       let expiry = if let Some(remember_me) = data.remember_me {
         let settings = settings::get();
@@ -168,12 +170,12 @@ impl UserService {
         None
       };
 
-      user_ctx.authorize(&data.username, expiry).await?;
+      user_ctx.authorize(user.id, &data.username, expiry).await?;
 
       Ok(())
     } else {
-      user_ctx.write_log(username, SignInMethod::Password, SignInCode::PasswordMismatch).await?;
-      let blocked = user_ctx.block_if_exceeded_limit(username, &txn).await?;
+      user_ctx.write_log(Some(user.id), SignInMethod::Password, SignInCode::PasswordMismatch).await?;
+      let blocked = user_ctx.block_if_exceeded_limit(Some(user.id), &txn).await?;
 
       Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
     };
@@ -183,20 +185,20 @@ impl UserService {
     result
   }
 
-  pub async fn invite(_user_ctx: &UserContext, username: String) -> Result<(), SumidaError> {
+  pub async fn invite(_user_ctx: &UserContext, user_id: i32) -> Result<(), SumidaError> {
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
 
-    let Some(user) = Users::find_by_id(&username).one(&txn).await? else {
+    let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
       return Err(SumidaError::InvalidAccount);
     };
     let Some(receiver) = user.email else {
-      return Err(SumidaError::NoUserEmail(username));
+      return Err(SumidaError::NoUserEmail(user_id));
     };
 
     let uuid = uuid::Uuid::new_v4();
 
-    UserInvitations::create(&username, uuid, &txn).await?;
+    UserInvitations::create(user_id, uuid, &txn).await?;
 
     let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
       username: opts.username.clone(),
@@ -209,7 +211,7 @@ impl UserService {
       "invitation",
       receiver,
       mail_form_context::InvitationContext {
-        username,
+        user_id,
         uuid: uuid.to_string(),
         full_name: user.full_name.unwrap_or_else(String::new),
       },
@@ -224,12 +226,12 @@ impl UserService {
   }
 
   pub async fn activate(user_ctx: &mut UserContext, activation: UserActivation) -> Result<(), SumidaError> {
-    let username = &activation.username;
+    let user_id = activation.user_id;
     let password = &activation.password;
     let uuid = &activation.uuid;
     let db_conn = db::get_connection();
 
-    let Some(user) = Users::find_by_id(username).one(db_conn).await? else {
+    let Some(user) = Users::find_by_id(user_id).one(db_conn).await? else {
       return Err(SumidaError::InvalidAccount);
     };
     let Some(_) = UserInvitations::find_by_id(*uuid)
@@ -242,6 +244,7 @@ impl UserService {
 
     let txn = db_conn.begin().await?;
 
+    let username = user.username.clone();
     let mut active_model = user.into_active_model();
     active_model.is_enabled = Set(true);
     active_model.password =
@@ -255,7 +258,7 @@ impl UserService {
     Self::sign_in(
       user_ctx,
       SignInUser {
-        username: username.to_string(),
+        username,
         password: password.to_string(),
         ..Default::default()
       },
@@ -268,9 +271,14 @@ impl UserService {
   pub async fn change_password(data: ChangePassword) -> Result<(), SumidaError> {
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
+    let Some(user) =
+      Users::find().filter(entity::users::Column::Username.eq(&data.username)).one(&txn).await?
+    else {
+      txn.rollback().await?;
+      return Err(SumidaError::InvalidAccount);
+    };
 
-    let is_verified =
-      UserVerifications::verify("password-change", &data.username, &data.code, &txn).await?;
+    let is_verified = UserVerifications::verify("password-change", user.id, &data.code, &txn).await?;
 
     if !is_verified {
       txn.rollback().await?;
@@ -293,21 +301,16 @@ impl UserService {
     Ok(())
   }
 
-  pub async fn impersonate<U: AsRef<str>>(
-    user_ctx: &mut UserContext,
-    username: U,
-  ) -> Result<(), SumidaError> {
+  pub async fn impersonate(user_ctx: &mut UserContext, user_id: i32) -> Result<(), SumidaError> {
     let db_conn = db::get_connection();
     let settings = settings::get();
-    let username = username.as_ref();
-    let user = Users::find_by_id(username).one(db_conn).await?;
+    let Some(user) = Users::find_by_id(user_id).one(db_conn).await? else {
+      return Err(SumidaError::InvalidAccount);
+    };
 
-    if user.is_some() {
-      user_ctx.authorize(username, Some(settings.session.expiry.default_expiry()?)).await?;
-      return Ok(());
-    }
+    user_ctx.authorize(user_id, &user.username, Some(settings.session.expiry.default_expiry()?)).await?;
 
-    Err(SumidaError::InvalidAccount)
+    Ok(())
   }
 
   pub async fn get_vapid(_user_ctx: &UserContext) -> Result<GetVapid, SumidaError> {

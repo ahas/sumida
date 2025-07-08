@@ -9,7 +9,7 @@ use super::users::Entity as Users;
 pub struct Model {
   #[sea_orm(primary_key)]
   pub uuid: Uuid,
-  pub user: String,
+  pub user_id: i32,
 
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
@@ -19,8 +19,8 @@ pub struct Model {
 pub enum Relation {
   #[sea_orm(
     belongs_to = "Users",
-    from = "Column::User",
-    to = "super::users::Column::Username"
+    from = "Column::UserId",
+    to = "super::users::Column::Id"
     on_update = "Cascade",
     on_delete = "Cascade",
   )]
@@ -36,14 +36,12 @@ impl Related<Users> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
-  pub async fn create<S, C>(username: S, uuid: Uuid, db: &C) -> Result<(), DbErr>
+  pub async fn create<C>(user_id: i32, uuid: Uuid, db: &C) -> Result<(), DbErr>
   where
-    S: AsRef<str>,
     C: ConnectionTrait,
   {
-    let username = username.as_ref();
     let active_model = ActiveModel {
-      user: Set(username.to_owned()),
+      user_id: Set(user_id),
       uuid: Set(uuid),
       expires_at: Set((Utc::now() + Duration::days(30)).fixed_offset()),
       ..Default::default()

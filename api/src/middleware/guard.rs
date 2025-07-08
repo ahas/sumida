@@ -56,7 +56,8 @@ macro_rules! admin_guard {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
-  pub user: String,
+  pub user_id: i32,
+  pub username: String,
   pub exp: usize,
 }
 
@@ -97,14 +98,9 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
     &jwt::Validation::default(),
   )
   .map_err(|_err| SumidaError::InvalidJwt)?;
-  let expiry = settings
-    .jwt
-    .as_ref()
-    .ok_or(SumidaError::NoJwtSecret)?
-    .expiry
-    .access_token_expiry()?;
+  let expiry = settings.jwt.as_ref().ok_or(SumidaError::NoJwtSecret)?.expiry.access_token_expiry()?;
 
-  user_ctx.authorize(&token.claims.user, Some(expiry)).await?;
+  user_ctx.authorize(token.claims.user_id, &token.claims.username, Some(expiry)).await?;
 
   Ok(())
 }
@@ -116,10 +112,10 @@ async fn verify_api_key(user_ctx: &mut UserContext, token: &str) -> Result<(), S
     .one(db_conn)
     .await?
     .ok_or(SumidaError::InvalidApiKey)?;
-  let user = Users::find_by_id(&api_key.user).one(db_conn).await?;
+  let user = Users::find_by_id(api_key.user_id).one(db_conn).await?;
 
   if let Some(user) = user {
-    user_ctx.authorize(&user.username, Some(Expiry::OnSessionEnd)).await?;
+    user_ctx.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd)).await?;
   } else {
     // UserSignInLogs::write(
     //   user_data.username,

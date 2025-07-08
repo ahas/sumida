@@ -8,10 +8,10 @@ use super::users::Entity as Users;
 pub struct Model {
   #[sea_orm(primary_key)]
   pub id: i32,
-  pub user: Option<String>,
+  pub user_id: Option<i32>,
   pub ip_address: Option<String>,
   pub blocked_at: DateTimeWithTimeZone,
-  pub blocked_by: Option<String>,
+  pub blocked_by: Option<i32>,
   pub reason: String,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub lifted_at: Option<DateTimeWithTimeZone>,
@@ -22,8 +22,8 @@ pub struct Model {
 pub enum Relation {
   #[sea_orm(
     belongs_to = "Users",
-    from = "Column::User",
-    to = "super::users::Column::Username",
+    from = "Column::UserId",
+    to = "super::users::Column::Id",
     on_update = "Cascade",
     on_delete = "Cascade"
   )]
@@ -32,7 +32,7 @@ pub enum Relation {
   #[sea_orm(
     belongs_to = "Users",
     from = "Column::BlockedBy",
-    to = "super::users::Column::Username",
+    to = "super::users::Column::Id",
     on_update = "Cascade",
     on_delete = "SetNull"
   )]
@@ -66,7 +66,7 @@ impl Entity {
         .select_only()
         .expr(Expr::val(1))
         .filter(
-          Expr::col(Column::User).eq(Expr::col((super::users::Entity, super::users::Column::Username))),
+          Expr::col(Column::UserId).eq(Expr::col((super::users::Entity, super::users::Column::Id))),
         )
         .filter(Condition::any().add(Column::LiftedAt.is_null()))
         .filter(Condition::any().add(Column::ExpiresAt.is_null()).add(Column::ExpiresAt.gt(now)))

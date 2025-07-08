@@ -22,8 +22,8 @@ impl<S> PreferenceController<S> {
     user_ctx: UserContext,
     State(_state): State<S>,
   ) -> Result<Json<serde_json::Value>, SumidaError> {
-    let username = user_ctx.profile.username.clone();
-    let ret = PreferenceService::get(username).await?;
+    let user_id = user_ctx.profile.id;
+    let ret = PreferenceService::get(user_id).await?;
     Ok(Json(ret))
   }
 
@@ -32,8 +32,8 @@ impl<S> PreferenceController<S> {
     State(_state): State<S>,
     Json(body): Json<serde_json::Value>,
   ) -> Result<Json<serde_json::Value>, SumidaError> {
-    let username = user_ctx.profile.username.clone();
-    PreferenceService::update(username, body).await?;
+    let user_id = user_ctx.profile.id;
+    PreferenceService::update(user_id, body).await?;
     Ok(Json(json!({})))
   }
 }

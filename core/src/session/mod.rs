@@ -25,6 +25,7 @@ use crate::{db, settings};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfile {
+  pub id: i32,
   pub username: String,
   pub full_name: String,
   pub organization: UserOrganization,
@@ -43,14 +44,14 @@ impl UserProfile {
     user: entity::users::Model,
     db: &C,
   ) -> anyhow::Result<()> {
-    let organization = entity::organizations::Entity::find_by_id(user.organization)
+    let organization = entity::organizations::Entity::find_by_id(user.organization_id)
       .one(db)
       .await?
-      .ok_or(SumidaError::NoUserOrganization(user.organization))?;
-    let role = entity::roles::Entity::find_by_id(user.role)
+      .ok_or(SumidaError::NoUserOrganization(user.organization_id))?;
+    let role = entity::roles::Entity::find_by_id(user.role_id)
       .one(db)
       .await?
-      .ok_or(SumidaError::NoUserRole(user.role))?;
+      .ok_or(SumidaError::NoUserRole(user.role_id))?;
 
     self.username = user.username.clone();
     self.full_name = user.full_name.unwrap_or_default().clone();
@@ -72,6 +73,7 @@ impl UserProfile {
 impl Default for UserProfile {
   fn default() -> Self {
     Self {
+      id: 0,
       username: "".to_owned(),
       full_name: "".to_owned(),
       organization: UserOrganization::default(),
@@ -200,7 +202,13 @@ impl UserContext {
   pub const USER_ENV_KEY: &'static str = "user.env";
   pub const USER_STATE_KEY: &'static str = "user.state";
 
-  pub async fn authorize(&mut self, username: &str, expiry: Option<Expiry>) -> Result<(), SumidaError> {
+  pub async fn authorize(
+    &mut self,
+    id: i32,
+    username: &str,
+    expiry: Option<Expiry>,
+  ) -> Result<(), SumidaError> {
+    self.profile.id = id;
     self.profile.username = username.to_owned();
     self.profile.is_authorized = true;
     self.profile.expiry = expiry;
@@ -214,12 +222,12 @@ impl UserContext {
 
   pub async fn write_log(
     &self,
-    username: Option<&str>,
+    user_id: Option<i32>,
     method: SignInMethod,
     code: SignInCode,
   ) -> Result<InsertResult<entity::user_logs::ActiveModel>, DbErr> {
     UserLogs::insert(entity::user_logs::ActiveModel {
-      user: Set(username.map(String::from).unwrap_or_else(|| self.profile.username.clone())),
+      user_id: Set(user_id.unwrap_or_else(|| self.profile.id)),
       method: Set(method),
       code: Set(code),
       ip_address: Set(self.env.ip_address.clone()),
@@ -238,17 +246,17 @@ impl UserContext {
     .await
   }
 
-  pub fn resolve_username(&self, explicit: Option<&str>) -> String {
-    explicit.map(String::from).unwrap_or_else(|| self.profile.username.clone())
+  pub fn resolve_user_id(&self, explicit: Option<i32>) -> i32 {
+    explicit.unwrap_or_else(|| self.profile.id)
   }
 
   pub async fn block_if_exceeded_limit<C: ConnectionTrait>(
     &mut self,
-    username: Option<&str>,
+    user_id: Option<i32>,
     db: &C,
   ) -> Result<bool, SumidaError> {
     let settings = &settings::get().security.block;
-    let username = self.resolve_username(username);
+    let user_id = self.resolve_user_id(user_id);
 
     self.state.failed_sign_in_attempts += 1;
     self.session.insert(Self::USER_STATE_KEY, self.state.clone()).await.map_err(anyhow::Error::from)?;
@@ -261,7 +269,7 @@ impl UserContext {
 
       match settings.target.as_str() {
         "ip" => self.block_ip(duration, "", reason, db).await?,
-        "account" => self.block_account(Some(username.as_str()), duration, "", reason, db).await?,
+        "account" => self.block_account(Some(user_id), duration, "", reason, db).await?,
         _ => {}
       };
 
@@ -296,17 +304,17 @@ impl UserContext {
 
   pub async fn block_account<C: ConnectionTrait>(
     &self,
-    username: Option<&str>,
+    user_id: Option<i32>,
     duration: Option<Duration>,
     reason: &str,
     note: Option<&str>,
     db: &C,
   ) -> Result<(), SumidaError> {
-    let username = self.resolve_username(username);
+    let user_id = self.resolve_user_id(user_id);
     let expires_at = duration.map(|x| (Utc::now() + x).fixed_offset());
 
     UserBlocks::insert(entity::user_blocks::ActiveModel {
-      user: Set(Some(username)),
+      user_id: Set(Some(user_id)),
       blocked_at: Set(Utc::now().fixed_offset()),
       reason: Set(reason.to_string()),
       expires_at: Set(expires_at),
@@ -321,14 +329,14 @@ impl UserContext {
 
   pub async fn check_blocked<C: ConnectionTrait>(
     &self,
-    username: Option<&str>,
+    user_id: Option<i32>,
     db: &C,
   ) -> Result<bool, SumidaError> {
     let lhs = {
       let mut cond = Condition::any();
 
-      if let Some(username) = username {
-        cond = cond.add(entity::user_blocks::Column::User.eq(username));
+      if let Some(user_id) = user_id {
+        cond = cond.add(entity::user_blocks::Column::UserId.eq(user_id));
       }
 
       cond.add(entity::user_blocks::Column::IpAddress.eq(&self.env.ip_address))
@@ -354,7 +362,7 @@ impl UserContext {
       Err(if self.profile.username.is_empty() {
         SumidaError::NoCredentials
       } else {
-        SumidaError::NotAuthorized(self.profile.username.clone())
+        SumidaError::NotAuthorized(self.profile.id)
       })
     }
   }
@@ -367,13 +375,12 @@ impl UserContext {
 
       Users::update(entity::users::ActiveModel {
         username: Unchanged(profile.username.clone()),
-        last_sign_in_at: Set(Some(Utc::now().fixed_offset())),
         ..Default::default()
       })
       .exec(&txn)
       .await?;
 
-      let user = entity::users::Entity::find_by_id(&profile.username)
+      let user = entity::users::Entity::find_by_id(profile.id)
         .one(&txn)
         .await?
         .ok_or(SumidaError::InvalidAccount)?;

@@ -31,8 +31,8 @@ impl<S> UserController<S> {
     Ok(UserService::list(filter, pagination).await?.into())
   }
 
-  async fn get(State(_state): State<S>, Path(username): Path<String>) -> Result<GetUser, SumidaError> {
-    match UserService::get(&username).await? {
+  async fn get(State(_state): State<S>, Path(user_id): Path<i32>) -> Result<GetUser, SumidaError> {
+    match UserService::get(user_id).await? {
       Some(user) => Ok(user),
       None => Err(SumidaError::InvalidAccount),
     }
@@ -59,9 +59,9 @@ impl<S> UserController<S> {
 
   async fn delete(
     State(_state): State<S>,
-    Path(username): Path<String>,
+    Path(user_id): Path<i32>,
   ) -> Result<UserDeleted, SumidaError> {
-    UserService::delete(username).await?;
+    UserService::delete(user_id).await?;
     Ok(UserDeleted)
   }
 
@@ -84,7 +84,7 @@ impl<S> UserController<S> {
   }
 
   async fn get_my_info(user_ctx: UserContext, State(_state): State<S>) -> Result<GetUser, SumidaError> {
-    match UserService::get(&user_ctx.profile.username).await? {
+    match UserService::get(user_ctx.profile.id).await? {
       Some(user) => Ok(user),
       None => Err(SumidaError::InvalidAccount),
     }
@@ -102,9 +102,9 @@ impl<S> UserController<S> {
   async fn invite(
     user_ctx: UserContext,
     State(_state): State<S>,
-    Path(username): Path<String>,
+    Path(user_id): Path<i32>,
   ) -> Result<StatusCode, SumidaError> {
-    UserService::invite(&user_ctx, username).await?;
+    UserService::invite(&user_ctx, user_id).await?;
     Ok(StatusCode::OK)
   }
 
@@ -129,9 +129,9 @@ impl<S> UserController<S> {
   async fn impersonate(
     mut user_ctx: UserContext,
     State(_state): State<S>,
-    Json(body): Json<Impersonate>,
+    Path(user_id): Path<i32>,
   ) -> Result<StatusCode, SumidaError> {
-    UserService::impersonate(&mut user_ctx, body.username).await?;
+    UserService::impersonate(&mut user_ctx, user_id).await?;
     Ok(StatusCode::ACCEPTED)
   }
 
@@ -147,17 +147,17 @@ where
   fn router(self, state: &S) -> axum::Router<S> {
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
-      .route("/{username}", routing::get(Self::get))
+      .route("/{user_id}", routing::get(Self::get))
       .route_layer(ability_guard!(user, read));
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
       .route_layer(ability_guard!(user, create));
     let route_update = Router::new()
-      .route("/{username}", routing::patch(Self::update))
-      .route("/{username}/invite", routing::post(Self::invite))
+      .route("/{user_id}", routing::patch(Self::update))
+      .route("/{user_id}/invite", routing::post(Self::invite))
       .route_layer(ability_guard!(user, update));
     let route_delete = Router::new()
-      .route("/{username}", routing::delete(Self::delete))
+      .route("/{user_id}", routing::delete(Self::delete))
       .route_layer(ability_guard!(user, delete));
 
     Router::new()
@@ -173,7 +173,7 @@ where
       .route("/sign-in", routing::post(Self::sign_in))
       .route("/change-password", routing::post(Self::change_password))
       .route("/activate", routing::post(Self::activate))
-      .route("/impersonate", routing::post(Self::impersonate))
+      .route("/impersonate/{id}", routing::post(Self::impersonate))
       .route("/vapid", routing::get(Self::get_vapid))
   }
 }

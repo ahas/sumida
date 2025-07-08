@@ -6,7 +6,7 @@ pub struct Model {
   #[sea_orm(primary_key)]
   pub id: i32,
   pub name: String,
-  pub parent: Option<i32>,
+  pub parent_id: Option<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -15,7 +15,7 @@ pub struct Model {
 pub enum Relation {
   #[sea_orm(
     belongs_to = "Entity",
-    from = "Column::Parent",
+    from = "Column::ParentId",
     to = "Column::Id",
     on_update = "Cascade",
     on_delete = "SetNull"

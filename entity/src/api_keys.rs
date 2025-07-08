@@ -5,7 +5,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = false)]
   pub key: String,
-  pub user: String,
+  pub user_id: i32,
   #[sea_orm(column_type = "JsonBinary", nullable)]
   pub ability: Option<Json>,
   pub expires_at: Option<DateTimeWithTimeZone>,

@@ -28,7 +28,7 @@ impl UserInvitationService {
     let count = query.clone().select_only().column(Column::Uuid).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
-      "user" => Column::User,
+      "user_id" => Column::UserId,
       "uuid" => Column::Uuid,
       _ => Column::CreatedAt,
     });
@@ -53,13 +53,13 @@ impl UserInvitationService {
     )
   }
 
-  pub async fn create(username: String) -> Result<entity::user_invitations::Model, SumidaError> {
+  pub async fn create(user_id: i32) -> Result<entity::user_invitations::Model, SumidaError> {
     let db_conn = db::get_connection();
     let uuid = Uuid::new_v4();
     let expires_at = Utc::now() + Duration::days(30);
 
     let active_model = entity::user_invitations::ActiveModel {
-      user: Set(username.clone()),
+      user_id: Set(user_id),
       uuid: Set(uuid),
       expires_at: Set(expires_at.fixed_offset()),
       ..Default::default()
@@ -73,13 +73,13 @@ impl UserInvitationService {
       .ok_or(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
   }
 
-  pub async fn update(username: String) -> Result<entity::user_invitations::Model, SumidaError> {
+  pub async fn update(user_id: i32) -> Result<entity::user_invitations::Model, SumidaError> {
     let db_conn = db::get_connection();
     let uuid = Uuid::new_v4();
     let expires_at = Utc::now() + Duration::days(30);
 
     let active_model = entity::user_invitations::ActiveModel {
-      user: Unchanged(username.clone()),
+      user_id: Unchanged(user_id),
       uuid: Set(uuid),
       expires_at: Set(expires_at.fixed_offset()),
       ..Default::default()

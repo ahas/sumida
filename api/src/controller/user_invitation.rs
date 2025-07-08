@@ -40,10 +40,10 @@ impl<S> UserInvitationController<S> {
 
   async fn create(
     State(_state): State<S>,
-    Path(username): Path<String>,
+    Path(user_id): Path<i32>,
     Json(_body): Json<CreateUserInvitation>,
   ) -> Result<UserInvitationCreated, SumidaError> {
-    let invitation = UserInvitationService::create(username).await?;
+    let invitation = UserInvitationService::create(user_id).await?;
 
     Ok(UserInvitationCreated {
       uuid: invitation.uuid,
@@ -53,10 +53,10 @@ impl<S> UserInvitationController<S> {
 
   async fn update(
     State(_state): State<S>,
-    Path(username): Path<String>,
+    Path(user_id): Path<i32>,
     Json(_body): Json<UpdateUserInvitation>,
   ) -> Result<UserInvitationUpdated, SumidaError> {
-    let invitation = UserInvitationService::update(username).await?;
+    let invitation = UserInvitationService::update(user_id).await?;
 
     Ok(UserInvitationUpdated {
       uuid: invitation.uuid,

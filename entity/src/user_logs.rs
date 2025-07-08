@@ -42,7 +42,7 @@ pub enum SignInCode {
 pub struct Model {
   #[sea_orm(primary_key)]
   pub id: i32,
-  pub user: String,
+  pub user_id: i32,
   pub method: SignInMethod,
   pub code: SignInCode,
 
@@ -66,8 +66,8 @@ pub struct Model {
 pub enum Relation {
   #[sea_orm(
     belongs_to = "Users",
-    from = "Column::User",
-    to = "super::users::Column::Username"
+    from = "Column::UserId",
+    to = "super::users::Column::Id"
     on_update = "Cascade",
     on_delete = "Cascade",
   )]

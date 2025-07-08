@@ -8,7 +8,7 @@ enum Organizations {
   Table,
   Id,
   Name,
-  Parent,
+  ParentId,
   CreatedAt,
   UpdatedAt,
 }
@@ -27,6 +27,7 @@ enum Roles {
 #[derive(DeriveIden)]
 enum Users {
   Table,
+  Id,
   Username,
   Password,
   Email,
@@ -34,9 +35,8 @@ enum Users {
   Phone,
   IsAdmin,
   IsEnabled,
-  Role,
-  Organization,
-  LastLoggedInAt,
+  RoleId,
+  OrganizationId,
   CreatedAt,
   UpdatedAt,
 }
@@ -45,7 +45,7 @@ enum Users {
 enum UserBlocks {
   Table,
   Id,
-  User,
+  UserId,
   IpAddress,
   BlockedAt,
   BlockedBy,
@@ -58,7 +58,7 @@ enum UserBlocks {
 #[derive(DeriveIden)]
 enum UserInvitations {
   Table,
-  User,
+  UserId,
   Uuid,
   ExpiresAt,
   CreatedAt,
@@ -68,7 +68,7 @@ enum UserInvitations {
 enum UserLogs {
   Table,
   Id,
-  User,
+  UserId,
   Method,
   Code,
   IpAddress,
@@ -87,7 +87,7 @@ enum UserLogs {
 #[derive(DeriveIden)]
 enum UserVerifications {
   Table,
-  User,
+  UserId,
   Kind,
   Method,
   Code,
@@ -98,7 +98,7 @@ enum UserVerifications {
 #[derive(DeriveIden)]
 enum Preferences {
   Table,
-  User,
+  UserId,
   Data,
 }
 
@@ -106,7 +106,7 @@ enum Preferences {
 enum ApiKeys {
   Table,
   Key,
-  User,
+  UserId,
   Ability,
   ExpiresAt,
   CreatedAt,
@@ -169,14 +169,14 @@ impl MigrationTrait for Migration {
           .table(Organizations::Table)
           .col(integer(Organizations::Id).auto_increment())
           .col(string(Organizations::Name))
-          .col(integer_null(Organizations::Parent))
+          .col(integer_null(Organizations::ParentId))
           .col(timestamp_with_time_zone(Organizations::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Organizations::UpdatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_organizations").col(Organizations::Id))
+          .primary_key(Index::create().name("pk_organizations__id").col(Organizations::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_organizations__parent")
-              .from(Organizations::Table, Organizations::Parent)
+              .name("fk_organizations__parent_id")
+              .from(Organizations::Table, Organizations::ParentId)
               .to(Organizations::Table, Organizations::Id)
               .on_delete(SetNull)
               .on_update(Cascade),
@@ -188,9 +188,9 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_organizations__parent")
+          .name("idx_organizations__parent_id")
           .table(Organizations::Table)
-          .col(Organizations::Parent)
+          .col(Organizations::ParentId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )
@@ -210,7 +210,7 @@ impl MigrationTrait for Migration {
           .col(json_binary(Roles::Ability).default(json!({})))
           .col(timestamp_with_time_zone(Roles::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Roles::UpdatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_roles").col(Roles::Id))
+          .primary_key(Index::create().name("pk_roles__id").col(Roles::Id))
           .to_owned(),
       )
       .await?;
@@ -223,31 +223,39 @@ impl MigrationTrait for Migration {
         Table::create()
           .if_not_exists()
           .table(Users::Table)
+          .col(integer(Users::Id).auto_increment())
           .col(string(Users::Username))
           .col(string(Users::Password))
           .col(string_null(Users::Email))
           .col(string_null(Users::FullName))
           .col(string_null(Users::Phone))
-          .col(integer(Users::Role))
-          .col(integer(Users::Organization))
+          .col(integer(Users::RoleId))
+          .col(integer(Users::OrganizationId))
           .col(boolean(Users::IsAdmin).default(false))
           .col(boolean(Users::IsEnabled).default(false))
-          .col(timestamp_with_time_zone_null(Users::LastLoggedInAt))
           .col(timestamp_with_time_zone(Users::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Users::UpdatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_users").col(Users::Username))
+          .primary_key(Index::create().name("pk_users__id").col(Users::Id))
+          .index(
+            Index::create()
+              .if_not_exists()
+              .name("uq_users__username")
+              .table(Users::Table)
+              .col(Users::Username)
+              .unique(),
+          )
           .foreign_key(
             ForeignKey::create()
-              .name("fk_users__organization")
-              .from(Users::Table, Users::Organization)
+              .name("fk_users__organization_id")
+              .from(Users::Table, Users::OrganizationId)
               .to(Organizations::Table, Organizations::Id)
               .on_delete(SetNull)
               .on_update(Cascade),
           )
           .foreign_key(
             ForeignKey::create()
-              .name("fk_users__role")
-              .from(Users::Table, Users::Role)
+              .name("fk_users__role_id")
+              .from(Users::Table, Users::RoleId)
               .to(Roles::Table, Roles::Id)
               .on_delete(SetNull)
               .on_update(Cascade),
@@ -260,9 +268,9 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_users__organization")
+          .name("idx_users__organization_id")
           .table(Users::Table)
-          .col(Users::Organization)
+          .col(Users::OrganizationId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )
@@ -271,9 +279,9 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_users__role")
+          .name("idx_users__role_id")
           .table(Users::Table)
-          .col(Users::Role)
+          .col(Users::RoleId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )
@@ -287,14 +295,14 @@ impl MigrationTrait for Migration {
         Table::create()
           .if_not_exists()
           .table(Preferences::Table)
-          .col(string(Preferences::User))
+          .col(integer(Preferences::UserId))
           .col(json_binary(Preferences::Data).default(json!({})))
-          .primary_key(Index::create().name("pk_preferences").col(Preferences::User))
+          .primary_key(Index::create().name("pk_preferences__user_id").col(Preferences::UserId))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_preferences__user")
-              .from(Preferences::Table, Preferences::User)
-              .to(Users::Table, Users::Username)
+              .name("fk_preferences__user_id")
+              .from(Preferences::Table, Preferences::UserId)
+              .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -305,9 +313,9 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_preferences__user")
+          .name("idx_preferences__user_id")
           .table(Preferences::Table)
-          .col(Preferences::User)
+          .col(Preferences::UserId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )
@@ -321,16 +329,16 @@ impl MigrationTrait for Migration {
           .if_not_exists()
           .table(ApiKeys::Table)
           .col(string(ApiKeys::Key))
-          .col(string(ApiKeys::User))
+          .col(integer(ApiKeys::UserId))
           .col(json_binary_null(ApiKeys::Ability))
           .col(timestamp_with_time_zone_null(ApiKeys::ExpiresAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(ApiKeys::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_api_keys").col(ApiKeys::Key))
+          .primary_key(Index::create().name("pk_api_keys__key").col(ApiKeys::Key))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_api_keys__user")
-              .from(ApiKeys::Table, ApiKeys::User)
-              .to(Users::Table, Users::Username)
+              .name("fk_api_keys__user_id")
+              .from(ApiKeys::Table, ApiKeys::UserId)
+              .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -345,20 +353,20 @@ impl MigrationTrait for Migration {
         Table::create()
           .table(UserBlocks::Table)
           .col(integer(UserBlocks::Id).auto_increment())
-          .col(string_null(UserBlocks::User))
+          .col(integer_null(UserBlocks::UserId))
           .col(string_null(UserBlocks::IpAddress))
           .col(timestamp_with_time_zone(UserBlocks::BlockedAt))
-          .col(string_null(UserBlocks::BlockedBy))
+          .col(integer_null(UserBlocks::BlockedBy))
           .col(string_null(UserBlocks::Reason))
           .col(timestamp_with_time_zone_null(UserBlocks::ExpiresAt))
           .col(timestamp_with_time_zone_null(UserBlocks::LiftedAt))
           .col(string_null(UserBlocks::Note))
-          .primary_key(Index::create().name("pk_user_blocks").col(UserBlocks::Id))
+          .primary_key(Index::create().name("pk_user_blocks__id").col(UserBlocks::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_user_blocks__user")
-              .from(UserBlocks::Table, UserBlocks::User)
-              .to(Users::Table, Users::Username)
+              .name("fk_user_blocks__user_id")
+              .from(UserBlocks::Table, UserBlocks::UserId)
+              .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -366,7 +374,7 @@ impl MigrationTrait for Migration {
             ForeignKey::create()
               .name("fk_user_blocks__blocked_by")
               .from(UserBlocks::Table, UserBlocks::BlockedBy)
-              .to(Users::Table, Users::Username)
+              .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -381,15 +389,15 @@ impl MigrationTrait for Migration {
         Table::create()
           .table(UserInvitations::Table)
           .col(uuid(UserInvitations::Uuid).default(Expr::cust("uuid_generate_v4()")))
-          .col(string(UserInvitations::User))
+          .col(integer(UserInvitations::UserId))
           .col(timestamp_with_time_zone(UserInvitations::ExpiresAt))
           .col(timestamp_with_time_zone(UserInvitations::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_user_invitations").col(UserInvitations::Uuid))
+          .primary_key(Index::create().name("pk_user_invitations__uuid").col(UserInvitations::Uuid))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_user_invitations__user")
-              .from(UserInvitations::Table, UserInvitations::User)
-              .to(Users::Table, Users::Username)
+              .name("fk_user_invitations__user_id")
+              .from(UserInvitations::Table, UserInvitations::UserId)
+              .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -404,7 +412,7 @@ impl MigrationTrait for Migration {
         Table::create()
           .table(UserLogs::Table)
           .col(integer(UserLogs::Id).auto_increment())
-          .col(string(UserLogs::User))
+          .col(integer(UserLogs::UserId))
           .col(string(UserLogs::Method))
           .col(integer(UserLogs::Code))
           .col(string(UserLogs::IpAddress))
@@ -418,12 +426,12 @@ impl MigrationTrait for Migration {
           .col(string_null(UserLogs::DeviceBrand))
           .col(string_null(UserLogs::DeviceModel))
           .col(timestamp_with_time_zone(UserLogs::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_user_logs").col(UserLogs::Id))
+          .primary_key(Index::create().name("pk_user_logs__id").col(UserLogs::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_user_logs__user")
-              .from(UserLogs::Table, UserLogs::User)
-              .to(Users::Table, Users::Username)
+              .name("fk_user_logs__user_id")
+              .from(UserLogs::Table, UserLogs::UserId)
+              .to(Users::Table, Users::Id)
               .on_delete(SetNull)
               .on_update(Cascade),
           )
@@ -437,7 +445,7 @@ impl MigrationTrait for Migration {
       .create_table(
         Table::create()
           .table(UserVerifications::Table)
-          .col(string(UserVerifications::User))
+          .col(integer(UserVerifications::UserId))
           .col(string(UserVerifications::Kind))
           .col(string(UserVerifications::Method))
           .col(string(UserVerifications::Code))
@@ -445,15 +453,15 @@ impl MigrationTrait for Migration {
           .col(timestamp_with_time_zone(UserVerifications::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(
             Index::create()
-              .name("pk_user_verifications")
-              .col(UserVerifications::User)
+              .name("pk_user_verifications__user_id__kind")
+              .col(UserVerifications::UserId)
               .col(UserVerifications::Kind),
           )
           .foreign_key(
             ForeignKey::create()
-              .name("fk_user_verifications__user")
-              .from(UserVerifications::Table, UserVerifications::User)
-              .to(Users::Table, Users::Username)
+              .name("fk_user_verifications__user_id")
+              .from(UserVerifications::Table, UserVerifications::UserId)
+              .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -473,7 +481,7 @@ impl MigrationTrait for Migration {
           .col(string(MailForms::Content).default(""))
           .col(timestamp_with_time_zone(MailForms::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(MailForms::UpdatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_mail_forms").col(MailForms::Kind))
+          .primary_key(Index::create().name("pk_mail_forms__kind").col(MailForms::Kind))
           .to_owned(),
       )
       .await?;
@@ -487,40 +495,48 @@ impl MigrationTrait for Migration {
     // Indexes
     manager
       .drop_index(
-        Index::drop().if_exists().name("idx_organizations__parent").table(Organizations::Table).to_owned(),
+        Index::drop()
+          .if_exists()
+          .name("idx_organizations__parent_id")
+          .table(Organizations::Table)
+          .to_owned(),
       )
       .await?;
     manager
-      .drop_index(Index::drop().if_exists().name("idx_users__organization").table(Users::Table).to_owned())
+      .drop_index(
+        Index::drop().if_exists().name("idx_users__organization_id").table(Users::Table).to_owned(),
+      )
       .await?;
     manager
-      .drop_index(Index::drop().if_exists().name("idx_users__role").table(Users::Table).to_owned())
+      .drop_index(Index::drop().if_exists().name("idx_users__role_id").table(Users::Table).to_owned())
       .await?;
     manager
       .drop_index(
-        Index::drop().if_exists().name("idx_preferences__user").table(Preferences::Table).to_owned(),
+        Index::drop().if_exists().name("idx_preferences__user_id").table(Preferences::Table).to_owned(),
       )
       .await?;
 
     // Foreign Keys
     manager
       .drop_foreign_key(
-        ForeignKey::drop().name("fk_organizations__parent").table(Organizations::Table).to_owned(),
+        ForeignKey::drop().name("fk_organizations__parent_id").table(Organizations::Table).to_owned(),
       )
       .await?;
     manager
-      .drop_foreign_key(ForeignKey::drop().name("fk_users__organization").table(Users::Table).to_owned())
+      .drop_foreign_key(ForeignKey::drop().name("fk_users__organization_id").table(Users::Table).to_owned())
       .await?;
     manager
-      .drop_foreign_key(ForeignKey::drop().name("fk_users__role").table(Users::Table).to_owned())
+      .drop_foreign_key(ForeignKey::drop().name("fk_users__role_id").table(Users::Table).to_owned())
       .await?;
     manager
       .drop_foreign_key(
-        ForeignKey::drop().name("fk_preferences__user").table(Preferences::Table).to_owned(),
+        ForeignKey::drop().name("fk_preferences__user_id").table(Preferences::Table).to_owned(),
       )
       .await?;
     manager
-      .drop_foreign_key(ForeignKey::drop().name("fk_user_blocks__user").table(UserBlocks::Table).to_owned())
+      .drop_foreign_key(
+        ForeignKey::drop().name("fk_user_blocks__user_id").table(UserBlocks::Table).to_owned(),
+      )
       .await?;
     manager
       .drop_foreign_key(
@@ -529,17 +545,18 @@ impl MigrationTrait for Migration {
       .await?;
     manager
       .drop_foreign_key(
-        ForeignKey::drop().name("fk_user_invitations__user").table(UserInvitations::Table).to_owned(),
+        ForeignKey::drop().name("fk_user_invitations__user_id").table(UserInvitations::Table).to_owned(),
       )
       .await?;
     manager
-      .drop_foreign_key(
-        ForeignKey::drop().name("fk_user_logs__user").table(UserLogs::Table).to_owned(),
-      )
+      .drop_foreign_key(ForeignKey::drop().name("fk_user_logs__user_id").table(UserLogs::Table).to_owned())
       .await?;
     manager
       .drop_foreign_key(
-        ForeignKey::drop().name("fk_user_verifications__user").table(UserVerifications::Table).to_owned(),
+        ForeignKey::drop()
+          .name("fk_user_verifications__user_id")
+          .table(UserVerifications::Table)
+          .to_owned(),
       )
       .await?;
 

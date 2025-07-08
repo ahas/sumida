@@ -24,19 +24,21 @@ impl UserLogService {
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
     let user_alias = Alias::new("user");
+    let username_col = Expr::col((user_alias.clone(), "username"));
 
     let mut query = filter.apply(
       UserLogs::find()
         .select_only()
         .expr(Expr::col((UserLogs, Asterisk)))
-        .expr_as(Expr::col((user_alias.clone(), "username")), "user_username")
+        .expr_as(Expr::col((user_alias.clone(), "id")), "user_id")
+        .expr_as(username_col.clone(), "user_username")
         .expr_as(Expr::col((user_alias.clone(), "full_name")), "user_full_name")
         .join_as(JoinType::LeftJoin, entity::user_logs::Relation::User.def(), user_alias.clone()),
     );
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
-      "user" => Column::User.into_simple_expr(),
+      "user" => username_col.into_simple_expr(),
       _ => Column::CreatedAt.into_simple_expr(),
     });
     query = pagination.paginate(query);
@@ -54,6 +56,7 @@ impl UserLogService {
     let item = UserLogs::find_by_id(id)
       .select_only()
       .expr(Expr::col((UserLogs, Asterisk)))
+      .expr_as(Expr::col((user_alias.clone(), "id")), "user_id")
       .expr_as(Expr::col((user_alias.clone(), "username")), "user_username")
       .expr_as(Expr::col((user_alias.clone(), "full_name")), "user_full_name")
       .join_as(JoinType::LeftJoin, entity::user_logs::Relation::User.def(), user_alias.clone())
