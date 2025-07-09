@@ -169,7 +169,7 @@ where
       .route("/sign-in", routing::post(Self::sign_in))
       .route("/change-password", routing::post(Self::change_password))
       .route("/activate", routing::post(Self::activate))
-      .route("/impersonate/{id}", routing::post(Self::impersonate))
+      .route("/{user_id}/impersonate", routing::post(Self::impersonate))
       .route("/vapid", routing::get(Self::get_vapid))
   }
 }

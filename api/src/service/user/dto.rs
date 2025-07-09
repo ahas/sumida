@@ -288,12 +288,6 @@ pub struct UserActivation {
   pub uuid: Uuid,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Impersonate {
-  pub user_id: i32,
-}
-
 #[derive(Debug, Serialize)]
 pub struct VapidClaims {
   pub aud: String,
