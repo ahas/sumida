@@ -5,7 +5,7 @@ use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
-use sea_orm::{DeleteResult, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect, RelationTrait};
+use sea_orm::{DeleteResult, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect, RelationTrait, Select};
 use sea_orm::{EntityTrait, TransactionTrait};
 
 use crate::util::crud::Pagination;
@@ -15,6 +15,21 @@ use self::dto::*;
 pub struct UserLogService;
 
 impl UserLogService {
+  pub fn select(query: Select<entity::user_logs::Entity>) -> Select<entity::user_logs::Entity> {
+    let user_alias = Alias::new("user");
+    let col_user_id = Expr::col((user_alias.clone(), "id"));
+    let col_username = Expr::col((user_alias.clone(), "username"));
+    let col_full_name = Expr::col((user_alias.clone(), "full_name"));
+
+    query
+      .select_only()
+      .expr(Expr::col((entity::user_logs::Entity, Asterisk)))
+      .expr_as(col_user_id, "user_id")
+      .expr_as(col_username, "user_username")
+      .expr_as(col_full_name, "user_full_name")
+      .join_as(JoinType::LeftJoin, entity::user_logs::Relation::User.def(), user_alias.clone())
+  }
+
   pub async fn list(
     filter: UserLogFilter,
     pagination: Pagination,
@@ -23,22 +38,17 @@ impl UserLogService {
 
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
-    let user_alias = Alias::new("user");
-    let username_col = Expr::col((user_alias.clone(), "username"));
+    let col_user_id = Expr::col("user_id");
+    let col_username = Expr::col("user_username");
+    let col_full_name = Expr::col("user_full_name");
 
-    let mut query = filter.apply(
-      UserLogs::find()
-        .select_only()
-        .expr(Expr::col((UserLogs, Asterisk)))
-        .expr_as(Expr::col((user_alias.clone(), "id")), "user_id")
-        .expr_as(username_col.clone(), "user_username")
-        .expr_as(Expr::col((user_alias.clone(), "full_name")), "user_full_name")
-        .join_as(JoinType::LeftJoin, entity::user_logs::Relation::User.def(), user_alias.clone()),
-    );
+    let mut query = filter.apply(Self::select(UserLogs::find()));
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
-      "user" => username_col.into_simple_expr(),
+      "userId" => col_user_id.into_simple_expr(),
+      "username" => col_username.into_simple_expr(),
+      "name" => col_full_name.into_simple_expr(),
       _ => Column::CreatedAt.into_simple_expr(),
     });
     query = pagination.paginate(query);
@@ -50,21 +60,7 @@ impl UserLogService {
   }
 
   pub async fn get(id: i32) -> Result<Option<GetUserLog>, SumidaError> {
-    let db_conn = db::get_connection();
-    let user_alias = Alias::new("user");
-
-    let item = UserLogs::find_by_id(id)
-      .select_only()
-      .expr(Expr::col((UserLogs, Asterisk)))
-      .expr_as(Expr::col((user_alias.clone(), "id")), "user_id")
-      .expr_as(Expr::col((user_alias.clone(), "username")), "user_username")
-      .expr_as(Expr::col((user_alias.clone(), "full_name")), "user_full_name")
-      .join_as(JoinType::LeftJoin, entity::user_logs::Relation::User.def(), user_alias.clone())
-      .into_model::<GetUserLog>()
-      .one(db_conn)
-      .await?;
-
-    Ok(item)
+    Ok(Self::select(UserLogs::find_by_id(id)).into_model::<GetUserLog>().one(db::get_connection()).await?)
   }
 
   pub async fn delete(id: i32) -> Result<DeleteResult, SumidaError> {

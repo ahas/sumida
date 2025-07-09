@@ -1,12 +1,16 @@
 pub mod dto;
 
+use chrono::Utc;
 use core::db;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::Expr;
-use sea_orm::sea_query::{Alias, Asterisk};
-use sea_orm::{DeleteResult, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect, RelationTrait};
+use sea_orm::sea_query::{Alias, Asterisk, SimpleExpr};
+use sea_orm::{
+  ColumnTrait, Condition, DeleteResult, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
+  QueryTrait, RelationTrait,
+};
 use sea_orm::{EntityTrait, InsertResult, IntoActiveModel, TransactionTrait};
 
 use crate::util::crud::Pagination;
@@ -16,6 +20,26 @@ use self::dto::*;
 pub struct UserBlockService;
 
 impl UserBlockService {
+  pub fn exists_expr() -> SimpleExpr {
+    let now = Utc::now().fixed_offset();
+    Expr::exists(
+      UserBlocks::find()
+        .select_only()
+        .expr(Expr::val(1))
+        .filter(
+          Expr::col(entity::user_blocks::Column::UserId).eq(Expr::col((Users, entity::users::Column::Id))),
+        )
+        .filter(Condition::any().add(entity::user_blocks::Column::LiftedAt.is_null()))
+        .filter(
+          Condition::any()
+            .add(entity::user_blocks::Column::ExpiresAt.is_null())
+            .add(entity::user_blocks::Column::ExpiresAt.gt(now)),
+        )
+        .limit(1)
+        .into_query(),
+    )
+  }
+
   pub async fn list(
     filter: UserBlockFilter,
     pagination: Pagination,

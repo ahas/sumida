@@ -4,18 +4,22 @@ pub mod mail_form_context;
 #[cfg(test)]
 pub mod tests;
 
+use argon2::password_hash::PasswordHasher;
+use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::Utc;
 use core::session::UserContext;
 use core::{db, settings};
-use entity::mail_forms::MailFormSendOptions;
 use entity::prelude::*;
 use entity::user_logs::{SignInCode, SignInMethod};
 use error::SumidaError;
-use sea_orm::ActiveValue::*;
+use sea_orm::prelude::Expr;
+use sea_orm::sea_query::{Alias, Asterisk};
+use sea_orm::{ActiveValue::*, JoinType, Select};
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
-  QuerySelect, TransactionTrait, Unchanged,
+  QuerySelect, RelationTrait, TransactionTrait, Unchanged,
 };
 use sea_orm_crud::Optional;
 
@@ -23,9 +27,38 @@ use crate::util::crud::Pagination;
 
 use self::dto::*;
 
+use super::mail_form::MailFormSendOptions;
+use super::prelude::*;
+
 pub struct UserService;
 
 impl UserService {
+  pub fn select(query: Select<entity::users::Entity>) -> Select<entity::users::Entity> {
+    let org_alias = Alias::new("org");
+    let role_alias = Alias::new("role");
+
+    query
+      .select_only()
+      .expr(Expr::col((entity::users::Entity, Asterisk)))
+      .expr_as(UserBlockService::exists_expr(), "is_blocked")
+      .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
+      .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
+      .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")
+      .expr_as(Expr::col((role_alias.clone(), "name")), "role_name")
+      .join_as(JoinType::LeftJoin, entity::users::Relation::Organization.def(), org_alias.clone())
+      .join_as(JoinType::LeftJoin, entity::users::Relation::Role.def(), role_alias.clone())
+  }
+
+  pub fn hash_password<S>(password: S) -> argon2::password_hash::Result<String>
+  where
+    S: AsRef<str>,
+  {
+    let argon2 = Argon2::default();
+    let salt = SaltString::generate(&mut OsRng);
+
+    Ok(argon2.hash_password(password.as_ref().as_bytes(), &salt)?.to_string())
+  }
+
   pub async fn list(
     filter: UserFilter,
     pagination: Pagination,
@@ -35,7 +68,7 @@ impl UserService {
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
 
-    let mut query = filter.apply(Users::select());
+    let mut query = filter.apply(Self::select(Users::find()));
     let count = query.clone().select_only().column(Column::Username).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -55,13 +88,7 @@ impl UserService {
   }
 
   pub async fn get(user_id: i32) -> Result<Option<GetUser>, SumidaError> {
-    Ok(
-      Users::select()
-        .filter(entity::users::Column::Id.eq(user_id))
-        .into_model::<GetUser>()
-        .one(db::get_connection())
-        .await?,
-    )
+    Ok(Self::select(Users::find_by_id(user_id)).into_model::<GetUser>().one(db::get_connection()).await?)
   }
 
   pub async fn create(data: CreateUser) -> Result<InsertResult<entity::users::ActiveModel>, SumidaError> {
@@ -69,7 +96,7 @@ impl UserService {
 
     let mut active_model = data.into_active_model();
     active_model.password =
-      Set(Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
+      Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
 
     Ok(Users::insert(active_model).exec(db::get_connection()).await?)
   }
@@ -82,7 +109,7 @@ impl UserService {
 
     if let Some(password) = password {
       model.password =
-        Set(Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
+        Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
     }
 
     Ok(Users::update(model).exec(db::get_connection()).await?)
@@ -114,7 +141,7 @@ impl UserService {
 
     if let Some(ref password) = password {
       model.password =
-        Set(Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
+        Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
     }
 
     model.role_id = NotSet;
@@ -198,7 +225,7 @@ impl UserService {
 
     let uuid = uuid::Uuid::new_v4();
 
-    UserInvitations::create(user_id, uuid, &txn).await?;
+    UserInvitationService::upsert(user_id, uuid, &txn).await?;
 
     let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
       username: opts.username.clone(),
@@ -207,7 +234,7 @@ impl UserService {
       server: opts.server.clone(),
     });
 
-    MailForms::send(
+    MailFormService::send(
       "invitation",
       receiver,
       mail_form_context::InvitationContext {
@@ -248,7 +275,7 @@ impl UserService {
     let mut active_model = user.into_active_model();
     active_model.is_enabled = Set(true);
     active_model.password =
-      Set(Users::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
+      Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
 
     Users::update(active_model).exec(&txn).await?;
     UserInvitations::delete_by_id(*uuid).exec(&txn).await?;
@@ -278,7 +305,7 @@ impl UserService {
       return Err(SumidaError::InvalidAccount);
     };
 
-    let is_verified = UserVerifications::verify("password-change", user.id, &data.code, &txn).await?;
+    let is_verified = UserVerificationService::verify("password-change", user.id, &data.code, &txn).await?;
 
     if !is_verified {
       txn.rollback().await?;
@@ -286,7 +313,7 @@ impl UserService {
     }
 
     let password =
-      Users::hash_password(&data.password).map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+      Self::hash_password(&data.password).map_err(|e| SumidaError::Unsupported(e.to_string()))?;
 
     let active_model = entity::users::ActiveModel {
       username: Unchanged(data.username),

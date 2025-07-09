@@ -42,10 +42,9 @@ impl<S> UserController<S> {
     State(_state): State<S>,
     Json(body): Json<CreateUser>,
   ) -> Result<UserCreated, SumidaError> {
-    let username = body.username.clone();
-    UserService::create(body).await?;
-
-    Ok(UserCreated { username })
+    Ok(UserCreated {
+      id: UserService::create(body).await?.last_insert_id,
+    })
   }
 
   async fn update(
@@ -57,10 +56,7 @@ impl<S> UserController<S> {
     Ok(UserUpdated)
   }
 
-  async fn delete(
-    State(_state): State<S>,
-    Path(user_id): Path<i32>,
-  ) -> Result<UserDeleted, SumidaError> {
+  async fn delete(State(_state): State<S>, Path(user_id): Path<i32>) -> Result<UserDeleted, SumidaError> {
     UserService::delete(user_id).await?;
     Ok(UserDeleted)
   }

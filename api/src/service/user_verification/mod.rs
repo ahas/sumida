@@ -2,20 +2,64 @@ pub mod dto;
 
 use chrono::{Duration, Utc};
 use core::{db, settings};
-use entity::{mail_forms::MailFormSendOptions, prelude::*};
+use entity::prelude::*;
 use error::SumidaError;
 use rand::Rng;
 use sea_orm::{
-  ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set, TransactionTrait,
+  ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
+  TransactionTrait,
 };
 
-use crate::service::user::mail_form_context::*;
+use crate::service::{
+  mail_form::MailFormSendOptions, prelude::MailFormService, user::mail_form_context::*,
+};
 
 use self::dto::*;
 
 pub struct UserVerificationService;
 
 impl UserVerificationService {
+  pub async fn verify<'db, KindT, CodeT, DbConnT>(
+    kind: KindT,
+    user_id: i32,
+    code: CodeT,
+    txn: &'db DbConnT,
+  ) -> Result<bool, SumidaError>
+  where
+    KindT: AsRef<str>,
+    CodeT: AsRef<str>,
+    DbConnT: ConnectionTrait,
+  {
+    use entity::user_verifications::{ActiveModel, Column, Entity};
+
+    let kind = kind.as_ref();
+    let code = code.as_ref();
+
+    let Some(_) = Users::find_by_id(user_id).one(txn).await? else {
+      return Err(SumidaError::InvalidAccount);
+    };
+    let is_verified = Entity::find()
+      .filter(Column::Kind.eq(kind))
+      .filter(Column::UserId.eq(user_id))
+      .filter(Column::Code.eq(code))
+      .count(txn)
+      .await?
+      > 0;
+
+    if is_verified {
+      UserVerifications::delete(ActiveModel {
+        kind: Set(kind.to_owned()),
+        user_id: Set(user_id),
+        code: Set(code.to_owned()),
+        ..Default::default()
+      })
+      .exec(txn)
+      .await?;
+    }
+
+    Ok(is_verified)
+  }
+
   pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
     use entity::user_verifications::Column;
 
@@ -68,8 +112,14 @@ impl UserVerificationService {
         auth: opts.auth.clone(),
       });
 
-      MailForms::send("verification", &email, VerificationContext { code }, opts, db::get_connection())
-        .await?;
+      MailFormService::send(
+        "verification",
+        &email,
+        VerificationContext { code },
+        opts,
+        db::get_connection(),
+      )
+      .await?;
     }
 
     txn.commit().await?;

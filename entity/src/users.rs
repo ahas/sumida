@@ -1,8 +1,4 @@
-use argon2::{
-  Argon2,
-  password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
-};
-use sea_orm::{prelude::*, sea_query::{Alias, Asterisk}, JoinType, QuerySelect};
+use sea_orm::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "users")]
@@ -77,31 +73,3 @@ impl Related<super::roles::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-
-impl Entity {
-  pub fn select() -> Select<Self> {
-    let org_alias = Alias::new("org");
-    let role_alias = Alias::new("role");
-
-    Self::find()
-      .select_only()
-      .expr(Expr::col((Self, Asterisk)))
-      .expr_as(super::user_blocks::Entity::exists_expr(), "is_blocked")
-      .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
-      .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
-      .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")
-      .expr_as(Expr::col((role_alias.clone(), "name")), "role_name")
-      .join_as(JoinType::LeftJoin, super::users::Relation::Organization.def(), org_alias.clone())
-      .join_as(JoinType::LeftJoin, super::users::Relation::Role.def(), role_alias.clone())
-  }
-
-  pub fn hash_password<S>(password: S) -> argon2::password_hash::Result<String>
-  where
-    S: AsRef<str>,
-  {
-    let argon2 = Argon2::default();
-    let salt = SaltString::generate(&mut OsRng);
-
-    Ok(argon2.hash_password(password.as_ref().as_bytes(), &salt)?.to_string())
-  }
-}

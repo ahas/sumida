@@ -3,43 +3,55 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Ability {
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub create: Option<bool>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub update: Option<bool>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub read: Option<bool>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub delete: Option<bool>,
+  #[serde(default)]
+  pub create: bool,
+  #[serde(default)]
+  pub update: bool,
+  #[serde(default)]
+  pub read: bool,
+  #[serde(default)]
+  pub delete: bool,
 }
 
 impl Default for Ability {
   fn default() -> Self {
     Self {
-      create: Some(false),
-      update: Some(false),
-      read: Some(false),
-      delete: Some(false),
+      create: false,
+      update: false,
+      read: false,
+      delete: false,
     }
   }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct DefaultRoleAbility {
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub role: Option<Ability>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub user: Option<Ability>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub organization: Option<Ability>,
+pub struct SumidaRoleAbility {
+  #[serde(default)]
+  pub role: Ability,
+  #[serde(default)]
+  pub user: Ability,
+  #[serde(default)]
+  pub user_invitation: Ability,
+  #[serde(default)]
+  pub user_block: Ability,
+  #[serde(default)]
+  pub user_log: Ability,
+  #[serde(default)]
+  pub organization: Ability,
+  #[serde(default)]
+  pub api_key: Ability,
 }
 
-impl Default for DefaultRoleAbility {
+impl Default for SumidaRoleAbility {
   fn default() -> Self {
     Self {
-      role: Some(Ability::default()),
-      user: Some(Ability::default()),
-      organization: Some(Ability::default()),
+      role: Ability::default(),
+      user: Ability::default(),
+      user_invitation: Ability::default(),
+      user_block: Ability::default(),
+      user_log: Ability::default(),
+      organization: Ability::default(),
+      api_key: Ability::default(),
     }
   }
 }

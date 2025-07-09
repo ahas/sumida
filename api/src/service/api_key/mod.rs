@@ -6,7 +6,11 @@ use entity::prelude::*;
 use error::SumidaError;
 use rand::{TryRngCore, rngs::OsRng};
 use sea_orm::{
-  prelude::Expr, sea_query::{Alias, Asterisk}, ActiveValue::Unchanged, DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, PaginatorTrait, QuerySelect, Set, SqlErr, TransactionTrait
+  ActiveValue::Unchanged,
+  DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType,
+  PaginatorTrait, QuerySelect, RelationTrait, Select, Set, SqlErr, TransactionTrait,
+  prelude::Expr,
+  sea_query::{Alias, Asterisk},
 };
 
 use crate::util::crud::Pagination;
@@ -16,6 +20,20 @@ use self::dto::*;
 pub struct ApiKeyService;
 
 impl ApiKeyService {
+  pub fn select(query: Select<entity::api_keys::Entity>) -> Select<entity::api_keys::Entity> {
+    let user_alias = Alias::new("user");
+    let col_id = Expr::col((user_alias.clone(), "id"));
+    let col_username = Expr::col((user_alias.clone(), "username"));
+    let col_full_name = Expr::col((user_alias.clone(), "full_name"));
+
+    query
+      .expr(Expr::col((entity::api_keys::Entity, Asterisk)))
+      .expr_as(col_id, "user_id")
+      .expr_as(col_username.clone(), "user_username")
+      .expr_as(col_full_name.clone(), "user_full_name")
+      .join_as(JoinType::LeftJoin, entity::api_keys::Relation::User.def(), user_alias.clone())
+  }
+
   pub async fn list(
     filter: ApiKeyFilter,
     pagination: Pagination,
@@ -24,20 +42,16 @@ impl ApiKeyService {
 
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
-    let user_alias = Alias::new("u");
-    let username_col = Expr::col((user_alias.clone(), "username"));
+    let col_username = Expr::col("user_username");
+    let col_full_name = Expr::col("user_full_name");
 
-    let mut query = filter.apply(
-      ApiKeys::find()
-        .expr(Expr::col((ApiKeys, Asterisk)))
-        .expr_as(Expr::col((user_alias.clone(), "id")), "user_id")
-        .expr_as(username_col.clone(), "user_username"),
-    );
+    let mut query = filter.apply(Self::select(ApiKeys::find()));
     let count = query.clone().select_only().column(Column::Key).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
       "key" => Column::Key.into_simple_expr(),
-      "user" => username_col.into_simple_expr(),
+      "username" => col_username.into_simple_expr(),
+      "name" => col_full_name.into_simple_expr(),
       _ => Column::Key.into_simple_expr(),
     });
     query = pagination.paginate(query);
@@ -50,8 +64,10 @@ impl ApiKeyService {
   }
 
   pub async fn get(key: &str) -> Result<Option<GetApiKey>, SumidaError> {
-    let db_conn = db::get_connection();
-    Ok(ApiKeys::find_by_id(key).into_model::<GetApiKey>().one(db_conn).await?)
+    Ok(
+      //
+      Self::select(ApiKeys::find_by_id(key)).into_model::<GetApiKey>().one(db::get_connection()).await?,
+    )
   }
 
   fn generate_token_bytes(entropy_bytes: usize) -> anyhow::Result<String> {

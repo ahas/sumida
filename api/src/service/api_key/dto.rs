@@ -12,10 +12,12 @@ use serde_json::json;
 use crate::util::crud::{wrap_ilike, wrap_ilike_col};
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiKeyFilter {
   pub key: Option<String>,
   pub user_id: Option<i32>,
   pub username: Option<String>,
+  pub name: Option<String>,
 }
 
 impl ApiKeyFilter {
@@ -29,25 +31,28 @@ impl ApiKeyFilter {
       .apply_if(self.key.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Key, v)))
       .apply_if(self.user_id, |q, v| q.filter(Column::UserId.eq(v)))
       .apply_if(self.username.as_ref(), |q, v| {
-        q.filter(wrap_ilike(Expr::col((Alias::new("u"), Alias::new("username"))), v))
+        q.filter(wrap_ilike(Expr::col(Alias::new("user_username")), v))
       })
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Expr::col(Alias::new("user_full_name")), v)))
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
-#[sea_orm(entity = "entity::users::Entity", alias = "u", from_query_result)]
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[sea_orm(entity = "entity::users::Entity")]
 pub struct ApiKeyUser {
   #[sea_orm(from_alias = "user_id")]
   pub id: i32,
   #[sea_orm(from_alias = "user_username")]
   pub username: String,
+  #[sea_orm(from_alias = "user_full_name")]
+  pub name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiKeyListItem {
   pub key: String,
-  #[sea_orm(nested, alias = "u")]
+  #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
   pub ability: Option<serde_json::Value>,
   pub expires_at: Option<DateTimeWithTimeZone>,
@@ -58,7 +63,7 @@ pub struct ApiKeyListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetApiKey {
   pub key: String,
-  #[sea_orm(nested, alias = "u")]
+  #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
   pub ability: Option<serde_json::Value>,
   pub expires_at: Option<DateTimeWithTimeZone>,

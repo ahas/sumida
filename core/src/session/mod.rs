@@ -374,7 +374,8 @@ impl UserContext {
       let txn = db_conn.begin().await?;
 
       Users::update(entity::users::ActiveModel {
-        username: Unchanged(profile.username.clone()),
+        id: Unchanged(profile.id),
+        username: Set(profile.username.clone()),
         ..Default::default()
       })
       .exec(&txn)

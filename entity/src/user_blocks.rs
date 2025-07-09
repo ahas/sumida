@@ -1,5 +1,4 @@
-use chrono::Utc;
-use sea_orm::{Condition, QuerySelect, QueryTrait, prelude::*, sea_query::SimpleExpr};
+use sea_orm::prelude::*;
 
 use super::users::Entity as Users;
 
@@ -57,21 +56,3 @@ impl Linked for BlockedByLink {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-
-impl Entity {
-  pub fn exists_expr() -> SimpleExpr {
-    let now = Utc::now().fixed_offset();
-    Expr::exists(
-      Entity::find()
-        .select_only()
-        .expr(Expr::val(1))
-        .filter(
-          Expr::col(Column::UserId).eq(Expr::col((super::users::Entity, super::users::Column::Id))),
-        )
-        .filter(Condition::any().add(Column::LiftedAt.is_null()))
-        .filter(Condition::any().add(Column::ExpiresAt.is_null()).add(Column::ExpiresAt.gt(now)))
-        .limit(1)
-        .into_query(),
-    )
-  }
-}

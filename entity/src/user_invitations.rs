@@ -1,5 +1,3 @@
-use chrono::{Duration, Utc};
-use sea_orm::ActiveValue::*;
 use sea_orm::prelude::*;
 
 use super::users::Entity as Users;
@@ -34,27 +32,3 @@ impl Related<Users> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-
-impl Entity {
-  pub async fn create<C>(user_id: i32, uuid: Uuid, db: &C) -> Result<(), DbErr>
-  where
-    C: ConnectionTrait,
-  {
-    let active_model = ActiveModel {
-      user_id: Set(user_id),
-      uuid: Set(uuid),
-      expires_at: Set((Utc::now() + Duration::days(30)).fixed_offset()),
-      ..Default::default()
-    };
-
-    let exists = Self::find_by_id(uuid).count(db).await? > 0;
-
-    if exists {
-      Self::update(active_model).exec(db).await?;
-    } else {
-      Self::insert(active_model).exec(db).await?;
-    }
-
-    Ok(())
-  }
-}

@@ -31,8 +31,8 @@ impl<S> UserLogController<S> {
 
   async fn get(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetUserLog, SumidaError> {
     match UserLogService::get(id).await? {
-      Some(role) => Ok(role),
-      None => Err(SumidaError::NoData("Role".to_owned(), id.to_string())),
+      Some(user_log) => Ok(user_log),
+      None => Err(SumidaError::NoData("UserLog".to_owned(), id.to_string())),
     }
   }
 
@@ -53,10 +53,10 @@ where
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(ability_guard!(role, read));
+      .route_layer(ability_guard!(user_log, read));
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(ability_guard!(role, delete));
+      .route_layer(ability_guard!(user_log, delete));
 
     Router::new() //
       .merge(route_read)

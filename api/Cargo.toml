@@ -33,10 +33,12 @@ chrono = { workspace = true }
 humantime = { workspace = true }
 jsonwebtoken = { workspace = true }
 rand = { workspace = true }
+lettre = { workspace = true }
 sea-orm = { workspace = true }
 sea-orm-crud = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tinytemplate = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }

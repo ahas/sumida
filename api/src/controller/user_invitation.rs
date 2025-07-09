@@ -5,9 +5,9 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::service::prelude::*;
+use crate::user_guard;
 use crate::util::crud::{List, Pagination};
-use crate::{admin_guard, user_guard};
+use crate::{ability_guard, service::prelude::*};
 
 use super::ApiController;
 
@@ -78,24 +78,22 @@ where
   S: Clone + Send + Sync + 'static,
 {
   fn router(self, state: &S) -> axum::Router<S> {
-    let route_list = Router::new() //
+    let route_read = Router::new() //
       .route("/", routing::get(Self::list))
-      .route_layer(admin_guard!(state));
-    let route_get = Router::new() //
-      .route("/{uuid}", routing::get(Self::get));
+      .route("/{uuid}", routing::get(Self::get))
+      .route_layer(ability_guard!(user_invitation, read));
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(admin_guard!(state));
+      .route_layer(ability_guard!(user_invitation, create));
     let route_update = Router::new() //
       .route("/{uuid}", routing::patch(Self::update))
-      .route_layer(admin_guard!(state));
+      .route_layer(ability_guard!(user_invitation, update));
     let route_delete = Router::new() //
       .route("/{uuid}", routing::delete(Self::delete))
-      .route_layer(admin_guard!(state));
+      .route_layer(ability_guard!(user_invitation, delete));
 
     Router::new()
-      .merge(route_list)
-      .merge(route_get)
+      .merge(route_read)
       .merge(route_create)
       .merge(route_update)
       .merge(route_delete)

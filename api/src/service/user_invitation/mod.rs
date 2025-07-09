@@ -4,8 +4,8 @@ use chrono::{Duration, Utc};
 use core::db;
 use entity::prelude::*;
 use error::SumidaError;
-use sea_orm::{ActiveValue::*, EntityTrait, TransactionTrait};
-use sea_orm::{ColumnTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelect};
+use sea_orm::{ActiveValue::*, DbErr, EntityTrait, TransactionTrait};
+use sea_orm::{ColumnTrait, ConnectionTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelect};
 use uuid::Uuid;
 
 use crate::util::crud::Pagination;
@@ -15,6 +15,28 @@ use self::dto::*;
 pub struct UserInvitationService;
 
 impl UserInvitationService {
+  pub async fn upsert<C>(user_id: i32, uuid: Uuid, db: &C) -> Result<(), DbErr>
+  where
+    C: ConnectionTrait,
+  {
+    let active_model = entity::user_invitations::ActiveModel {
+      user_id: Set(user_id),
+      uuid: Set(uuid),
+      expires_at: Set((Utc::now() + Duration::days(30)).fixed_offset()),
+      ..Default::default()
+    };
+
+    let exists = UserInvitations::find_by_id(uuid).count(db).await? > 0;
+
+    if exists {
+      UserInvitations::update(active_model).exec(db).await?;
+    } else {
+      UserInvitations::insert(active_model).exec(db).await?;
+    }
+
+    Ok(())
+  }
+
   pub async fn list(
     filter: UserInvitationFilter,
     pagination: Pagination,

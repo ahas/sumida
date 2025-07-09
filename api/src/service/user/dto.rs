@@ -21,6 +21,7 @@ use serde_json::{Value as JsonValue, json};
 use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserFilter {
   pub search: Option<String>,
   pub username: Option<String>,
@@ -123,6 +124,7 @@ impl From<core::session::UserRole> for UserRole {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct UserListItem {
+  pub id: i32,
   pub username: String,
   pub full_name: Option<String>,
   pub email: Option<String>,
@@ -142,6 +144,7 @@ pub struct UserListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetUser {
+  pub id: i32,
   pub username: String,
   pub full_name: Option<String>,
   pub email: Option<String>,
@@ -167,6 +170,7 @@ impl IntoResponse for GetUser {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUser {
+  pub id: Optional<i32>,
   pub username: String,
   pub password: String,
   pub full_name: Nullable<String>,
@@ -181,7 +185,7 @@ pub struct CreateUser {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserCreated {
-  pub username: String,
+  pub id: i32,
 }
 
 impl IntoResponse for UserCreated {
@@ -193,6 +197,7 @@ impl IntoResponse for UserCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUser {
+  pub username: Optional<String>,
   pub password: Optional<String>,
   pub email: Nullable<String>,
   pub full_name: Nullable<String>,

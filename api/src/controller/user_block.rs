@@ -31,8 +31,8 @@ impl<S> UserBlockController<S> {
 
   async fn get(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetUserBlock, SumidaError> {
     match UserBlockService::get(id).await? {
-      Some(role) => Ok(role),
-      None => Err(SumidaError::NoData("Role".to_owned(), id.to_string())),
+      Some(user_block) => Ok(user_block),
+      None => Err(SumidaError::NoData("UserBlock".to_owned(), id.to_string())),
     }
   }
 
@@ -68,16 +68,16 @@ where
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(ability_guard!(role, read));
+      .route_layer(ability_guard!(user_block, read));
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(ability_guard!(role, create));
+      .route_layer(ability_guard!(user_block, create));
     let route_update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(ability_guard!(role, update));
+      .route_layer(ability_guard!(user_block, update));
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(ability_guard!(role, delete));
+      .route_layer(ability_guard!(user_block, delete));
 
     Router::new()
       .merge(route_read)

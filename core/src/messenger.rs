@@ -54,8 +54,8 @@ impl SumidaMessenger {
   }
 
   #[inline]
-  pub fn user(&self, usernames: impl RoomParam) -> Self {
-    self.clone().within(usernames.into_room_iter().map(|x| format!("user:{x}")).collect::<Vec<String>>())
+  pub fn user(&self, user_ids: impl RoomParam) -> Self {
+    self.clone().within(user_ids.into_room_iter().map(|x| format!("user:{x}")).collect::<Vec<String>>())
   }
 
   #[inline]

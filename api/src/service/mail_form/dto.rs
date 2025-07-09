@@ -11,6 +11,7 @@ use serde_json::json;
 use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MailFormFilter {
   pub sender: Option<String>,
   pub subject: Option<String>,

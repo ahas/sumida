@@ -1,23 +1,39 @@
 use axum::Json;
 use axum::response::IntoResponse;
 use entity::user_logs::{SignInCode, SignInMethod};
-use sea_orm::{FromQueryResult, QueryTrait, prelude::*};
+use sea_orm::{Condition, FromQueryResult, IntoSimpleExpr, QueryTrait, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::crud::wrap_ilike;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserLogFilter {
   pub search: Option<String>,
+  pub user_id: Option<i32>,
   pub username: Option<String>,
+  pub name: Option<String>,
 }
 
 impl UserLogFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
-    query.apply_if(self.username.as_ref(), |q, v| {
-      q.filter(wrap_ilike(Expr::col((entity::users::Entity, entity::users::Column::Username)), v))
-    })
+    let col_user_id = Expr::col("user_id");
+    let col_username = Expr::col("user_username");
+    let col_full_name = Expr::col("user_full_name");
+
+    query
+      .apply_if(self.search.as_ref(), |q, v| {
+        q.filter(
+          Condition::any() //
+            .add(col_user_id.clone().into_simple_expr().cast_as("text").eq(v))
+            .add(wrap_ilike(col_username.clone(), &v))
+            .add(wrap_ilike(col_full_name.clone(), &v)),
+        )
+      })
+      .apply_if(self.user_id, |q, v| q.filter(col_user_id.into_simple_expr().eq(v)))
+      .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike(col_username, v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(col_full_name, v)))
   }
 }
 
