@@ -8,7 +8,6 @@ use serde_json::json;
 use crate::util::crud::wrap_ilike;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct UserLogFilter {
   pub search: Option<String>,
   pub user_id: Option<i32>,

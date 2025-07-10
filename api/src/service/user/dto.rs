@@ -21,7 +21,6 @@ use serde_json::{Value as JsonValue, json};
 use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct UserFilter {
   pub search: Option<String>,
   pub username: Option<String>,

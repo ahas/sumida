@@ -11,7 +11,6 @@ use serde_json::{Value as JsonValue, json};
 use crate::util::crud::wrap_ilike_col;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RoleFilter {
   pub name: Option<String>,
   pub description: Option<String>,

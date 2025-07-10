@@ -12,7 +12,6 @@ use serde_json::json;
 use crate::util::crud::{wrap_ilike, wrap_ilike_col};
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ApiKeyFilter {
   pub key: Option<String>,
   pub user_id: Option<i32>,

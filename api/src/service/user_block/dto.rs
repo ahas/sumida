@@ -15,7 +15,6 @@ use entity::user_blocks::*;
 use crate::util::crud::wrap_ilike;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct UserBlockFilter {
   pub search: Option<String>,
   pub username: Option<String>,
