@@ -5,7 +5,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id: i32,
-  pub category_id: i32,
+  pub category_id: Option<i32>,
   pub name: String,
   pub description: Option<String>,
   pub created_at: DateTimeWithTimeZone,
@@ -21,15 +21,15 @@ pub enum Relation {
     on_update = "Cascade",
     on_delete = "Cascade"
   )]
-  BoardCategory,
+  Category,
 
   #[sea_orm(has_many = "super::board_posts::Entity")]
-  BoardPosts,
+  Posts,
 }
 
 impl Related<super::board_categories::Entity> for Entity {
   fn to() -> RelationDef {
-    Relation::BoardCategory.def()
+    Relation::Category.def()
   }
 }
 

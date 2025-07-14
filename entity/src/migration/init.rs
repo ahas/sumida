@@ -4,6 +4,17 @@ use sea_orm_migration::schema::*;
 use serde_json::json;
 
 #[derive(DeriveIden)]
+enum RelationTuples {
+  Table,
+  Id,
+  Namespace,
+  Object,
+  Relation,
+  User,
+  CreatedAt,
+}
+
+#[derive(DeriveIden)]
 enum Organizations {
   Table,
   Id,
@@ -160,6 +171,24 @@ impl MigrationTrait for Migration {
         "#,
       )
       .await?;
+
+    // BEGIN relation_tuples table
+    manager
+      .create_table(
+        Table::create()
+          .if_not_exists()
+          .table(RelationTuples::Table)
+          .col(integer(RelationTuples::Id).auto_increment())
+          .col(string(RelationTuples::Namespace))
+          .col(string(RelationTuples::Object))
+          .col(string(RelationTuples::Relation))
+          .col(string(RelationTuples::User))
+          .col(timestamp_with_time_zone(RelationTuples::CreatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_relation_tuples__id").col(RelationTuples::Id))
+          .to_owned(),
+      )
+      .await?;
+    db_conn.execute_unprepared("SELECT manage_updated_at('relation_tuples');").await?;
 
     // BEGIN organizations table
     manager
@@ -492,79 +521,6 @@ impl MigrationTrait for Migration {
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db_conn = manager.get_connection();
 
-    // Indexes
-    manager
-      .drop_index(
-        Index::drop()
-          .if_exists()
-          .name("idx_organizations__parent_id")
-          .table(Organizations::Table)
-          .to_owned(),
-      )
-      .await?;
-    manager
-      .drop_index(
-        Index::drop().if_exists().name("idx_users__organization_id").table(Users::Table).to_owned(),
-      )
-      .await?;
-    manager
-      .drop_index(Index::drop().if_exists().name("idx_users__role_id").table(Users::Table).to_owned())
-      .await?;
-    manager
-      .drop_index(
-        Index::drop().if_exists().name("idx_preferences__user_id").table(Preferences::Table).to_owned(),
-      )
-      .await?;
-
-    // Foreign Keys
-    manager
-      .drop_foreign_key(
-        ForeignKey::drop().name("fk_organizations__parent_id").table(Organizations::Table).to_owned(),
-      )
-      .await?;
-    manager
-      .drop_foreign_key(ForeignKey::drop().name("fk_users__organization_id").table(Users::Table).to_owned())
-      .await?;
-    manager
-      .drop_foreign_key(ForeignKey::drop().name("fk_users__role_id").table(Users::Table).to_owned())
-      .await?;
-    manager
-      .drop_foreign_key(
-        ForeignKey::drop().name("fk_preferences__user_id").table(Preferences::Table).to_owned(),
-      )
-      .await?;
-    manager
-      .drop_foreign_key(
-        ForeignKey::drop().name("fk_user_blocks__user_id").table(UserBlocks::Table).to_owned(),
-      )
-      .await?;
-    manager
-      .drop_foreign_key(
-        ForeignKey::drop().name("fk_user_blocks__blocked_by").table(UserBlocks::Table).to_owned(),
-      )
-      .await?;
-    manager
-      .drop_foreign_key(
-        ForeignKey::drop().name("fk_user_invitations__user_id").table(UserInvitations::Table).to_owned(),
-      )
-      .await?;
-    manager
-      .drop_foreign_key(ForeignKey::drop().name("fk_user_logs__user_id").table(UserLogs::Table).to_owned())
-      .await?;
-    manager
-      .drop_foreign_key(
-        ForeignKey::drop()
-          .name("fk_user_verifications__user_id")
-          .table(UserVerifications::Table)
-          .to_owned(),
-      )
-      .await?;
-
-    // Triggers
-    db_conn.execute_unprepared("DROP TRIGGER IF EXISTS set_updated_at ON organizations;").await?;
-    db_conn.execute_unprepared("DROP TRIGGER IF EXISTS set_updated_at ON roles;").await?;
-    db_conn.execute_unprepared("DROP TRIGGER IF EXISTS set_updated_at ON users;").await?;
-
     // Tables
     manager.drop_table(Table::drop().if_exists().table(MailForms::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(UserVerifications::Table).to_owned()).await?;
@@ -576,6 +532,7 @@ impl MigrationTrait for Migration {
     manager.drop_table(Table::drop().if_exists().table(Users::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(Roles::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(Organizations::Table).to_owned()).await?;
+    manager.drop_table(Table::drop().if_exists().table(RelationTuples::Table).to_owned()).await?;
 
     // Functions
     db_conn.execute_unprepared("DROP FUNCTION IF EXISTS manage_updated_at(in _tbl regclass);").await?;

@@ -60,6 +60,12 @@ where
     let preference_controller = PreferenceController::<StateT>::new();
     let mail_form_controller = MailFormController::<StateT>::new();
 
+    // Board System
+    let board_category_controller = BoardCategoryController::<StateT>::new();
+    let board_controller = BoardController::<StateT>::new();
+    let board_post_controller = BoardPostController::<StateT>::new();
+    let board_comment_controller = BoardCommentController::<StateT>::new();
+
     Router::new()
       .nest("/api-keys", api_key_controller.router(state))
       .nest("/organizations", org_controller.router(state))
@@ -71,6 +77,11 @@ where
       .nest("/user-verifications", user_verification_controller.router(state))
       .nest("/preference", preference_controller.router(state))
       .nest("/mail-forms", mail_form_controller.router(state))
+      // Board System
+      .nest("/boards", board_controller.router(state))
+      .nest("/board-categories", board_category_controller.router(state))
+      .nest("/board-posts", board_post_controller.router(state))
+      .nest("/board-comments", board_comment_controller.router(state))
   }
 }
 

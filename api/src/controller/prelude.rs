@@ -9,6 +9,8 @@ pub use super::user_invitation::UserInvitationController;
 pub use super::user_log::UserLogController;
 pub use super::user_verification::UserVerificationController;
 
+pub use super::bs::prelude::*;
+
 pub use core::session::{UserContext, UserOrganization, UserProfile};
 pub use error::SumidaError;
 pub use tower_sessions::Session;

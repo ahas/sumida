@@ -1,4 +1,5 @@
 pub mod api_key;
+pub mod bs;
 pub mod mail_form;
 pub mod organization;
 pub mod preference;

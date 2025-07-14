@@ -40,6 +40,15 @@ pub struct SumidaRoleAbility {
   pub organization: Ability,
   #[serde(default)]
   pub api_key: Ability,
+  // Board System
+  #[serde(default)]
+  pub board: Ability,
+  #[serde(default)]
+  pub board_category: Ability,
+  #[serde(default)]
+  pub board_post: Ability,
+  #[serde(default)]
+  pub board_comment: Ability,
 }
 
 impl Default for SumidaRoleAbility {
@@ -52,6 +61,11 @@ impl Default for SumidaRoleAbility {
       user_log: Ability::default(),
       organization: Ability::default(),
       api_key: Ability::default(),
+      // Board System
+      board: Ability::default(),
+      board_category: Ability::default(),
+      board_post: Ability::default(),
+      board_comment: Ability::default(),
     }
   }
 }

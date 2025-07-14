@@ -2,7 +2,7 @@ use std::io::{BufWriter, Cursor};
 
 use axum::http::header;
 use axum::response::IntoResponse;
-use image::{codecs::jpeg, imageops, DynamicImage, ImageFormat, RgbImage};
+use image::{DynamicImage, ImageFormat, RgbImage, codecs::jpeg, imageops};
 
 #[derive(Clone, Debug)]
 pub struct ImageResponse(pub DynamicImage, pub ImageFormat);

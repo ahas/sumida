@@ -20,7 +20,7 @@ pub enum Relation {
     on_update = "Cascade",
     on_delete = "SetNull"
   )]
-  SelfRef,
+  Parent,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

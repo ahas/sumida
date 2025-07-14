@@ -6,10 +6,10 @@ pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id: i32,
   pub board_id: i32,
-  pub user_id: i32,
+  pub parent_id: Option<i32>,
+  pub user_id: Option<i32>,
   pub title: String,
-  #[sea_orm(column_type = "Text")]
-  pub content: String,
+  pub content: Option<String>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -24,17 +24,31 @@ pub enum Relation {
     on_delete = "Cascade"
   )]
   Board,
-
   #[sea_orm(has_many = "super::board_comments::Entity")]
-  BoardComment,
-
+  Comments,
   #[sea_orm(has_many = "super::board_post_views::Entity")]
-  BoardPostViews,
+  Views,
+  #[sea_orm(belongs_to = "Entity", from = "Column::ParentId", to = "Column::Id", on_delete = "Cascade")]
+  Parent,
+  #[sea_orm(belongs_to = "crate::users::Entity", from = "Column::UserId", to = "crate::users::Column::Id")]
+  User,
 }
 
 impl Related<super::boards::Entity> for Entity {
   fn to() -> RelationDef {
     Relation::Board.def()
+  }
+}
+
+impl Related<Entity> for Entity {
+  fn to() -> RelationDef {
+    Relation::Parent.def()
+  }
+}
+
+impl Related<crate::users::Entity> for Entity {
+  fn to() -> RelationDef {
+    Relation::User.def()
   }
 }
 

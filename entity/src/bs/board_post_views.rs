@@ -21,12 +21,12 @@ pub enum Relation {
     on_delete = "Cascade",
     on_update = "Cascade"
   )]
-  BoardPost,
+  Post,
 }
 
 impl Related<super::board_posts::Entity> for Entity {
   fn to() -> RelationDef {
-    Relation::BoardPost.def()
+    Relation::Post.def()
   }
 }
 

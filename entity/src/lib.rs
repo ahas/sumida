@@ -1,8 +1,9 @@
 pub mod api_keys;
-pub mod board;
+pub mod bs;
 pub mod mail_forms;
 pub mod organizations;
 pub mod preferences;
+pub mod relation_tuples;
 pub mod roles;
 pub mod user_blocks;
 pub mod user_invitations;
