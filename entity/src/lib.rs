@@ -1,4 +1,5 @@
 pub mod api_keys;
+pub mod board;
 pub mod mail_forms;
 pub mod organizations;
 pub mod preferences;
