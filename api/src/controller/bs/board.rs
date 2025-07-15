@@ -1,7 +1,7 @@
 use crate::controller::ApiController;
 use crate::service::bs::prelude::*;
 use crate::util::crud::{List, Pagination};
-use crate::{ability_guard, user_guard};
+use crate::{ability_guard, service_access_policy, user_guard};
 use axum::{
   Json, Router,
   extract::{Path, Query, State},
@@ -64,20 +64,25 @@ where
     let read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(ability_guard!(board, read));
+      .route_layer(service_access_policy!(board, read));
 
     let create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(ability_guard!(board, create));
+      .route_layer(service_access_policy!(board, create));
 
     let update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(ability_guard!(board, update));
+      .route_layer(service_access_policy!(board, update));
 
     let delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(ability_guard!(board, delete));
+      .route_layer(service_access_policy!(board, delete));
 
-    Router::new().merge(read).merge(create).merge(update).merge(delete).route_layer(user_guard!(state))
+    Router::new() //
+      .merge(read)
+      .merge(create)
+      .merge(update)
+      .merge(delete)
+      .route_layer(user_guard!(state))
   }
 }

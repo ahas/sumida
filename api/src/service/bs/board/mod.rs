@@ -1,18 +1,15 @@
 pub mod dto;
 
 use self::dto::*;
+use crate::util::access::Access;
 use crate::util::crud::Pagination;
-use crate::util::rebac::ReBAC;
 use core::db;
 use core::session::UserContext;
-use entity::bs::boards::Column;
-use entity::bs::boards::Entity as Boards;
+use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::IntoActiveModel;
 use sea_orm::IntoSimpleExpr;
 use sea_orm::PaginatorTrait;
-use sea_orm::sea_query::Alias;
-use sea_orm::sea_query::IntoIndexColumn;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{ActiveValue::Set, DeleteResult, EntityTrait, InsertResult, QuerySelect, TransactionTrait};
 
@@ -24,16 +21,15 @@ impl BoardService {
     filter: BoardFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardListItem>, u64), SumidaError> {
+    use entity::bs::boards::Column;
+
     let db = db::get_connection();
     let txn = db.begin().await?;
 
     let mut query = filter.apply(Boards::find().select_only().expr(Expr::col((Boards, Asterisk))));
 
-    let rel = ReBAC::new().namespace("board").relation("viewer");
-    let rt_alias = Alias::new("rt");
-    rel.build(&rt_alias, user_ctx);
-    let col = Expr::col(entity::bs::boards::Column::Id).cast_as("VARCHAR");
-    query = ReBAC::left_join_with(query, Boards, col, &rt_alias);
+    query =
+      Access::new().namespace("board").action("viewer").owner(user_ctx).filter(query, (Boards, Column::Id));
 
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 

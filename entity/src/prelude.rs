@@ -2,7 +2,7 @@ pub use super::api_keys::Entity as ApiKeys;
 pub use super::mail_forms::Entity as MailForms;
 pub use super::organizations::Entity as Organizations;
 pub use super::preferences::Entity as Preferences;
-pub use super::relation_tuples::Entity as RelationTuples;
+pub use super::access_policies::Entity as AccessPolicies;
 pub use super::roles::Entity as Roles;
 pub use super::user_blocks::Entity as UserBlocks;
 pub use super::user_invitations::Entity as UserInvitations;

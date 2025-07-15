@@ -40,6 +40,8 @@ pub enum SumidaError {
   NoAbilityTopic(String),
   #[error("permission `{0}` exists, but action `{1}` is disabled")]
   NoAbilityAction(String, String),
+  #[error("no service available")]
+  NoServiceAvailable,
   #[error("no jwt secret")]
   NoJwtSecret,
   #[error("invalid jwt")]
@@ -112,7 +114,9 @@ impl From<SumidaError> for StatusCode {
       | SumidaError::InvalidAuthorizationToken
       | SumidaError::OnlyAdminAllowed
       | SumidaError::VerificationFailed => Ok(StatusCode::UNAUTHORIZED),
-      SumidaError::NoAbilityTopic(_) | SumidaError::NoAbilityAction(_, _) => Ok(StatusCode::NOT_ACCEPTABLE),
+      SumidaError::NoAbilityTopic(_)
+      | SumidaError::NoAbilityAction(_, _)
+      | SumidaError::NoServiceAvailable => Ok(StatusCode::NOT_ACCEPTABLE),
       SumidaError::InvalidAuthorizationMethod(_) => Ok(StatusCode::NOT_IMPLEMENTED),
 
       // runtime errors

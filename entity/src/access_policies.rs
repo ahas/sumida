@@ -1,13 +1,13 @@
 use sea_orm::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "relation_tuples")]
+#[sea_orm(table_name = "access_policies")]
 pub struct Model {
-  #[sea_orm(primary_key, auto_increment = true)]
-  pub id: i32,
+  #[sea_orm(primary_key)]
+  pub uuid: Uuid,
   pub namespace: String,
   pub object: String,
-  pub relation: String,
+  pub action: String,
   pub user: String,
   pub created_at: DateTimeWithTimeZone,
 }

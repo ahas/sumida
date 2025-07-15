@@ -4,12 +4,12 @@ use sea_orm_migration::schema::*;
 use serde_json::json;
 
 #[derive(DeriveIden)]
-enum RelationTuples {
+enum AccessPolicies {
   Table,
-  Id,
+  Uuid,
   Namespace,
   Object,
-  Relation,
+  Action,
   User,
   CreatedAt,
 }
@@ -172,23 +172,47 @@ impl MigrationTrait for Migration {
       )
       .await?;
 
-    // BEGIN relation_tuples table
+    // BEGIN access_policies table
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_access_policies__tuple")
+          .table(AccessPolicies::Table)
+          .col(AccessPolicies::Namespace)
+          .col(AccessPolicies::Object)
+          .col(AccessPolicies::Action)
+          .col(AccessPolicies::User)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_access_policies__user")
+          .table(AccessPolicies::Table)
+          .col(AccessPolicies::User)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
     manager
       .create_table(
         Table::create()
           .if_not_exists()
-          .table(RelationTuples::Table)
-          .col(integer(RelationTuples::Id).auto_increment())
-          .col(string(RelationTuples::Namespace))
-          .col(string(RelationTuples::Object))
-          .col(string(RelationTuples::Relation))
-          .col(string(RelationTuples::User))
-          .col(timestamp_with_time_zone(RelationTuples::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_relation_tuples__id").col(RelationTuples::Id))
+          .table(AccessPolicies::Table)
+          .col(uuid(AccessPolicies::Uuid).default(Expr::cust("uuid_generate_v4()")))
+          .col(string(AccessPolicies::Namespace))
+          .col(string(AccessPolicies::Object))
+          .col(string(AccessPolicies::Action))
+          .col(string(AccessPolicies::User))
+          .col(timestamp_with_time_zone(AccessPolicies::CreatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_access_policies__uuid").col(AccessPolicies::Uuid))
           .to_owned(),
       )
       .await?;
-    db_conn.execute_unprepared("SELECT manage_updated_at('relation_tuples');").await?;
 
     // BEGIN organizations table
     manager
@@ -532,7 +556,7 @@ impl MigrationTrait for Migration {
     manager.drop_table(Table::drop().if_exists().table(Users::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(Roles::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(Organizations::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(RelationTuples::Table).to_owned()).await?;
+    manager.drop_table(Table::drop().if_exists().table(AccessPolicies::Table).to_owned()).await?;
 
     // Functions
     db_conn.execute_unprepared("DROP FUNCTION IF EXISTS manage_updated_at(in _tbl regclass);").await?;

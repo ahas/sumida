@@ -41,6 +41,37 @@ macro_rules! ability_guard {
 }
 
 #[macro_export]
+macro_rules! service_access_policy {
+  ($ns: ident, $action: ident) => {
+    axum::middleware::from_fn(
+      |user_ctx: $crate::sumida_core::session::UserContext,
+       req: axum::extract::Request,
+       next: axum::middleware::Next| async move {
+        use crate::util::access::Access;
+        use core::db;
+
+        let ns = stringify!($ns);
+        let action = stringify!($action);
+
+        let count = Access::new()
+          .namespace(ns)
+          .object("service")
+          .action(action)
+          .owner(&user_ctx)
+          .count(db::get_connection())
+          .await;
+
+        if count > 0 {
+          Ok(next.run(req).await)
+        } else {
+          Err(SumidaError::NoServiceAvailable)
+        }
+      },
+    )
+  };
+}
+
+#[macro_export]
 macro_rules! user_guard {
   ($state: ident) => {
     axum::middleware::from_fn_with_state($state.clone(), $crate::middleware::guard::user_guard_fn)
