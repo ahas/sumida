@@ -27,31 +27,44 @@ impl<S> BoardController<S> {
     Ok(BoardService::list(&user_ctx, filter, pagination).await?.into())
   }
 
-  async fn get(State(_): State<S>, Path(id): Path<i32>) -> Result<GetBoard, SumidaError> {
-    match BoardService::get(id).await? {
+  async fn get(
+    user_ctx: UserContext,
+    State(_): State<S>,
+    Path(id): Path<i32>,
+  ) -> Result<GetBoard, SumidaError> {
+    match BoardService::get(&user_ctx, id).await? {
       Some(item) => Ok(item),
       None => Err(SumidaError::NoData("Board".into(), id.to_string())),
     }
   }
 
-  async fn create(State(_): State<S>, Json(body): Json<CreateBoard>) -> Result<BoardCreated, SumidaError> {
-    let res = BoardService::create(body).await?;
+  async fn create(
+    user_ctx: UserContext,
+    State(_): State<S>,
+    Json(body): Json<CreateBoard>,
+  ) -> Result<BoardCreated, SumidaError> {
+    let res = BoardService::create(&user_ctx, body).await?;
     Ok(BoardCreated {
       id: res.last_insert_id,
     })
   }
 
   async fn update(
+    user_ctx: UserContext,
     State(_): State<S>,
     Path(id): Path<i32>,
     Json(body): Json<UpdateBoard>,
   ) -> Result<BoardUpdated, SumidaError> {
-    BoardService::update(id, body).await?;
+    BoardService::update(&user_ctx, id, body).await?;
     Ok(BoardUpdated)
   }
 
-  async fn delete(State(_): State<S>, Path(id): Path<i32>) -> Result<BoardDeleted, SumidaError> {
-    BoardService::delete(id).await?;
+  async fn delete(
+    user_ctx: UserContext,
+    State(_): State<S>,
+    Path(id): Path<i32>,
+  ) -> Result<BoardDeleted, SumidaError> {
+    BoardService::delete(&user_ctx, id).await?;
     Ok(BoardDeleted)
   }
 }
@@ -63,20 +76,16 @@ where
   fn router(self, state: &S) -> Router<S> {
     let read = Router::new() //
       .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get))
-      .route_layer(service_access_policy!(board, read));
+      .route("/{id}", routing::get(Self::get));
 
     let create = Router::new() //
-      .route("/", routing::post(Self::create))
-      .route_layer(service_access_policy!(board, create));
+      .route("/", routing::post(Self::create));
 
     let update = Router::new() //
-      .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_access_policy!(board, update));
+      .route("/{id}", routing::patch(Self::update));
 
     let delete = Router::new() //
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_access_policy!(board, delete));
+      .route("/{id}", routing::delete(Self::delete));
 
     Router::new() //
       .merge(read)
