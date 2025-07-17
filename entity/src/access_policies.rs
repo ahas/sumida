@@ -6,8 +6,9 @@ pub struct Model {
   #[sea_orm(primary_key)]
   pub uuid: Uuid,
   pub namespace: String,
+  pub effect: String,
   pub object: String,
-  pub action: String,
+  pub action: Vec<String>,
   pub user: String,
   pub created_at: DateTimeWithTimeZone,
 }

@@ -1,7 +1,7 @@
 use crate::controller::ApiController;
 use crate::service::bs::prelude::*;
 use crate::util::crud::{List, Pagination};
-use crate::{ability_guard, service_access_policy, user_guard};
+use crate::{service_ap, user_guard};
 use axum::{
   Json, Router,
   extract::{Path, Query, State},
@@ -76,16 +76,20 @@ where
   fn router(self, state: &S) -> Router<S> {
     let read = Router::new() //
       .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get));
+      .route("/{id}", routing::get(Self::get))
+      .route_layer(service_ap!(board, read));
 
     let create = Router::new() //
-      .route("/", routing::post(Self::create));
+      .route("/", routing::post(Self::create))
+      .route_layer(service_ap!(board, create));
 
     let update = Router::new() //
-      .route("/{id}", routing::patch(Self::update));
+      .route("/{id}", routing::patch(Self::update))
+      .route_layer(service_ap!(board, update));
 
     let delete = Router::new() //
-      .route("/{id}", routing::delete(Self::delete));
+      .route("/{id}", routing::delete(Self::delete))
+      .route_layer(service_ap!(board, delete));
 
     Router::new() //
       .merge(read)

@@ -1,8 +1,8 @@
 pub mod dto;
 
 use self::dto::*;
+use crate::util::ap::Ap;
 use crate::util::crud::Pagination;
-use crate::util::srn::Srn;
 use core::db;
 use core::session::UserContext;
 use entity::prelude::*;
@@ -18,16 +18,15 @@ pub struct BoardService;
 
 impl BoardService {
   pub fn select(user_ctx: &UserContext, query: Select<Boards>) -> Select<Boards> {
-    Self::srn(user_ctx).action("read").apply(query.select_only().expr(Expr::col((Boards, Asterisk))))
+    Self::ap(user_ctx).action("read").apply(query.select_only().expr(Expr::col((Boards, Asterisk))))
   }
 
-  pub fn srn(user_ctx: &UserContext) -> Srn {
+  pub fn ap(user_ctx: &UserContext) -> Ap {
     use entity::bs::boards::Column;
 
-    Srn::new("board:?")
-      .namespace("sumida")
+    Ap::new("board") //
       .owner(user_ctx)
-      .column(Expr::col((Boards, Column::Id)).cast_as("varchar"))
+      .object(Expr::col((Boards, Column::Id)).cast_as("varchar"))
   }
 
   pub async fn list(
@@ -65,11 +64,10 @@ impl BoardService {
   }
 
   pub async fn create(
-    user_ctx: &UserContext,
+    _user_ctx: &UserContext,
     data: CreateBoard,
   ) -> Result<InsertResult<entity::bs::boards::ActiveModel>, SumidaError> {
     let db = db::get_connection();
-    Self::srn(user_ctx).action("create").check(db).await?;
     Ok(Boards::insert(data.into_active_model()).exec(db).await?)
   }
 
@@ -79,7 +77,7 @@ impl BoardService {
     data: UpdateBoard,
   ) -> Result<entity::bs::boards::Model, SumidaError> {
     let db = db::get_connection();
-    Self::srn(user_ctx).action("update").check_with(Boards::find_by_id(id), db).await?;
+    Self::ap(user_ctx).action("update").check(Boards::find_by_id(id), db).await?;
 
     let mut am = data.into_active_model();
     am.id = Set(id);
@@ -88,7 +86,7 @@ impl BoardService {
 
   pub async fn delete(user_ctx: &UserContext, id: i32) -> Result<DeleteResult, SumidaError> {
     let db = db::get_connection();
-    Self::srn(user_ctx).action("delete").check_with(Boards::find_by_id(id), db).await?;
+    Self::ap(user_ctx).action("delete").check(Boards::find_by_id(id), db).await?;
     Ok(Boards::delete_by_id(id).exec(db).await?)
   }
 }

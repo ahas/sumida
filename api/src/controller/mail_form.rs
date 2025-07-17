@@ -10,7 +10,7 @@ use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
-use crate::{admin_guard, user_guard};
+use crate::{admin_guard, service_ap, user_guard};
 
 use super::ApiController;
 
@@ -121,22 +121,20 @@ where
   S: Clone + Send + Sync + 'static,
 {
   fn router(self, state: &S) -> axum::Router<S> {
-    let admin_guard_layer = admin_guard!(state);
-
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{kind}", routing::get(Self::get))
-      .route_layer(admin_guard_layer);
+      .route_layer(service_ap!(mail_form, read));
     let route_create = Router::new()
       .route("/", routing::post(Self::create))
       .route("/files", routing::post(Self::upload_files))
-      .route_layer(admin_guard!(state));
+      .route_layer(service_ap!(mail_form, create));
     let route_update = Router::new() //
       .route("/{kind}", routing::patch(Self::update))
-      .route_layer(admin_guard!(state));
+      .route_layer(service_ap!(mail_form, update));
     let route_delete = Router::new() //
       .route("/{kind}", routing::delete(Self::delete))
-      .route_layer(admin_guard!(state));
+      .route_layer(service_ap!(mail_form, delete));
 
     Router::<S>::new()
       .merge(route_read)

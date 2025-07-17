@@ -6,24 +6,15 @@ use error::SumidaError;
 use sea_orm::{ActiveValue::*, TransactionTrait};
 use sea_orm::{DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect};
 use sea_orm_crud::Optional;
-use serde::Serialize;
 use serde_json::json;
 
-use crate::provider::RoleProvider;
 use crate::util::crud::Pagination;
 
 use self::dto::*;
 
-pub struct RoleService<T, R> {
-  _ability: std::marker::PhantomData<T>,
-  _provider: std::marker::PhantomData<R>,
-}
+pub struct RoleService;
 
-impl<T, R> RoleService<T, R>
-where
-  T: Default + Serialize + 'static,
-  R: RoleProvider<T> + Clone + Send + Sync + 'static,
-{
+impl RoleService {
   pub async fn list(
     filter: RoleFilter,
     pagination: Pagination,

@@ -1,36 +1,26 @@
 pub mod controller;
 pub mod layer;
 pub mod middleware;
-pub mod provider;
 pub mod service;
 pub mod util;
 
 use axum::Router;
 use controller::{ApiController, prelude::*};
-use serde::Serialize;
-
-use self::provider::RoleProvider;
 
 pub mod sumida_core {
   pub use ::core::*;
 }
 
-pub struct Sumida<'a, StateT, RoleAbilityT, RoleProviderT>
+pub struct Sumida<'a, StateT>
 where
   StateT: Clone + Send + Sync + 'static,
-  RoleAbilityT: Default + Serialize + 'static,
-  RoleProviderT: RoleProvider<RoleAbilityT> + Clone + Send + Sync + 'static,
 {
   pub state: Option<&'a StateT>,
-  pub role: Option<RoleProviderT>,
-  _role_ability: std::marker::PhantomData<RoleAbilityT>,
 }
 
-impl<'a, StateT, RoleAbilityT, RoleProviderT> Sumida<'a, StateT, RoleAbilityT, RoleProviderT>
+impl<'a, StateT> Sumida<'a, StateT>
 where
   StateT: Clone + Send + Sync + 'static,
-  RoleAbilityT: Default + Serialize + 'static,
-  RoleProviderT: RoleProvider<RoleAbilityT> + Clone + Send + Sync + 'static,
 {
   pub fn new() -> Self {
     Self::default()
@@ -41,17 +31,12 @@ where
     self
   }
 
-  pub fn set_role_provider(mut self, role: RoleProviderT) -> Self {
-    self.role = Some(role);
-    self
-  }
-
   pub fn router(self) -> Router<StateT> {
     let state = self.state.expect("[SumidaRouter]: state must be set");
 
     let api_key_controller = ApiKeyController::<StateT>::new();
     let org_controller = OrganizationController::<StateT>::new();
-    let role_controller = RoleController::<StateT, RoleAbilityT, RoleProviderT>::new();
+    let role_controller = RoleController::<StateT>::new();
     let user_controller = UserController::<StateT>::new();
     let user_block_controller = UserBlockController::<StateT>::new();
     let user_log_controller = UserLogController::<StateT>::new();
@@ -85,17 +70,11 @@ where
   }
 }
 
-impl<StateT, RoleAbilityT, RoleProviderT> Default for Sumida<'_, StateT, RoleAbilityT, RoleProviderT>
+impl<StateT> Default for Sumida<'_, StateT>
 where
   StateT: Clone + Send + Sync + 'static,
-  RoleAbilityT: Default + Serialize + 'static,
-  RoleProviderT: RoleProvider<RoleAbilityT> + Clone + Send + Sync + 'static,
 {
   fn default() -> Self {
-    Self {
-      state: None,
-      role: None,
-      _role_ability: std::marker::PhantomData,
-    }
+    Self { state: None }
   }
 }

@@ -6,9 +6,16 @@ use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, Set};
 use sea_orm::{QueryTrait, prelude::*};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, json};
+use serde_json::json;
 
 use crate::util::crud::wrap_ilike_col;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServicePolicy {
+  service: String,
+  action: String,
+}
 
 #[derive(Deserialize)]
 pub struct RoleFilter {
@@ -42,7 +49,7 @@ pub struct GetRole {
   pub id: i32,
   pub name: String,
   pub description: Option<String>,
-  pub ability: JsonValue,
+  pub service_policies: Vec<ServicePolicy>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -60,7 +67,7 @@ pub struct CreateRole {
   pub name: String,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub ability: Optional<JsonValue>,
+  pub service_policies: Vec<ServicePolicy>,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateRole {
@@ -69,7 +76,6 @@ impl IntoActiveModel<ActiveModel> for CreateRole {
       id: self.id.into_active_value(),
       name: Set(self.name),
       description: self.description.into_active_value(),
-      ability: self.ability.into_active_value(),
       ..Default::default()
     }
   }
@@ -93,7 +99,7 @@ pub struct UpdateRole {
   pub name: Optional<String>,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub ability: Optional<JsonValue>,
+  pub service_policies: Optional<Vec<ServicePolicy>>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateRole {
@@ -101,7 +107,6 @@ impl IntoActiveModel<ActiveModel> for UpdateRole {
     ActiveModel {
       name: self.name.into_active_value(),
       description: self.description.into_active_value(),
-      ability: self.ability.into_active_value(),
       ..Default::default()
     }
   }

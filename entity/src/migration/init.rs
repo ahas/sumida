@@ -11,6 +11,7 @@ enum AccessPolicies {
   Object,
   Action,
   User,
+  Effect,
   CreatedAt,
 }
 
@@ -30,7 +31,6 @@ enum Roles {
   Id,
   Name,
   Description,
-  Ability,
   CreatedAt,
   UpdatedAt,
 }
@@ -118,7 +118,6 @@ enum ApiKeys {
   Table,
   Key,
   UserId,
-  Ability,
   ExpiresAt,
   CreatedAt,
 }
@@ -191,6 +190,17 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
+          .name("idx_access_policies__group")
+          .table(AccessPolicies::Table)
+          .col(AccessPolicies::Namespace)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
           .name("idx_access_policies__user")
           .table(AccessPolicies::Table)
           .col(AccessPolicies::User)
@@ -205,8 +215,11 @@ impl MigrationTrait for Migration {
           .table(AccessPolicies::Table)
           .col(uuid(AccessPolicies::Uuid).default(Expr::cust("uuid_generate_v4()")))
           .col(string(AccessPolicies::Namespace))
+          .col(string(AccessPolicies::Effect))
           .col(string(AccessPolicies::Object))
-          .col(string(AccessPolicies::Action))
+          .col(
+            array(AccessPolicies::Action, ColumnType::String(StringLen::None)).default(Expr::cust("'{}'")),
+          )
           .col(string(AccessPolicies::User))
           .col(timestamp_with_time_zone(AccessPolicies::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_access_policies__uuid").col(AccessPolicies::Uuid))
@@ -260,7 +273,6 @@ impl MigrationTrait for Migration {
           .col(integer(Roles::Id).auto_increment())
           .col(string(Roles::Name))
           .col(string(Roles::Description).default(""))
-          .col(json_binary(Roles::Ability).default(json!({})))
           .col(timestamp_with_time_zone(Roles::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Roles::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_roles__id").col(Roles::Id))
@@ -383,7 +395,6 @@ impl MigrationTrait for Migration {
           .table(ApiKeys::Table)
           .col(string(ApiKeys::Key))
           .col(integer(ApiKeys::UserId))
-          .col(json_binary_null(ApiKeys::Ability))
           .col(timestamp_with_time_zone_null(ApiKeys::ExpiresAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(ApiKeys::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_api_keys__key").col(ApiKeys::Key))

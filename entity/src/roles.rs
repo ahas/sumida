@@ -24,52 +24,6 @@ impl Default for Ability {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct SumidaRoleAbility {
-  #[serde(default)]
-  pub role: Ability,
-  #[serde(default)]
-  pub user: Ability,
-  #[serde(default)]
-  pub user_invitation: Ability,
-  #[serde(default)]
-  pub user_block: Ability,
-  #[serde(default)]
-  pub user_log: Ability,
-  #[serde(default)]
-  pub organization: Ability,
-  #[serde(default)]
-  pub api_key: Ability,
-  // Board System
-  #[serde(default)]
-  pub board: Ability,
-  #[serde(default)]
-  pub board_category: Ability,
-  #[serde(default)]
-  pub board_post: Ability,
-  #[serde(default)]
-  pub board_comment: Ability,
-}
-
-impl Default for SumidaRoleAbility {
-  fn default() -> Self {
-    Self {
-      role: Ability::default(),
-      user: Ability::default(),
-      user_invitation: Ability::default(),
-      user_block: Ability::default(),
-      user_log: Ability::default(),
-      organization: Ability::default(),
-      api_key: Ability::default(),
-      // Board System
-      board: Ability::default(),
-      board_category: Ability::default(),
-      board_post: Ability::default(),
-      board_comment: Ability::default(),
-    }
-  }
-}
-
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "roles")]
 pub struct Model {

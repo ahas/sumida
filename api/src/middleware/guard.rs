@@ -41,27 +41,26 @@ macro_rules! ability_guard {
 }
 
 #[macro_export]
-macro_rules! service_access_policy {
+macro_rules! service_ap {
   ($ns: ident, $action: ident) => {
     axum::middleware::from_fn(
       |user_ctx: $crate::sumida_core::session::UserContext,
        req: axum::extract::Request,
        next: axum::middleware::Next| async move {
-        use crate::util::access::Access;
+        use crate::util::ap::Ap;
         use core::db;
 
         let ns = stringify!($ns);
         let action = stringify!($action);
 
-        let count = Access::new()
-          .namespace(ns)
-          .object("service")
+        let is_allowed = Ap::new(ns)
+          .object(sea_orm::sea_query::Expr::val("service").into())
           .action(action)
           .owner(&user_ctx)
-          .count(db::get_connection())
+          .check_allowed(db::get_connection())
           .await;
 
-        if count > 0 {
+        if is_allowed {
           Ok(next.run(req).await)
         } else {
           Err(SumidaError::NoServiceAvailable)

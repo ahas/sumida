@@ -3,7 +3,7 @@ use axum::{Json, Router, routing};
 
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
-use crate::{ability_guard, user_guard};
+use crate::{service_ap, user_guard};
 
 use super::ApiController;
 
@@ -68,16 +68,16 @@ where
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(ability_guard!(api_key, read));
+      .route_layer(service_ap!(api_key, read));
     let route_create = Router::new()
       .route("/", routing::post(Self::create))
-      .route_layer(ability_guard!(api_key, create));
+      .route_layer(service_ap!(api_key, create));
     let route_update = Router::new()
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(ability_guard!(api_key, update));
+      .route_layer(service_ap!(api_key, update));
     let route_delete = Router::new()
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(ability_guard!(api_key, delete));
+      .route_layer(service_ap!(api_key, delete));
 
     Router::new()
       .merge(route_read)
