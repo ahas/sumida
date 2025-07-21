@@ -75,7 +75,7 @@ impl<S> UserController<S> {
     Ok(StatusCode::OK)
   }
 
-  async fn profile(user_ctx: UserContext, State(_state): State<S>) -> Result<UserProfile, SumidaError> {
+  async fn get_profile(user_ctx: UserContext, State(_state): State<S>) -> Result<UserProfile, SumidaError> {
     Ok(user_ctx.profile)
   }
 
@@ -84,6 +84,15 @@ impl<S> UserController<S> {
       Some(user) => Ok(user),
       None => Err(SumidaError::InvalidAccount),
     }
+  }
+
+  async fn get_access_policies(
+    user_ctx: UserContext,
+    State(_state): State<S>,
+  ) -> Result<Json<Vec<RoleAccessPolicy>>, SumidaError> {
+    let access_policies =
+      RoleService::find_access_policies(Some(user_ctx.profile.role.id), Some(user_ctx.profile.id)).await?;
+    Ok(Json(access_policies))
   }
 
   async fn update_my_info(
@@ -161,9 +170,10 @@ where
       .merge(route_create)
       .merge(route_update)
       .merge(route_delete)
-      .route("/profile", routing::get(Self::profile))
+      .route("/profile", routing::get(Self::get_profile))
       .route("/my-info", routing::get(Self::get_my_info))
       .route("/my-info", routing::patch(Self::update_my_info))
+      .route("/access-policies", routing::get(Self::get_access_policies))
       .route_layer(user_guard!(state))
       .route("/sign-out", routing::post(Self::sign_out))
       .route("/sign-in", routing::post(Self::sign_in))

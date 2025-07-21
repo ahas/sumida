@@ -1,9 +1,6 @@
 pub mod dto;
 pub mod mail_form_context;
 
-#[cfg(test)]
-pub mod tests;
-
 use argon2::password_hash::PasswordHasher;
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;

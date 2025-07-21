@@ -1,14 +1,13 @@
 use core::session::UserContext;
 use entity::access_policies::{Column as ApCol, Entity as ApEntity};
 use error::SumidaError;
-use sea_orm::ConnectionTrait;
-use sea_orm::PaginatorTrait;
+use sea_orm::EntityName;
 use sea_orm::sea_query::Alias;
 use sea_orm::sea_query::IntoTableRef;
 use sea_orm::sea_query::SelectStatement;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{
-  Condition, EntityTrait, QueryFilter, Select,
+  Condition, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Select,
   sea_query::{Expr, SimpleExpr},
 };
 
@@ -151,16 +150,14 @@ impl Ap {
   }
 
   pub fn build_statement(&self, ap_alias: Alias) -> SelectStatement {
-    let mut stmt = SelectStatement::new();
-    stmt
+    SelectStatement::new()
       .expr(Expr::val(1))
       .from_as(ApEntity.into_table_ref(), ap_alias.clone())
       .and_where(self._build_namespace_condition(ap_alias.clone()).into())
       .and_where(self._build_object_conditions(ap_alias.clone()).into())
       .and_where(self._build_action_condition(ap_alias.clone()).into())
-      .and_where(self._build_user_conditions(ap_alias.clone()).into());
-
-    stmt
+      .and_where(self._build_user_conditions(ap_alias.clone()).into())
+      .to_owned()
   }
 
   pub fn build_condition(&self, ap_alias: Alias) -> Condition {
@@ -193,7 +190,7 @@ impl Ap {
     C: ConnectionTrait,
     E::Model: Sync,
   {
-    self.apply(query).count(db).await.unwrap_or(0)
+    PaginatorTrait::count(self.apply(query), db).await.unwrap_or(0)
   }
 
   pub async fn check<'db, E, C>(self, query: Select<E>, db: &'db C) -> Result<(), SumidaError>
@@ -202,7 +199,7 @@ impl Ap {
     C: ConnectionTrait,
     E::Model: Sync,
   {
-    if self.apply(query).count(db).await.unwrap_or(0) > 0 {
+    if PaginatorTrait::count(self.apply(query), db).await.unwrap_or(0) > 0 {
       Ok(())
     } else {
       Err(SumidaError::NoServiceAvailable)
@@ -213,9 +210,9 @@ impl Ap {
   where
     C: ConnectionTrait,
   {
-    let ap_alias = self._unwrap_alias();
+    let ap_alias = Alias::new(ApEntity.table_name());
     let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
-    let condition = self.build_condition(ap_alias);
+    let condition = self.build_condition(ap_alias.clone());
     let query = ApEntity::find().filter(condition);
 
     let allowed_count = query.clone().filter(col_effect.clone().eq("allow")).count(db).await.unwrap_or(0);

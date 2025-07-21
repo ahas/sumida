@@ -79,8 +79,6 @@ impl IntoResponse for GetApiKey {
 #[serde(rename_all = "camelCase")]
 pub struct CreateApiKey {
   pub user_id: i32,
-  #[serde(default)]
-  pub ability: Nullable<serde_json::Value>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
 }
 
@@ -99,8 +97,6 @@ impl IntoResponse for ApiKeyCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateApiKey {
-  #[serde(default)]
-  pub ability: Nullable<serde_json::Value>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
 }
 

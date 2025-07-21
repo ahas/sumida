@@ -5,9 +5,9 @@ use axum::{
 };
 
 use crate::service::prelude::*;
+use crate::{user_guard, service_ap};
 use crate::util::crud::{List, Pagination};
-use crate::{controller::ApiController, service_ap};
-use crate::{service_ap, user_guard};
+use crate::{controller::ApiController};
 
 pub struct BoardCategoryController<S> {
   _state: std::marker::PhantomData<S>,

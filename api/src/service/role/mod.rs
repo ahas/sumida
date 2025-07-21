@@ -3,10 +3,10 @@ pub mod dto;
 use core::db;
 use entity::prelude::*;
 use error::SumidaError;
-use sea_orm::{ActiveValue::*, TransactionTrait};
-use sea_orm::{DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect};
-use sea_orm_crud::Optional;
-use serde_json::json;
+use sea_orm::{
+  ActiveValue::*, ColumnTrait, Condition, DeleteResult, EntityTrait, InsertResult, IntoActiveModel,
+  PaginatorTrait, QueryFilter, QuerySelect, TransactionTrait,
+};
 
 use crate::util::crud::Pagination;
 
@@ -15,6 +15,28 @@ use self::dto::*;
 pub struct RoleService;
 
 impl RoleService {
+  pub async fn find_access_policies(
+    role_id: Option<i32>,
+    user_id: Option<i32>,
+  ) -> Result<Vec<RoleAccessPolicy>, SumidaError> {
+    use entity::access_policies::{Column as ApColumn, Entity as ApEntity};
+
+    let db = db::get_connection();
+    let mut cond = Condition::any();
+
+    if let Some(role_id) = role_id {
+      cond = cond.add(ApColumn::User.eq(format!("role:{role_id}")))
+    }
+
+    if let Some(user_id) = user_id {
+      cond = cond.add(ApColumn::User.eq(format!("user:{user_id}")))
+    }
+
+    let result = ApEntity::find().filter(cond).into_model::<RoleAccessPolicy>().all(db).await?;
+
+    Ok(result)
+  }
+
   pub async fn list(
     filter: RoleFilter,
     pagination: Pagination,
@@ -44,34 +66,19 @@ impl RoleService {
 
   pub async fn get(id: i32) -> Result<Option<GetRole>, SumidaError> {
     let db_conn = db::get_connection();
-    Ok(Roles::find_by_id(id).into_model::<GetRole>().one(db_conn).await?)
+    let Some(mut role) = Roles::find_by_id(id).into_model::<GetRole>().one(db_conn).await? else {
+      return Ok(None);
+    };
+    role.access_policies = Self::find_access_policies(Some(id), None).await?;
+
+    Ok(Some(role))
   }
 
-  pub async fn create(
-    mut data: CreateRole,
-  ) -> Result<InsertResult<entity::roles::ActiveModel>, SumidaError> {
-    let Optional(ability) = data.ability;
-    let default_role_ability = serde_json::to_value(R::get()).unwrap_or(json!({}));
-    let ability = Self::with_defailt_role_ability(
-      default_role_ability.clone(),
-      ability.unwrap_or(default_role_ability),
-    );
-
-    data.ability = Optional(Some(ability));
-
+  pub async fn create(data: CreateRole) -> Result<InsertResult<entity::roles::ActiveModel>, SumidaError> {
     Ok(Roles::insert(data.into_active_model()).exec(db::get_connection()).await?)
   }
 
-  pub async fn update(id: i32, mut data: UpdateRole) -> Result<entity::roles::Model, SumidaError> {
-    let Optional(ability) = data.ability;
-    let default_role_ability = serde_json::to_value(R::get()).unwrap_or(json!({}));
-    let ability = Self::with_defailt_role_ability(
-      default_role_ability.clone(),
-      ability.unwrap_or(default_role_ability),
-    );
-
-    data.ability = Optional(Some(ability));
-
+  pub async fn update(id: i32, data: UpdateRole) -> Result<entity::roles::Model, SumidaError> {
     let mut model = data.into_active_model();
     model.id = Set(id);
 
@@ -81,23 +88,5 @@ impl RoleService {
   pub async fn delete(id: i32) -> Result<DeleteResult, SumidaError> {
     let db_conn = db::get_connection();
     Ok(Roles::delete_by_id(id).exec(db_conn).await?)
-  }
-
-  fn with_defailt_role_ability(
-    default_role_ability: serde_json::Value,
-    role_ability: serde_json::Value,
-  ) -> serde_json::Value {
-    let default_role_ability = default_role_ability.as_object().cloned().unwrap_or_default();
-    let mut role_ability = role_ability.as_object().cloned().unwrap_or_default();
-
-    for (key, val) in default_role_ability {
-      if role_ability.contains_key(&key) {
-        continue;
-      }
-
-      role_ability.insert(key.to_string(), val.clone());
-    }
-
-    serde_json::Value::Object(role_ability)
   }
 }

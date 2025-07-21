@@ -10,7 +10,7 @@ use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
-use crate::{admin_guard, service_ap, user_guard};
+use crate::{service_ap, user_guard};
 
 use super::ApiController;
 

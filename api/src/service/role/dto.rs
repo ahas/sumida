@@ -2,19 +2,22 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::roles::ActiveModel;
-use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, Set};
-use sea_orm::{QueryTrait, prelude::*};
+use sea_orm::{
+  DerivePartialModel, FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set, prelude::*,
+};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::crud::wrap_ilike_col;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "entity::access_policies::Entity", alias = "ap_allow", from_query_result)]
 #[serde(rename_all = "camelCase")]
-pub struct ServicePolicy {
-  service: String,
-  action: String,
+pub struct RoleAccessPolicy {
+  namespace: String,
+  object: String,
+  action: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -49,7 +52,8 @@ pub struct GetRole {
   pub id: i32,
   pub name: String,
   pub description: Option<String>,
-  pub service_policies: Vec<ServicePolicy>,
+  #[sea_orm(skip)]
+  pub access_policies: Vec<RoleAccessPolicy>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -67,7 +71,7 @@ pub struct CreateRole {
   pub name: String,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub service_policies: Vec<ServicePolicy>,
+  pub access_policies: Vec<RoleAccessPolicy>,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateRole {
@@ -99,7 +103,7 @@ pub struct UpdateRole {
   pub name: Optional<String>,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub service_policies: Optional<Vec<ServicePolicy>>,
+  pub service_policies: Option<Vec<RoleAccessPolicy>>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateRole {

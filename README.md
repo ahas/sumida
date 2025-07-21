@@ -40,7 +40,6 @@ async fn main() -> Result<(), anyhow::Error> {
     .merge(Router::<AppState>::from(
       sumida::SumidaRouter::new()
         .set_state(&state)
-        .set_role(AppRoleProvider)
     ))
     .merge(app::new_router(&state).await?)
     .layer(sumida::core::session::new_layer().await?)

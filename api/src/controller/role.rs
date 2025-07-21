@@ -4,7 +4,6 @@ use axum::{
   routing,
 };
 
-use crate::provider::RoleProvider;
 use crate::service::prelude::*;
 use crate::util::crud::{List, Pagination};
 use crate::{service_ap, user_guard};
