@@ -27,10 +27,7 @@ impl<S> ApiKeyController<S> {
   }
 
   async fn get(State(_state): State<S>, Path(key): Path<String>) -> Result<GetApiKey, SumidaError> {
-    match ApiKeyService::get(&key).await? {
-      Some(org) => Ok(org),
-      None => Err(SumidaError::NoData("ApiKey".to_owned(), key.to_string())),
-    }
+    ApiKeyService::get(&key).await?.ok_or_else(|| SumidaError::NoData("ApiKey".to_owned(), key.to_string()))
   }
 
   async fn create(
@@ -51,10 +48,7 @@ impl<S> ApiKeyController<S> {
     Ok(ApiKeyUpdated)
   }
 
-  async fn delete(
-    State(_state): State<S>,
-    Path(key): Path<String>,
-  ) -> Result<ApiKeyDeleted, SumidaError> {
+  async fn delete(State(_state): State<S>, Path(key): Path<String>) -> Result<ApiKeyDeleted, SumidaError> {
     ApiKeyService::delete(&key).await?;
     Ok(ApiKeyDeleted)
   }
@@ -69,15 +63,12 @@ where
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(api_key, read));
-    let route_create = Router::new()
-      .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(api_key, create));
-    let route_update = Router::new()
-      .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(api_key, update));
-    let route_delete = Router::new()
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(api_key, delete));
+    let route_create =
+      Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!(api_key, create));
+    let route_update =
+      Router::new().route("/{id}", routing::patch(Self::update)).route_layer(service_ap!(api_key, update));
+    let route_delete =
+      Router::new().route("/{id}", routing::delete(Self::delete)).route_layer(service_ap!(api_key, delete));
 
     Router::new()
       .merge(route_read)
@@ -87,4 +78,3 @@ where
       .route_layer(user_guard!(state))
   }
 }
-

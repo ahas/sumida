@@ -1,22 +1,21 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use core::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
+use entity::users::*;
 use sea_orm::Condition;
+use sea_orm::FromQueryResult;
 use sea_orm::JoinType;
 use sea_orm::QueryTrait;
+use sea_orm::prelude::*;
 use sea_orm::sea_query::Alias;
 use sea_orm::sea_query::CommonTableExpression;
 use sea_orm::sea_query::Query;
 use sea_orm::sea_query::UnionType;
 use sea_orm::sea_query::WithClause;
-// use core::session::{UserOrganization, UserRole};
-use core::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
-use entity::users::*;
-use sea_orm::FromQueryResult;
-use sea_orm::prelude::*;
 use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, json};
+use serde_json::json;
 
 use crate::util::crud::wrap_ilike_col;
 
@@ -224,50 +223,6 @@ pub struct UserDeleted;
 impl IntoResponse for UserDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
-  }
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SignInUser {
-  pub username: String,
-  pub password: String,
-  pub remember_me: Option<bool>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserProfile {
-  pub username: String,
-  pub full_name: String,
-  pub organization: UserOrganization,
-  pub role: UserRole,
-  pub ability: JsonValue,
-  pub is_admin: bool,
-  pub is_authorized: bool,
-  pub first_seen_at: DateTimeWithTimeZone,
-  pub last_seen_at: DateTimeWithTimeZone,
-}
-
-impl From<core::session::UserProfile> for UserProfile {
-  fn from(value: core::session::UserProfile) -> Self {
-    Self {
-      username: value.username.clone(),
-      full_name: value.full_name.clone(),
-      organization: UserOrganization::from(value.organization.clone()),
-      role: UserRole::from(value.role.clone()),
-      ability: value.ability.clone(),
-      is_admin: value.is_admin,
-      is_authorized: value.is_authorized,
-      first_seen_at: value.first_seen_at,
-      last_seen_at: value.last_seen_at,
-    }
-  }
-}
-
-impl IntoResponse for UserProfile {
-  fn into_response(self) -> axum::response::Response {
-    Json(self).into_response()
   }
 }
 

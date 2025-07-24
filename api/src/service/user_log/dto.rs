@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::response::IntoResponse;
-use entity::user_logs::{SignInCode, SignInMethod};
+use entity::user_logs::{LoginCode, LoginMethod};
 use sea_orm::{Condition, FromQueryResult, IntoSimpleExpr, QueryTrait, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -53,8 +53,8 @@ pub struct UserLogListItem {
   pub id: i32,
   #[sea_orm(nested, alias = "user")]
   pub user: UserLogUser,
-  pub method: SignInMethod,
-  pub code: SignInCode,
+  pub method: LoginMethod,
+  pub code: LoginCode,
 
   pub ip_address: String,
   pub user_agent: String,
@@ -78,8 +78,8 @@ pub struct GetUserLog {
   pub id: i32,
   #[sea_orm(nested, alias = "user")]
   pub user: UserLogUser,
-  pub method: SignInMethod,
-  pub code: SignInCode,
+  pub method: LoginMethod,
+  pub code: LoginCode,
 
   pub ip_address: String,
   pub user_agent: String,

@@ -16,8 +16,9 @@ use crate::util::crud::wrap_ilike_col;
 #[serde(rename_all = "camelCase")]
 pub struct RoleAccessPolicy {
   namespace: String,
-  object: String,
+  object: Vec<String>,
   action: Vec<String>,
+  effect: String,
 }
 
 #[derive(Deserialize)]

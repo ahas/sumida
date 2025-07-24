@@ -32,10 +32,9 @@ impl<S> BoardController<S> {
     State(_): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetBoard, SumidaError> {
-    match BoardService::get(&user_ctx, id).await? {
-      Some(item) => Ok(item),
-      None => Err(SumidaError::NoData("Board".into(), id.to_string())),
-    }
+    BoardService::get(&user_ctx, id)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Board".into(), id.to_string()))
   }
 
   async fn create(

@@ -26,10 +26,9 @@ impl<S> BoardCommentController<S> {
   }
 
   async fn get(State(_): State<S>, Path(id): Path<i32>) -> Result<GetBoardComment, SumidaError> {
-    match BoardCommentService::get(id).await? {
-      Some(item) => Ok(item),
-      None => Err(SumidaError::NoData("BoardComment".into(), id.to_string())),
-    }
+    BoardCommentService::get(id)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("BoardComment".into(), id.to_string()))
   }
 
   async fn create(

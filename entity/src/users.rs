@@ -34,8 +34,8 @@ impl Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-  #[sea_orm(has_one = "super::preferences::Entity")]
-  Preference,
+  #[sea_orm(has_one = "super::user_prefs::Entity")]
+  Pref,
   #[sea_orm(
     belongs_to = "super::organizations::Entity",
     from = "Column::OrganizationId",
@@ -54,9 +54,9 @@ pub enum Relation {
   Role,
 }
 
-impl Related<super::preferences::Entity> for Entity {
+impl Related<super::user_prefs::Entity> for Entity {
   fn to() -> RelationDef {
-    Relation::Preference.def()
+    Relation::Pref.def()
   }
 }
 

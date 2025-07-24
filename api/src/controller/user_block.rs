@@ -30,10 +30,9 @@ impl<S> UserBlockController<S> {
   }
 
   async fn get(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetUserBlock, SumidaError> {
-    match UserBlockService::get(id).await? {
-      Some(user_block) => Ok(user_block),
-      None => Err(SumidaError::NoData("UserBlock".to_owned(), id.to_string())),
-    }
+    UserBlockService::get(id)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("UserBlock".to_owned(), id.to_string()))
   }
 
   async fn create(

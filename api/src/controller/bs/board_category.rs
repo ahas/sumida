@@ -4,10 +4,10 @@ use axum::{
   routing,
 };
 
+use crate::controller::ApiController;
 use crate::service::prelude::*;
-use crate::{user_guard, service_ap};
 use crate::util::crud::{List, Pagination};
-use crate::{controller::ApiController};
+use crate::{service_ap, user_guard};
 
 pub struct BoardCategoryController<S> {
   _state: std::marker::PhantomData<S>,
@@ -29,10 +29,9 @@ impl<S> BoardCategoryController<S> {
   }
 
   async fn get(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetBoardCategory, SumidaError> {
-    match BoardCategoryService::get(id).await? {
-      Some(cat) => Ok(cat),
-      None => Err(SumidaError::NoData("BoardCategory".to_owned(), id.to_string())),
-    }
+    BoardCategoryService::get(id)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("BoardCategory".to_owned(), id.to_string()))
   }
 
   async fn create(

@@ -27,10 +27,9 @@ impl<S> OrganizationController<S> {
   }
 
   async fn get(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetOrganization, SumidaError> {
-    match OrganizationService::get(id).await? {
-      Some(org) => Ok(org),
-      None => Err(SumidaError::NoData("Organization".to_owned(), id.to_string())),
-    }
+    OrganizationService::get(id)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Organization".to_owned(), id.to_string()))
   }
 
   async fn create(
@@ -69,9 +68,8 @@ where
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(organization, read));
-    let route_create = Router::new()
-      .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(organization, create));
+    let route_create =
+      Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!(organization, create));
     let route_update = Router::new()
       .route("/{id}", routing::patch(Self::update))
       .route_layer(service_ap!(organization, update));

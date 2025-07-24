@@ -1,15 +1,14 @@
 pub mod dto;
 pub mod mail_form_context;
 
+use argon2::Argon2;
 use argon2::password_hash::PasswordHasher;
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::Utc;
 use core::session::UserContext;
 use core::{db, settings};
 use entity::prelude::*;
-use entity::user_logs::{SignInCode, SignInMethod};
 use error::SumidaError;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
@@ -20,6 +19,7 @@ use sea_orm::{
 };
 use sea_orm_crud::Optional;
 
+use crate::service::auth::session::AuthSessionService;
 use crate::util::crud::Pagination;
 
 use self::dto::*;
@@ -116,99 +116,6 @@ impl UserService {
     Ok(Users::delete_by_id(user_id).exec(db::get_connection()).await?)
   }
 
-  pub fn verify_password(password: &str, password_hash: &str) -> bool {
-    let argon2 = Argon2::default();
-    let Ok(parsed_hash) = PasswordHash::new(password_hash) else {
-      return false;
-    };
-    let result = argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok();
-
-    result
-  }
-
-  pub async fn update_my_info(
-    user_ctx: &mut UserContext,
-    data: UpdateUser,
-  ) -> Result<entity::users::Model, SumidaError> {
-    let username = &user_ctx.profile.username;
-    let Optional(password) = data.password.clone();
-
-    let mut model: entity::users::ActiveModel = data.into_active_model();
-    model.username = Set(username.clone());
-
-    if let Some(ref password) = password {
-      model.password =
-        Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
-    }
-
-    model.role_id = NotSet;
-    model.organization_id = NotSet;
-    model.is_admin = NotSet;
-    model.is_enabled = NotSet;
-
-    user_ctx.identify().await?;
-
-    Ok(Users::update(model).exec(db::get_connection()).await?)
-  }
-
-  pub async fn sign_in(user_ctx: &mut UserContext, data: SignInUser) -> Result<(), SumidaError> {
-    let db_conn = db::get_connection();
-    let txn = db_conn.begin().await?;
-
-    // 1) Return error if the user does not exist
-    let Some(user) = Users::find()
-      .filter(entity::users::Column::Username.eq(&data.username))
-      .filter(entity::users::Column::IsEnabled.eq(true))
-      .one(&txn)
-      .await?
-    else {
-      user_ctx.write_log(None, SignInMethod::Password, SignInCode::AccountNotFound).await?;
-      return Err(SumidaError::InvalidAccount);
-    };
-
-    // 2) Check the user is blocked
-    if user_ctx.check_blocked(Some(user.id), &txn).await? {
-      user_ctx.write_log(Some(user.id), SignInMethod::Password, SignInCode::AccountBlocked).await?;
-      return Err(SumidaError::AccountBlocked);
-    }
-
-    // 3) Return error if the user is inactive
-    if !user.is_enabled {
-      user_ctx.write_log(Some(user.id), SignInMethod::Password, SignInCode::AccountInactive).await?;
-      return Err(SumidaError::InactiveAccount);
-    }
-
-    // 4) Check the user password
-    let result = if Self::verify_password(&data.password, &user.password) {
-      user_ctx.write_log(Some(user.id), SignInMethod::Password, SignInCode::Success).await?;
-
-      let expiry = if let Some(remember_me) = data.remember_me {
-        let settings = settings::get();
-
-        Some(if remember_me {
-          settings.session.expiry.remember_me_expiry()?
-        } else {
-          settings.session.expiry.default_expiry()?
-        })
-      } else {
-        None
-      };
-
-      user_ctx.authorize(user.id, &data.username, expiry).await?;
-
-      Ok(())
-    } else {
-      user_ctx.write_log(Some(user.id), SignInMethod::Password, SignInCode::PasswordMismatch).await?;
-      let blocked = user_ctx.block_if_exceeded_limit(Some(user.id), &txn).await?;
-
-      Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
-    };
-
-    txn.commit().await?;
-
-    result
-  }
-
   pub async fn invite(_user_ctx: &UserContext, user_id: i32) -> Result<(), SumidaError> {
     let db_conn = db::get_connection();
     let txn = db_conn.begin().await?;
@@ -279,9 +186,9 @@ impl UserService {
 
     txn.commit().await?;
 
-    Self::sign_in(
+    AuthSessionService::login(
       user_ctx,
-      SignInUser {
+      LoginSession {
         username,
         password: password.to_string(),
         ..Default::default()

@@ -33,10 +33,7 @@ where
   }
 
   async fn get(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetRole, SumidaError> {
-    match RoleService::get(id).await? {
-      Some(role) => Ok(role),
-      None => Err(SumidaError::NoData("Role".to_owned(), id.to_string())),
-    }
+    RoleService::get(id).await?.ok_or_else(|| SumidaError::NoData("Role".to_owned(), id.to_string()))
   }
 
   async fn create(

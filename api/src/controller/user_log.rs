@@ -30,16 +30,10 @@ impl<S> UserLogController<S> {
   }
 
   async fn get(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetUserLog, SumidaError> {
-    match UserLogService::get(id).await? {
-      Some(user_log) => Ok(user_log),
-      None => Err(SumidaError::NoData("UserLog".to_owned(), id.to_string())),
-    }
+    UserLogService::get(id).await?.ok_or_else(|| SumidaError::NoData("UserLog".to_owned(), id.to_string()))
   }
 
-  async fn delete(
-    State(_state): State<S>,
-    Path(id): Path<i32>,
-  ) -> Result<UserLogDeleted, SumidaError> {
+  async fn delete(State(_state): State<S>, Path(id): Path<i32>) -> Result<UserLogDeleted, SumidaError> {
     UserLogService::delete(id).await?;
     Ok(UserLogDeleted)
   }

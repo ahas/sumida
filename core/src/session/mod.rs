@@ -10,7 +10,7 @@ use axum::response::IntoResponse;
 use axum_client_ip::ClientIp;
 use chrono::{Duration, Utc};
 use entity::prelude::*;
-use entity::user_logs::{SignInCode, SignInMethod};
+use entity::user_logs::{LoginCode, LoginMethod};
 use error::SumidaError;
 use lazy_static::lazy_static;
 use sea_orm::ActiveValue::{Set, Unchanged};
@@ -186,7 +186,7 @@ where
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserState {
-  pub failed_sign_in_attempts: u32,
+  pub failed_login_attempts: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -213,7 +213,7 @@ impl UserContext {
     self.profile.is_authorized = true;
     self.profile.expiry = expiry;
     self.profile.first_seen_at = Utc::now().fixed_offset();
-    self.state.failed_sign_in_attempts = 0;
+    self.state.failed_login_attempts = 0;
 
     self.identify().await?;
 
@@ -223,8 +223,8 @@ impl UserContext {
   pub async fn write_log(
     &self,
     user_id: Option<i32>,
-    method: SignInMethod,
-    code: SignInCode,
+    method: LoginMethod,
+    code: LoginCode,
   ) -> Result<InsertResult<entity::user_logs::ActiveModel>, DbErr> {
     UserLogs::insert(entity::user_logs::ActiveModel {
       user_id: Set(user_id.unwrap_or_else(|| self.profile.id)),
@@ -258,10 +258,10 @@ impl UserContext {
     let settings = &settings::get().security.block;
     let user_id = self.resolve_user_id(user_id);
 
-    self.state.failed_sign_in_attempts += 1;
+    self.state.failed_login_attempts += 1;
     self.session.insert(Self::USER_STATE_KEY, self.state.clone()).await.map_err(anyhow::Error::from)?;
 
-    if self.state.failed_sign_in_attempts > settings.max_failed_attempts {
+    if self.state.failed_login_attempts > settings.max_failed_attempts {
       let duration = humantime::parse_duration(&settings.failure_reset_after)
         .ok()
         .and_then(|x| Duration::from_std(x).ok());
@@ -388,7 +388,7 @@ impl UserContext {
       profile.update(user, &txn).await?;
       txn.commit().await?;
     } else {
-      self.profile = UserProfile::default();
+      self.logout().await?;
     }
 
     self.profile.last_seen_at = Utc::now().into();
@@ -402,6 +402,14 @@ impl UserContext {
     self.session.insert(Self::USER_ENV_KEY, self.env.clone()).await?;
     self.session.insert(Self::USER_STATE_KEY, self.state.clone()).await?;
     self.session.set_expiry(self.profile.expiry);
+    self.session.save().await?;
+
+    Ok(())
+  }
+
+  pub async fn logout(&mut self) -> Result<(), anyhow::Error> {
+    self.profile = UserProfile::default();
+    self.session.insert(Self::USER_PROFILE_KEY, self.profile.clone()).await?;
     self.session.save().await?;
 
     Ok(())

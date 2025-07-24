@@ -107,7 +107,7 @@ enum UserVerifications {
 }
 
 #[derive(DeriveIden)]
-enum Preferences {
+enum UserPrefs {
   Table,
   UserId,
   Data,
@@ -354,19 +354,19 @@ impl MigrationTrait for Migration {
     db_conn.execute_unprepared("SELECT manage_updated_at('users');").await?;
     // END users table
 
-    // BEGIN preferences table
+    // BEGIN user_prefs table
     manager
       .create_table(
         Table::create()
           .if_not_exists()
-          .table(Preferences::Table)
-          .col(integer(Preferences::UserId))
-          .col(json_binary(Preferences::Data).default(json!({})))
-          .primary_key(Index::create().name("pk_preferences__user_id").col(Preferences::UserId))
+          .table(UserPrefs::Table)
+          .col(integer(UserPrefs::UserId))
+          .col(json_binary(UserPrefs::Data).default(json!({})))
+          .primary_key(Index::create().name("pk_user_prefs__user_id").col(UserPrefs::UserId))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_preferences__user_id")
-              .from(Preferences::Table, Preferences::UserId)
+              .name("fk_user_prefs__user_id")
+              .from(UserPrefs::Table, UserPrefs::UserId)
               .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
@@ -378,14 +378,14 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_preferences__user_id")
-          .table(Preferences::Table)
-          .col(Preferences::UserId)
+          .name("idx_user_prefs__user_id")
+          .table(UserPrefs::Table)
+          .col(UserPrefs::UserId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;
-    // END preferences table
+    // END user_prefs table
 
     // BEGIN api_keys table
     manager
@@ -563,7 +563,7 @@ impl MigrationTrait for Migration {
     manager.drop_table(Table::drop().if_exists().table(UserInvitations::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(UserBlocks::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(ApiKeys::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(Preferences::Table).to_owned()).await?;
+    manager.drop_table(Table::drop().if_exists().table(UserPrefs::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(Users::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(Roles::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(Organizations::Table).to_owned()).await?;

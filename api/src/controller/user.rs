@@ -32,10 +32,7 @@ impl<S> UserController<S> {
   }
 
   async fn get(State(_state): State<S>, Path(user_id): Path<i32>) -> Result<GetUser, SumidaError> {
-    match UserService::get(user_id).await? {
-      Some(user) => Ok(user),
-      None => Err(SumidaError::InvalidAccount),
-    }
+    UserService::get(user_id).await?.ok_or(SumidaError::InvalidAccount)
   }
 
   async fn create(
@@ -59,49 +56,6 @@ impl<S> UserController<S> {
   async fn delete(State(_state): State<S>, Path(user_id): Path<i32>) -> Result<UserDeleted, SumidaError> {
     UserService::delete(user_id).await?;
     Ok(UserDeleted)
-  }
-
-  async fn sign_in(
-    mut user_ctx: UserContext,
-    State(_state): State<S>,
-    Json(body): Json<SignInUser>,
-  ) -> Result<StatusCode, SumidaError> {
-    UserService::sign_in(&mut user_ctx, body).await?;
-    Ok(StatusCode::OK)
-  }
-
-  async fn sign_out(user_ctx: Session, State(_state): State<S>) -> Result<StatusCode, SumidaError> {
-    user_ctx.delete().await.ok();
-    Ok(StatusCode::OK)
-  }
-
-  async fn get_profile(user_ctx: UserContext, State(_state): State<S>) -> Result<UserProfile, SumidaError> {
-    Ok(user_ctx.profile)
-  }
-
-  async fn get_my_info(user_ctx: UserContext, State(_state): State<S>) -> Result<GetUser, SumidaError> {
-    match UserService::get(user_ctx.profile.id).await? {
-      Some(user) => Ok(user),
-      None => Err(SumidaError::InvalidAccount),
-    }
-  }
-
-  async fn get_access_policies(
-    user_ctx: UserContext,
-    State(_state): State<S>,
-  ) -> Result<Json<Vec<RoleAccessPolicy>>, SumidaError> {
-    let access_policies =
-      RoleService::find_access_policies(Some(user_ctx.profile.role.id), Some(user_ctx.profile.id)).await?;
-    Ok(Json(access_policies))
-  }
-
-  async fn update_my_info(
-    mut user_ctx: UserContext,
-    State(_state): State<S>,
-    Json(body): Json<UpdateUser>,
-  ) -> Result<UserUpdated, SumidaError> {
-    UserService::update_my_info(&mut user_ctx, body).await?;
-    Ok(UserUpdated)
   }
 
   async fn invite(
@@ -170,13 +124,7 @@ where
       .merge(route_create)
       .merge(route_update)
       .merge(route_delete)
-      .route("/profile", routing::get(Self::get_profile))
-      .route("/my-info", routing::get(Self::get_my_info))
-      .route("/my-info", routing::patch(Self::update_my_info))
-      .route("/access-policies", routing::get(Self::get_access_policies))
       .route_layer(user_guard!(state))
-      .route("/sign-out", routing::post(Self::sign_out))
-      .route("/sign-in", routing::post(Self::sign_in))
       .route("/change-password", routing::post(Self::change_password))
       .route("/activate", routing::post(Self::activate))
       .route("/{user_id}/impersonate", routing::post(Self::impersonate))

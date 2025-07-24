@@ -116,7 +116,7 @@ impl From<SumidaError> for StatusCode {
       | SumidaError::VerificationFailed => Ok(StatusCode::UNAUTHORIZED),
       SumidaError::NoAbilityTopic(_)
       | SumidaError::NoAbilityAction(_, _)
-      | SumidaError::NoServiceAvailable => Ok(StatusCode::NOT_ACCEPTABLE),
+      | SumidaError::NoServiceAvailable => Ok(StatusCode::FORBIDDEN),
       SumidaError::InvalidAuthorizationMethod(_) => Ok(StatusCode::NOT_IMPLEMENTED),
 
       // runtime errors

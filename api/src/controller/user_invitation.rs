@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::user_guard;
 use crate::util::crud::{List, Pagination};
-use crate::{service_ap, service::prelude::*};
+use crate::{service::prelude::*, service_ap};
 
 use super::ApiController;
 
@@ -32,10 +32,9 @@ impl<S> UserInvitationController<S> {
   }
 
   async fn get(State(_state): State<S>, Path(uuid): Path<Uuid>) -> Result<GetUserInvitation, SumidaError> {
-    match UserInvitationService::get(uuid).await? {
-      Some(user_invitation) => Ok(user_invitation),
-      None => Err(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string())),
-    }
+    UserInvitationService::get(uuid)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
   }
 
   async fn create(

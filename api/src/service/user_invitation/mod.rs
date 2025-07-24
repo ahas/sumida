@@ -92,7 +92,7 @@ impl UserInvitationService {
     UserInvitations::find_by_id(uuid)
       .one(db_conn)
       .await?
-      .ok_or(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
+      .ok_or_else(|| SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
   }
 
   pub async fn update(user_id: i32) -> Result<entity::user_invitations::Model, SumidaError> {
@@ -112,7 +112,7 @@ impl UserInvitationService {
     UserInvitations::find_by_id(uuid)
       .one(db_conn)
       .await?
-      .ok_or(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
+      .ok_or_else(|| SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
   }
 
   pub async fn delete(uuid: Uuid) -> Result<DeleteResult, SumidaError> {

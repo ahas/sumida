@@ -5,7 +5,7 @@ use super::users::Entity as Users;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
-pub enum SignInMethod {
+pub enum LoginMethod {
   #[serde(rename = "password")]
   #[sea_orm(string_value = "password")]
   Password,
@@ -19,7 +19,7 @@ pub enum SignInMethod {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "i32", db_type = "Integer")]
-pub enum SignInCode {
+pub enum LoginCode {
   #[serde(rename = "success")]
   #[sea_orm(num_value = 0)]
   Success,
@@ -43,8 +43,8 @@ pub struct Model {
   #[sea_orm(primary_key)]
   pub id: i32,
   pub user_id: i32,
-  pub method: SignInMethod,
-  pub code: SignInCode,
+  pub method: LoginMethod,
+  pub code: LoginCode,
 
   pub ip_address: String,
   pub user_agent: String,

@@ -35,10 +35,9 @@ impl<S> MailFormController<S> {
   }
 
   async fn get(State(_state): State<S>, Path(kind): Path<String>) -> Result<GetMailForm, SumidaError> {
-    match MailFormService::get(&kind).await? {
-      Some(mail_form) => Ok(mail_form),
-      None => Err(SumidaError::NoData("MailForm".to_owned(), kind.to_string())),
-    }
+    MailFormService::get(&kind)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("MailForm".to_owned(), kind.to_string()))
   }
 
   async fn create(

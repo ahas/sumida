@@ -25,10 +25,7 @@ impl<S> BoardPostController<S> {
   }
 
   async fn get(State(_): State<S>, Path(id): Path<i32>) -> Result<GetBoardPost, SumidaError> {
-    match BoardPostService::get(id).await? {
-      Some(item) => Ok(item),
-      None => Err(SumidaError::NoData("BoardPost".into(), id.to_string())),
-    }
+    BoardPostService::get(id).await?.ok_or_else(|| SumidaError::NoData("BoardPost".into(), id.to_string()))
   }
 
   async fn create(

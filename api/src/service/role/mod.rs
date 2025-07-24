@@ -4,8 +4,8 @@ use core::db;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::{
-  ActiveValue::*, ColumnTrait, Condition, DeleteResult, EntityTrait, InsertResult, IntoActiveModel,
-  PaginatorTrait, QueryFilter, QuerySelect, TransactionTrait,
+  ActiveValue::*, ConnectionTrait, DeleteResult, EntityTrait, FromQueryResult, InsertResult,
+  IntoActiveModel, PaginatorTrait, QuerySelect, Statement, TransactionTrait,
 };
 
 use crate::util::crud::Pagination;
@@ -16,23 +16,45 @@ pub struct RoleService;
 
 impl RoleService {
   pub async fn find_access_policies(
+    is_admin: bool,
     role_id: Option<i32>,
     user_id: Option<i32>,
   ) -> Result<Vec<RoleAccessPolicy>, SumidaError> {
-    use entity::access_policies::{Column as ApColumn, Entity as ApEntity};
-
     let db = db::get_connection();
-    let mut cond = Condition::any();
+    let mut users = Vec::new();
 
     if let Some(role_id) = role_id {
-      cond = cond.add(ApColumn::User.eq(format!("role:{role_id}")))
+      users.push(format!("role:{role_id}"));
     }
 
     if let Some(user_id) = user_id {
-      cond = cond.add(ApColumn::User.eq(format!("user:{user_id}")))
+      users.push(format!("user:{user_id}"));
     }
 
-    let result = ApEntity::find().filter(cond).into_model::<RoleAccessPolicy>().all(db).await?;
+    if is_admin {
+      users.push("user:admin".to_string());
+    }
+
+    let result = RoleAccessPolicy::find_by_statement(Statement::from_sql_and_values(
+      db.get_database_backend(),
+      r#"
+      SELECT
+        ap."namespace" AS "namespace"
+        , ARRAY_AGG(DISTINCT ap."object") AS "object"
+        , ap."effect" AS "effect"
+        , ARRAY_AGG(DISTINCT act) AS "action"
+      FROM access_policies ap
+        , LATERAL UNNEST(ap."action") AS "act"
+      WHERE ap."user" = ANY($1)
+      GROUP BY
+        ap."namespace"
+        , ap."object"
+        , ap."effect"
+      "#,
+      [users.into()],
+    ))
+    .all(db)
+    .await?;
 
     Ok(result)
   }
@@ -69,7 +91,8 @@ impl RoleService {
     let Some(mut role) = Roles::find_by_id(id).into_model::<GetRole>().one(db_conn).await? else {
       return Ok(None);
     };
-    role.access_policies = Self::find_access_policies(Some(id), None).await?;
+
+    role.access_policies = Self::find_access_policies(false, Some(id), None).await?;
 
     Ok(Some(role))
   }
