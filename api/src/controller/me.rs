@@ -20,21 +20,17 @@ impl<S> MeController<S> {
     }
   }
 
-  async fn get_session(user_ctx: UserContext, State(_state): State<S>) -> Result<MeSession, SumidaError> {
-    MeService::get_session(user_ctx.profile.id).await?.ok_or(SumidaError::InvalidAccount)
-  }
-
-  async fn get_profile(user_ctx: UserContext, State(_state): State<S>) -> Result<MeProfile, SumidaError> {
-    Ok(user_ctx.profile.into())
-  }
-
-  async fn update_profile(
+  async fn update_me(
     mut user_ctx: UserContext,
     State(_state): State<S>,
-    Json(body): Json<UpdateMeProfile>,
-  ) -> Result<MeProfileUpdated, SumidaError> {
-    MeService::update_profile(&mut user_ctx, body).await?;
-    Ok(MeProfileUpdated)
+    Json(body): Json<UpdateMe>,
+  ) -> Result<MeUpdated, SumidaError> {
+    MeService::update_me(&mut user_ctx, body).await?;
+    Ok(MeUpdated)
+  }
+
+  async fn get_me(user_ctx: UserContext, State(_state): State<S>) -> Result<Me, SumidaError> {
+    MeService::get_session(&user_ctx).await?.ok_or(SumidaError::InvalidAccount)
   }
 
   async fn get_prefs(
@@ -71,9 +67,8 @@ where
 {
   fn router(self, state: &S) -> axum::Router<S> {
     Router::new()
-      .route("/session", routing::get(Self::get_session))
-      .route("/profile", routing::get(Self::get_profile))
-      .route("/profile", routing::patch(Self::update_profile))
+      .route("/", routing::get(Self::get_me))
+      .route("/", routing::patch(Self::update_me))
       .route("/prefs", routing::get(Self::get_prefs))
       .route("/prefs", routing::patch(Self::update_prefs))
       .route("/access-policies", routing::get(Self::get_access_policies))

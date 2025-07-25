@@ -13,7 +13,7 @@ use sea_orm::{
   sea_query::{Alias, Asterisk},
 };
 
-use crate::util::crud::Pagination;
+use crate::util::{ap::UserAp, crud::Pagination};
 
 use self::dto::*;
 
@@ -64,10 +64,18 @@ impl ApiKeyService {
   }
 
   pub async fn get(key: &str) -> Result<Option<GetApiKey>, SumidaError> {
-    Ok(
-      //
-      Self::select(ApiKeys::find_by_id(key)).into_model::<GetApiKey>().one(db::get_connection()).await?,
-    )
+    let db = db::get_connection();
+    let Some(mut api_key) =
+      Self::select(ApiKeys::find_by_id(key)).into_model::<GetApiKey>().one(db::get_connection()).await?
+    else {
+      return Ok(None);
+    };
+
+    if api_key.is_secured {
+      api_key.access_policies = Some(UserAp::query().api_key(key).find_all(db).await?);
+    }
+
+    Ok(Some(api_key))
   }
 
   fn generate_token_bytes(entropy_bytes: usize) -> anyhow::Result<String> {
@@ -84,9 +92,8 @@ impl ApiKeyService {
   pub async fn create(
     data: CreateApiKey,
   ) -> Result<InsertResult<entity::api_keys::ActiveModel>, SumidaError> {
-    let db_conn = db::get_connection();
-
     loop {
+      let txn = db::get_connection().begin().await?;
       let key = match Self::generate_token_bytes(64) {
         Ok(v) => v,
         _ => {
@@ -94,29 +101,54 @@ impl ApiKeyService {
         }
       };
 
+      let user_aps = if data.is_secured { data.access_policies.clone() } else { None };
       let mut active_model = data.clone().into_active_model();
       active_model.key = Set(key);
 
-      match ApiKeys::insert(active_model).exec(db_conn).await {
-        Ok(result) => return Ok(result),
+      match ApiKeys::insert(active_model).exec(&txn).await {
+        Ok(result) => {
+          if let Some(user_aps) = user_aps {
+            UserAp::query().api_key(&result.last_insert_id).update(user_aps, &txn).await?;
+          }
+
+          txn.commit().await?;
+          return Ok(result);
+        }
         Err(err) if Self::is_unique_violation(&err) => {
+          txn.rollback().await?;
           continue;
         }
-        Err(err) => return Err(err.into()),
+        Err(err) => {
+          txn.rollback().await?;
+          return Err(err.into());
+        }
       }
     }
   }
 
   pub async fn update(key: &str, data: UpdateApiKey) -> Result<entity::api_keys::Model, SumidaError> {
+    let txn = db::get_connection().begin().await?;
+    let user_aps = if data.is_secured { data.access_policies.clone() } else { None };
+
+    if let Some(user_aps) = user_aps {
+      UserAp::query().api_key(key).update(user_aps, &txn).await?;
+    }
+
     let mut model = data.into_active_model();
     model.key = Unchanged(key.to_string());
 
-    let db_conn = db::get_connection();
-    Ok(ApiKeys::update(model).exec(db_conn).await?)
+    let result = ApiKeys::update(model).exec(&txn).await?;
+    txn.commit().await?;
+
+    Ok(result)
   }
 
   pub async fn delete(key: &str) -> Result<DeleteResult, SumidaError> {
-    let db_conn = db::get_connection();
-    Ok(ApiKeys::delete_by_id(key).exec(db_conn).await?)
+    let txn = db::get_connection().begin().await?;
+    UserAp::query().api_key(key).clear(&txn).await?;
+    let result = ApiKeys::delete_by_id(key).exec(&txn).await?;
+    txn.commit().await?;
+
+    Ok(result)
   }
 }

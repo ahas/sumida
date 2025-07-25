@@ -23,6 +23,7 @@ pub struct Ap {
   _namespace: String,
   _object: Option<SimpleExpr>,
   _actions: Vec<String>,
+  _api_key: Option<String>,
   _user_id: Option<i32>,
   _role_id: Option<i32>,
   _org_id: Option<i32>,
@@ -36,6 +37,7 @@ impl Ap {
       _namespace: namespace.as_ref().to_owned(),
       _object: None,
       _actions: Vec::new(),
+      _api_key: None,
       _user_id: None,
       _role_id: None,
       _org_id: None,
@@ -59,24 +61,30 @@ impl Ap {
     let col_user = Expr::col((ap_alias.clone(), ApCol::User));
     let mut condition = Condition::any().add(col_user.clone().eq("*"));
 
-    // Match by user ID if provided.
-    if let Some(user_id) = self._user_id {
-      condition = condition.add(col_user.clone().eq(format!("user:{}", user_id)));
-    }
+    // Match by Api-Key if provided.
+    // If it is then ignore other conditions
+    if let Some(key) = &self._api_key {
+      condition = condition.add(col_user.clone().eq(format!("key:{}", key)));
+    } else {
+      // Match by user ID if provided.
+      if let Some(user_id) = self._user_id {
+        condition = condition.add(col_user.clone().eq(format!("user:{}", user_id)));
+      }
 
-    // Match by organization ID if provided.
-    if let Some(org_id) = self._org_id {
-      condition = condition.add(col_user.clone().eq(format!("org:{}", org_id)));
-    }
+      // Match by organization ID if provided.
+      if let Some(org_id) = self._org_id {
+        condition = condition.add(col_user.clone().eq(format!("org:{}", org_id)));
+      }
 
-    // Match by role ID if provided.
-    if let Some(role_id) = self._role_id {
-      condition = condition.add(col_user.clone().eq(format!("role:{}", role_id)));
-    }
+      // Match by role ID if provided.
+      if let Some(role_id) = self._role_id {
+        condition = condition.add(col_user.clone().eq(format!("role:{}", role_id)));
+      }
 
-    // Always allow admin access if applicable.
-    if self._is_admin {
-      condition = condition.add(col_user.clone().eq("user:admin"));
+      // Always allow admin access if applicable.
+      if self._is_admin {
+        condition = condition.add(col_user.clone().eq("user:admin"));
+      }
     }
 
     condition
@@ -117,6 +125,11 @@ impl Ap {
     self
   }
 
+  pub fn api_key<S: AsRef<str>>(mut self, key: S) -> Self {
+    self._api_key = Some(key.as_ref().to_string());
+    self
+  }
+
   pub fn user(mut self, id: i32) -> Self {
     self._user_id = Some(id);
     self
@@ -135,6 +148,10 @@ impl Ap {
   pub fn owner(self, owner: &UserContext) -> Self {
     let mut access =
       self.user(owner.profile.id).role(owner.profile.role.id).org(owner.profile.organization.id);
+
+    if let Some(key) = &owner.profile.api_key {
+      access = access.api_key(key);
+    }
 
     if owner.profile.is_admin {
       access = access.admin();
@@ -289,6 +306,7 @@ impl UserAp {
 
 #[derive(Clone, Debug)]
 pub struct UserApQuery {
+  _api_key: Option<String>,
   _user_id: Option<i32>,
   _role_id: Option<i32>,
   _org_id: Option<i32>,
@@ -298,11 +316,17 @@ pub struct UserApQuery {
 impl UserApQuery {
   pub fn new() -> Self {
     Self {
+      _api_key: None,
       _user_id: None,
       _role_id: None,
       _org_id: None,
       _is_admin: false,
     }
+  }
+
+  pub fn api_key<S: AsRef<str>>(mut self, key: S) -> Self {
+    self._api_key = Some(key.as_ref().to_string());
+    self
   }
 
   pub fn user(mut self, id: i32) -> Self {
@@ -324,6 +348,10 @@ impl UserApQuery {
     let mut access =
       self.user(owner.profile.id).role(owner.profile.role.id).org(owner.profile.organization.id);
 
+    if let Some(key) = &owner.profile.api_key {
+      access = access.api_key(key);
+    }
+
     if owner.profile.is_admin {
       access = access.admin();
     }
@@ -339,20 +367,24 @@ impl UserApQuery {
   fn _build_users(&self) -> Vec<String> {
     let mut users = Vec::new();
 
-    if let Some(org_id) = self._org_id {
-      users.push(format!("org:{org_id}"));
-    }
+    if let Some(key) = &self._api_key {
+      users.push(format!("key:{key}"));
+    } else {
+      if let Some(org_id) = self._org_id {
+        users.push(format!("org:{org_id}"));
+      }
 
-    if let Some(role_id) = self._role_id {
-      users.push(format!("role:{role_id}"));
-    }
+      if let Some(role_id) = self._role_id {
+        users.push(format!("role:{role_id}"));
+      }
 
-    if let Some(user_id) = self._user_id {
-      users.push(format!("user:{user_id}"));
-    }
+      if let Some(user_id) = self._user_id {
+        users.push(format!("user:{user_id}"));
+      }
 
-    if self._is_admin {
-      users.push("user:admin".to_string());
+      if self._is_admin {
+        users.push("user:admin".to_string());
+      }
     }
 
     users
@@ -431,8 +463,8 @@ impl UserApQuery {
     db: &'db C,
   ) -> Result<(), DbErr> {
     let users = self._build_users();
-    Self::_clear(&users, db).await;
-    Self::_save(&users, user_aps, db).await;
+    Self::_clear(&users, db).await?;
+    Self::_save(&users, user_aps, db).await?;
 
     Ok(())
   }

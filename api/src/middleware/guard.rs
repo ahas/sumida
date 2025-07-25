@@ -16,30 +16,7 @@ use tower_sessions::Expiry;
 #[macro_export]
 macro_rules! service_ap {
   ($ns: ident, $action: ident) => {
-    axum::middleware::from_fn(
-      |user_ctx: $crate::sumida_core::session::UserContext,
-       req: axum::extract::Request,
-       next: axum::middleware::Next| async move {
-        use crate::util::ap::Ap;
-        use core::db;
-
-        let ns = stringify!($ns);
-        let action = stringify!($action);
-
-        let is_allowed = Ap::new(ns)
-          .object(sea_orm::sea_query::Expr::val("service").into())
-          .action(action)
-          .owner(&user_ctx)
-          .check_allowed(db::get_connection())
-          .await;
-
-        if is_allowed {
-          Ok(next.run(req).await)
-        } else {
-          Err(SumidaError::NoServiceAvailable)
-        }
-      },
-    )
+    axum::middleware::from_fn($crate::middleware::guard::service_ap_fn)
   };
 }
 
@@ -108,10 +85,10 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
   Ok(())
 }
 
-async fn verify_api_key(user_ctx: &mut UserContext, token: &str) -> Result<(), SumidaError> {
+async fn verify_api_key(user_ctx: &mut UserContext, key: &str) -> Result<(), SumidaError> {
   let db_conn = db::get_connection();
   let api_key = ApiKeys::find()
-    .filter(entity::api_keys::Column::Key.eq(token))
+    .filter(entity::api_keys::Column::Key.eq(key))
     .one(db_conn)
     .await?
     .ok_or(SumidaError::InvalidApiKey)?;
@@ -119,14 +96,11 @@ async fn verify_api_key(user_ctx: &mut UserContext, token: &str) -> Result<(), S
 
   if let Some(user) = user {
     user_ctx.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd)).await?;
+
+    if api_key.is_secured {
+      user_ctx.profile.api_key = Some(key.to_owned());
+    }
   } else {
-    // UserSignInLogs::write(
-    //   user_data.username,
-    //   SignInMethod::ApiKey,
-    //   SignInCode::AccountNotFound,
-    //   user_env,
-    //   db,
-    // );
     return Err(SumidaError::InvalidAccount);
   }
 
@@ -157,6 +131,31 @@ pub async fn verify(
   }
 
   Ok(true)
+}
+
+#[allow(dead_code)]
+pub async fn service_ap_fn(
+  user_ctx: UserContext,
+  req: Request,
+  next: Next,
+) -> Result<Response, SumidaError> {
+  use crate::util::ap::Ap;
+
+  let ns = stringify!($ns);
+  let action = stringify!($action);
+
+  let is_allowed = Ap::new(ns)
+    .object(sea_orm::sea_query::Expr::val("service").into())
+    .action(action)
+    .owner(&user_ctx)
+    .check_allowed(db::get_connection())
+    .await;
+
+  if is_allowed {
+    Ok(next.run(req).await)
+  } else {
+    Err(SumidaError::NoServiceAvailable)
+  }
 }
 
 #[allow(dead_code)]

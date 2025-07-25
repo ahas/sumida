@@ -16,7 +16,6 @@ use lazy_static::lazy_static;
 use sea_orm::ActiveValue::{Set, Unchanged};
 use sea_orm::{Condition, InsertResult, TransactionTrait, prelude::*};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, json};
 use tower_sessions::{Expiry, Session};
 use uaparser::{Parser, UserAgentParser};
 
@@ -30,9 +29,9 @@ pub struct UserProfile {
   pub full_name: String,
   pub organization: UserOrganization,
   pub role: UserRole,
-  pub ability: JsonValue,
   pub is_admin: bool,
   pub is_authorized: bool,
+  pub api_key: Option<String>,
   pub first_seen_at: DateTimeWithTimeZone,
   pub last_seen_at: DateTimeWithTimeZone,
   pub expiry: Option<Expiry>,
@@ -64,7 +63,6 @@ impl UserProfile {
       name: role.name.clone(),
     };
     self.is_admin = user.is_admin;
-    self.ability = role.ability;
 
     Ok(())
   }
@@ -78,9 +76,9 @@ impl Default for UserProfile {
       full_name: "".to_owned(),
       organization: UserOrganization::default(),
       role: UserRole::default(),
-      ability: json!({}),
       is_admin: false,
       is_authorized: false,
+      api_key: None,
       first_seen_at: Utc::now().into(),
       last_seen_at: Utc::now().into(),
       expiry: None,

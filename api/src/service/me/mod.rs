@@ -19,23 +19,34 @@ use crate::service::user::UserService;
 pub struct MeService;
 
 impl MeService {
-  pub async fn get_session(user_id: i32) -> Result<Option<MeSession>, SumidaError> {
-    Ok(
-      UserService::select(Users::find_by_id(user_id))
-        .into_model::<MeSession>()
-        .one(db::get_connection())
-        .await?,
-    )
+  pub async fn get_session(user_ctx: &UserContext) -> Result<Option<Me>, SumidaError> {
+    if !user_ctx.profile.is_authorized {
+      return Err(SumidaError::NoCredentials);
+    }
+
+    let Some(mut me_session) = UserService::select(Users::find_by_id(user_ctx.profile.id))
+      .into_model::<Me>()
+      .one(db::get_connection())
+      .await?
+    else {
+      return Ok(None);
+    };
+
+    me_session.first_seen_at = user_ctx.profile.first_seen_at;
+    me_session.last_seen_at = user_ctx.profile.last_seen_at;
+
+    Ok(Some(me_session))
   }
 
-  pub async fn update_profile(
+  pub async fn update_me(
     user_ctx: &mut UserContext,
-    data: UpdateMeProfile,
+    data: UpdateMe,
   ) -> Result<entity::users::Model, SumidaError> {
     let username = &user_ctx.profile.username;
     let Optional(password) = data.password.clone();
 
     let mut model: entity::users::ActiveModel = data.into_active_model();
+    model.id = Unchanged(user_ctx.profile.id);
     model.username = Set(username.clone());
 
     if let Some(ref password) = password {

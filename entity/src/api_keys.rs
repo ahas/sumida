@@ -9,6 +9,7 @@ pub struct Model {
   pub key: String,
   pub user_id: i32,
   pub expires_at: Option<DateTimeWithTimeZone>,
+  pub is_secured: bool,
   pub created_at: DateTimeWithTimeZone,
 }
 

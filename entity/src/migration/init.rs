@@ -119,6 +119,7 @@ enum ApiKeys {
   Key,
   UserId,
   ExpiresAt,
+  IsSecured,
   CreatedAt,
 }
 
@@ -396,6 +397,7 @@ impl MigrationTrait for Migration {
           .col(string(ApiKeys::Key))
           .col(integer(ApiKeys::UserId))
           .col(timestamp_with_time_zone_null(ApiKeys::ExpiresAt).default(Expr::current_timestamp()))
+          .col(boolean(ApiKeys::IsSecured).default(false))
           .col(timestamp_with_time_zone(ApiKeys::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_api_keys__key").col(ApiKeys::Key))
           .foreign_key(

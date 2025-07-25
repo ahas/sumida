@@ -36,10 +36,6 @@ pub enum SumidaError {
   NotAuthorized(i32),
   #[error("user credentials required")]
   NoCredentials,
-  #[error("no permission to perform `{0}`")]
-  NoAbilityTopic(String),
-  #[error("permission `{0}` exists, but action `{1}` is disabled")]
-  NoAbilityAction(String, String),
   #[error("no service available")]
   NoServiceAvailable,
   #[error("no jwt secret")]
@@ -114,9 +110,7 @@ impl From<SumidaError> for StatusCode {
       | SumidaError::InvalidAuthorizationToken
       | SumidaError::OnlyAdminAllowed
       | SumidaError::VerificationFailed => Ok(StatusCode::UNAUTHORIZED),
-      SumidaError::NoAbilityTopic(_)
-      | SumidaError::NoAbilityAction(_, _)
-      | SumidaError::NoServiceAvailable => Ok(StatusCode::FORBIDDEN),
+      SumidaError::NoServiceAvailable => Ok(StatusCode::FORBIDDEN),
       SumidaError::InvalidAuthorizationMethod(_) => Ok(StatusCode::NOT_IMPLEMENTED),
 
       // runtime errors

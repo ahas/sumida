@@ -2,13 +2,15 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::api_keys::*;
+use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::Alias;
-use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
+use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue};
 use sea_orm::{QueryTrait, prelude::*};
 use sea_orm_crud::Nullable;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::util::ap::UserAp;
 use crate::util::crud::{wrap_ilike, wrap_ilike_col};
 
 #[derive(Deserialize)]
@@ -54,6 +56,7 @@ pub struct ApiKeyListItem {
   #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
   pub expires_at: Option<DateTimeWithTimeZone>,
+  pub is_secured: bool,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -63,7 +66,10 @@ pub struct GetApiKey {
   pub key: String,
   #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
+  #[sea_orm(skip)]
+  pub access_policies: Option<Vec<UserAp>>,
   pub expires_at: Option<DateTimeWithTimeZone>,
+  pub is_secured: bool,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -73,11 +79,23 @@ impl IntoResponse for GetApiKey {
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateApiKey {
   pub user_id: i32,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
+  pub access_policies: Option<Vec<UserAp>>,
+  pub is_secured: bool,
+}
+
+impl IntoActiveModel<ActiveModel> for CreateApiKey {
+  fn into_active_model(self) -> ActiveModel {
+    ActiveModel {
+      user_id: Set(self.user_id),
+      expires_at: self.expires_at.into_active_value(),
+      ..Default::default()
+    }
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -92,10 +110,21 @@ impl IntoResponse for ApiKeyCreated {
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateApiKey {
   pub expires_at: Nullable<DateTimeWithTimeZone>,
+  pub access_policies: Option<Vec<UserAp>>,
+  pub is_secured: bool,
+}
+
+impl IntoActiveModel<ActiveModel> for UpdateApiKey {
+  fn into_active_model(self) -> ActiveModel {
+    ActiveModel {
+      expires_at: self.expires_at.into_active_value(),
+      ..Default::default()
+    }
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
