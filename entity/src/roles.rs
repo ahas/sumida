@@ -1,5 +1,4 @@
 use sea_orm::prelude::*;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "roles")]
