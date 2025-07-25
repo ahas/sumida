@@ -1,29 +1,6 @@
 use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct Ability {
-  #[serde(default)]
-  pub create: bool,
-  #[serde(default)]
-  pub update: bool,
-  #[serde(default)]
-  pub read: bool,
-  #[serde(default)]
-  pub delete: bool,
-}
-
-impl Default for Ability {
-  fn default() -> Self {
-    Self {
-      create: false,
-      update: false,
-      read: false,
-      delete: false,
-    }
-  }
-}
-
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "roles")]
 pub struct Model {

@@ -1,15 +1,23 @@
 use core::session::UserContext;
 use entity::access_policies::{Column as ApCol, Entity as ApEntity};
 use error::SumidaError;
+use sea_orm::DbErr;
+use sea_orm::DeleteResult;
 use sea_orm::EntityName;
+use sea_orm::FromQueryResult;
+use sea_orm::Statement;
 use sea_orm::sea_query::Alias;
 use sea_orm::sea_query::IntoTableRef;
 use sea_orm::sea_query::SelectStatement;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{
-  Condition, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Select,
+  ActiveModelTrait,
+  ActiveValue::{NotSet, Set},
+  ColumnTrait, Condition, ConnectionTrait, DerivePartialModel, EntityTrait, PaginatorTrait, QueryFilter,
+  Select,
   sea_query::{Expr, SimpleExpr},
 };
+use serde::{Deserialize, Serialize};
 
 pub struct Ap {
   _namespace: String,
@@ -260,5 +268,172 @@ impl ApChain {
 
   pub fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E> {
     query.filter(self.condition())
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "entity::access_policies::Entity", alias = "ap_allow", from_query_result)]
+#[serde(rename_all = "camelCase")]
+pub struct UserAp {
+  namespace: String,
+  object: Vec<String>,
+  action: Vec<String>,
+  effect: String,
+}
+
+impl UserAp {
+  pub fn query() -> UserApQuery {
+    UserApQuery::new()
+  }
+}
+
+#[derive(Clone, Debug)]
+pub struct UserApQuery {
+  _user_id: Option<i32>,
+  _role_id: Option<i32>,
+  _org_id: Option<i32>,
+  _is_admin: bool,
+}
+
+impl UserApQuery {
+  pub fn new() -> Self {
+    Self {
+      _user_id: None,
+      _role_id: None,
+      _org_id: None,
+      _is_admin: false,
+    }
+  }
+
+  pub fn user(mut self, id: i32) -> Self {
+    self._user_id = Some(id);
+    self
+  }
+
+  pub fn role(mut self, id: i32) -> Self {
+    self._role_id = Some(id);
+    self
+  }
+
+  pub fn org(mut self, id: i32) -> Self {
+    self._org_id = Some(id);
+    self
+  }
+
+  pub fn owner(self, owner: &UserContext) -> Self {
+    let mut access =
+      self.user(owner.profile.id).role(owner.profile.role.id).org(owner.profile.organization.id);
+
+    if owner.profile.is_admin {
+      access = access.admin();
+    }
+
+    access
+  }
+
+  pub fn admin(mut self) -> Self {
+    self._is_admin = true;
+    self
+  }
+
+  fn _build_users(&self) -> Vec<String> {
+    let mut users = Vec::new();
+
+    if let Some(org_id) = self._org_id {
+      users.push(format!("org:{org_id}"));
+    }
+
+    if let Some(role_id) = self._role_id {
+      users.push(format!("role:{role_id}"));
+    }
+
+    if let Some(user_id) = self._user_id {
+      users.push(format!("user:{user_id}"));
+    }
+
+    if self._is_admin {
+      users.push("user:admin".to_string());
+    }
+
+    users
+  }
+
+  pub async fn find_all<'db, C: ConnectionTrait>(self, db: &'db C) -> Result<Vec<UserAp>, DbErr> {
+    let result = UserAp::find_by_statement(Statement::from_sql_and_values(
+      db.get_database_backend(),
+      r#"
+      SELECT
+        ap."namespace" AS "namespace"
+        , ARRAY_AGG(DISTINCT ap."object") AS "object"
+        , ap."effect" AS "effect"
+        , ARRAY_AGG(DISTINCT act) AS "action"
+      FROM access_policies ap
+        , LATERAL UNNEST(ap."action") AS "act"
+      WHERE ap."user" = ANY($1)
+      GROUP BY
+        ap."namespace"
+        , ap."object"
+        , ap."effect"
+      "#,
+      [self._build_users().into()],
+    ))
+    .all(db)
+    .await?;
+
+    Ok(result)
+  }
+
+  #[inline(always)]
+  async fn _clear<'db, C: ConnectionTrait>(users: &Vec<String>, db: &'db C) -> Result<DeleteResult, DbErr> {
+    let result = ApEntity::delete_many().filter(ApCol::User.is_in(users)).exec(db).await?;
+
+    Ok(result)
+  }
+
+  #[inline(always)]
+  async fn _save<'db, C: ConnectionTrait>(
+    users: &Vec<String>,
+    user_aps: Vec<UserAp>,
+    db: &'db C,
+  ) -> Result<(), DbErr> {
+    for user in users {
+      for user_ap in &user_aps {
+        for object in &user_ap.object {
+          let am = entity::access_policies::ActiveModel {
+            uuid: NotSet,
+            namespace: Set(user_ap.namespace.clone()),
+            object: Set(object.clone()),
+            action: Set(user_ap.action.clone()),
+            effect: Set(user_ap.effect.clone()),
+            user: Set(user.clone()),
+            ..Default::default()
+          };
+
+          am.save(db).await?;
+        }
+      }
+    }
+
+    Ok(())
+  }
+
+  pub async fn clear<'db, C: ConnectionTrait>(self, db: &'db C) -> Result<DeleteResult, DbErr> {
+    Self::_clear(&self._build_users(), db).await
+  }
+
+  pub async fn save<'db, C: ConnectionTrait>(self, user_aps: Vec<UserAp>, db: &'db C) -> Result<(), DbErr> {
+    Self::_save(&self._build_users(), user_aps, db).await
+  }
+
+  pub async fn update<'db, C: ConnectionTrait>(
+    self,
+    user_aps: Vec<UserAp>,
+    db: &'db C,
+  ) -> Result<(), DbErr> {
+    let users = self._build_users();
+    Self::_clear(&users, db).await;
+    Self::_save(&users, user_aps, db).await;
+
+    Ok(())
   }
 }

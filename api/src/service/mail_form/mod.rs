@@ -113,8 +113,8 @@ impl MailFormService {
   ) -> Result<(Vec<MailFormListItem>, u64), SumidaError> {
     use entity::mail_forms::Column;
 
-    let db_conn = db::get_connection();
-    let txn = db_conn.begin().await?;
+    let db = db::get_connection();
+    let txn = db.begin().await?;
 
     let mut query = filter.apply(MailForms::find());
     let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;

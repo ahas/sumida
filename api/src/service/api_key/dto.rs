@@ -53,7 +53,6 @@ pub struct ApiKeyListItem {
   pub key: String,
   #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
-  pub ability: Option<serde_json::Value>,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub created_at: DateTimeWithTimeZone,
 }
@@ -64,7 +63,6 @@ pub struct GetApiKey {
   pub key: String,
   #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
-  pub ability: Option<serde_json::Value>,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub created_at: DateTimeWithTimeZone,
 }

@@ -14,33 +14,6 @@ use serde::{Deserialize, Serialize};
 use tower_sessions::Expiry;
 
 #[macro_export]
-macro_rules! ability_guard {
-  ($topic: ident, $action: ident) => {
-    axum::middleware::from_fn(
-      |user_ctx: $crate::sumida_core::session::UserContext,
-       req: axum::extract::Request,
-       next: axum::middleware::Next| async move {
-        let topic = stringify!($topic);
-        let action = stringify!($action);
-
-        let Some(ability) = user_ctx.profile.ability.get(topic) else {
-          return Err(SumidaError::NoAbilityTopic(topic.to_string()));
-        };
-        let Some(allowed_prop) = ability.get(action) else {
-          return Err(SumidaError::NoAbilityAction(topic.to_string(), action.to_string()));
-        };
-        let allowed = allowed_prop.as_bool().unwrap_or(false);
-
-        match allowed {
-          true => Ok(next.run(req).await),
-          false => Err(SumidaError::NoAbilityAction(topic.to_string(), action.to_string())),
-        }
-      },
-    )
-  };
-}
-
-#[macro_export]
 macro_rules! service_ap {
   ($ns: ident, $action: ident) => {
     axum::middleware::from_fn(

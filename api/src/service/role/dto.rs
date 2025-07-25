@@ -9,17 +9,7 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::crud::wrap_ilike_col;
-
-#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
-#[sea_orm(entity = "entity::access_policies::Entity", alias = "ap_allow", from_query_result)]
-#[serde(rename_all = "camelCase")]
-pub struct RoleAccessPolicy {
-  namespace: String,
-  object: Vec<String>,
-  action: Vec<String>,
-  effect: String,
-}
+use crate::util::{ap::UserAp, crud::wrap_ilike_col};
 
 #[derive(Deserialize)]
 pub struct RoleFilter {
@@ -54,7 +44,7 @@ pub struct GetRole {
   pub name: String,
   pub description: Option<String>,
   #[sea_orm(skip)]
-  pub access_policies: Vec<RoleAccessPolicy>,
+  pub access_policies: Vec<UserAp>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -72,7 +62,7 @@ pub struct CreateRole {
   pub name: String,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub access_policies: Vec<RoleAccessPolicy>,
+  pub access_policies: Vec<UserAp>,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateRole {
@@ -104,7 +94,7 @@ pub struct UpdateRole {
   pub name: Optional<String>,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub service_policies: Option<Vec<RoleAccessPolicy>>,
+  pub access_policies: Option<Vec<UserAp>>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateRole {

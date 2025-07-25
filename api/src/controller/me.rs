@@ -1,3 +1,4 @@
+use core::db;
 use core::session::UserContext;
 
 use axum::{Json, Router, extract::State, routing};
@@ -5,6 +6,7 @@ use error::SumidaError;
 use serde_json::json;
 
 use crate::service::prelude::*;
+use crate::util::ap::{Ap, UserAp};
 use crate::{controller::ApiController, user_guard};
 
 pub struct MeController<S> {
@@ -57,13 +59,8 @@ impl<S> MeController<S> {
   async fn get_access_policies(
     user_ctx: UserContext,
     State(_state): State<S>,
-  ) -> Result<Json<Vec<RoleAccessPolicy>>, SumidaError> {
-    let access_policies = RoleService::find_access_policies(
-      user_ctx.profile.is_admin,
-      Some(user_ctx.profile.role.id),
-      Some(user_ctx.profile.id),
-    )
-    .await?;
+  ) -> Result<Json<Vec<UserAp>>, SumidaError> {
+    let access_policies = UserAp::query().owner(&user_ctx).find_all(db::get_connection()).await?;
     Ok(Json(access_policies))
   }
 }
