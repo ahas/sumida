@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::roles::ActiveModel;
 use sea_orm::{
-  DerivePartialModel, FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set, prelude::*,
+  FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set, prelude::*,
 };
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};

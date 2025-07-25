@@ -6,7 +6,7 @@ use error::SumidaError;
 use serde_json::json;
 
 use crate::service::prelude::*;
-use crate::util::ap::{Ap, UserAp};
+use crate::util::ap::UserAp;
 use crate::{controller::ApiController, user_guard};
 
 pub struct MeController<S> {
