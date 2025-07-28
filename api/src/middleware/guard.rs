@@ -16,7 +16,12 @@ use tower_sessions::Expiry;
 #[macro_export]
 macro_rules! service_ap {
   ($ns: ident, $action: ident) => {
-    axum::middleware::from_fn($crate::middleware::guard::service_ap_fn)
+    axum::middleware::from_fn(|user_ctx, req, next| {
+      let ns = stringify!($ns).to_string();
+      let action = stringify!($action).to_string();
+
+      $crate::middleware::guard::service_ap_fn(user_ctx, ns, action, req, next)
+    })
   };
 }
 
@@ -136,13 +141,12 @@ pub async fn verify(
 #[allow(dead_code)]
 pub async fn service_ap_fn(
   user_ctx: UserContext,
+  ns: String,
+  action: String,
   req: Request,
   next: Next,
 ) -> Result<Response, SumidaError> {
   use crate::util::ap::Ap;
-
-  let ns = stringify!($ns);
-  let action = stringify!($action);
 
   let is_allowed = Ap::new(ns)
     .object(sea_orm::sea_query::Expr::val("service").into())

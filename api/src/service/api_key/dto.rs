@@ -6,7 +6,7 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::Alias;
 use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue};
 use sea_orm::{QueryTrait, prelude::*};
-use sea_orm_crud::Nullable;
+use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -85,7 +85,7 @@ pub struct CreateApiKey {
   pub user_id: i32,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
   pub access_policies: Option<Vec<UserAp>>,
-  pub is_secured: bool,
+  pub is_secured: Optional<bool>,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateApiKey {
@@ -93,6 +93,7 @@ impl IntoActiveModel<ActiveModel> for CreateApiKey {
     ActiveModel {
       user_id: Set(self.user_id),
       expires_at: self.expires_at.into_active_value(),
+      is_secured: self.is_secured.into_active_value(),
       ..Default::default()
     }
   }
@@ -115,13 +116,14 @@ impl IntoResponse for ApiKeyCreated {
 pub struct UpdateApiKey {
   pub expires_at: Nullable<DateTimeWithTimeZone>,
   pub access_policies: Option<Vec<UserAp>>,
-  pub is_secured: bool,
+  pub is_secured: Optional<bool>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateApiKey {
   fn into_active_model(self) -> ActiveModel {
     ActiveModel {
       expires_at: self.expires_at.into_active_value(),
+      is_secured: self.is_secured.into_active_value(),
       ..Default::default()
     }
   }

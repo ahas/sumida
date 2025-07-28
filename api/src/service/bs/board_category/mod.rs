@@ -22,8 +22,7 @@ impl BoardCategoryService {
   ) -> Result<(Vec<BoardCategoryListItem>, u64), SumidaError> {
     use entity::bs::board_categories::Column;
 
-    let db_conn = db::get_connection();
-    let txn = db_conn.begin().await?;
+    let txn = db::get_connection().begin().await?;
 
     let mut query =
       filter.apply(BoardCategories::find().select_only().expr(Expr::col((BoardCategories, Asterisk))));
@@ -37,8 +36,8 @@ impl BoardCategoryService {
     query = pagination.paginate(query);
 
     let items = query.into_partial_model::<BoardCategoryListItem>().all(&txn).await?;
-
     txn.commit().await?;
+
     Ok((items, count))
   }
 

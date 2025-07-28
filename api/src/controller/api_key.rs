@@ -19,37 +19,50 @@ impl<S> ApiKeyController<S> {
   }
 
   async fn list(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Query(filter): Query<ApiKeyFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<ApiKeyListItem>, SumidaError> {
-    Ok(ApiKeyService::list(filter, pagination).await?.into())
+    Ok(ApiKeyService::list(&user_ctx, filter, pagination).await?.into())
   }
 
-  async fn get(State(_state): State<S>, Path(key): Path<String>) -> Result<GetApiKey, SumidaError> {
-    ApiKeyService::get(&key).await?.ok_or_else(|| SumidaError::NoData("ApiKey".to_owned(), key.to_string()))
+  async fn get(
+    user_ctx: UserContext,
+    State(_state): State<S>,
+    Path(key): Path<String>,
+  ) -> Result<GetApiKey, SumidaError> {
+    ApiKeyService::get(&user_ctx, &key)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("ApiKey".to_owned(), key.to_string()))
   }
 
   async fn create(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Json(body): Json<CreateApiKey>,
   ) -> Result<ApiKeyCreated, SumidaError> {
     Ok(ApiKeyCreated {
-      key: ApiKeyService::create(body).await?.last_insert_id,
+      key: ApiKeyService::create(&user_ctx, body).await?.last_insert_id,
     })
   }
 
   async fn update(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Path(key): Path<String>,
     Json(body): Json<UpdateApiKey>,
   ) -> Result<ApiKeyUpdated, SumidaError> {
-    ApiKeyService::update(&key, body).await?;
+    ApiKeyService::update(&user_ctx, &key, body).await?;
     Ok(ApiKeyUpdated)
   }
 
-  async fn delete(State(_state): State<S>, Path(key): Path<String>) -> Result<ApiKeyDeleted, SumidaError> {
-    ApiKeyService::delete(&key).await?;
+  async fn delete(
+    user_ctx: UserContext,
+    State(_state): State<S>,
+    Path(key): Path<String>,
+  ) -> Result<ApiKeyDeleted, SumidaError> {
+    ApiKeyService::delete(&user_ctx, &key).await?;
     Ok(ApiKeyDeleted)
   }
 }

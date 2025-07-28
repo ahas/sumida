@@ -24,37 +24,48 @@ impl<S> UserController<S> {
   }
 
   async fn list(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Query(filter): Query<UserFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<UserListItem>, SumidaError> {
-    Ok(UserService::list(filter, pagination).await?.into())
+    Ok(UserService::list(&user_ctx, filter, pagination).await?.into())
   }
 
-  async fn get(State(_state): State<S>, Path(user_id): Path<i32>) -> Result<GetUser, SumidaError> {
-    UserService::get(user_id).await?.ok_or(SumidaError::InvalidAccount)
+  async fn get(
+    user_ctx: UserContext,
+    State(_state): State<S>,
+    Path(user_id): Path<i32>,
+  ) -> Result<GetUser, SumidaError> {
+    UserService::get(&user_ctx, user_id).await?.ok_or(SumidaError::InvalidAccount)
   }
 
   async fn create(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Json(body): Json<CreateUser>,
   ) -> Result<UserCreated, SumidaError> {
     Ok(UserCreated {
-      id: UserService::create(body).await?.last_insert_id,
+      id: UserService::create(&user_ctx, body).await?.last_insert_id,
     })
   }
 
   async fn update(
+    user_ctx: UserContext,
     State(_state): State<S>,
-    Path(username): Path<String>,
+    Path(id): Path<i32>,
     Json(body): Json<UpdateUser>,
   ) -> Result<UserUpdated, SumidaError> {
-    UserService::update(username, body).await?;
+    UserService::update(&user_ctx, id, body).await?;
     Ok(UserUpdated)
   }
 
-  async fn delete(State(_state): State<S>, Path(user_id): Path<i32>) -> Result<UserDeleted, SumidaError> {
-    UserService::delete(user_id).await?;
+  async fn delete(
+    user_ctx: UserContext,
+    State(_state): State<S>,
+    Path(user_id): Path<i32>,
+  ) -> Result<UserDeleted, SumidaError> {
+    UserService::delete(&user_ctx, user_id).await?;
     Ok(UserDeleted)
   }
 

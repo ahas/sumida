@@ -1,14 +1,20 @@
 pub mod dto;
 
-use core::db;
+use core::{db, session::UserContext};
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::{
   ActiveValue::*, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
-  TransactionTrait,
+  Select, TransactionTrait, sea_query::Expr,
 };
 
-use crate::util::{ap::UserAp, crud::Pagination};
+use crate::{
+  service::ApiService,
+  util::{
+    ap::{Ap, UserAp},
+    crud::Pagination,
+  },
+};
 
 use self::dto::*;
 
@@ -16,15 +22,15 @@ pub struct RoleService;
 
 impl RoleService {
   pub async fn list(
+    user_ctx: &UserContext,
     filter: RoleFilter,
     pagination: Pagination,
   ) -> Result<(Vec<RoleListItem>, u64), SumidaError> {
     use entity::roles::Column;
 
-    let db_conn = db::get_connection();
-    let txn = db_conn.begin().await?;
+    let txn = db::get_connection().begin().await?;
 
-    let mut query = filter.apply(Roles::find());
+    let mut query = filter.apply(Self::select(user_ctx, Roles::find()));
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -36,24 +42,30 @@ impl RoleService {
     query = pagination.paginate(query);
 
     let items = query.into_model::<RoleListItem>().all(&txn).await?;
-
     txn.commit().await?;
 
     Ok((items, count))
   }
 
-  pub async fn get(id: i32) -> Result<Option<GetRole>, SumidaError> {
-    let db = db::get_connection();
-    let Some(mut role) = Roles::find_by_id(id).into_model::<GetRole>().one(db).await? else {
+  pub async fn get(user_ctx: &UserContext, id: i32) -> Result<Option<GetRole>, SumidaError> {
+    let txn = db::get_connection().begin().await?;
+    Self::ap(user_ctx).action("read").check(Roles::find_by_id(id), &txn).await?;
+
+    let Some(mut role) = Roles::find_by_id(id).into_model::<GetRole>().one(&txn).await? else {
       return Ok(None);
     };
 
-    role.access_policies = UserAp::query().role(id).find_all(db).await?;
+    role.access_policies = UserAp::query().role(id).find_all(&txn).await?;
+    let role = Some(role);
+    txn.commit().await?;
 
-    Ok(Some(role))
+    Ok(role)
   }
 
-  pub async fn create(data: CreateRole) -> Result<InsertResult<entity::roles::ActiveModel>, SumidaError> {
+  pub async fn create(
+    _user_ctx: &UserContext,
+    data: CreateRole,
+  ) -> Result<InsertResult<entity::roles::ActiveModel>, SumidaError> {
     let txn = db::get_connection().begin().await?;
     let user_aps = data.access_policies.clone();
     let result = Roles::insert(data.into_active_model()).exec(&txn).await?;
@@ -63,8 +75,13 @@ impl RoleService {
     Ok(result)
   }
 
-  pub async fn update(id: i32, data: UpdateRole) -> Result<entity::roles::Model, SumidaError> {
+  pub async fn update(
+    user_ctx: &UserContext,
+    id: i32,
+    data: UpdateRole,
+  ) -> Result<entity::roles::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
+    Self::ap(user_ctx).action("update").check(Roles::find_by_id(id), &txn).await?;
 
     if let Some(user_aps) = data.access_policies.clone() {
       UserAp::query().role(id).update(user_aps, &txn).await?;
@@ -79,12 +96,28 @@ impl RoleService {
     Ok(result)
   }
 
-  pub async fn delete(id: i32) -> Result<DeleteResult, SumidaError> {
+  pub async fn delete(user_ctx: &UserContext, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
+    Self::ap(user_ctx).action("delete").check(Roles::find_by_id(id), &txn).await?;
+
     UserAp::query().role(id).clear(&txn).await?;
     let result = Roles::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
+  }
+}
+
+impl ApiService<Roles> for RoleService {
+  fn select(user_ctx: &UserContext, query: Select<Roles>) -> Select<Roles> {
+    Self::ap(user_ctx).action("read").apply(query)
+  }
+
+  fn ap(user_ctx: &UserContext) -> Ap {
+    use entity::roles::Column;
+
+    Ap::new("role") //
+      .owner(user_ctx)
+      .object(Expr::col((Roles, Column::Id)).cast_as("varchar"))
   }
 }

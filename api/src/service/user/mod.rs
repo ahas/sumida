@@ -10,16 +10,17 @@ use core::session::UserContext;
 use core::{db, settings};
 use entity::prelude::*;
 use error::SumidaError;
-use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{ActiveValue::*, JoinType, Select};
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
-  QuerySelect, RelationTrait, TransactionTrait, Unchanged,
+  QuerySelect, RelationTrait, TransactionTrait, Unchanged, sea_query::Expr,
 };
 use sea_orm_crud::Optional;
 
+use crate::service::ApiService;
 use crate::service::auth::session::AuthSessionService;
+use crate::util::ap::Ap;
 use crate::util::crud::Pagination;
 
 use self::dto::*;
@@ -30,22 +31,6 @@ use super::prelude::*;
 pub struct UserService;
 
 impl UserService {
-  pub fn select(query: Select<entity::users::Entity>) -> Select<entity::users::Entity> {
-    let org_alias = Alias::new("org");
-    let role_alias = Alias::new("role");
-
-    query
-      .select_only()
-      .expr(Expr::col((entity::users::Entity, Asterisk)))
-      .expr_as(UserBlockService::exists_expr(), "is_blocked")
-      .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
-      .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
-      .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")
-      .expr_as(Expr::col((role_alias.clone(), "name")), "role_name")
-      .join_as(JoinType::LeftJoin, entity::users::Relation::Organization.def(), org_alias.clone())
-      .join_as(JoinType::LeftJoin, entity::users::Relation::Role.def(), role_alias.clone())
-  }
-
   pub fn hash_password<S>(password: S) -> argon2::password_hash::Result<String>
   where
     S: AsRef<str>,
@@ -57,15 +42,15 @@ impl UserService {
   }
 
   pub async fn list(
+    user_ctx: &UserContext,
     filter: UserFilter,
     pagination: Pagination,
   ) -> Result<(Vec<UserListItem>, u64), SumidaError> {
     use entity::users::Column;
 
-    let db_conn = db::get_connection();
-    let txn = db_conn.begin().await?;
+    let txn = db::get_connection().begin().await?;
 
-    let mut query = filter.apply(Self::select(Users::find()));
+    let mut query = filter.apply(Self::select(user_ctx, Users::find()));
     let count = query.clone().select_only().column(Column::Username).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -78,17 +63,24 @@ impl UserService {
     query = pagination.paginate(query);
 
     let items = query.into_model::<UserListItem>().all(&txn).await?;
-
     txn.commit().await?;
 
     Ok((items, count))
   }
 
-  pub async fn get(user_id: i32) -> Result<Option<GetUser>, SumidaError> {
-    Ok(Self::select(Users::find_by_id(user_id)).into_model::<GetUser>().one(db::get_connection()).await?)
+  pub async fn get(user_ctx: &UserContext, user_id: i32) -> Result<Option<GetUser>, SumidaError> {
+    Ok(
+      Self::select(user_ctx, Users::find_by_id(user_id))
+        .into_model::<GetUser>()
+        .one(db::get_connection())
+        .await?,
+    )
   }
 
-  pub async fn create(data: CreateUser) -> Result<InsertResult<entity::users::ActiveModel>, SumidaError> {
+  pub async fn create(
+    _user_ctx: &UserContext,
+    data: CreateUser,
+  ) -> Result<InsertResult<entity::users::ActiveModel>, SumidaError> {
     let password = data.password.clone();
 
     let mut active_model = data.into_active_model();
@@ -98,22 +90,34 @@ impl UserService {
     Ok(Users::insert(active_model).exec(db::get_connection()).await?)
   }
 
-  pub async fn update(username: String, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
+  pub async fn update(user_ctx: &UserContext, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
+    let txn = db::get_connection().begin().await?;
+    Self::ap(user_ctx).action("update").check(Users::find_by_id(user_id), &txn).await?;
+
     let Optional(password) = data.password.clone();
 
     let mut model: entity::users::ActiveModel = data.into_active_model();
-    model.username = Set(username);
+    model.id = Unchanged(user_id);
 
     if let Some(password) = password {
       model.password =
         Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
     }
 
-    Ok(Users::update(model).exec(db::get_connection()).await?)
+    let result = Users::update(model).exec(&txn).await?;
+    txn.commit().await?;
+
+    Ok(result)
   }
 
-  pub async fn delete(user_id: i32) -> Result<DeleteResult, SumidaError> {
-    Ok(Users::delete_by_id(user_id).exec(db::get_connection()).await?)
+  pub async fn delete(user_ctx: &UserContext, user_id: i32) -> Result<DeleteResult, SumidaError> {
+    let txn = db::get_connection().begin().await?;
+    Self::ap(user_ctx).action("delete").check(Users::find_by_id(id), &txn).await?;
+
+    let result = Users::delete_by_id(user_id).exec(&txn).await?;
+    txn.commit().await?;
+
+    Ok(result)
   }
 
   pub async fn invite(_user_ctx: &UserContext, user_id: i32) -> Result<(), SumidaError> {
@@ -251,5 +255,33 @@ impl UserService {
     let sub = &settings.subject;
 
     Ok(GetVapid::new(audience, exp, sub).await)
+  }
+}
+
+impl ApiService<Users> for UserService {
+  fn select(user_ctx: &UserContext, query: Select<Users>) -> Select<Users> {
+    Self::ap(user_ctx).action("read").apply({
+      let org_alias = Alias::new("org");
+      let role_alias = Alias::new("role");
+
+      query
+        .select_only()
+        .expr(Expr::col((entity::users::Entity, Asterisk)))
+        .expr_as(UserBlockService::exists_expr(), "is_blocked")
+        .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
+        .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
+        .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")
+        .expr_as(Expr::col((role_alias.clone(), "name")), "role_name")
+        .join_as(JoinType::LeftJoin, entity::users::Relation::Organization.def(), org_alias.clone())
+        .join_as(JoinType::LeftJoin, entity::users::Relation::Role.def(), role_alias.clone())
+    })
+  }
+
+  fn ap(user_ctx: &UserContext) -> Ap {
+    use entity::users::Column;
+
+    Ap::new("user") //
+      .owner(user_ctx)
+      .object(Expr::col((Users, Column::Id)).cast_as("varchar"))
   }
 }

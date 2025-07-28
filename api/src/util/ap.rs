@@ -5,6 +5,7 @@ use sea_orm::DbErr;
 use sea_orm::DeleteResult;
 use sea_orm::EntityName;
 use sea_orm::FromQueryResult;
+use sea_orm::QueryTrait;
 use sea_orm::Statement;
 use sea_orm::sea_query::Alias;
 use sea_orm::sea_query::IntoTableRef;
@@ -19,14 +20,31 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
+pub enum ApUser {
+  Admin,
+  Org(i32),
+  Role(i32),
+  User(i32),
+  ApiKey(String),
+}
+
+impl ToString for ApUser {
+  fn to_string(&self) -> String {
+    match self {
+      ApUser::Admin => "user:admin".to_string(),
+      ApUser::Org(id) => format!("org:{id}"),
+      ApUser::Role(id) => format!("role:{id}"),
+      ApUser::User(id) => format!("user:{id}"),
+      ApUser::ApiKey(key) => format!("api:{key}"),
+    }
+  }
+}
+
 pub struct Ap {
   _namespace: String,
   _object: Option<SimpleExpr>,
   _actions: Vec<String>,
-  _api_key: Option<String>,
-  _user_id: Option<i32>,
-  _role_id: Option<i32>,
-  _org_id: Option<i32>,
+  _users: Vec<ApUser>,
   _alias: Option<Alias>,
   _is_admin: bool,
 }
@@ -37,10 +55,7 @@ impl Ap {
       _namespace: namespace.as_ref().to_owned(),
       _object: None,
       _actions: Vec::new(),
-      _api_key: None,
-      _user_id: None,
-      _role_id: None,
-      _org_id: None,
+      _users: Vec::new(),
       _alias: None,
       _is_admin: false,
     }
@@ -61,30 +76,8 @@ impl Ap {
     let col_user = Expr::col((ap_alias.clone(), ApCol::User));
     let mut condition = Condition::any().add(col_user.clone().eq("*"));
 
-    // Match by Api-Key if provided.
-    // If it is then ignore other conditions
-    if let Some(key) = &self._api_key {
-      condition = condition.add(col_user.clone().eq(format!("key:{}", key)));
-    } else {
-      // Match by user ID if provided.
-      if let Some(user_id) = self._user_id {
-        condition = condition.add(col_user.clone().eq(format!("user:{}", user_id)));
-      }
-
-      // Match by organization ID if provided.
-      if let Some(org_id) = self._org_id {
-        condition = condition.add(col_user.clone().eq(format!("org:{}", org_id)));
-      }
-
-      // Match by role ID if provided.
-      if let Some(role_id) = self._role_id {
-        condition = condition.add(col_user.clone().eq(format!("role:{}", role_id)));
-      }
-
-      // Always allow admin access if applicable.
-      if self._is_admin {
-        condition = condition.add(col_user.clone().eq("user:admin"));
-      }
+    for ap_user in &self._users {
+      condition = condition.add(col_user.clone().eq(ap_user.to_string()));
     }
 
     condition
@@ -125,39 +118,25 @@ impl Ap {
     self
   }
 
-  pub fn api_key<S: AsRef<str>>(mut self, key: S) -> Self {
-    self._api_key = Some(key.as_ref().to_string());
+  pub fn user(mut self, ap_user: ApUser) -> Self {
+    self._users.push(ap_user);
     self
   }
 
-  pub fn user(mut self, id: i32) -> Self {
-    self._user_id = Some(id);
-    self
-  }
-
-  pub fn role(mut self, id: i32) -> Self {
-    self._role_id = Some(id);
-    self
-  }
-
-  pub fn org(mut self, id: i32) -> Self {
-    self._org_id = Some(id);
-    self
-  }
-
-  pub fn owner(self, owner: &UserContext) -> Self {
-    let mut access =
-      self.user(owner.profile.id).role(owner.profile.role.id).org(owner.profile.organization.id);
-
+  pub fn owner(mut self, owner: &UserContext) -> Self {
     if let Some(key) = &owner.profile.api_key {
-      access = access.api_key(key);
+      self._users.push(ApUser::ApiKey(key.to_owned()));
+    } else {
+      self._users.push(ApUser::User(owner.profile.id));
+      self._users.push(ApUser::Role(owner.profile.role.id));
+      self._users.push(ApUser::Org(owner.profile.organization.id));
+
+      if owner.profile.is_admin {
+        self._users.push(ApUser::Admin);
+      }
     }
 
-    if owner.profile.is_admin {
-      access = access.admin();
-    }
-
-    access
+    self
   }
 
   pub fn admin(mut self) -> Self {
@@ -224,7 +203,10 @@ impl Ap {
     C: ConnectionTrait,
     E::Model: Sync,
   {
-    if PaginatorTrait::count(self.apply(query), db).await.unwrap_or(0) > 0 {
+    let query = self.apply(query);
+    println!("{}", query.clone().build(db.get_database_backend()).to_string());
+
+    if PaginatorTrait::count(query, db).await.unwrap_or(0) > 0 {
       Ok(())
     } else {
       Err(SumidaError::NoServiceAvailable)
@@ -285,6 +267,41 @@ impl ApChain {
 
   pub fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E> {
     query.filter(self.condition())
+  }
+
+  pub async fn count<'db, E, C>(self, query: Select<E>, db: &'db C) -> u64
+  where
+    E: EntityTrait,
+    C: ConnectionTrait,
+    E::Model: Sync,
+  {
+    PaginatorTrait::count(self.apply(query), db).await.unwrap_or(0)
+  }
+
+  pub async fn check<'db, E, C>(self, query: Select<E>, db: &'db C) -> Result<(), SumidaError>
+  where
+    E: EntityTrait,
+    C: ConnectionTrait,
+    E::Model: Sync,
+  {
+    if PaginatorTrait::count(self.apply(query), db).await.unwrap_or(0) > 0 {
+      Ok(())
+    } else {
+      Err(SumidaError::NoServiceAvailable)
+    }
+  }
+
+  pub async fn check_allowed<'db, C>(self, db: &'db C) -> bool
+  where
+    C: ConnectionTrait,
+  {
+    for item in self.items {
+      if !item.check_allowed(db).await {
+        return false;
+      }
+    }
+
+    true
   }
 }
 
