@@ -2,12 +2,7 @@ use anyhow::Context;
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
 
 pub async fn setup_test_db() -> anyhow::Result<()> {
-  // dotenvy::dotenv().ok();
-  dotenvy::from_filename(".env.e2e").expect("Failed to load .env.e2e");
-
   let settings = infra::settings::get();
-  infra::db::establish_connection().await;
-
   let admin_url = std::env::var("DATABASE_ADMIN_URL").context("Missing env: DATABASE_ADMIN_URL")?;
   let test_url = settings.database.url.clone();
 

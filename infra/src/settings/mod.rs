@@ -8,7 +8,7 @@ pub mod session;
 pub mod smtp;
 pub mod web_push;
 
-use config::{Config, ConfigError, File};
+use config::{Config, File};
 use lazy_static::lazy_static;
 use serde::Deserialize;
 
@@ -29,14 +29,17 @@ pub struct SumidaSettings {
 }
 
 impl SumidaSettings {
-  pub fn build<'de, T>() -> Result<T, ConfigError>
+  pub fn build<'de, T>() -> anyhow::Result<T>
   where
     T: Deserialize<'de>,
   {
-    let p = std::env::var("SUMIDA_SETTINGS").unwrap_or("settings.toml");
-    let s = Config::builder().add_source(File::with_name(p)).build()?;
+    let source = File::from(
+      std::env::current_dir()?
+        .join(std::env::var("SUMIDA_SETTINGS").unwrap_or_else(|_| "settings.toml".to_string())),
+    );
+    let config = Config::builder().add_source(source).build()?;
 
-    s.try_deserialize()
+    Ok(config.try_deserialize()?)
   }
 }
 

@@ -79,8 +79,3 @@ pub async fn establish_connection() {
 pub fn get_connection() -> &'static DatabaseConnection {
   CONN.get().unwrap()
 }
-
-#[cfg(test)]
-pub fn set_test_connection(conn: DatabaseConnection) {
-  let _ = CONN.set(conn);
-}

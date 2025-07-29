@@ -1,23 +1,36 @@
-use axum::{Extension, Router, routing};
-use std::net::SocketAddr;
-use tokio::sync::oneshot;
+pub mod db;
+
+use axum::{Extension, Router};
+use reqwest::{Method, RequestBuilder, Url};
+use std::{net::SocketAddr, time::Duration};
+use tokio::sync::{OnceCell, oneshot};
+
+static SERVER: OnceCell<SumidaTestServer> = OnceCell::const_new();
+
+pub async fn server() -> &'static SumidaTestServer {
+  SERVER
+    .get_or_init(|| async { SumidaTestServer::spawn().await.expect("Failed to spawn the server") })
+    .await
+}
 
 #[derive(Clone)]
 pub struct SumidaTestState;
 
 pub struct SumidaTestServer {
   pub client: reqwest::Client,
-  addr: SocketAddr,
-  shutdown_tx: Option<oneshot::Sender<()>>,
+  pub addr: SocketAddr,
+  _shutdown: oneshot::Sender<()>,
 }
 
-impl TestServer {
+impl SumidaTestServer {
   pub async fn spawn() -> anyhow::Result<Self> {
-    dotenvy::dotenv().ok();
+    dotenvy::from_filename(".env.e2e").expect("Failed to load .env.e2e");
 
     let settings = infra::settings::get();
-    infra::tracing::subscribe();
     infra::db::establish_connection().await;
+    db::setup_test_db().await?;
+
+    // infra::tracing::subscribe();
     infra::aws::load_sdk_config().await;
 
     let state = SumidaTestState;
@@ -59,8 +72,19 @@ impl TestServer {
     Ok(Self {
       addr,
       client,
-      shutdown_tx: Some(shutdown_tx),
+      _shutdown: shutdown_tx,
     })
+  }
+
+  // Basic HTTP method helpers
+  #[inline]
+  pub fn base_url(&self) -> Url {
+    Url::parse(&format!("http://{}/", self.addr)).unwrap()
+  }
+
+  #[inline]
+  pub fn url(&self, path: &str) -> Url {
+    self.base_url().join(path.trim_start_matches('/')).unwrap()
   }
 
   #[inline]
@@ -68,7 +92,6 @@ impl TestServer {
     self.client.request(method, self.url(path))
   }
 
-  // Basic HTTP method helpers
   #[inline]
   pub fn get(&self, path: &str) -> RequestBuilder {
     self.request(Method::GET, path)
@@ -103,13 +126,5 @@ impl TestServer {
   #[inline]
   pub fn delete_json<T: serde::Serialize + ?Sized>(&self, path: &str, body: &T) -> RequestBuilder {
     self.delete(path).json(body)
-  }
-}
-
-impl Drop for TestServer {
-  fn drop(&mut self) {
-    if let Some(tx) = self.shutdown_tx.take() {
-      let _ = tx.send(());
-    }
   }
 }
