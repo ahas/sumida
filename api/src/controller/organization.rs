@@ -24,7 +24,7 @@ impl<S> OrganizationController<S> {
     Query(filter): Query<OrganizationFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<OrganizationListItem>, SumidaError> {
-    Ok(OrganizationService::list(&user_ctx, filter, pagination).await?.into())
+    Ok(OrganizationService::new(user_ctx).list(filter, pagination).await?.into())
   }
 
   async fn get(
@@ -32,7 +32,8 @@ impl<S> OrganizationController<S> {
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetOrganization, SumidaError> {
-    OrganizationService::get(&user_ctx, id)
+    OrganizationService::new(user_ctx)
+      .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("Organization".to_owned(), id.to_string()))
   }
@@ -43,7 +44,7 @@ impl<S> OrganizationController<S> {
     Json(body): Json<CreateOrganization>,
   ) -> Result<OrganizationCreated, SumidaError> {
     Ok(OrganizationCreated {
-      id: OrganizationService::create(&user_ctx, body).await?.last_insert_id,
+      id: OrganizationService::new(user_ctx).create(body).await?.last_insert_id,
     })
   }
 
@@ -53,7 +54,7 @@ impl<S> OrganizationController<S> {
     Path(id): Path<i32>,
     Json(body): Json<UpdateOrganization>,
   ) -> Result<OrganizationUpdated, SumidaError> {
-    OrganizationService::update(&user_ctx, id, body).await?;
+    OrganizationService::new(user_ctx).update(id, body).await?;
     Ok(OrganizationUpdated)
   }
 
@@ -62,7 +63,7 @@ impl<S> OrganizationController<S> {
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<OrganizationDeleted, SumidaError> {
-    OrganizationService::delete(&user_ctx, id).await?;
+    OrganizationService::new(user_ctx).delete(id).await?;
     Ok(OrganizationDeleted)
   }
 }

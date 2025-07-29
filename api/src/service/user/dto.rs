@@ -1,8 +1,8 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use core::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
 use entity::users::*;
+use infra::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
 use sea_orm::Condition;
 use sea_orm::FromQueryResult;
 use sea_orm::JoinType;
@@ -92,8 +92,8 @@ pub struct UserOrganization {
   pub name: String,
 }
 
-impl From<core::session::UserOrganization> for UserOrganization {
-  fn from(value: core::session::UserOrganization) -> Self {
+impl From<infra::session::UserOrganization> for UserOrganization {
+  fn from(value: infra::session::UserOrganization) -> Self {
     Self {
       id: value.id,
       name: value.name,
@@ -110,8 +110,8 @@ pub struct UserRole {
   pub name: String,
 }
 
-impl From<core::session::UserRole> for UserRole {
-  fn from(value: core::session::UserRole) -> Self {
+impl From<infra::session::UserRole> for UserRole {
+  fn from(value: infra::session::UserRole) -> Self {
     Self {
       id: value.id,
       name: value.name,

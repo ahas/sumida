@@ -23,26 +23,32 @@ impl<S> UserInvitationController<S> {
   }
 
   async fn list(
-    _user_ctx: UserContext,
+    user_ctx: UserContext,
     State(_state): State<S>,
     Query(filter): Query<UserInvitationFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<UserInvitationListItem>, SumidaError> {
-    Ok(UserInvitationService::list(filter, pagination).await?.into())
+    Ok(UserInvitationService::new(user_ctx).list(filter, pagination).await?.into())
   }
 
-  async fn get(State(_state): State<S>, Path(uuid): Path<Uuid>) -> Result<GetUserInvitation, SumidaError> {
-    UserInvitationService::get(uuid)
+  async fn get(
+    user_ctx: UserContext,
+    State(_state): State<S>,
+    Path(uuid): Path<Uuid>,
+  ) -> Result<GetUserInvitation, SumidaError> {
+    UserInvitationService::new(user_ctx)
+      .get(uuid)
       .await?
       .ok_or_else(|| SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()))
   }
 
   async fn create(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Path(user_id): Path<i32>,
     Json(_body): Json<CreateUserInvitation>,
   ) -> Result<UserInvitationCreated, SumidaError> {
-    let invitation = UserInvitationService::create(user_id).await?;
+    let invitation = UserInvitationService::new(user_ctx).create(user_id).await?;
 
     Ok(UserInvitationCreated {
       uuid: invitation.uuid,
@@ -51,11 +57,12 @@ impl<S> UserInvitationController<S> {
   }
 
   async fn update(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Path(user_id): Path<i32>,
     Json(_body): Json<UpdateUserInvitation>,
   ) -> Result<UserInvitationUpdated, SumidaError> {
-    let invitation = UserInvitationService::update(user_id).await?;
+    let invitation = UserInvitationService::new(user_ctx).update(user_id).await?;
 
     Ok(UserInvitationUpdated {
       uuid: invitation.uuid,
@@ -64,10 +71,11 @@ impl<S> UserInvitationController<S> {
   }
 
   async fn delete(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Path(uuid): Path<Uuid>,
   ) -> Result<UserInvitationDeleted, SumidaError> {
-    UserInvitationService::delete(uuid).await?;
+    UserInvitationService::new(user_ctx).delete(uuid).await?;
     Ok(UserInvitationDeleted)
   }
 }

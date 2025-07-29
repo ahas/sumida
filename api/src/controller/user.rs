@@ -29,7 +29,7 @@ impl<S> UserController<S> {
     Query(filter): Query<UserFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<UserListItem>, SumidaError> {
-    Ok(UserService::list(&user_ctx, filter, pagination).await?.into())
+    Ok(UserService::new(user_ctx).list(filter, pagination).await?.into())
   }
 
   async fn get(
@@ -37,7 +37,7 @@ impl<S> UserController<S> {
     State(_state): State<S>,
     Path(user_id): Path<i32>,
   ) -> Result<GetUser, SumidaError> {
-    UserService::get(&user_ctx, user_id).await?.ok_or(SumidaError::InvalidAccount)
+    UserService::new(user_ctx).get(user_id).await?.ok_or(SumidaError::InvalidAccount)
   }
 
   async fn create(
@@ -46,7 +46,7 @@ impl<S> UserController<S> {
     Json(body): Json<CreateUser>,
   ) -> Result<UserCreated, SumidaError> {
     Ok(UserCreated {
-      id: UserService::create(&user_ctx, body).await?.last_insert_id,
+      id: UserService::new(user_ctx).create(body).await?.last_insert_id,
     })
   }
 
@@ -56,7 +56,7 @@ impl<S> UserController<S> {
     Path(id): Path<i32>,
     Json(body): Json<UpdateUser>,
   ) -> Result<UserUpdated, SumidaError> {
-    UserService::update(&user_ctx, id, body).await?;
+    UserService::new(user_ctx).update(id, body).await?;
     Ok(UserUpdated)
   }
 
@@ -65,7 +65,7 @@ impl<S> UserController<S> {
     State(_state): State<S>,
     Path(user_id): Path<i32>,
   ) -> Result<UserDeleted, SumidaError> {
-    UserService::delete(&user_ctx, user_id).await?;
+    UserService::new(user_ctx).delete(user_id).await?;
     Ok(UserDeleted)
   }
 
@@ -74,39 +74,39 @@ impl<S> UserController<S> {
     State(_state): State<S>,
     Path(user_id): Path<i32>,
   ) -> Result<StatusCode, SumidaError> {
-    UserService::invite(&user_ctx, user_id).await?;
+    UserService::new(user_ctx).invite(user_id).await?;
     Ok(StatusCode::OK)
   }
 
   async fn activate(
-    mut user_ctx: UserContext,
+    user_ctx: UserContext,
     State(_state): State<S>,
     Json(body): Json<UserActivation>,
   ) -> Result<StatusCode, SumidaError> {
-    UserService::activate(&mut user_ctx, body).await?;
+    UserService::new(user_ctx).activate(body).await?;
     Ok(StatusCode::ACCEPTED)
   }
 
   async fn change_password(
-    _user_ctx: UserContext,
+    user_ctx: UserContext,
     State(_state): State<S>,
     Json(body): Json<ChangePassword>,
   ) -> Result<StatusCode, SumidaError> {
-    UserService::change_password(body).await?;
+    UserService::new(user_ctx).change_password(body).await?;
     Ok(StatusCode::OK)
   }
 
   async fn impersonate(
-    mut user_ctx: UserContext,
+    user_ctx: UserContext,
     State(_state): State<S>,
     Path(user_id): Path<i32>,
   ) -> Result<StatusCode, SumidaError> {
-    UserService::impersonate(&mut user_ctx, user_id).await?;
+    UserService::new(user_ctx).impersonate(user_id).await?;
     Ok(StatusCode::ACCEPTED)
   }
 
   async fn get_vapid(user_ctx: UserContext, State(_state): State<S>) -> Result<GetVapid, SumidaError> {
-    UserService::get_vapid(&user_ctx).await
+    UserService::new(user_ctx).get_vapid().await
   }
 }
 

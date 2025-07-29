@@ -2,8 +2,8 @@ use axum::extract::Multipart;
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 #[cfg(feature = "storage-aws-s3")]
-use core::aws;
-use core::settings;
+use infra::aws;
+use infra::settings;
 use serde_json::json;
 
 use crate::service::prelude::*;
@@ -31,7 +31,7 @@ impl<S> MailFormController<S> {
     Query(filter): Query<MailFormFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<MailFormListItem>, SumidaError> {
-    Ok(MailFormService::list(&user_ctx, filter, pagination).await?.into())
+    Ok(MailFormService::new(user_ctx).list(filter, pagination).await?.into())
   }
 
   async fn get(
@@ -39,7 +39,8 @@ impl<S> MailFormController<S> {
     State(_state): State<S>,
     Path(kind): Path<String>,
   ) -> Result<GetMailForm, SumidaError> {
-    MailFormService::get(&user_ctx, &kind)
+    MailFormService::new(user_ctx)
+      .get(&kind)
       .await?
       .ok_or_else(|| SumidaError::NoData("MailForm".to_owned(), kind.to_string()))
   }
@@ -50,7 +51,7 @@ impl<S> MailFormController<S> {
     Json(body): Json<CreateMailForm>,
   ) -> Result<MailFormCreated, SumidaError> {
     Ok(MailFormCreated {
-      kind: MailFormService::create(&user_ctx, body).await?.last_insert_id,
+      kind: MailFormService::new(user_ctx).create(body).await?.last_insert_id,
     })
   }
 
@@ -60,7 +61,7 @@ impl<S> MailFormController<S> {
     Path(kind): Path<String>,
     Json(body): Json<UpdateMailForm>,
   ) -> Result<MailFormUpdated, SumidaError> {
-    MailFormService::update(&user_ctx, kind, body).await?;
+    MailFormService::new(user_ctx).update(kind, body).await?;
     Ok(MailFormUpdated)
   }
 
@@ -69,7 +70,7 @@ impl<S> MailFormController<S> {
     State(_state): State<S>,
     Path(kind): Path<String>,
   ) -> Result<MailFormDeleted, SumidaError> {
-    MailFormService::delete(&user_ctx, kind).await?;
+    MailFormService::new(user_ctx).delete(kind).await?;
     Ok(MailFormDeleted)
   }
 

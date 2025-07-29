@@ -1,3 +1,0 @@
-[alias]
-t = "test --features test-suite"
-tu = "test --lib --no-default-features --features test-suite"

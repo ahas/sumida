@@ -368,8 +368,7 @@ impl UserContext {
   pub async fn identify(&mut self) -> Result<(), SumidaError> {
     if self.profile.is_authorized {
       let profile = &mut self.profile;
-      let db_conn = db::get_connection();
-      let txn = db_conn.begin().await?;
+      let txn = db::get_connection().begin().await?;
 
       Users::update(entity::users::ActiveModel {
         id: Unchanged(profile.id),

@@ -1,6 +1,6 @@
 pub mod dto;
 
-use core::db;
+use infra::db;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::ActiveValue::Set;

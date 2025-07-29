@@ -1,11 +1,10 @@
-use core::session::UserContext;
+use infra::session::UserContext;
 use entity::access_policies::{Column as ApCol, Entity as ApEntity};
 use error::SumidaError;
 use sea_orm::DbErr;
 use sea_orm::DeleteResult;
 use sea_orm::EntityName;
 use sea_orm::FromQueryResult;
-use sea_orm::QueryTrait;
 use sea_orm::Statement;
 use sea_orm::sea_query::Alias;
 use sea_orm::sea_query::IntoTableRef;
@@ -19,7 +18,9 @@ use sea_orm::{
   sea_query::{Expr, SimpleExpr},
 };
 use serde::{Deserialize, Serialize};
+use std::mem;
 
+#[derive(Clone, Debug)]
 pub enum ApUser {
   Admin,
   Org(i32),
@@ -40,13 +41,45 @@ impl ToString for ApUser {
   }
 }
 
+pub trait ApGuard {
+  fn object(self, expr: SimpleExpr) -> Self;
+
+  fn action<S: AsRef<str>>(self, action: S) -> Self;
+
+  fn actions(self, actions: &mut Vec<String>) -> Self;
+
+  fn user(self, ap_user: ApUser) -> Self;
+
+  fn owner(self, owner: &UserContext) -> Self;
+
+  fn condition(&self) -> Condition;
+
+  fn count<'db, E, C>(self, query: Select<E>, db: &'db C) -> impl Future<Output = u64>
+  where
+    E: EntityTrait,
+    C: ConnectionTrait,
+    E::Model: Sync;
+
+  fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E>;
+
+  fn check<'db, E, C>(self, query: Select<E>, db: &'db C) -> impl Future<Output = Result<(), SumidaError>>
+  where
+    E: EntityTrait,
+    C: ConnectionTrait,
+    E::Model: Sync;
+
+  fn check_allowed<'db, C>(self, db: &'db C) -> impl Future<Output = bool>
+  where
+    C: ConnectionTrait;
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Ap {
   _namespace: String,
   _object: Option<SimpleExpr>,
   _actions: Vec<String>,
   _users: Vec<ApUser>,
   _alias: Option<Alias>,
-  _is_admin: bool,
 }
 
 impl Ap {
@@ -57,7 +90,6 @@ impl Ap {
       _actions: Vec::new(),
       _users: Vec::new(),
       _alias: None,
-      _is_admin: false,
     }
   }
 
@@ -103,54 +135,9 @@ impl Ap {
     self._alias.clone().unwrap_or_else(|| Alias::new("ap"))
   }
 
-  pub fn object(mut self, expr: SimpleExpr) -> Self {
-    self._object = Some(expr);
-    self
-  }
-
-  pub fn action<S: AsRef<str>>(mut self, action: S) -> Self {
-    self._actions.push(action.as_ref().to_owned());
-    self
-  }
-
-  pub fn actions(mut self, actions: &mut Vec<String>) -> Self {
-    self._actions.append(actions);
-    self
-  }
-
-  pub fn user(mut self, ap_user: ApUser) -> Self {
-    self._users.push(ap_user);
-    self
-  }
-
-  pub fn owner(mut self, owner: &UserContext) -> Self {
-    if let Some(key) = &owner.profile.api_key {
-      self._users.push(ApUser::ApiKey(key.to_owned()));
-    } else {
-      self._users.push(ApUser::User(owner.profile.id));
-      self._users.push(ApUser::Role(owner.profile.role.id));
-      self._users.push(ApUser::Org(owner.profile.organization.id));
-
-      if owner.profile.is_admin {
-        self._users.push(ApUser::Admin);
-      }
-    }
-
-    self
-  }
-
-  pub fn admin(mut self) -> Self {
-    self._is_admin = true;
-    self
-  }
-
   pub fn alias(mut self, alias: Alias) -> Self {
     self._alias = Some(alias);
     self
-  }
-
-  pub fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E> {
-    query.filter(self.condition())
   }
 
   pub fn build_statement(&self, ap_alias: Alias) -> SelectStatement {
@@ -171,8 +158,46 @@ impl Ap {
       .add(self._build_action_condition(ap_alias.clone()))
       .add(self._build_user_conditions(ap_alias.clone()))
   }
+}
 
-  pub fn condition(&self) -> Condition {
+impl ApGuard for Ap {
+  fn object(mut self, expr: SimpleExpr) -> Self {
+    self._object = Some(expr);
+    self
+  }
+
+  fn action<S: AsRef<str>>(mut self, action: S) -> Self {
+    self._actions.push(action.as_ref().to_owned());
+    self
+  }
+
+  fn actions(mut self, actions: &mut Vec<String>) -> Self {
+    self._actions.append(actions);
+    self
+  }
+
+  fn user(mut self, ap_user: ApUser) -> Self {
+    self._users.push(ap_user);
+    self
+  }
+
+  fn owner(mut self, owner: &UserContext) -> Self {
+    if let Some(key) = &owner.profile.api_key {
+      self._users.push(ApUser::ApiKey(key.to_owned()));
+    } else {
+      self._users.push(ApUser::User(owner.profile.id));
+      self._users.push(ApUser::Role(owner.profile.role.id));
+      self._users.push(ApUser::Org(owner.profile.organization.id));
+
+      if owner.profile.is_admin {
+        self._users.push(ApUser::Admin);
+      }
+    }
+
+    self
+  }
+
+  fn condition(&self) -> Condition {
     let ap_alias = self._unwrap_alias();
     let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
     let stmt = self.build_statement(ap_alias.clone());
@@ -188,7 +213,11 @@ impl Ap {
       .add(Expr::exists(stmt_deny).not())
   }
 
-  pub async fn count<'db, E, C>(self, query: Select<E>, db: &'db C) -> u64
+  fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E> {
+    query.filter(self.condition())
+  }
+
+  async fn count<'db, E, C>(self, query: Select<E>, db: &'db C) -> u64
   where
     E: EntityTrait,
     C: ConnectionTrait,
@@ -197,14 +226,13 @@ impl Ap {
     PaginatorTrait::count(self.apply(query), db).await.unwrap_or(0)
   }
 
-  pub async fn check<'db, E, C>(self, query: Select<E>, db: &'db C) -> Result<(), SumidaError>
+  async fn check<'db, E, C>(self, query: Select<E>, db: &'db C) -> Result<(), SumidaError>
   where
     E: EntityTrait,
     C: ConnectionTrait,
     E::Model: Sync,
   {
     let query = self.apply(query);
-    println!("{}", query.clone().build(db.get_database_backend()).to_string());
 
     if PaginatorTrait::count(query, db).await.unwrap_or(0) > 0 {
       Ok(())
@@ -213,7 +241,7 @@ impl Ap {
     }
   }
 
-  pub async fn check_allowed<'db, C>(self, db: &'db C) -> bool
+  async fn check_allowed<'db, C>(self, db: &'db C) -> bool
   where
     C: ConnectionTrait,
   {
@@ -229,6 +257,7 @@ impl Ap {
   }
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct ApChain {
   items: Vec<Ap>,
 }
@@ -242,12 +271,54 @@ impl ApChain {
     self.items.push(ap);
     self
   }
+}
 
-  pub fn condition(self) -> Condition {
+impl ApGuard for ApChain {
+  fn object(mut self, expr: SimpleExpr) -> Self {
+    for item in &mut self.items {
+      *item = mem::take(item).object(expr.clone());
+    }
+
+    self
+  }
+
+  fn action<S: AsRef<str>>(mut self, action: S) -> Self {
+    for item in &mut self.items {
+      *item = mem::take(item).action(action.as_ref().to_string());
+    }
+
+    self
+  }
+
+  fn actions(mut self, actions: &mut Vec<String>) -> Self {
+    for item in &mut self.items {
+      *item = mem::take(item).actions(actions);
+    }
+
+    self
+  }
+
+  fn user(mut self, ap_user: ApUser) -> Self {
+    for item in &mut self.items {
+      *item = mem::take(item).user(ap_user.clone());
+    }
+
+    self
+  }
+
+  fn owner(mut self, owner: &UserContext) -> Self {
+    for item in &mut self.items {
+      *item = mem::take(item).owner(owner);
+    }
+
+    self
+  }
+
+  fn condition(&self) -> Condition {
     let mut cond_allow = Condition::any();
     let mut cond_deny = Condition::all();
 
-    for item in self.items {
+    for item in &self.items {
       let ap_alias = item._unwrap_alias();
       let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
       let stmt = item.build_statement(ap_alias.clone());
@@ -265,11 +336,11 @@ impl ApChain {
     Condition::all().add(cond_allow).add(cond_deny)
   }
 
-  pub fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E> {
+  fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E> {
     query.filter(self.condition())
   }
 
-  pub async fn count<'db, E, C>(self, query: Select<E>, db: &'db C) -> u64
+  async fn count<'db, E, C>(self, query: Select<E>, db: &'db C) -> u64
   where
     E: EntityTrait,
     C: ConnectionTrait,
@@ -278,7 +349,7 @@ impl ApChain {
     PaginatorTrait::count(self.apply(query), db).await.unwrap_or(0)
   }
 
-  pub async fn check<'db, E, C>(self, query: Select<E>, db: &'db C) -> Result<(), SumidaError>
+  async fn check<'db, E, C>(self, query: Select<E>, db: &'db C) -> Result<(), SumidaError>
   where
     E: EntityTrait,
     C: ConnectionTrait,
@@ -291,7 +362,7 @@ impl ApChain {
     }
   }
 
-  pub async fn check_allowed<'db, C>(self, db: &'db C) -> bool
+  async fn check_allowed<'db, C>(self, db: &'db C) -> bool
   where
     C: ConnectionTrait,
   {
@@ -323,88 +394,37 @@ impl UserAp {
 
 #[derive(Clone, Debug)]
 pub struct UserApQuery {
-  _api_key: Option<String>,
-  _user_id: Option<i32>,
-  _role_id: Option<i32>,
-  _org_id: Option<i32>,
-  _is_admin: bool,
+  _users: Vec<ApUser>,
 }
 
 impl UserApQuery {
   pub fn new() -> Self {
-    Self {
-      _api_key: None,
-      _user_id: None,
-      _role_id: None,
-      _org_id: None,
-      _is_admin: false,
-    }
+    Self { _users: Vec::new() }
   }
 
-  pub fn api_key<S: AsRef<str>>(mut self, key: S) -> Self {
-    self._api_key = Some(key.as_ref().to_string());
+  pub fn user(mut self, ap_user: ApUser) -> Self {
+    self._users.push(ap_user);
     self
   }
 
-  pub fn user(mut self, id: i32) -> Self {
-    self._user_id = Some(id);
-    self
-  }
-
-  pub fn role(mut self, id: i32) -> Self {
-    self._role_id = Some(id);
-    self
-  }
-
-  pub fn org(mut self, id: i32) -> Self {
-    self._org_id = Some(id);
-    self
-  }
-
-  pub fn owner(self, owner: &UserContext) -> Self {
-    let mut access =
-      self.user(owner.profile.id).role(owner.profile.role.id).org(owner.profile.organization.id);
-
+  pub fn owner(mut self, owner: &UserContext) -> Self {
     if let Some(key) = &owner.profile.api_key {
-      access = access.api_key(key);
+      self._users.push(ApUser::ApiKey(key.to_owned()));
+    } else {
+      self._users.push(ApUser::User(owner.profile.id));
+      self._users.push(ApUser::Role(owner.profile.role.id));
+      self._users.push(ApUser::Org(owner.profile.organization.id));
+
+      if owner.profile.is_admin {
+        self._users.push(ApUser::Admin);
+      }
     }
 
-    if owner.profile.is_admin {
-      access = access.admin();
-    }
-
-    access
-  }
-
-  pub fn admin(mut self) -> Self {
-    self._is_admin = true;
     self
   }
 
   fn _build_users(&self) -> Vec<String> {
-    let mut users = Vec::new();
-
-    if let Some(key) = &self._api_key {
-      users.push(format!("key:{key}"));
-    } else {
-      if let Some(org_id) = self._org_id {
-        users.push(format!("org:{org_id}"));
-      }
-
-      if let Some(role_id) = self._role_id {
-        users.push(format!("role:{role_id}"));
-      }
-
-      if let Some(user_id) = self._user_id {
-        users.push(format!("user:{user_id}"));
-      }
-
-      if self._is_admin {
-        users.push("user:admin".to_string());
-      }
-    }
-
-    users
+    self._users.iter().map(|x| x.to_string()).collect()
   }
 
   pub async fn find_all<'db, C: ConnectionTrait>(self, db: &'db C) -> Result<Vec<UserAp>, DbErr> {

@@ -25,14 +25,14 @@ include!(concat!(env!("OUT_DIR"), "/version.rs"));
 async fn main() -> Result<(), anyhow::Error> {
   color_eyre::install().expect("failed to install color_eyre");
 
-  dotenv::dotenv().ok();
+  dotenvy::dotenv().ok();
 
-  let settings = sumida::core::settings::get();
+  let settings = sumida::infra::settings::get();
   let state = AppState;
 
-  sumida::core::tracing::subscribe();
-  sumida::core::db::establish_connection().await;
-  sumida::core::aws::load_sdk_config().await;
+  sumida::infra::tracing::subscribe();
+  sumida::infra::db::establish_connection().await;
+  sumida::infra::aws::load_sdk_config().await;
 
   tracing::info!("version: {}", VERSION);
 
@@ -42,8 +42,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .set_state(&state)
     ))
     .merge(app::new_router(&state).await?)
-    .layer(sumida::core::session::new_layer().await?)
-    .layer(sumida::core::cors::new_layer())
+    .layer(sumida::infra::session::new_layer().await?)
+    .layer(sumida::infra::cors::new_layer())
     .layer(Extension(settings))
     .with_state(state)
     .route("/", routing::get(health_check))

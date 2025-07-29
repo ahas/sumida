@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use aws_smithy_types::byte_stream::{AggregatedBytes, ByteStream};
-use core::{aws, settings};
+use infra::{aws, settings};
 #[cfg(feature = "image")]
 use image::{self, DynamicImage, ImageFormat};
 use std::{fmt::Display, io::Cursor};

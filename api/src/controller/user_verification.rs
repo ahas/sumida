@@ -17,10 +17,11 @@ impl<S> UserVerificationController<S> {
   }
 
   async fn send(
+    user_ctx: UserContext,
     State(_state): State<S>,
     Json(body): Json<SendUserVerification>,
   ) -> Result<UserVerificationSent, SumidaError> {
-    UserVerificationService::send(body).await?;
+    UserVerificationService::new(user_ctx).send(body).await?;
 
     Ok(UserVerificationSent)
   }

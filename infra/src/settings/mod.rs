@@ -33,7 +33,8 @@ impl SumidaSettings {
   where
     T: Deserialize<'de>,
   {
-    let s = Config::builder().add_source(File::with_name("settings.toml")).build()?;
+    let p = std::env::var("SUMIDA_SETTINGS").unwrap_or("settings.toml");
+    let s = Config::builder().add_source(File::with_name(p)).build()?;
 
     s.try_deserialize()
   }

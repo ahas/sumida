@@ -134,7 +134,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
   async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-    let db_conn = manager.get_connection();
+    let db = manager.get_connection();
 
     // board_categories
     manager
@@ -160,7 +160,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db_conn.execute_unprepared("SELECT manage_updated_at('board_categories');").await?;
+    db.execute_unprepared("SELECT manage_updated_at('board_categories');").await?;
 
     // boards
     manager
@@ -186,7 +186,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db_conn.execute_unprepared("SELECT manage_updated_at('boards');").await?;
+    db.execute_unprepared("SELECT manage_updated_at('boards');").await?;
 
     // board_posts
     manager
@@ -222,7 +222,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db_conn.execute_unprepared("SELECT manage_updated_at('board_posts');").await?;
+    db.execute_unprepared("SELECT manage_updated_at('board_posts');").await?;
 
     // board_comments
     manager
@@ -257,7 +257,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db_conn.execute_unprepared("SELECT manage_updated_at('board_comments');").await?;
+    db.execute_unprepared("SELECT manage_updated_at('board_comments');").await?;
 
     // board_post_likes
     manager

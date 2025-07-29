@@ -1,4 +1,4 @@
-use core::session::UserContext;
+use infra::session::UserContext;
 use entity::access_policies::Column as ApColumn;
 use entity::access_policies::Entity as Ap;
 use sea_orm::sea_query::Alias;

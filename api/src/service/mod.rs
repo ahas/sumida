@@ -1,8 +1,6 @@
-use core::session::UserContext;
-
 use sea_orm::{EntityTrait, Select};
 
-use crate::util::ap::Ap;
+use crate::util::ap::ApGuard;
 
 pub mod admin;
 pub mod api_key;
@@ -20,7 +18,7 @@ pub mod user_verification;
 
 pub mod prelude;
 
-pub trait ApiService<E: EntityTrait> {
-  fn select(user_ctx: &UserContext, query: Select<E>) -> Select<E>;
-  fn ap(user_ctx: &UserContext) -> Ap;
+pub trait ApiService<A: ApGuard, E: EntityTrait> {
+  fn ap(&self) -> A;
+  fn select(&self, query: Select<E>) -> Select<E>;
 }

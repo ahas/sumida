@@ -1,7 +1,7 @@
 pub mod dto;
 
 use chrono::{Duration, Utc};
-use core::{db, settings};
+use infra::{db, session::UserContext, settings};
 use entity::prelude::*;
 use error::SumidaError;
 use rand::Rng;
@@ -10,16 +10,23 @@ use sea_orm::{
   TransactionTrait,
 };
 
-use crate::service::{
-  mail_form::MailFormSendOptions, prelude::MailFormService, user::mail_form_context::*,
-};
-
 use self::dto::*;
 
-pub struct UserVerificationService;
+use crate::service::mail_form::MailFormSendOptions;
+use crate::service::prelude::MailFormService;
+use crate::service::user::mail_form_context::*;
+
+pub struct UserVerificationService {
+  pub user_ctx: UserContext,
+}
 
 impl UserVerificationService {
+  pub fn new(user_ctx: UserContext) -> Self {
+    Self { user_ctx }
+  }
+
   pub async fn verify<'db, KindT, CodeT, DbConnT>(
+    &self,
     kind: KindT,
     user_id: i32,
     code: CodeT,
@@ -60,7 +67,7 @@ impl UserVerificationService {
     Ok(is_verified)
   }
 
-  pub async fn send(data: SendUserVerification) -> Result<(), SumidaError> {
+  pub async fn send(&self, data: SendUserVerification) -> Result<(), SumidaError> {
     use entity::user_verifications::Column;
 
     let code: String = {
@@ -68,8 +75,7 @@ impl UserVerificationService {
       (0..6).map(|_| rng.random_range(0..10).to_string()).collect()
     };
 
-    let db_conn = db::get_connection();
-    let txn = db_conn.begin().await?;
+    let txn = db::get_connection().begin().await?;
 
     let user_id = data.user_id;
     let kind = data.kind.clone();
@@ -85,7 +91,7 @@ impl UserVerificationService {
     let exists = UserVerifications::find()
       .filter(Column::UserId.eq(user_id))
       .filter(Column::Kind.eq(&kind))
-      .count(db_conn)
+      .count(&txn)
       .await?
       > 0;
 

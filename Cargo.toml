@@ -1,7 +1,7 @@
 [package]
 name = "sumida"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = []
@@ -19,13 +19,13 @@ full-aws = [
 ]
 test-suite = ["full-local"]
 
-aws-dynamodb = ["core/aws-dynamodb"]
-aws-s3 = ["core/aws-s3", "api/aws-s3"]
+aws-dynamodb = ["infra/aws-dynamodb"]
+aws-s3 = ["infra/aws-s3", "api/aws-s3"]
 image = ["api/image"]
 
 session = []
-session-store-redis = ["session", "core/session-store-redis"]
-session-store-aws-dynamodb = ["session", "core/session-store-aws-dynamodb"]
+session-store-redis = ["session", "infra/session-store-redis"]
+session-store-aws-dynamodb = ["session", "infra/session-store-aws-dynamodb"]
 
 jwt = []
 jwt-secret-store-aws-ssm = ["jwt", "api/jwt-secret-store-aws-ssm"]
@@ -36,9 +36,11 @@ storage-local = ["api/storage-local"]
 
 [workspace]
 resolver = "2"
-members = ["api", "core", "entity", "error"]
+members = ["api", "infra", "entity", "error", "e2e"]
 
 [workspace.dependencies]
+sea-orm-crud = { path = "../sea-orm-crud" }
+
 anyhow = "1.0.98"
 argon2 = "0.5.3"
 aws-config = "1.6.3"
@@ -63,9 +65,10 @@ sea-orm = { version = "1.1.12", features = [
   "macros",
   "runtime-tokio-rustls",
 ] }
-sea-orm-migration = { version = "1.1.12", features = ["sqlx-postgres"] }
-sea-orm-crud = { git = "https://github.com/ahas/sea-orm-crud.git" }
-# sea-orm-crud = { path = "../sea-orm-crud" }
+sea-orm-migration = { version = "1.1.14", features = [
+  "runtime-tokio-rustls",
+  "sqlx-postgres",
+] }
 tinytemplate = "1.2.1"
 time = "0.3.41"
 tokio = "1.45.0"
@@ -81,6 +84,7 @@ base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 api = { path = "./api", default-features = false }
 aws-smithy-types.workspace = true
 cfg-if.workspace = true
-core = { path = "./core", default-features = false }
+infra = { path = "./infra", default-features = false }
 entity = { path = "./entity", default-features = false }
 error = { path = "./error", default-features = false }
+e2e = { path = "./e2e", default-features = false }

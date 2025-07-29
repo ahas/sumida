@@ -2,7 +2,7 @@ pub mod dto;
 
 use self::dto::*;
 use crate::util::crud::Pagination;
-use core::db;
+use infra::db;
 use entity::bs::board_comments::Column;
 use entity::bs::board_comments::Entity as BoardComments;
 use error::SumidaError;

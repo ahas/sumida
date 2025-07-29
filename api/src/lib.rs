@@ -7,10 +7,6 @@ pub mod util;
 use axum::Router;
 use controller::{ApiController, prelude::*};
 
-pub mod sumida_core {
-  pub use ::core::*;
-}
-
 pub struct Sumida<'a, StateT>
 where
   StateT: Clone + Send + Sync + 'static,

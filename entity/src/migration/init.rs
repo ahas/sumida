@@ -140,15 +140,14 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
   async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-    let db_conn = manager.get_connection();
+    let db = manager.get_connection();
 
     // Extensions
-    db_conn.execute_unprepared("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";").await?;
+    db.execute_unprepared("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";").await?;
 
     // Functions
-    db_conn
-      .execute_unprepared(
-        r#"
+    db.execute_unprepared(
+      r#"
         CREATE OR REPLACE FUNCTION manage_updated_at(_tbl regclass) RETURNS VOID AS $$
         BEGIN
           EXECUTE format('CREATE TRIGGER set_updated_at BEFORE UPDATE ON %s
@@ -169,10 +168,28 @@ impl MigrationTrait for Migration {
         END;
         $$ LANGUAGE plpgsql;
         "#,
-      )
-      .await?;
+    )
+    .await?;
 
     // BEGIN access_policies table
+    manager
+      .create_table(
+        Table::create()
+          .if_not_exists()
+          .table(AccessPolicies::Table)
+          .col(uuid(AccessPolicies::Uuid).default(Expr::cust("uuid_generate_v4()")))
+          .col(string(AccessPolicies::Namespace))
+          .col(string(AccessPolicies::Effect))
+          .col(string(AccessPolicies::Object))
+          .col(
+            array(AccessPolicies::Action, ColumnType::String(StringLen::None)).default(Expr::cust("'{}'")),
+          )
+          .col(string(AccessPolicies::User))
+          .col(timestamp_with_time_zone(AccessPolicies::CreatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_access_policies__uuid").col(AccessPolicies::Uuid))
+          .to_owned(),
+      )
+      .await?;
     manager
       .create_index(
         Index::create()
@@ -206,24 +223,6 @@ impl MigrationTrait for Migration {
           .table(AccessPolicies::Table)
           .col(AccessPolicies::User)
           .index_type(IndexType::BTree)
-          .to_owned(),
-      )
-      .await?;
-    manager
-      .create_table(
-        Table::create()
-          .if_not_exists()
-          .table(AccessPolicies::Table)
-          .col(uuid(AccessPolicies::Uuid).default(Expr::cust("uuid_generate_v4()")))
-          .col(string(AccessPolicies::Namespace))
-          .col(string(AccessPolicies::Effect))
-          .col(string(AccessPolicies::Object))
-          .col(
-            array(AccessPolicies::Action, ColumnType::String(StringLen::None)).default(Expr::cust("'{}'")),
-          )
-          .col(string(AccessPolicies::User))
-          .col(timestamp_with_time_zone(AccessPolicies::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_access_policies__uuid").col(AccessPolicies::Uuid))
           .to_owned(),
       )
       .await?;
@@ -262,7 +261,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db_conn.execute_unprepared("SELECT manage_updated_at('organizations');").await?;
+    db.execute_unprepared("SELECT manage_updated_at('organizations');").await?;
     // END organizations table
 
     // BEGIN roles table
@@ -280,7 +279,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db_conn.execute_unprepared("SELECT manage_updated_at('roles');").await?;
+    db.execute_unprepared("SELECT manage_updated_at('roles');").await?;
     // END roles table
 
     // BEGIN users table
@@ -352,7 +351,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db_conn.execute_unprepared("SELECT manage_updated_at('users');").await?;
+    db.execute_unprepared("SELECT manage_updated_at('users');").await?;
     // END users table
 
     // BEGIN user_prefs table
@@ -556,7 +555,7 @@ impl MigrationTrait for Migration {
   }
 
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-    let db_conn = manager.get_connection();
+    let db = manager.get_connection();
 
     // Tables
     manager.drop_table(Table::drop().if_exists().table(MailForms::Table).to_owned()).await?;
@@ -572,11 +571,11 @@ impl MigrationTrait for Migration {
     manager.drop_table(Table::drop().if_exists().table(AccessPolicies::Table).to_owned()).await?;
 
     // Functions
-    db_conn.execute_unprepared("DROP FUNCTION IF EXISTS manage_updated_at(in _tbl regclass);").await?;
-    db_conn.execute_unprepared("DROP FUNCTION IF EXISTS set_updated_at();").await?;
+    db.execute_unprepared("DROP FUNCTION IF EXISTS manage_updated_at(in _tbl regclass);").await?;
+    db.execute_unprepared("DROP FUNCTION IF EXISTS set_updated_at();").await?;
 
     // Extensions
-    db_conn.execute_unprepared("DROP EXTENSION IF EXISTS \"uuid-ossp\";").await?;
+    db.execute_unprepared("DROP EXTENSION IF EXISTS \"uuid-ossp\";").await?;
 
     Ok(())
   }

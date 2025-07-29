@@ -27,7 +27,7 @@ impl<S> UserBlockController<S> {
     Query(filter): Query<UserBlockFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<UserBlockListItem>, SumidaError> {
-    Ok(UserBlockService::list(&user_ctx, filter, pagination).await?.into())
+    Ok(UserBlockService::new(user_ctx).list(filter, pagination).await?.into())
   }
 
   async fn get(
@@ -35,7 +35,8 @@ impl<S> UserBlockController<S> {
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetUserBlock, SumidaError> {
-    UserBlockService::get(&user_ctx, id)
+    UserBlockService::new(user_ctx)
+      .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("UserBlock".to_owned(), id.to_string()))
   }
@@ -46,7 +47,7 @@ impl<S> UserBlockController<S> {
     Json(body): Json<CreateUserBlock>,
   ) -> Result<UserBlockCreated, SumidaError> {
     Ok(UserBlockCreated {
-      id: UserBlockService::create(&user_ctx, body).await?.last_insert_id,
+      id: UserBlockService::new(user_ctx).create(body).await?.last_insert_id,
     })
   }
 
@@ -56,7 +57,7 @@ impl<S> UserBlockController<S> {
     Path(id): Path<i32>,
     Json(body): Json<UpdateUserBlock>,
   ) -> Result<UserBlockUpdated, SumidaError> {
-    UserBlockService::update(&user_ctx, id, body).await?;
+    UserBlockService::new(user_ctx).update(id, body).await?;
     Ok(UserBlockUpdated)
   }
 
@@ -65,7 +66,7 @@ impl<S> UserBlockController<S> {
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<UserBlockDeleted, SumidaError> {
-    UserBlockService::delete(&user_ctx, id).await?;
+    UserBlockService::new(user_ctx).delete(id).await?;
     Ok(UserBlockDeleted)
   }
 }

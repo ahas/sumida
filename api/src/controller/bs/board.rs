@@ -7,7 +7,7 @@ use axum::{
   extract::{Path, Query, State},
   routing,
 };
-use core::session::UserContext;
+use infra::session::UserContext;
 use error::SumidaError;
 use std::marker::PhantomData;
 
@@ -24,7 +24,7 @@ impl<S> BoardController<S> {
     Query(filter): Query<BoardFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardListItem>, SumidaError> {
-    Ok(BoardService::list(&user_ctx, filter, pagination).await?.into())
+    Ok(BoardService::new(user_ctx).list(filter, pagination).await?.into())
   }
 
   async fn get(
@@ -32,7 +32,8 @@ impl<S> BoardController<S> {
     State(_): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetBoard, SumidaError> {
-    BoardService::get(&user_ctx, id)
+    BoardService::new(user_ctx)
+      .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("Board".into(), id.to_string()))
   }
@@ -42,9 +43,8 @@ impl<S> BoardController<S> {
     State(_): State<S>,
     Json(body): Json<CreateBoard>,
   ) -> Result<BoardCreated, SumidaError> {
-    let res = BoardService::create(&user_ctx, body).await?;
     Ok(BoardCreated {
-      id: res.last_insert_id,
+      id: BoardService::new(user_ctx).create(body).await?.last_insert_id,
     })
   }
 
@@ -54,7 +54,7 @@ impl<S> BoardController<S> {
     Path(id): Path<i32>,
     Json(body): Json<UpdateBoard>,
   ) -> Result<BoardUpdated, SumidaError> {
-    BoardService::update(&user_ctx, id, body).await?;
+    BoardService::new(user_ctx).update(id, body).await?;
     Ok(BoardUpdated)
   }
 
@@ -63,7 +63,7 @@ impl<S> BoardController<S> {
     State(_): State<S>,
     Path(id): Path<i32>,
   ) -> Result<BoardDeleted, SumidaError> {
-    BoardService::delete(&user_ctx, id).await?;
+    BoardService::new(user_ctx).delete(id).await?;
     Ok(BoardDeleted)
   }
 }

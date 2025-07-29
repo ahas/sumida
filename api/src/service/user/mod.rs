@@ -6,8 +6,8 @@ use argon2::password_hash::PasswordHasher;
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use chrono::Utc;
-use core::session::UserContext;
-use core::{db, settings};
+use infra::session::UserContext;
+use infra::{db, settings};
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::sea_query::{Alias, Asterisk};
@@ -20,7 +20,7 @@ use sea_orm_crud::Optional;
 
 use crate::service::ApiService;
 use crate::service::auth::session::AuthSessionService;
-use crate::util::ap::Ap;
+use crate::util::ap::{Ap, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
@@ -28,9 +28,15 @@ use self::dto::*;
 use super::mail_form::MailFormSendOptions;
 use super::prelude::*;
 
-pub struct UserService;
+pub struct UserService {
+  user_ctx: UserContext,
+}
 
 impl UserService {
+  pub fn new(user_ctx: UserContext) -> Self {
+    Self { user_ctx }
+  }
+
   pub fn hash_password<S>(password: S) -> argon2::password_hash::Result<String>
   where
     S: AsRef<str>,
@@ -42,7 +48,7 @@ impl UserService {
   }
 
   pub async fn list(
-    user_ctx: &UserContext,
+    &self,
     filter: UserFilter,
     pagination: Pagination,
   ) -> Result<(Vec<UserListItem>, u64), SumidaError> {
@@ -50,7 +56,7 @@ impl UserService {
 
     let txn = db::get_connection().begin().await?;
 
-    let mut query = filter.apply(Self::select(user_ctx, Users::find()));
+    let mut query = filter.apply(self.select(Users::find()));
     let count = query.clone().select_only().column(Column::Username).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -68,17 +74,12 @@ impl UserService {
     Ok((items, count))
   }
 
-  pub async fn get(user_ctx: &UserContext, user_id: i32) -> Result<Option<GetUser>, SumidaError> {
-    Ok(
-      Self::select(user_ctx, Users::find_by_id(user_id))
-        .into_model::<GetUser>()
-        .one(db::get_connection())
-        .await?,
-    )
+  pub async fn get(&self, user_id: i32) -> Result<Option<GetUser>, SumidaError> {
+    Ok(self.select(Users::find_by_id(user_id)).into_model::<GetUser>().one(db::get_connection()).await?)
   }
 
   pub async fn create(
-    _user_ctx: &UserContext,
+    &self,
     data: CreateUser,
   ) -> Result<InsertResult<entity::users::ActiveModel>, SumidaError> {
     let password = data.password.clone();
@@ -90,9 +91,9 @@ impl UserService {
     Ok(Users::insert(active_model).exec(db::get_connection()).await?)
   }
 
-  pub async fn update(user_ctx: &UserContext, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
+  pub async fn update(&self, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("update").check(Users::find_by_id(user_id), &txn).await?;
+    self.ap().action("update").check(Users::find_by_id(user_id), &txn).await?;
 
     let Optional(password) = data.password.clone();
 
@@ -110,9 +111,9 @@ impl UserService {
     Ok(result)
   }
 
-  pub async fn delete(user_ctx: &UserContext, user_id: i32) -> Result<DeleteResult, SumidaError> {
+  pub async fn delete(&self, user_id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("delete").check(Users::find_by_id(id), &txn).await?;
+    self.ap().action("delete").check(Users::find_by_id(user_id), &txn).await?;
 
     let result = Users::delete_by_id(user_id).exec(&txn).await?;
     txn.commit().await?;
@@ -120,9 +121,8 @@ impl UserService {
     Ok(result)
   }
 
-  pub async fn invite(_user_ctx: &UserContext, user_id: i32) -> Result<(), SumidaError> {
-    let db_conn = db::get_connection();
-    let txn = db_conn.begin().await?;
+  pub async fn invite(&self, user_id: i32) -> Result<(), SumidaError> {
+    let txn = db::get_connection().begin().await?;
 
     let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
       return Err(SumidaError::InvalidAccount);
@@ -160,24 +160,27 @@ impl UserService {
     Ok(())
   }
 
-  pub async fn activate(user_ctx: &mut UserContext, activation: UserActivation) -> Result<(), SumidaError> {
+  pub async fn activate(&mut self, activation: UserActivation) -> Result<(), SumidaError> {
     let user_id = activation.user_id;
     let password = &activation.password;
     let uuid = &activation.uuid;
-    let db_conn = db::get_connection();
+    let db = db::get_connection();
+    let txn = db.begin().await?;
 
-    let Some(user) = Users::find_by_id(user_id).one(db_conn).await? else {
+    let Some(user) = Users::find_by_id(user_id).one(db).await? else {
       return Err(SumidaError::InvalidAccount);
     };
     let Some(_) = UserInvitations::find_by_id(*uuid)
       .filter(entity::user_invitations::Column::ExpiresAt.gt(Utc::now()))
-      .one(db_conn)
+      .one(db)
       .await?
     else {
       return Err(SumidaError::NoData("UserInvitation".to_owned(), uuid.to_string()));
     };
 
-    let txn = db_conn.begin().await?;
+    txn.commit().await?;
+
+    let txn = db.begin().await?;
 
     let username = user.username.clone();
     let mut active_model = user.into_active_model();
@@ -190,22 +193,22 @@ impl UserService {
 
     txn.commit().await?;
 
-    AuthSessionService::login(
-      user_ctx,
-      LoginSession {
+    let mut auth_session_service = AuthSessionService::new(self.user_ctx.clone());
+    auth_session_service
+      .login(LoginSession {
         username,
         password: password.to_string(),
         ..Default::default()
-      },
-    )
-    .await?;
+      })
+      .await?;
+    self.user_ctx = auth_session_service.user_ctx;
 
     Ok(())
   }
 
-  pub async fn change_password(data: ChangePassword) -> Result<(), SumidaError> {
-    let db_conn = db::get_connection();
-    let txn = db_conn.begin().await?;
+  pub async fn change_password(&mut self, data: ChangePassword) -> Result<(), SumidaError> {
+    let txn = db::get_connection().begin().await?;
+
     let Some(user) =
       Users::find().filter(entity::users::Column::Username.eq(&data.username)).one(&txn).await?
     else {
@@ -213,7 +216,10 @@ impl UserService {
       return Err(SumidaError::InvalidAccount);
     };
 
-    let is_verified = UserVerificationService::verify("password-change", user.id, &data.code, &txn).await?;
+    let user_verification_service = UserVerificationService::new(self.user_ctx.clone());
+    let is_verified =
+      user_verification_service.verify("password-change", user.id, &data.code, &txn).await?;
+    self.user_ctx = user_verification_service.user_ctx;
 
     if !is_verified {
       txn.rollback().await?;
@@ -236,20 +242,23 @@ impl UserService {
     Ok(())
   }
 
-  pub async fn impersonate(user_ctx: &mut UserContext, user_id: i32) -> Result<(), SumidaError> {
-    let db_conn = db::get_connection();
+  pub async fn impersonate(&mut self, user_id: i32) -> Result<(), SumidaError> {
+    let db = db::get_connection();
     let settings = settings::get();
-    let Some(user) = Users::find_by_id(user_id).one(db_conn).await? else {
+    let Some(user) = Users::find_by_id(user_id).one(db).await? else {
       return Err(SumidaError::InvalidAccount);
     };
 
-    user_ctx.authorize(user_id, &user.username, Some(settings.session.expiry.default_expiry()?)).await?;
+    self
+      .user_ctx
+      .authorize(user_id, &user.username, Some(settings.session.expiry.default_expiry()?))
+      .await?;
 
     Ok(())
   }
 
-  pub async fn get_vapid(_user_ctx: &UserContext) -> Result<GetVapid, SumidaError> {
-    let settings = &core::settings::get().web_push;
+  pub async fn get_vapid(&self) -> Result<GetVapid, SumidaError> {
+    let settings = &infra::settings::get().web_push;
     let audience = &settings.audience;
     let exp = &settings.expiration;
     let sub = &settings.subject;
@@ -258,9 +267,9 @@ impl UserService {
   }
 }
 
-impl ApiService<Users> for UserService {
-  fn select(user_ctx: &UserContext, query: Select<Users>) -> Select<Users> {
-    Self::ap(user_ctx).action("read").apply({
+impl ApiService<Ap, Users> for UserService {
+  fn select(&self, query: Select<Users>) -> Select<Users> {
+    self.ap().action("read").apply({
       let org_alias = Alias::new("org");
       let role_alias = Alias::new("role");
 
@@ -277,11 +286,11 @@ impl ApiService<Users> for UserService {
     })
   }
 
-  fn ap(user_ctx: &UserContext) -> Ap {
+  fn ap(&self) -> Ap {
     use entity::users::Column;
 
     Ap::new("user") //
-      .owner(user_ctx)
+      .owner(&self.user_ctx)
       .object(Expr::col((Users, Column::Id)).cast_as("varchar"))
   }
 }

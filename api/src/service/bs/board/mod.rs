@@ -2,10 +2,10 @@ pub mod dto;
 
 use self::dto::*;
 use crate::service::ApiService;
-use crate::util::ap::Ap;
+use crate::util::ap::{Ap, ApGuard};
 use crate::util::crud::Pagination;
-use core::db;
-use core::session::UserContext;
+use infra::db;
+use infra::session::UserContext;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::IntoActiveModel;
@@ -15,11 +15,17 @@ use sea_orm::Select;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{ActiveValue::Set, DeleteResult, EntityTrait, InsertResult, QuerySelect, TransactionTrait};
 
-pub struct BoardService;
+pub struct BoardService {
+  user_ctx: UserContext,
+}
 
 impl BoardService {
+  pub fn new(user_ctx: UserContext) -> Self {
+    BoardService { user_ctx }
+  }
+
   pub async fn list(
-    user_ctx: &UserContext,
+    &self,
     filter: BoardFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardListItem>, u64), SumidaError> {
@@ -27,7 +33,7 @@ impl BoardService {
 
     let txn = db::get_connection().begin().await?;
 
-    let mut query = filter.apply(Self::select(user_ctx, Boards::find()));
+    let mut query = filter.apply(self.select(Boards::find()));
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -43,9 +49,10 @@ impl BoardService {
     Ok((items, count))
   }
 
-  pub async fn get(user_ctx: &UserContext, id: i32) -> Result<Option<GetBoard>, SumidaError> {
+  pub async fn get(&self, id: i32) -> Result<Option<GetBoard>, SumidaError> {
     Ok(
-      Self::select(user_ctx, Boards::find_by_id(id))
+      self
+        .select(Boards::find_by_id(id))
         .into_partial_model::<GetBoard>()
         .one(db::get_connection())
         .await?,
@@ -53,19 +60,15 @@ impl BoardService {
   }
 
   pub async fn create(
-    _user_ctx: &UserContext,
+    &self,
     data: CreateBoard,
   ) -> Result<InsertResult<entity::bs::boards::ActiveModel>, SumidaError> {
     Ok(Boards::insert(data.into_active_model()).exec(db::get_connection()).await?)
   }
 
-  pub async fn update(
-    user_ctx: &UserContext,
-    id: i32,
-    data: UpdateBoard,
-  ) -> Result<entity::bs::boards::Model, SumidaError> {
+  pub async fn update(&self, id: i32, data: UpdateBoard) -> Result<entity::bs::boards::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("update").check(Boards::find_by_id(id), &txn).await?;
+    self.ap().action("update").check(Boards::find_by_id(id), &txn).await?;
 
     let mut am = data.into_active_model();
     am.id = Set(id);
@@ -76,9 +79,9 @@ impl BoardService {
     Ok(item)
   }
 
-  pub async fn delete(user_ctx: &UserContext, id: i32) -> Result<DeleteResult, SumidaError> {
+  pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("delete").check(Boards::find_by_id(id), &txn).await?;
+    self.ap().action("delete").check(Boards::find_by_id(id), &txn).await?;
     let result = Boards::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
@@ -86,16 +89,16 @@ impl BoardService {
   }
 }
 
-impl ApiService<Boards> for BoardService {
-  fn select(user_ctx: &UserContext, query: Select<Boards>) -> Select<Boards> {
-    Self::ap(user_ctx).action("read").apply(query.select_only().expr(Expr::col((Boards, Asterisk))))
+impl ApiService<Ap, Boards> for BoardService {
+  fn select(&self, query: Select<Boards>) -> Select<Boards> {
+    self.ap().action("read").apply(query.select_only().expr(Expr::col((Boards, Asterisk))))
   }
 
-  fn ap(user_ctx: &UserContext) -> Ap {
+  fn ap(&self) -> Ap {
     use entity::bs::boards::Column;
 
     Ap::new("board") //
-      .owner(user_ctx)
+      .owner(&self.user_ctx)
       .object(Expr::col((Boards, Column::Id)).cast_as("varchar"))
   }
 }

@@ -1,5 +1,5 @@
-use core::db;
-use core::session::UserContext;
+use infra::db;
+use infra::session::UserContext;
 
 use axum::{Json, Router, extract::State, routing};
 use error::SumidaError;
@@ -21,25 +21,23 @@ impl<S> MeController<S> {
   }
 
   async fn update_me(
-    mut user_ctx: UserContext,
+    user_ctx: UserContext,
     State(_state): State<S>,
     Json(body): Json<UpdateMe>,
   ) -> Result<MeUpdated, SumidaError> {
-    MeService::update_me(&mut user_ctx, body).await?;
+    MeService::new(user_ctx).update_me(body).await?;
     Ok(MeUpdated)
   }
 
   async fn get_me(user_ctx: UserContext, State(_state): State<S>) -> Result<Me, SumidaError> {
-    MeService::get_session(&user_ctx).await?.ok_or(SumidaError::InvalidAccount)
+    MeService::new(user_ctx).get_session().await?.ok_or(SumidaError::InvalidAccount)
   }
 
   async fn get_prefs(
     user_ctx: UserContext,
     State(_state): State<S>,
   ) -> Result<Json<serde_json::Value>, SumidaError> {
-    let user_id = user_ctx.profile.id;
-    let ret = MeService::get_prefs(user_id).await?;
-    Ok(Json(ret))
+    Ok(Json(MeService::new(user_ctx).get_prefs().await?))
   }
 
   async fn update_prefs(
@@ -47,8 +45,7 @@ impl<S> MeController<S> {
     State(_state): State<S>,
     Json(body): Json<serde_json::Value>,
   ) -> Result<Json<serde_json::Value>, SumidaError> {
-    let user_id = user_ctx.profile.id;
-    MeService::update_prefs(user_id, body).await?;
+    MeService::new(user_ctx).update_prefs(body).await?;
     Ok(Json(json!({})))
   }
 

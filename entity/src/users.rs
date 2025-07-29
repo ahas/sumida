@@ -22,13 +22,13 @@ pub struct Model {
 impl Model {
   pub async fn get_organization(
     &self,
-    db_conn: &DatabaseConnection,
+    db: &DatabaseConnection,
   ) -> Result<Option<super::organizations::Model>, DbErr> {
-    super::organizations::Entity::find_by_id(self.organization_id).one(db_conn).await
+    super::organizations::Entity::find_by_id(self.organization_id).one(db).await
   }
 
-  pub async fn get_role(&self, db_conn: &DatabaseConnection) -> Result<Option<super::roles::Model>, DbErr> {
-    super::roles::Entity::find_by_id(self.role_id).one(db_conn).await
+  pub async fn get_role(&self, db: &DatabaseConnection) -> Result<Option<super::roles::Model>, DbErr> {
+    super::roles::Entity::find_by_id(self.role_id).one(db).await
   }
 }
 

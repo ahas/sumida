@@ -1,5 +1,5 @@
 use axum::http::{Method, header};
-use core::settings;
+use infra::settings;
 use tower_http::cors::CorsLayer;
 
 pub fn new() -> CorsLayer {

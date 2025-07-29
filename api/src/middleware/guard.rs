@@ -3,15 +3,17 @@ use axum::http::{HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
 use cfg_if::cfg_if;
-use core::db;
-use core::session::UserContext;
-use core::settings;
+use infra::db;
+use infra::session::UserContext;
+use infra::settings;
 use entity::prelude::*;
 use error::SumidaError;
 use jsonwebtoken as jwt;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Expiry;
+
+use crate::util::ap::ApGuard;
 
 #[macro_export]
 macro_rules! service_ap {
@@ -62,7 +64,7 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
         .and_then(|x| x.secret.clone())
         .unwrap_or_default();
     } else if #[cfg(feature = "jwt-secret-store-aws-ssm")] {
-      use core::aws;
+      use infra::aws;
       let ssm_client = aws_sdk_ssm::Client::new(aws::get_sdk_config());
       secret = ssm_client
         .get_parameter()
@@ -91,13 +93,14 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
 }
 
 async fn verify_api_key(user_ctx: &mut UserContext, key: &str) -> Result<(), SumidaError> {
-  let db_conn = db::get_connection();
+  let txn = db::get_connection().begin().await?;
+
   let api_key = ApiKeys::find()
     .filter(entity::api_keys::Column::Key.eq(key))
-    .one(db_conn)
+    .one(&txn)
     .await?
     .ok_or(SumidaError::InvalidApiKey)?;
-  let user = Users::find_by_id(api_key.user_id).one(db_conn).await?;
+  let user = Users::find_by_id(api_key.user_id).one(&txn).await?;
 
   if let Some(user) = user {
     user_ctx.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd)).await?;
@@ -108,6 +111,8 @@ async fn verify_api_key(user_ctx: &mut UserContext, key: &str) -> Result<(), Sum
   } else {
     return Err(SumidaError::InvalidAccount);
   }
+
+  txn.commit().await?;
 
   Ok(())
 }

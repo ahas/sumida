@@ -1,8 +1,8 @@
 pub mod dto;
 
 use chrono::Utc;
-use core::db;
-use core::session::UserContext;
+use infra::db;
+use infra::session::UserContext;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::ActiveValue::Set;
@@ -14,14 +14,20 @@ use sea_orm::{
 use sea_orm::{EntityTrait, InsertResult, IntoActiveModel, TransactionTrait};
 
 use crate::service::ApiService;
-use crate::util::ap::Ap;
+use crate::util::ap::{Ap, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
 
-pub struct UserBlockService;
+pub struct UserBlockService {
+  user_ctx: UserContext,
+}
 
 impl UserBlockService {
+  pub fn new(user_ctx: UserContext) -> Self {
+    Self { user_ctx }
+  }
+
   pub fn exists_expr() -> SimpleExpr {
     let now = Utc::now().fixed_offset();
     Expr::exists(
@@ -43,7 +49,7 @@ impl UserBlockService {
   }
 
   pub async fn list(
-    user_ctx: &UserContext,
+    &self,
     filter: UserBlockFilter,
     pagination: Pagination,
   ) -> Result<(Vec<UserBlockListItem>, u64), SumidaError> {
@@ -51,7 +57,7 @@ impl UserBlockService {
 
     let txn = db::get_connection().begin().await?;
 
-    let mut query = filter.apply(Self::select(user_ctx, UserBlocks::find()));
+    let mut query = filter.apply(self.select(UserBlocks::find()));
 
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
@@ -68,11 +74,10 @@ impl UserBlockService {
     Ok((items, count))
   }
 
-  pub async fn get(user_ctx: &UserContext, id: i32) -> Result<Option<GetUserBlock>, SumidaError> {
+  pub async fn get(&self, id: i32) -> Result<Option<GetUserBlock>, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("read").check(UserBlocks::find_by_id(id), &txn).await?;
-
-    let item = UserBlocks::find_by_id(id)
+    let item = self
+      .select(UserBlocks::find_by_id(id))
       .select_only()
       .expr(Expr::col((UserBlocks, Asterisk)))
       .join_as(JoinType::LeftJoin, entity::user_blocks::Relation::User.def(), Alias::new("u"))
@@ -86,7 +91,7 @@ impl UserBlockService {
   }
 
   pub async fn create(
-    _user_ctx: &UserContext,
+    &self,
     data: CreateUserBlock,
   ) -> Result<InsertResult<entity::user_blocks::ActiveModel>, SumidaError> {
     let active_model = data.into_active_model();
@@ -96,12 +101,12 @@ impl UserBlockService {
   }
 
   pub async fn update(
-    user_ctx: &UserContext,
+    &self,
     id: i32,
     data: UpdateUserBlock,
   ) -> Result<entity::user_blocks::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("update").check(UserBlocks::find_by_id(id), &txn).await?;
+    self.ap().action("update").check(UserBlocks::find_by_id(id), &txn).await?;
 
     let mut active_model = data.into_active_model();
     active_model.id = Set(id);
@@ -112,9 +117,9 @@ impl UserBlockService {
     Ok(result)
   }
 
-  pub async fn delete(user_ctx: &UserContext, id: i32) -> Result<DeleteResult, SumidaError> {
+  pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("delete").check(UserBlocks::find_by_id(id), &txn).await?;
+    self.ap().action("delete").check(UserBlocks::find_by_id(id), &txn).await?;
 
     let result = UserBlocks::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -123,9 +128,9 @@ impl UserBlockService {
   }
 }
 
-impl ApiService<UserBlocks> for UserBlockService {
-  fn select(user_ctx: &UserContext, query: Select<UserBlocks>) -> Select<UserBlocks> {
-    Self::ap(user_ctx).action("read").apply({
+impl ApiService<Ap, UserBlocks> for UserBlockService {
+  fn select(&self, query: Select<UserBlocks>) -> Select<UserBlocks> {
+    self.ap().action("read").apply({
       let user_alias = Alias::new("u");
       let blocked_by_alias = Alias::new("b");
 
@@ -141,11 +146,11 @@ impl ApiService<UserBlocks> for UserBlockService {
     })
   }
 
-  fn ap(user_ctx: &UserContext) -> Ap {
+  fn ap(&self) -> Ap {
     use entity::user_blocks::Column;
 
     Ap::new("user_block") //
-      .owner(user_ctx)
+      .owner(&self.user_ctx)
       .object(Expr::col((UserBlocks, Column::Id)).cast_as("varchar"))
   }
 }

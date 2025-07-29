@@ -1,4 +1,4 @@
-use core::settings;
+use infra::settings;
 use tower_sessions::{cookie::SameSite, SessionManagerLayer, SessionStore};
 
 pub async fn new<Store: SessionStore>(

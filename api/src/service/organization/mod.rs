@@ -1,6 +1,6 @@
 pub mod dto;
 
-use core::{db, session::UserContext};
+use infra::{db, session::UserContext};
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::{
@@ -8,18 +8,23 @@ use sea_orm::{
   TransactionTrait, sea_query::Expr,
 };
 
-use crate::{
-  service::ApiService,
-  util::{ap::Ap, crud::Pagination},
-};
+use crate::service::ApiService;
+use crate::util::ap::{Ap, ApGuard};
+use crate::util::crud::Pagination;
 
 use self::dto::*;
 
-pub struct OrganizationService;
+pub struct OrganizationService {
+  user_ctx: UserContext,
+}
 
 impl OrganizationService {
+  pub fn new(user_ctx: UserContext) -> Self {
+    Self { user_ctx }
+  }
+
   pub async fn list(
-    user_ctx: &UserContext,
+    &self,
     filter: OrganizationFilter,
     pagination: Pagination,
   ) -> Result<(Vec<OrganizationListItem>, u64), SumidaError> {
@@ -27,7 +32,7 @@ impl OrganizationService {
 
     let txn = db::get_connection().begin().await?;
 
-    let mut query = filter.apply(Self::select(user_ctx, Organizations::find()));
+    let mut query = filter.apply(self.select(Organizations::find()));
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -44,9 +49,10 @@ impl OrganizationService {
     Ok((items, count))
   }
 
-  pub async fn get(user_ctx: &UserContext, id: i32) -> Result<Option<GetOrganization>, SumidaError> {
+  pub async fn get(&self, id: i32) -> Result<Option<GetOrganization>, SumidaError> {
     Ok(
-      Self::select(user_ctx, Organizations::find_by_id(id))
+      self
+        .select(Organizations::find_by_id(id))
         .into_model::<GetOrganization>()
         .one(db::get_connection())
         .await?,
@@ -54,19 +60,19 @@ impl OrganizationService {
   }
 
   pub async fn create(
-    _user_ctx: &UserContext,
+    &self,
     data: CreateOrganization,
   ) -> Result<InsertResult<entity::organizations::ActiveModel>, SumidaError> {
     Ok(Organizations::insert(data.into_active_model()).exec(db::get_connection()).await?)
   }
 
   pub async fn update(
-    user_ctx: &UserContext,
+    &self,
     id: i32,
     data: UpdateOrganization,
   ) -> Result<entity::organizations::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("update").check(Organizations::find_by_id(id), &txn).await?;
+    self.ap().action("update").check(Organizations::find_by_id(id), &txn).await?;
 
     let mut model = data.into_active_model();
     model.id = Set(id);
@@ -77,9 +83,9 @@ impl OrganizationService {
     Ok(result)
   }
 
-  pub async fn delete(user_ctx: &UserContext, id: i32) -> Result<DeleteResult, SumidaError> {
+  pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("delete").check(Organizations::find_by_id(id), &txn).await?;
+    self.ap().action("delete").check(Organizations::find_by_id(id), &txn).await?;
 
     let result = Organizations::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -88,16 +94,16 @@ impl OrganizationService {
   }
 }
 
-impl ApiService<Organizations> for OrganizationService {
-  fn select(user_ctx: &UserContext, query: Select<Organizations>) -> Select<Organizations> {
-    Self::ap(user_ctx).action("read").apply(query)
+impl ApiService<Ap, Organizations> for OrganizationService {
+  fn select(&self, query: Select<Organizations>) -> Select<Organizations> {
+    self.ap().action("read").apply(query)
   }
 
-  fn ap(user_ctx: &UserContext) -> Ap {
+  fn ap(&self) -> Ap {
     use entity::organizations::Column;
 
     Ap::new("organization") //
-      .owner(user_ctx)
+      .owner(&self.user_ctx)
       .object(Expr::col((Organizations, Column::Id)).cast_as("varchar"))
   }
 }

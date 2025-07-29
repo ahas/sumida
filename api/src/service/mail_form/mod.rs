@@ -1,7 +1,7 @@
 pub mod dto;
 
-use core::db;
-use core::session::UserContext;
+use infra::db;
+use infra::session::UserContext;
 use entity::prelude::*;
 use error::SumidaError;
 use lettre::message::{Message, header::ContentType};
@@ -15,7 +15,7 @@ use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
 use crate::service::ApiService;
-use crate::util::ap::Ap;
+use crate::util::ap::{Ap, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
@@ -41,9 +41,15 @@ impl MailFormSendOptions {
   }
 }
 
-pub struct MailFormService;
+pub struct MailFormService {
+  user_ctx: UserContext,
+}
 
 impl MailFormService {
+  pub fn new(user_ctx: UserContext) -> Self {
+    Self { user_ctx }
+  }
+
   pub fn render(model: &entity::mail_forms::Model, context: impl Serialize) -> Result<String, SumidaError> {
     let mut tt = TinyTemplate::new();
     tt.add_template(&model.kind, &model.content)
@@ -111,7 +117,7 @@ impl MailFormService {
   }
 
   pub async fn list(
-    user_ctx: &UserContext,
+    &self,
     filter: MailFormFilter,
     pagination: Pagination,
   ) -> Result<(Vec<MailFormListItem>, u64), SumidaError> {
@@ -119,7 +125,7 @@ impl MailFormService {
 
     let txn = db::get_connection().begin().await?;
 
-    let mut query = filter.apply(Self::select(user_ctx, MailForms::find()));
+    let mut query = filter.apply(self.select(MailForms::find()));
     let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -136,12 +142,13 @@ impl MailFormService {
     Ok((items, count))
   }
 
-  pub async fn get<S>(user_ctx: &UserContext, kind: S) -> Result<Option<GetMailForm>, SumidaError>
+  pub async fn get<S>(&self, kind: S) -> Result<Option<GetMailForm>, SumidaError>
   where
     S: AsRef<str>,
   {
     Ok(
-      Self::select(user_ctx, MailForms::find_by_id(kind.as_ref()))
+      self
+        .select(MailForms::find_by_id(kind.as_ref()))
         .into_model::<GetMailForm>()
         .one(db::get_connection())
         .await?,
@@ -149,14 +156,14 @@ impl MailFormService {
   }
 
   pub async fn create(
-    _user_ctx: &UserContext,
+    &self,
     data: CreateMailForm,
   ) -> Result<InsertResult<entity::mail_forms::ActiveModel>, SumidaError> {
     Ok(MailForms::insert(data.into_active_model()).exec(db::get_connection()).await?)
   }
 
   pub async fn update<S>(
-    user_ctx: &UserContext,
+    &self,
     kind: S,
     data: UpdateMailForm,
   ) -> Result<entity::mail_forms::Model, SumidaError>
@@ -164,7 +171,7 @@ impl MailFormService {
     S: AsRef<str>,
   {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("update").check(MailForms::find_by_id(kind.as_ref()), &txn).await?;
+    self.ap().action("update").check(MailForms::find_by_id(kind.as_ref()), &txn).await?;
 
     let mut model = data.into_active_model();
     model.kind = Set(kind.as_ref().to_string());
@@ -175,12 +182,12 @@ impl MailFormService {
     Ok(result)
   }
 
-  pub async fn delete<S>(user_ctx: &UserContext, kind: S) -> Result<DeleteResult, SumidaError>
+  pub async fn delete<S>(&self, kind: S) -> Result<DeleteResult, SumidaError>
   where
     S: AsRef<str>,
   {
     let txn = db::get_connection().begin().await?;
-    Self::ap(user_ctx).action("delete").check(MailForms::find_by_id(kind.as_ref()), &txn).await?;
+    self.ap().action("delete").check(MailForms::find_by_id(kind.as_ref()), &txn).await?;
 
     let result = MailForms::delete_by_id(kind.as_ref()).exec(&txn).await?;
     txn.commit().await?;
@@ -189,16 +196,16 @@ impl MailFormService {
   }
 }
 
-impl ApiService<MailForms> for MailFormService {
-  fn select(user_ctx: &UserContext, query: Select<MailForms>) -> Select<MailForms> {
-    Self::ap(user_ctx).action("read").apply(query)
+impl ApiService<Ap, MailForms> for MailFormService {
+  fn select(&self, query: Select<MailForms>) -> Select<MailForms> {
+    self.ap().action("read").apply(query)
   }
 
-  fn ap(user_ctx: &UserContext) -> Ap {
+  fn ap(&self) -> Ap {
     use entity::mail_forms::Column;
 
     Ap::new("mail_form") //
-      .owner(user_ctx)
+      .owner(&self.user_ctx)
       .object(Expr::col((MailForms, Column::Kind)).cast_as("varchar"))
   }
 }

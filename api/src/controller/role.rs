@@ -30,7 +30,7 @@ where
     Query(filter): Query<RoleFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<RoleListItem>, SumidaError> {
-    Ok(RoleService::list(&user_ctx, filter, pagination).await?.into())
+    Ok(RoleService::new(user_ctx).list(filter, pagination).await?.into())
   }
 
   async fn get(
@@ -38,7 +38,8 @@ where
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetRole, SumidaError> {
-    RoleService::get(&user_ctx, id)
+    RoleService::new(user_ctx)
+      .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("Role".to_owned(), id.to_string()))
   }
@@ -49,7 +50,7 @@ where
     Json(body): Json<CreateRole>,
   ) -> Result<RoleCreated, SumidaError> {
     Ok(RoleCreated {
-      id: RoleService::create(&user_ctx, body).await?.last_insert_id,
+      id: RoleService::new(user_ctx).create(body).await?.last_insert_id,
     })
   }
 
@@ -59,7 +60,7 @@ where
     Path(id): Path<i32>,
     Json(body): Json<UpdateRole>,
   ) -> Result<RoleUpdated, SumidaError> {
-    RoleService::update(&user_ctx, id, body).await?;
+    RoleService::new(user_ctx).update(id, body).await?;
     Ok(RoleUpdated)
   }
 
@@ -68,7 +69,7 @@ where
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<RoleDeleted, SumidaError> {
-    RoleService::delete(&user_ctx, id).await?;
+    RoleService::new(user_ctx).delete(id).await?;
     Ok(RoleDeleted)
   }
 }
