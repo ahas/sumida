@@ -132,9 +132,9 @@ pub struct ApCondition {
 }
 
 impl ApCondition {
-  pub fn new<S: AsRef<str>>(namespace: S) -> Self {
+  pub fn new<S: ToString>(namespace: S) -> Self {
     Self {
-      namespace: namespace.as_ref().to_owned(),
+      namespace: namespace.to_string(),
       actions: Vec::new(),
       objects: Vec::new(),
       object_refs: Vec::new(),
@@ -501,9 +501,9 @@ pub struct FindUsersOfAp {
 }
 
 impl FindUsersOfAp {
-  pub fn new<S: AsRef<str>>(namespace: S) -> Self {
+  pub fn new<S: ToString>(namespace: S) -> Self {
     Self {
-      namespace: namespace.as_ref().to_owned(),
+      namespace: namespace.to_string(),
       actions: Vec::new(),
       objects: Vec::new(),
       object_refs: Vec::new(),
@@ -535,7 +535,7 @@ impl FindUsersOfAp {
     self
   }
 
-  pub async fn find_all<'db, C>(self, db: &'db C) -> Vec<ApUser>
+  pub async fn all<'db, C>(self, db: &'db C) -> Vec<ApUser>
   where
     C: ConnectionTrait,
   {
@@ -583,7 +583,7 @@ impl FindUsersOfAp {
   }
 }
 
-pub fn ns<S: AsRef<str>>(namespace: S) -> ApCondition {
+pub fn ns<S: ToString>(namespace: S) -> ApCondition {
   ApCondition::new(namespace)
 }
 
@@ -595,6 +595,6 @@ pub fn for_users() -> FindApForUsers {
   FindApForUsers::new()
 }
 
-pub fn find_users<S: AsRef<str>>(namespace: S) -> FindUsersOfAp {
+pub fn find_users<S: ToString>(namespace: S) -> FindUsersOfAp {
   FindUsersOfAp::new(namespace)
 }
