@@ -1,7 +1,7 @@
 pub mod dto;
 
 use chrono::{Duration, Utc};
-use infra::{db, session::UserContext, settings};
+use infra::{db, session::UserSession, settings};
 use entity::prelude::*;
 use error::SumidaError;
 use rand::Rng;
@@ -17,12 +17,12 @@ use crate::service::prelude::MailFormService;
 use crate::service::user::mail_form_context::*;
 
 pub struct UserVerificationService {
-  pub user_ctx: UserContext,
+  pub session: UserSession,
 }
 
 impl UserVerificationService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub async fn verify<'db, KindT, CodeT, DbConnT>(

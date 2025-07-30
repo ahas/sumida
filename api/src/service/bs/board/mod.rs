@@ -2,12 +2,12 @@ pub mod dto;
 
 use self::dto::*;
 use crate::service::ApiService;
-use crate::util::ap::{Ap, ApGuard};
+use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::crud::Pagination;
-use infra::db;
-use infra::session::UserContext;
 use entity::prelude::*;
 use error::SumidaError;
+use infra::db;
+use infra::session::UserSession;
 use sea_orm::IntoActiveModel;
 use sea_orm::IntoSimpleExpr;
 use sea_orm::PaginatorTrait;
@@ -16,12 +16,12 @@ use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{ActiveValue::Set, DeleteResult, EntityTrait, InsertResult, QuerySelect, TransactionTrait};
 
 pub struct BoardService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl BoardService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    BoardService { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    BoardService { session }
   }
 
   pub async fn list(
@@ -68,7 +68,7 @@ impl BoardService {
 
   pub async fn update(&self, id: i32, data: UpdateBoard) -> Result<entity::bs::boards::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("update").check(Boards::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("update").try_access(&txn).await?;
 
     let mut am = data.into_active_model();
     am.id = Set(id);
@@ -81,7 +81,7 @@ impl BoardService {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(Boards::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("delete").try_access(&txn).await?;
     let result = Boards::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
@@ -89,16 +89,16 @@ impl BoardService {
   }
 }
 
-impl ApiService<Ap, Boards> for BoardService {
+impl ApiService<ApCondition, Boards> for BoardService {
   fn select(&self, query: Select<Boards>) -> Select<Boards> {
     self.ap().action("read").apply(query.select_only().expr(Expr::col((Boards, Asterisk))))
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::bs::boards::Column;
 
-    Ap::new("board") //
-      .owner(&self.user_ctx)
-      .object(Expr::col((Boards, Column::Id)).cast_as("varchar"))
+    ap::ns("board") //
+      .who(&self.session)
+      .object_ref(Expr::col((Boards, Column::Id)).cast_as("varchar"))
   }
 }

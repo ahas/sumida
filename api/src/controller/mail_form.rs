@@ -27,50 +27,50 @@ impl<S> MailFormController<S> {
   }
 
   async fn list(
-    user_ctx: UserContext,
+    session: UserSession,
     Query(filter): Query<MailFormFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<MailFormListItem>, SumidaError> {
-    Ok(MailFormService::new(user_ctx).list(filter, pagination).await?.into())
+    Ok(MailFormService::new(session).list(filter, pagination).await?.into())
   }
 
   async fn get(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(kind): Path<String>,
   ) -> Result<GetMailForm, SumidaError> {
-    MailFormService::new(user_ctx)
+    MailFormService::new(session)
       .get(&kind)
       .await?
       .ok_or_else(|| SumidaError::NoData("MailForm".to_owned(), kind.to_string()))
   }
 
   async fn create(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Json(body): Json<CreateMailForm>,
   ) -> Result<MailFormCreated, SumidaError> {
     Ok(MailFormCreated {
-      kind: MailFormService::new(user_ctx).create(body).await?.last_insert_id,
+      kind: MailFormService::new(session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(kind): Path<String>,
     Json(body): Json<UpdateMailForm>,
   ) -> Result<MailFormUpdated, SumidaError> {
-    MailFormService::new(user_ctx).update(kind, body).await?;
+    MailFormService::new(session).update(kind, body).await?;
     Ok(MailFormUpdated)
   }
 
   async fn delete(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(kind): Path<String>,
   ) -> Result<MailFormDeleted, SumidaError> {
-    MailFormService::new(user_ctx).delete(kind).await?;
+    MailFormService::new(session).delete(kind).await?;
     Ok(MailFormDeleted)
   }
 

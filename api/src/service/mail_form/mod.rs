@@ -1,9 +1,9 @@
 pub mod dto;
 
-use infra::db;
-use infra::session::UserContext;
 use entity::prelude::*;
 use error::SumidaError;
+use infra::db;
+use infra::session::UserSession;
 use lettre::message::{Message, header::ContentType};
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
@@ -15,7 +15,7 @@ use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
 use crate::service::ApiService;
-use crate::util::ap::{Ap, ApGuard};
+use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
@@ -42,12 +42,12 @@ impl MailFormSendOptions {
 }
 
 pub struct MailFormService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl MailFormService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub fn render(model: &entity::mail_forms::Model, context: impl Serialize) -> Result<String, SumidaError> {
@@ -171,7 +171,7 @@ impl MailFormService {
     S: AsRef<str>,
   {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("update").check(MailForms::find_by_id(kind.as_ref()), &txn).await?;
+    self.ap().object(kind.as_ref()).action("update").try_access(&txn).await?;
 
     let mut model = data.into_active_model();
     model.kind = Set(kind.as_ref().to_string());
@@ -187,7 +187,7 @@ impl MailFormService {
     S: AsRef<str>,
   {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(MailForms::find_by_id(kind.as_ref()), &txn).await?;
+    self.ap().object(kind.as_ref()).action("delete").try_access(&txn).await?;
 
     let result = MailForms::delete_by_id(kind.as_ref()).exec(&txn).await?;
     txn.commit().await?;
@@ -196,16 +196,16 @@ impl MailFormService {
   }
 }
 
-impl ApiService<Ap, MailForms> for MailFormService {
+impl ApiService<ApCondition, MailForms> for MailFormService {
   fn select(&self, query: Select<MailForms>) -> Select<MailForms> {
     self.ap().action("read").apply(query)
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::mail_forms::Column;
 
-    Ap::new("mail_form") //
-      .owner(&self.user_ctx)
-      .object(Expr::col((MailForms, Column::Kind)).cast_as("varchar"))
+    ap::ns("mail_form") //
+      .who(&self.session)
+      .object_ref(Expr::col((MailForms, Column::Kind)).cast_as("varchar"))
   }
 }

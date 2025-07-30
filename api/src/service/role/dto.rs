@@ -2,14 +2,12 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::roles::ActiveModel;
-use sea_orm::{
-  FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set, prelude::*,
-};
+use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set, prelude::*};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::{ap::UserAp, crud::wrap_ilike_col};
+use crate::util::{ap::ApForUser, crud::wrap_ilike_col};
 
 #[derive(Deserialize)]
 pub struct RoleFilter {
@@ -44,7 +42,7 @@ pub struct GetRole {
   pub name: String,
   pub description: Option<String>,
   #[sea_orm(skip)]
-  pub access_policies: Vec<UserAp>,
+  pub access_policies: Vec<ApForUser>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -62,7 +60,7 @@ pub struct CreateRole {
   pub name: String,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub access_policies: Vec<UserAp>,
+  pub access_policies: Vec<ApForUser>,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateRole {
@@ -94,7 +92,7 @@ pub struct UpdateRole {
   pub name: Optional<String>,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub access_policies: Option<Vec<UserAp>>,
+  pub access_policies: Option<Vec<ApForUser>>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateRole {

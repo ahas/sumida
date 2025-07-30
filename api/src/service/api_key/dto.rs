@@ -10,7 +10,7 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::ap::UserAp;
+use crate::util::ap::ApForUser;
 use crate::util::crud::{wrap_ilike, wrap_ilike_col};
 
 #[derive(Deserialize)]
@@ -67,7 +67,7 @@ pub struct GetApiKey {
   #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
   #[sea_orm(skip)]
-  pub access_policies: Option<Vec<UserAp>>,
+  pub access_policies: Option<Vec<ApForUser>>,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub is_secured: bool,
   pub created_at: DateTimeWithTimeZone,
@@ -84,7 +84,7 @@ impl IntoResponse for GetApiKey {
 pub struct CreateApiKey {
   pub user_id: i32,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
-  pub access_policies: Option<Vec<UserAp>>,
+  pub access_policies: Option<Vec<ApForUser>>,
   pub is_secured: Optional<bool>,
 }
 
@@ -115,7 +115,7 @@ impl IntoResponse for ApiKeyCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateApiKey {
   pub expires_at: Nullable<DateTimeWithTimeZone>,
-  pub access_policies: Option<Vec<UserAp>>,
+  pub access_policies: Option<Vec<ApForUser>>,
   pub is_secured: Optional<bool>,
 }
 

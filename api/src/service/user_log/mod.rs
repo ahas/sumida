@@ -1,27 +1,27 @@
 pub mod dto;
 
-use infra::db;
-use infra::session::UserContext;
 use entity::prelude::*;
 use error::SumidaError;
+use infra::db;
+use infra::session::UserSession;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{DeleteResult, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect, RelationTrait, Select};
 use sea_orm::{EntityTrait, TransactionTrait};
 
 use crate::service::ApiService;
-use crate::util::ap::{Ap, ApGuard};
+use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
 
 pub struct UserLogService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl UserLogService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub async fn list(
@@ -59,7 +59,7 @@ impl UserLogService {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(UserLogs::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("delete").try_access(&txn).await?;
 
     let result = UserLogs::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -68,7 +68,7 @@ impl UserLogService {
   }
 }
 
-impl ApiService<Ap, UserLogs> for UserLogService {
+impl ApiService<ApCondition, UserLogs> for UserLogService {
   fn select(&self, query: Select<UserLogs>) -> Select<UserLogs> {
     self.ap().action("read").apply({
       let user_alias = Alias::new("user");
@@ -86,11 +86,11 @@ impl ApiService<Ap, UserLogs> for UserLogService {
     })
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::user_logs::Column;
 
-    Ap::new("user_log") //
-      .owner(&self.user_ctx)
-      .object(Expr::col((UserLogs, Column::Id)).cast_as("varchar"))
+    ap::ns("user_log") //
+      .who(&self.session)
+      .object_ref(Expr::col((UserLogs, Column::Id)).cast_as("varchar"))
   }
 }

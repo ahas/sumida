@@ -1,6 +1,6 @@
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use infra::settings;
-use infra::{db, session::UserContext};
+use infra::{db, session::UserSession};
 use entity::{
   prelude::*,
   user_logs::{LoginCode, LoginMethod},
@@ -11,12 +11,12 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use crate::service::auth::dto::LoginSession;
 
 pub struct AuthSessionService {
-  pub user_ctx: UserContext,
+  pub session: UserSession,
 }
 
 impl AuthSessionService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub fn verify_password(&self, password: &str, password_hash: &str) -> bool {
@@ -40,25 +40,25 @@ impl AuthSessionService {
       .one(&txn)
       .await?
     else {
-      self.user_ctx.write_log(None, LoginMethod::Password, LoginCode::AccountNotFound).await?;
+      self.session.write_log(None, LoginMethod::Password, LoginCode::AccountNotFound).await?;
       return Err(SumidaError::InvalidAccount);
     };
 
     // 2) Check the user is blocked
-    if self.user_ctx.check_blocked(Some(user.id), &txn).await? {
-      self.user_ctx.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBlocked).await?;
+    if self.session.check_blocked(Some(user.id), &txn).await? {
+      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBlocked).await?;
       return Err(SumidaError::AccountBlocked);
     }
 
     // 3) Return error if the user is inactive
     if !user.is_enabled {
-      self.user_ctx.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountInactive).await?;
+      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountInactive).await?;
       return Err(SumidaError::InactiveAccount);
     }
 
     // 4) Check the user password
     let result = if self.verify_password(&data.password, &user.password) {
-      self.user_ctx.write_log(Some(user.id), LoginMethod::Password, LoginCode::Success).await?;
+      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::Success).await?;
 
       let expiry = if let Some(remember_me) = data.remember_me {
         let settings = settings::get();
@@ -72,12 +72,12 @@ impl AuthSessionService {
         None
       };
 
-      self.user_ctx.authorize(user.id, &data.username, expiry).await?;
+      self.session.authorize(user.id, &data.username, expiry).await?;
 
       Ok(())
     } else {
-      self.user_ctx.write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch).await?;
-      let blocked = self.user_ctx.block_if_exceeded_limit(Some(user.id), &txn).await?;
+      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch).await?;
+      let blocked = self.session.block_if_exceeded_limit(Some(user.id), &txn).await?;
 
       Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
     };
@@ -88,7 +88,7 @@ impl AuthSessionService {
   }
 
   pub async fn logout(&mut self) -> Result<(), SumidaError> {
-    self.user_ctx.logout().await?;
+    self.session.logout().await?;
     Ok(())
   }
 }

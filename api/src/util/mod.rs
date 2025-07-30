@@ -1,4 +1,3 @@
-pub mod access;
 pub mod ap;
 pub mod crud;
 pub mod db;

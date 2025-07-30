@@ -16,6 +16,6 @@ pub use super::user_verification::{UserVerificationService, dto::*};
 
 pub use super::bs::prelude::*;
 
-pub use infra::session::{UserContext, UserOrganization, UserProfile};
+pub use infra::session::{UserSession, UserOrganization, UserProfile};
 pub use error::SumidaError;
 pub use tower_sessions::Session;

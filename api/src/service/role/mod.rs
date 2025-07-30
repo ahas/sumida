@@ -1,26 +1,26 @@
 pub mod dto;
 
-use infra::{db, session::UserContext};
 use entity::prelude::*;
 use error::SumidaError;
+use infra::{db, session::UserSession};
 use sea_orm::{
   ActiveValue::*, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
   Select, TransactionTrait, sea_query::Expr,
 };
 
 use crate::service::ApiService;
-use crate::util::ap::{Ap, ApGuard, ApUser, UserAp};
+use crate::util::ap::{self, ApCondition, ApGuard, ApUser};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
 
 pub struct RoleService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl RoleService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub async fn list(
@@ -51,13 +51,13 @@ impl RoleService {
 
   pub async fn get(&self, id: i32) -> Result<Option<GetRole>, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("read").check(Roles::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("read").try_access(&txn).await?;
 
     let Some(mut role) = Roles::find_by_id(id).into_model::<GetRole>().one(&txn).await? else {
       return Ok(None);
     };
 
-    role.access_policies = UserAp::query().user(ApUser::Role(id)).find_all(&txn).await?;
+    role.access_policies = ap::for_users().user(ApUser::Role(id)).find_all(&txn).await?;
     let role = Some(role);
     txn.commit().await?;
 
@@ -71,7 +71,7 @@ impl RoleService {
     let txn = db::get_connection().begin().await?;
     let user_aps = data.access_policies.clone();
     let result = Roles::insert(data.into_active_model()).exec(&txn).await?;
-    UserAp::query().user(ApUser::Role(result.last_insert_id)).update(user_aps, &txn).await?;
+    ap::for_users().user(ApUser::Role(result.last_insert_id)).update(user_aps, &txn).await?;
     txn.commit().await?;
 
     Ok(result)
@@ -79,10 +79,10 @@ impl RoleService {
 
   pub async fn update(&self, id: i32, data: UpdateRole) -> Result<entity::roles::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("update").check(Roles::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("update").try_access(&txn).await?;
 
     if let Some(user_aps) = data.access_policies.clone() {
-      UserAp::query().user(ApUser::Role(id)).update(user_aps, &txn).await?;
+      ap::for_users().user(ApUser::Role(id)).update(user_aps, &txn).await?;
     }
 
     let mut model = data.into_active_model();
@@ -96,9 +96,9 @@ impl RoleService {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(Roles::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("delete").try_access(&txn).await?;
 
-    UserAp::query().user(ApUser::Role(id)).clear(&txn).await?;
+    ap::for_users().user(ApUser::Role(id)).clear(&txn).await?;
     let result = Roles::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
@@ -106,16 +106,16 @@ impl RoleService {
   }
 }
 
-impl ApiService<Ap, Roles> for RoleService {
+impl ApiService<ApCondition, Roles> for RoleService {
   fn select(&self, query: Select<Roles>) -> Select<Roles> {
     self.ap().action("read").apply(query)
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::roles::Column;
 
-    Ap::new("role") //
-      .owner(&self.user_ctx)
-      .object(Expr::col((Roles, Column::Id)).cast_as("varchar"))
+    ap::ns("role") //
+      .who(&self.session)
+      .object_ref(Expr::col((Roles, Column::Id)).cast_as("varchar"))
   }
 }

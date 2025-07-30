@@ -7,8 +7,8 @@ use axum::{
   extract::{Path, Query, State},
   routing,
 };
-use infra::session::UserContext;
 use error::SumidaError;
+use infra::session::UserSession;
 use std::marker::PhantomData;
 
 pub struct BoardController<S>(PhantomData<S>);
@@ -19,51 +19,51 @@ impl<S> BoardController<S> {
   }
 
   async fn list(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_): State<S>,
     Query(filter): Query<BoardFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardListItem>, SumidaError> {
-    Ok(BoardService::new(user_ctx).list(filter, pagination).await?.into())
+    Ok(BoardService::new(session).list(filter, pagination).await?.into())
   }
 
   async fn get(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetBoard, SumidaError> {
-    BoardService::new(user_ctx)
+    BoardService::new(session)
       .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("Board".into(), id.to_string()))
   }
 
   async fn create(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_): State<S>,
     Json(body): Json<CreateBoard>,
   ) -> Result<BoardCreated, SumidaError> {
     Ok(BoardCreated {
-      id: BoardService::new(user_ctx).create(body).await?.last_insert_id,
+      id: BoardService::new(session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_): State<S>,
     Path(id): Path<i32>,
     Json(body): Json<UpdateBoard>,
   ) -> Result<BoardUpdated, SumidaError> {
-    BoardService::new(user_ctx).update(id, body).await?;
+    BoardService::new(session).update(id, body).await?;
     Ok(BoardUpdated)
   }
 
   async fn delete(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_): State<S>,
     Path(id): Path<i32>,
   ) -> Result<BoardDeleted, SumidaError> {
-    BoardService::new(user_ctx).delete(id).await?;
+    BoardService::new(session).delete(id).await?;
     Ok(BoardDeleted)
   }
 }

@@ -1,4 +1,4 @@
-use infra::session::UserContext;
+use infra::session::UserSession;
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing};
 use error::SumidaError;
@@ -18,16 +18,16 @@ impl<S> AuthSessionController<S> {
   }
 
   async fn login(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Json(body): Json<LoginSession>,
   ) -> Result<StatusCode, SumidaError> {
-    AuthSessionService::new(user_ctx).login(body).await?;
+    AuthSessionService::new(session).login(body).await?;
     Ok(StatusCode::OK)
   }
 
-  async fn logout(user_ctx: UserContext, State(_state): State<S>) -> Result<StatusCode, SumidaError> {
-    AuthSessionService::new(user_ctx).logout().await?;
+  async fn logout(session: UserSession, State(_state): State<S>) -> Result<StatusCode, SumidaError> {
+    AuthSessionService::new(session).logout().await?;
     Ok(StatusCode::OK)
   }
 }

@@ -188,14 +188,14 @@ pub struct UserState {
 }
 
 #[derive(Clone, Debug)]
-pub struct UserContext {
-  pub session: Session,
+pub struct UserSession {
+  pub inner: Session,
   pub profile: UserProfile,
   pub env: UserEnvironment,
   pub state: UserState,
 }
 
-impl UserContext {
+impl UserSession {
   pub const USER_PROFILE_KEY: &'static str = "user.profile";
   pub const USER_ENV_KEY: &'static str = "user.env";
   pub const USER_STATE_KEY: &'static str = "user.state";
@@ -257,7 +257,7 @@ impl UserContext {
     let user_id = self.resolve_user_id(user_id);
 
     self.state.failed_login_attempts += 1;
-    self.session.insert(Self::USER_STATE_KEY, self.state.clone()).await.map_err(anyhow::Error::from)?;
+    self.inner.insert(Self::USER_STATE_KEY, self.state.clone()).await.map_err(anyhow::Error::from)?;
 
     if self.state.failed_login_attempts > settings.max_failed_attempts {
       let duration = humantime::parse_duration(&settings.failure_reset_after)
@@ -395,50 +395,50 @@ impl UserContext {
   }
 
   pub async fn store(&self) -> Result<(), anyhow::Error> {
-    self.session.insert(Self::USER_PROFILE_KEY, self.profile.clone()).await?;
-    self.session.insert(Self::USER_ENV_KEY, self.env.clone()).await?;
-    self.session.insert(Self::USER_STATE_KEY, self.state.clone()).await?;
-    self.session.set_expiry(self.profile.expiry);
-    self.session.save().await?;
+    self.inner.insert(Self::USER_PROFILE_KEY, self.profile.clone()).await?;
+    self.inner.insert(Self::USER_ENV_KEY, self.env.clone()).await?;
+    self.inner.insert(Self::USER_STATE_KEY, self.state.clone()).await?;
+    self.inner.set_expiry(self.profile.expiry);
+    self.inner.save().await?;
 
     Ok(())
   }
 
   pub async fn logout(&mut self) -> Result<(), anyhow::Error> {
     self.profile = UserProfile::default();
-    self.session.insert(Self::USER_PROFILE_KEY, self.profile.clone()).await?;
-    self.session.save().await?;
+    self.inner.insert(Self::USER_PROFILE_KEY, self.profile.clone()).await?;
+    self.inner.save().await?;
 
     Ok(())
   }
 }
 
-impl<S> FromRequestParts<S> for UserContext
+impl<S> FromRequestParts<S> for UserSession
 where
   S: Send + Sync,
 {
   type Rejection = SumidaError;
 
   async fn from_request_parts(req: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-    let session = Session::from_request_parts(req, state).await?;
-    let profile = session.get(Self::USER_PROFILE_KEY).await.ok().flatten().unwrap_or_default();
-    let user_state = session.get(Self::USER_STATE_KEY).await.ok().flatten().unwrap_or_default();
+    let inner = Session::from_request_parts(req, state).await?;
+    let profile = inner.get(Self::USER_PROFILE_KEY).await.ok().flatten().unwrap_or_default();
+    let user_state = inner.get(Self::USER_STATE_KEY).await.ok().flatten().unwrap_or_default();
     let env = UserEnvironment::from_request_parts(req, state).await?;
 
-    let mut user_ctx = Self {
-      session,
+    let mut session = Self {
+      inner,
       profile,
       env,
       state: user_state,
     };
-    user_ctx.profile.last_seen_at = Utc::now().into();
-    user_ctx
-      .session
-      .insert(Self::USER_PROFILE_KEY, user_ctx.profile.clone())
+    session.profile.last_seen_at = Utc::now().into();
+    session
+      .inner
+      .insert(Self::USER_PROFILE_KEY, session.profile.clone())
       .await
       .map_err(anyhow::Error::from)?;
-    user_ctx.session.save().await.map_err(anyhow::Error::from)?;
+    session.inner.save().await.map_err(anyhow::Error::from)?;
 
-    Ok(user_ctx)
+    Ok(session)
   }
 }

@@ -22,31 +22,31 @@ impl<S> UserLogController<S> {
   }
 
   async fn list(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Query(filter): Query<UserLogFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<UserLogListItem>, SumidaError> {
-    Ok(UserLogService::new(user_ctx).list(filter, pagination).await?.into())
+    Ok(UserLogService::new(session).list(filter, pagination).await?.into())
   }
 
   async fn get(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetUserLog, SumidaError> {
-    UserLogService::new(user_ctx)
+    UserLogService::new(session)
       .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("UserLog".to_owned(), id.to_string()))
   }
 
   async fn delete(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<UserLogDeleted, SumidaError> {
-    UserLogService::new(user_ctx).delete(id).await?;
+    UserLogService::new(session).delete(id).await?;
     Ok(UserLogDeleted)
   }
 }

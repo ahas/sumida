@@ -1,26 +1,26 @@
 pub mod dto;
 
-use infra::{db, session::UserContext};
 use entity::prelude::*;
 use error::SumidaError;
+use infra::{db, session::UserSession};
 use sea_orm::{
   DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Select, Set,
   TransactionTrait, sea_query::Expr,
 };
 
 use crate::service::ApiService;
-use crate::util::ap::{Ap, ApGuard};
+use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
 
 pub struct OrganizationService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl OrganizationService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub async fn list(
@@ -72,7 +72,7 @@ impl OrganizationService {
     data: UpdateOrganization,
   ) -> Result<entity::organizations::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("update").check(Organizations::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("update").try_access(&txn).await?;
 
     let mut model = data.into_active_model();
     model.id = Set(id);
@@ -85,7 +85,7 @@ impl OrganizationService {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(Organizations::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("delete").try_access(&txn).await?;
 
     let result = Organizations::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -94,16 +94,16 @@ impl OrganizationService {
   }
 }
 
-impl ApiService<Ap, Organizations> for OrganizationService {
+impl ApiService<ApCondition, Organizations> for OrganizationService {
   fn select(&self, query: Select<Organizations>) -> Select<Organizations> {
     self.ap().action("read").apply(query)
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::organizations::Column;
 
-    Ap::new("organization") //
-      .owner(&self.user_ctx)
-      .object(Expr::col((Organizations, Column::Id)).cast_as("varchar"))
+    ap::ns("organization") //
+      .who(&self.session)
+      .object_ref(Expr::col((Organizations, Column::Id)).cast_as("varchar"))
   }
 }

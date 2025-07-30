@@ -1,10 +1,10 @@
 pub mod dto;
 
 use chrono::Utc;
-use infra::db;
-use infra::session::UserContext;
 use entity::prelude::*;
 use error::SumidaError;
+use infra::db;
+use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Alias, Asterisk, Expr, SimpleExpr};
 use sea_orm::{
@@ -14,18 +14,18 @@ use sea_orm::{
 use sea_orm::{EntityTrait, InsertResult, IntoActiveModel, TransactionTrait};
 
 use crate::service::ApiService;
-use crate::util::ap::{Ap, ApGuard};
+use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
 
 pub struct UserBlockService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl UserBlockService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub fn exists_expr() -> SimpleExpr {
@@ -106,7 +106,7 @@ impl UserBlockService {
     data: UpdateUserBlock,
   ) -> Result<entity::user_blocks::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("update").check(UserBlocks::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("update").try_access(&txn).await?;
 
     let mut active_model = data.into_active_model();
     active_model.id = Set(id);
@@ -119,7 +119,7 @@ impl UserBlockService {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(UserBlocks::find_by_id(id), &txn).await?;
+    self.ap().object(id).action("delete").try_access(&txn).await?;
 
     let result = UserBlocks::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -128,7 +128,7 @@ impl UserBlockService {
   }
 }
 
-impl ApiService<Ap, UserBlocks> for UserBlockService {
+impl ApiService<ApCondition, UserBlocks> for UserBlockService {
   fn select(&self, query: Select<UserBlocks>) -> Select<UserBlocks> {
     self.ap().action("read").apply({
       let user_alias = Alias::new("u");
@@ -146,11 +146,11 @@ impl ApiService<Ap, UserBlocks> for UserBlockService {
     })
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::user_blocks::Column;
 
-    Ap::new("user_block") //
-      .owner(&self.user_ctx)
-      .object(Expr::col((UserBlocks, Column::Id)).cast_as("varchar"))
+    ap::ns("user_block") //
+      .who(&self.session)
+      .object_ref(Expr::col((UserBlocks, Column::Id)).cast_as("varchar"))
   }
 }

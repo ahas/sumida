@@ -1,9 +1,9 @@
 pub mod dto;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use infra::{db, session::UserContext};
 use entity::prelude::*;
 use error::SumidaError;
+use infra::{db, session::UserSession};
 use rand::{TryRngCore, rngs::OsRng};
 use sea_orm::{
   ActiveValue::Unchanged,
@@ -13,19 +13,19 @@ use sea_orm::{
   sea_query::{Alias, Asterisk},
 };
 
-use crate::service::ApiService;
-use crate::util::ap::{Ap, ApGuard, ApUser, UserAp};
+use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::crud::Pagination;
+use crate::{service::ApiService, util::ap::ApUser};
 
 use self::dto::*;
 
 pub struct ApiKeyService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl ApiKeyService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    ApiKeyService { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    ApiKeyService { session }
   }
 
   pub async fn list(
@@ -68,7 +68,7 @@ impl ApiKeyService {
 
     if api_key.is_secured {
       api_key.access_policies =
-        Some(UserAp::query().user(ApUser::ApiKey(key.to_string())).find_all(&txn).await?);
+        Some(ap::for_users().user(ApUser::ApiKey(key.to_string())).find_all(&txn).await?);
     }
 
     txn.commit().await?;
@@ -111,7 +111,7 @@ impl ApiKeyService {
       match ApiKeys::insert(active_model).exec(&txn).await {
         Ok(result) => {
           if let Some(user_aps) = user_aps {
-            UserAp::query()
+            ap::for_users()
               .user(ApUser::ApiKey(result.last_insert_id.clone()))
               .update(user_aps, &txn)
               .await?;
@@ -139,7 +139,7 @@ impl ApiKeyService {
   ) -> Result<entity::api_keys::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
 
-    self.ap().action("update").check(ApiKeys::find_by_id(key), &txn).await?;
+    self.ap().object(key).action("update").try_access(&txn).await?;
 
     let user_aps = if data.is_secured.0.unwrap_or_default() {
       data.access_policies.clone()
@@ -148,7 +148,7 @@ impl ApiKeyService {
     };
 
     if let Some(user_aps) = user_aps {
-      UserAp::query().user(ApUser::ApiKey(key.to_string())).update(user_aps, &txn).await?;
+      ap::for_users().user(ApUser::ApiKey(key.to_string())).update(user_aps, &txn).await?;
     }
 
     let mut model = data.into_active_model();
@@ -162,8 +162,8 @@ impl ApiKeyService {
 
   pub async fn delete(&self, key: &str) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(ApiKeys::find_by_id(key), &txn).await?;
-    UserAp::query().user(ApUser::ApiKey(key.to_owned())).clear(&txn).await?;
+    self.ap().object(key).action("delete").try_access(&txn).await?;
+    ap::for_users().user(ApUser::ApiKey(key.to_owned())).clear(&txn).await?;
 
     let result = ApiKeys::delete_by_id(key).exec(&txn).await?;
     txn.commit().await?;
@@ -172,7 +172,7 @@ impl ApiKeyService {
   }
 }
 
-impl ApiService<Ap, ApiKeys> for ApiKeyService {
+impl ApiService<ApCondition, ApiKeys> for ApiKeyService {
   fn select(&self, query: Select<ApiKeys>) -> Select<ApiKeys> {
     let user_alias = Alias::new("user");
     let col_id = Expr::col((user_alias.clone(), "id"));
@@ -189,11 +189,11 @@ impl ApiService<Ap, ApiKeys> for ApiKeyService {
     )
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::api_keys::Column;
 
-    Ap::new("api_key") //
-      .owner(&self.user_ctx)
-      .object(Expr::col((ApiKeys, Column::Key)).cast_as("varchar"))
+    ap::ns("api_key") //
+      .who(&self.session)
+      .object_ref(Expr::col((ApiKeys, Column::Key)).cast_as("varchar"))
   }
 }

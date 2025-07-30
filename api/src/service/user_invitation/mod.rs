@@ -1,28 +1,28 @@
 pub mod dto;
 
 use chrono::{Duration, Utc};
-use infra::db;
-use infra::session::UserContext;
 use entity::prelude::*;
 use error::SumidaError;
+use infra::db;
+use infra::session::UserSession;
 use sea_orm::sea_query::Expr;
 use sea_orm::{ActiveValue::*, DbErr, EntityTrait, Select, TransactionTrait};
 use sea_orm::{ColumnTrait, ConnectionTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelect};
 use uuid::Uuid;
 
 use crate::service::ApiService;
-use crate::util::ap::{Ap, ApGuard};
+use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
 
 pub struct UserInvitationService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl UserInvitationService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub async fn upsert<C>(user_id: i32, uuid: Uuid, db: &C) -> Result<(), DbErr>
@@ -111,13 +111,6 @@ impl UserInvitationService {
 
   pub async fn update(&self, user_id: i32) -> Result<entity::user_invitations::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-
-    self
-      .ap()
-      .action("read")
-      .check(UserInvitations::find().filter(entity::user_invitations::Column::UserId.eq(user_id)), &txn)
-      .await?;
-
     let uuid = Uuid::new_v4();
     let expires_at = Utc::now() + Duration::days(30);
 
@@ -142,7 +135,7 @@ impl UserInvitationService {
 
   pub async fn delete(&self, uuid: Uuid) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(UserInvitations::find_by_id(uuid), &txn).await?;
+    self.ap().object(uuid).action("delete").try_access(&txn).await?;
 
     let result = UserInvitations::delete_by_id(uuid).exec(&txn).await?;
     txn.commit().await?;
@@ -151,16 +144,16 @@ impl UserInvitationService {
   }
 }
 
-impl ApiService<Ap, UserInvitations> for UserInvitationService {
+impl ApiService<ApCondition, UserInvitations> for UserInvitationService {
   fn select(&self, query: Select<UserInvitations>) -> Select<UserInvitations> {
     self.ap().action("read").apply(query)
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::user_invitations::Column;
 
-    Ap::new("user_invitation")
-      .owner(&self.user_ctx)
-      .object(Expr::col((UserInvitations, Column::Uuid)).cast_as("varchar"))
+    ap::ns("user_invitation")
+      .who(&self.session)
+      .object_ref(Expr::col((UserInvitations, Column::Uuid)).cast_as("varchar"))
   }
 }

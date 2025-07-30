@@ -25,51 +25,51 @@ where
   }
 
   async fn list(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Query(filter): Query<RoleFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<RoleListItem>, SumidaError> {
-    Ok(RoleService::new(user_ctx).list(filter, pagination).await?.into())
+    Ok(RoleService::new(session).list(filter, pagination).await?.into())
   }
 
   async fn get(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetRole, SumidaError> {
-    RoleService::new(user_ctx)
+    RoleService::new(session)
       .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("Role".to_owned(), id.to_string()))
   }
 
   async fn create(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Json(body): Json<CreateRole>,
   ) -> Result<RoleCreated, SumidaError> {
     Ok(RoleCreated {
-      id: RoleService::new(user_ctx).create(body).await?.last_insert_id,
+      id: RoleService::new(session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(id): Path<i32>,
     Json(body): Json<UpdateRole>,
   ) -> Result<RoleUpdated, SumidaError> {
-    RoleService::new(user_ctx).update(id, body).await?;
+    RoleService::new(session).update(id, body).await?;
     Ok(RoleUpdated)
   }
 
   async fn delete(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<RoleDeleted, SumidaError> {
-    RoleService::new(user_ctx).delete(id).await?;
+    RoleService::new(session).delete(id).await?;
     Ok(RoleDeleted)
   }
 }

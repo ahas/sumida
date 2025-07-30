@@ -3,26 +3,24 @@ use axum::http::{HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
 use cfg_if::cfg_if;
-use infra::db;
-use infra::session::UserContext;
-use infra::settings;
 use entity::prelude::*;
 use error::SumidaError;
+use infra::db;
+use infra::session::UserSession;
+use infra::settings;
 use jsonwebtoken as jwt;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Expiry;
 
-use crate::util::ap::ApGuard;
-
 #[macro_export]
 macro_rules! service_ap {
   ($ns: ident, $action: ident) => {
-    axum::middleware::from_fn(|user_ctx, req, next| {
+    axum::middleware::from_fn(|session, req, next| {
       let ns = stringify!($ns).to_string();
       let action = stringify!($action).to_string();
 
-      $crate::middleware::guard::service_ap_fn(user_ctx, ns, action, req, next)
+      $crate::middleware::guard::service_ap_fn(session, ns, action, req, next)
     })
   };
 }
@@ -48,7 +46,7 @@ pub struct JwtClaims {
   pub exp: usize,
 }
 
-async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), SumidaError> {
+async fn verify_jwt(session: &mut UserSession, token: &str) -> Result<(), SumidaError> {
   let settings = settings::get();
   #[cfg(not(any(feature = "jwt-secret-store-static", feature = "jwt-secret-store-aws-ssm")))]
   compile_error!("Either `jwt-secret-store-static` or `jwt-secret-store-aws-ssm` feature must be enabled");
@@ -87,12 +85,12 @@ async fn verify_jwt(user_ctx: &mut UserContext, token: &str) -> Result<(), Sumid
   .map_err(|_err| SumidaError::InvalidJwt)?;
   let expiry = settings.jwt.as_ref().ok_or(SumidaError::NoJwtSecret)?.expiry.access_token_expiry()?;
 
-  user_ctx.authorize(token.claims.user_id, &token.claims.username, Some(expiry)).await?;
+  session.authorize(token.claims.user_id, &token.claims.username, Some(expiry)).await?;
 
   Ok(())
 }
 
-async fn verify_api_key(user_ctx: &mut UserContext, key: &str) -> Result<(), SumidaError> {
+async fn verify_api_key(session: &mut UserSession, key: &str) -> Result<(), SumidaError> {
   let txn = db::get_connection().begin().await?;
 
   let api_key = ApiKeys::find()
@@ -103,10 +101,10 @@ async fn verify_api_key(user_ctx: &mut UserContext, key: &str) -> Result<(), Sum
   let user = Users::find_by_id(api_key.user_id).one(&txn).await?;
 
   if let Some(user) = user {
-    user_ctx.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd)).await?;
+    session.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd)).await?;
 
     if api_key.is_secured {
-      user_ctx.profile.api_key = Some(key.to_owned());
+      session.profile.api_key = Some(key.to_owned());
     }
   } else {
     return Err(SumidaError::InvalidAccount);
@@ -118,7 +116,7 @@ async fn verify_api_key(user_ctx: &mut UserContext, key: &str) -> Result<(), Sum
 }
 
 pub async fn verify(
-  user_ctx: &mut UserContext,
+  session: &mut UserSession,
   headers: &HeaderMap<HeaderValue>,
 ) -> Result<bool, SumidaError> {
   if let Some(v) = headers.get::<String>("Authorization".into()) {
@@ -132,12 +130,12 @@ pub async fn verify(
     let token = pair[1];
 
     match method.to_uppercase().as_str() {
-      "BEARER" => verify_jwt(user_ctx, token).await?,
-      "APIKEY" => verify_api_key(user_ctx, token).await?,
+      "BEARER" => verify_jwt(session, token).await?,
+      "APIKEY" => verify_api_key(session, token).await?,
       _ => return Err(SumidaError::InvalidAuthorizationMethod(method.to_string())),
     }
   } else {
-    user_ctx.verify()?;
+    session.verify()?;
   }
 
   Ok(true)
@@ -145,19 +143,19 @@ pub async fn verify(
 
 #[allow(dead_code)]
 pub async fn service_ap_fn(
-  user_ctx: UserContext,
+  session: UserSession,
   ns: String,
   action: String,
   req: Request,
   next: Next,
 ) -> Result<Response, SumidaError> {
-  use crate::util::ap::Ap;
+  use crate::util::ap::{self, ApGuard};
 
-  let is_allowed = Ap::new(ns)
-    .object(sea_orm::sea_query::Expr::val("service").into())
+  let is_allowed = ap::ns(ns) //
+    .object("service")
     .action(action)
-    .owner(&user_ctx)
-    .check_allowed(db::get_connection())
+    .who(&session)
+    .can_access(db::get_connection())
     .await;
 
   if is_allowed {
@@ -169,22 +167,22 @@ pub async fn service_ap_fn(
 
 #[allow(dead_code)]
 pub async fn user_guard_fn(
-  mut user_ctx: UserContext,
+  mut session: UserSession,
   req: Request,
   next: Next,
 ) -> Result<Response, SumidaError> {
-  verify(&mut user_ctx, req.headers()).await?;
+  verify(&mut session, req.headers()).await?;
 
   Ok(next.run(req).await)
 }
 
 #[allow(dead_code)]
 pub async fn admin_guard_fn(
-  user_ctx: UserContext,
+  session: UserSession,
   req: Request,
   next: Next,
 ) -> Result<Response, SumidaError> {
-  match user_ctx.profile.is_admin {
+  match session.profile.is_admin {
     true => Ok(next.run(req).await),
     false => Err(SumidaError::OnlyAdminAllowed),
   }

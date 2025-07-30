@@ -6,7 +6,7 @@ use socketioxide::{extract::SocketRef, SocketIo};
 use socketioxide_core::adapter::{Room, RoomParam};
 use error::SumidaError;
 
-use crate::session::UserContext;
+use crate::session::UserSession;
 
 #[derive(Clone, Debug)]
 pub struct SumidaMessengerState;
@@ -76,10 +76,10 @@ impl SumidaMessenger {
 pub async fn get_session(
   socket: &SocketRef,
   state: &SumidaMessengerState,
-) -> Result<UserContext, SumidaError> {
+) -> Result<UserSession, SumidaError> {
   let mut req_parts = socket.req_parts().to_owned();
 
-  UserContext::from_request_parts(&mut req_parts, state).await
+  UserSession::from_request_parts(&mut req_parts, state).await
 }
 
 pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerState>) {

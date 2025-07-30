@@ -6,10 +6,10 @@ use argon2::password_hash::PasswordHasher;
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use chrono::Utc;
-use infra::session::UserContext;
-use infra::{db, settings};
 use entity::prelude::*;
 use error::SumidaError;
+use infra::session::UserSession;
+use infra::{db, settings};
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{ActiveValue::*, JoinType, Select};
 use sea_orm::{
@@ -20,7 +20,7 @@ use sea_orm_crud::Optional;
 
 use crate::service::ApiService;
 use crate::service::auth::session::AuthSessionService;
-use crate::util::ap::{Ap, ApGuard};
+use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::crud::Pagination;
 
 use self::dto::*;
@@ -29,12 +29,12 @@ use super::mail_form::MailFormSendOptions;
 use super::prelude::*;
 
 pub struct UserService {
-  user_ctx: UserContext,
+  session: UserSession,
 }
 
 impl UserService {
-  pub fn new(user_ctx: UserContext) -> Self {
-    Self { user_ctx }
+  pub fn new(session: UserSession) -> Self {
+    Self { session }
   }
 
   pub fn hash_password<S>(password: S) -> argon2::password_hash::Result<String>
@@ -93,7 +93,7 @@ impl UserService {
 
   pub async fn update(&self, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("update").check(Users::find_by_id(user_id), &txn).await?;
+    self.ap().object(user_id).action("update").try_access(&txn).await?;
 
     let Optional(password) = data.password.clone();
 
@@ -113,7 +113,7 @@ impl UserService {
 
   pub async fn delete(&self, user_id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = db::get_connection().begin().await?;
-    self.ap().action("delete").check(Users::find_by_id(user_id), &txn).await?;
+    self.ap().object(user_id).action("delete").try_access(&txn).await?;
 
     let result = Users::delete_by_id(user_id).exec(&txn).await?;
     txn.commit().await?;
@@ -193,7 +193,7 @@ impl UserService {
 
     txn.commit().await?;
 
-    let mut auth_session_service = AuthSessionService::new(self.user_ctx.clone());
+    let mut auth_session_service = AuthSessionService::new(self.session.clone());
     auth_session_service
       .login(LoginSession {
         username,
@@ -201,7 +201,7 @@ impl UserService {
         ..Default::default()
       })
       .await?;
-    self.user_ctx = auth_session_service.user_ctx;
+    self.session = auth_session_service.session;
 
     Ok(())
   }
@@ -216,10 +216,10 @@ impl UserService {
       return Err(SumidaError::InvalidAccount);
     };
 
-    let user_verification_service = UserVerificationService::new(self.user_ctx.clone());
+    let user_verification_service = UserVerificationService::new(self.session.clone());
     let is_verified =
       user_verification_service.verify("password-change", user.id, &data.code, &txn).await?;
-    self.user_ctx = user_verification_service.user_ctx;
+    self.session = user_verification_service.session;
 
     if !is_verified {
       txn.rollback().await?;
@@ -250,7 +250,7 @@ impl UserService {
     };
 
     self
-      .user_ctx
+      .session
       .authorize(user_id, &user.username, Some(settings.session.expiry.default_expiry()?))
       .await?;
 
@@ -267,7 +267,7 @@ impl UserService {
   }
 }
 
-impl ApiService<Ap, Users> for UserService {
+impl ApiService<ApCondition, Users> for UserService {
   fn select(&self, query: Select<Users>) -> Select<Users> {
     self.ap().action("read").apply({
       let org_alias = Alias::new("org");
@@ -286,11 +286,11 @@ impl ApiService<Ap, Users> for UserService {
     })
   }
 
-  fn ap(&self) -> Ap {
+  fn ap(&self) -> ApCondition {
     use entity::users::Column;
 
-    Ap::new("user") //
-      .owner(&self.user_ctx)
-      .object(Expr::col((Users, Column::Id)).cast_as("varchar"))
+    ap::ns("user") //
+      .who(&self.session)
+      .object_ref(Expr::col((Users, Column::Id)).cast_as("varchar"))
   }
 }

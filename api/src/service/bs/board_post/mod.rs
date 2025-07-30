@@ -2,7 +2,7 @@ pub mod dto;
 
 use crate::util::crud::Pagination;
 use infra::db;
-use infra::session::UserContext;
+use infra::session::UserSession;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::ActiveValue::Set;
@@ -61,7 +61,7 @@ impl BoardPostService {
     )
   }
 
-  pub async fn view(user_ctx: &UserContext, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
+  pub async fn view(session: &UserSession, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
     let txn = db::get_connection().begin().await?;
     let post =
       Self::select(BoardPosts::find_by_id(id)).into_partial_model::<GetBoardPost>().one(&txn).await?;
@@ -71,10 +71,10 @@ impl BoardPostService {
       ..Default::default()
     };
 
-    if user_ctx.profile.is_authorized {
-      view_am.user_id = Set(Some(user_ctx.profile.id));
+    if session.profile.is_authorized {
+      view_am.user_id = Set(Some(session.profile.id));
     } else {
-      view_am.ip_address = Set(Some(user_ctx.env.ip_address.clone()));
+      view_am.ip_address = Set(Some(session.env.ip_address.clone()));
     }
 
     BoardPostViews::insert(view_am).exec(&txn).await?;

@@ -19,51 +19,51 @@ impl<S> OrganizationController<S> {
   }
 
   async fn list(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Query(filter): Query<OrganizationFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<OrganizationListItem>, SumidaError> {
-    Ok(OrganizationService::new(user_ctx).list(filter, pagination).await?.into())
+    Ok(OrganizationService::new(session).list(filter, pagination).await?.into())
   }
 
   async fn get(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetOrganization, SumidaError> {
-    OrganizationService::new(user_ctx)
+    OrganizationService::new(session)
       .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("Organization".to_owned(), id.to_string()))
   }
 
   async fn create(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Json(body): Json<CreateOrganization>,
   ) -> Result<OrganizationCreated, SumidaError> {
     Ok(OrganizationCreated {
-      id: OrganizationService::new(user_ctx).create(body).await?.last_insert_id,
+      id: OrganizationService::new(session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(id): Path<i32>,
     Json(body): Json<UpdateOrganization>,
   ) -> Result<OrganizationUpdated, SumidaError> {
-    OrganizationService::new(user_ctx).update(id, body).await?;
+    OrganizationService::new(session).update(id, body).await?;
     Ok(OrganizationUpdated)
   }
 
   async fn delete(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<OrganizationDeleted, SumidaError> {
-    OrganizationService::new(user_ctx).delete(id).await?;
+    OrganizationService::new(session).delete(id).await?;
     Ok(OrganizationDeleted)
   }
 }

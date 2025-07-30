@@ -19,51 +19,51 @@ impl<S> ApiKeyController<S> {
   }
 
   async fn list(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Query(filter): Query<ApiKeyFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<ApiKeyListItem>, SumidaError> {
-    Ok(ApiKeyService::new(user_ctx).list(filter, pagination).await?.into())
+    Ok(ApiKeyService::new(session).list(filter, pagination).await?.into())
   }
 
   async fn get(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(key): Path<String>,
   ) -> Result<GetApiKey, SumidaError> {
-    ApiKeyService::new(user_ctx)
+    ApiKeyService::new(session)
       .get(&key)
       .await?
       .ok_or_else(|| SumidaError::NoData("ApiKey".to_owned(), key.to_string()))
   }
 
   async fn create(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Json(body): Json<CreateApiKey>,
   ) -> Result<ApiKeyCreated, SumidaError> {
     Ok(ApiKeyCreated {
-      key: ApiKeyService::new(user_ctx).create(body).await?.last_insert_id,
+      key: ApiKeyService::new(session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(key): Path<String>,
     Json(body): Json<UpdateApiKey>,
   ) -> Result<ApiKeyUpdated, SumidaError> {
-    ApiKeyService::new(user_ctx).update(&key, body).await?;
+    ApiKeyService::new(session).update(&key, body).await?;
     Ok(ApiKeyUpdated)
   }
 
   async fn delete(
-    user_ctx: UserContext,
+    session: UserSession,
     State(_state): State<S>,
     Path(key): Path<String>,
   ) -> Result<ApiKeyDeleted, SumidaError> {
-    ApiKeyService::new(user_ctx).delete(&key).await?;
+    ApiKeyService::new(session).delete(&key).await?;
     Ok(ApiKeyDeleted)
   }
 }
