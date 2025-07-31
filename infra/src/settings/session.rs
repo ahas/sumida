@@ -6,7 +6,32 @@ use tower_sessions::Expiry;
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct SessionSettings {
+  #[cfg(feature = "session-store-redis")]
+  pub redis: SessionRedisSettings,
+  #[cfg(feature = "session-store-aws-dynamodb")]
+  pub dynamodb: SessionDynamodbSettings,
+
+  pub ip_source: ClientIpSource,
+  pub cookie: SessionCookieSettings,
+}
+
+#[cfg(feature = "session-store-redis")]
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct SessionRedisSettings {
+  pub url: String,
+}
+
+#[cfg(feature = "session-store-aws-dynamodb")]
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct SessionDynamodbSettings {
   pub table: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct SessionCookieSettings {
   pub name: Option<String>,
   pub domain: Option<String>,
   pub path: Option<String>,
@@ -14,7 +39,6 @@ pub struct SessionSettings {
   pub secure: Option<bool>,
   #[serde(default)]
   pub expiry: SessionExpirySettings,
-  pub ip_source: ClientIpSource,
 }
 
 #[derive(Debug, Deserialize)]

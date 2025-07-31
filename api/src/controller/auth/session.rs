@@ -5,7 +5,7 @@ use error::SumidaError;
 
 use crate::{controller::ApiController, service::prelude::*, user_guard};
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct AuthSessionController<S> {
   _state: std::marker::PhantomData<S>,
 }

@@ -1,10 +1,8 @@
 pub mod dto;
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::{db, session::UserSession};
-use rand::{TryRngCore, rngs::OsRng};
 use sea_orm::{
   ActiveValue::Unchanged,
   DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType,
@@ -14,7 +12,7 @@ use sea_orm::{
 };
 
 use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 use crate::{service::ApiService, util::ap::ApUser};
 
 use self::dto::*;
@@ -76,13 +74,6 @@ impl ApiKeyService {
     Ok(Some(api_key))
   }
 
-  fn generate_token_bytes(entropy_bytes: usize) -> anyhow::Result<String> {
-    let mut buf = vec![0u8; entropy_bytes];
-    OsRng.try_fill_bytes(&mut buf)?;
-
-    Ok(URL_SAFE_NO_PAD.encode(buf))
-  }
-
   fn is_unique_violation(err: &DbErr) -> bool {
     matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
   }
@@ -93,7 +84,7 @@ impl ApiKeyService {
   ) -> Result<InsertResult<entity::api_keys::ActiveModel>, SumidaError> {
     loop {
       let txn = db::get_connection().begin().await?;
-      let key = match Self::generate_token_bytes(64) {
+      let key = match crate::util::random::generate_url_safe_string(64) {
         Ok(v) => v,
         _ => {
           continue;
@@ -173,20 +164,18 @@ impl ApiKeyService {
 }
 
 impl ApiService<ApCondition, ApiKeys> for ApiKeyService {
-  fn select(&self, query: Select<ApiKeys>) -> Select<ApiKeys> {
+  fn default_query_with(query: Select<ApiKeys>) -> Select<ApiKeys> {
     let user_alias = Alias::new("user");
     let col_id = Expr::col((user_alias.clone(), "id"));
     let col_username = Expr::col((user_alias.clone(), "username"));
     let col_full_name = Expr::col((user_alias.clone(), "full_name"));
 
-    self.ap().action("read").apply(
-      query
-        .expr(Expr::col((entity::api_keys::Entity, Asterisk)))
-        .expr_as(col_id, "user_id")
-        .expr_as(col_username.clone(), "user_username")
-        .expr_as(col_full_name.clone(), "user_full_name")
-        .join_as(JoinType::LeftJoin, entity::api_keys::Relation::User.def(), user_alias.clone()),
-    )
+    query
+      .expr(Expr::col((entity::api_keys::Entity, Asterisk)))
+      .expr_as(col_id, "user_id")
+      .expr_as(col_username.clone(), "user_username")
+      .expr_as(col_full_name.clone(), "user_full_name")
+      .join_as(JoinType::LeftJoin, entity::api_keys::Relation::User.def(), user_alias.clone())
   }
 
   fn ap(&self) -> ApCondition {

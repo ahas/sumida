@@ -7,8 +7,8 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-# default = ["session-store-redis"]
-default = ["session-store-aws-dynamodb"]
+default = ["session-store-redis"]
+# default = ["session-store-aws-dynamodb"]
 aws = ["aws-config"]
 aws-s3 = ["aws", "aws-sdk-s3"]
 aws-dynamodb = ["aws", "aws-sdk-dynamodb"]

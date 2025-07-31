@@ -3,7 +3,7 @@ pub mod dto;
 use self::dto::*;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::db;
@@ -90,8 +90,10 @@ impl BoardService {
 }
 
 impl ApiService<ApCondition, Boards> for BoardService {
-  fn select(&self, query: Select<Boards>) -> Select<Boards> {
-    self.ap().action("read").apply(query.select_only().expr(Expr::col((Boards, Asterisk))))
+  fn default_query_with(query: Select<Boards>) -> Select<Boards> {
+    query //
+      .select_only()
+      .expr(Expr::col((Boards, Asterisk)))
   }
 
   fn ap(&self) -> ApCondition {

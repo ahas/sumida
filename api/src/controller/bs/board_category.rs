@@ -6,9 +6,10 @@ use axum::{
 
 use crate::controller::ApiController;
 use crate::service::prelude::*;
-use crate::util::crud::{List, Pagination};
+use crate::util::pagination::{List, Pagination};
 use crate::{service_ap, user_guard};
 
+#[derive(Clone, Debug, Default)]
 pub struct BoardCategoryController<S> {
   _state: std::marker::PhantomData<S>,
 }
@@ -69,19 +70,19 @@ where
     let route_read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(board_category, read));
+      .route_layer(service_ap!("board_category", read));
 
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(board_category, create));
+      .route_layer(service_ap!("board_category", create));
 
     let route_update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(board_category, update));
+      .route_layer(service_ap!("board_category", update));
 
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(board_category, delete));
+      .route_layer(service_ap!("board_category", delete));
 
     Router::new()
       .merge(route_read)

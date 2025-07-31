@@ -5,12 +5,12 @@ use error::SumidaError;
 use infra::{db, session::UserSession};
 use sea_orm::{
   ActiveValue::*, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
-  Select, TransactionTrait, sea_query::Expr,
+  TransactionTrait, sea_query::Expr,
 };
 
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard, ApUser};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
@@ -107,10 +107,6 @@ impl RoleService {
 }
 
 impl ApiService<ApCondition, Roles> for RoleService {
-  fn select(&self, query: Select<Roles>) -> Select<Roles> {
-    self.ap().action("read").apply(query)
-  }
-
   fn ap(&self) -> ApCondition {
     use entity::roles::Column;
 

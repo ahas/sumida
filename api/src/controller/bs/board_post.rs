@@ -1,6 +1,6 @@
 use crate::controller::ApiController;
 use crate::service::bs::prelude::*;
-use crate::util::crud::{List, Pagination};
+use crate::util::pagination::{List, Pagination};
 use crate::{service_ap, user_guard};
 use axum::{
   Json, Router,
@@ -9,6 +9,7 @@ use axum::{
 };
 use error::SumidaError;
 
+#[derive(Clone, Debug, Default)]
 pub struct BoardPostController<S>(std::marker::PhantomData<S>);
 
 impl<S> BoardPostController<S> {
@@ -61,19 +62,19 @@ where
     let read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(board_post, read));
+      .route_layer(service_ap!("board_post", read));
 
     let create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(board_post, create));
+      .route_layer(service_ap!("board_post", create));
 
     let update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(board_post, update));
+      .route_layer(service_ap!("board_post", update));
 
     let delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(board_post, delete));
+      .route_layer(service_ap!("board_post", delete));
 
     Router::new().merge(read).merge(create).merge(update).merge(delete).route_layer(user_guard!(state))
   }

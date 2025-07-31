@@ -213,6 +213,7 @@ impl UserSession {
     self.profile.first_seen_at = Utc::now().fixed_offset();
     self.state.failed_login_attempts = 0;
 
+    self.inner.set_expiry(expiry);
     self.identify().await?;
 
     Ok(())
@@ -225,7 +226,7 @@ impl UserSession {
     code: LoginCode,
   ) -> Result<InsertResult<entity::user_logs::ActiveModel>, DbErr> {
     UserLogs::insert(entity::user_logs::ActiveModel {
-      user_id: Set(user_id.unwrap_or_else(|| self.profile.id)),
+      user_id: Set(user_id.unwrap_or(self.profile.id)),
       method: Set(method),
       code: Set(code),
       ip_address: Set(self.env.ip_address.clone()),
@@ -245,7 +246,7 @@ impl UserSession {
   }
 
   pub fn resolve_user_id(&self, explicit: Option<i32>) -> i32 {
-    explicit.unwrap_or_else(|| self.profile.id)
+    explicit.unwrap_or(self.profile.id)
   }
 
   pub async fn block_if_exceeded_limit<C: ConnectionTrait>(
@@ -341,12 +342,12 @@ impl UserSession {
     };
     let rhs = {
       let now = Utc::now().fixed_offset();
-      let cond = Condition::all().add(entity::user_blocks::Column::LiftedAt.is_null()).add(
+
+      Condition::all().add(entity::user_blocks::Column::LiftedAt.is_null()).add(
         Condition::any()
           .add(entity::user_blocks::Column::ExpiresAt.is_null())
           .add(entity::user_blocks::Column::ExpiresAt.gt(now)),
-      );
-      cond
+      )
     };
     let cond = Condition::all().add(lhs).add(rhs);
 
@@ -398,7 +399,6 @@ impl UserSession {
     self.inner.insert(Self::USER_PROFILE_KEY, self.profile.clone()).await?;
     self.inner.insert(Self::USER_ENV_KEY, self.env.clone()).await?;
     self.inner.insert(Self::USER_STATE_KEY, self.state.clone()).await?;
-    self.inner.set_expiry(self.profile.expiry);
     self.inner.save().await?;
 
     Ok(())

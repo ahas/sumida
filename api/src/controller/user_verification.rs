@@ -5,6 +5,7 @@ use crate::service::prelude::*;
 
 use super::ApiController;
 
+#[derive(Clone, Debug, Default)]
 pub struct UserVerificationController<S> {
   _state: std::marker::PhantomData<S>,
 }

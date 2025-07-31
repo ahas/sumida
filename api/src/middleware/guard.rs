@@ -15,9 +15,9 @@ use tower_sessions::Expiry;
 
 #[macro_export]
 macro_rules! service_ap {
-  ($ns: ident, $action: ident) => {
+  ($ns: literal, $action: ident) => {
     axum::middleware::from_fn(|session, req, next| {
-      let ns = stringify!($ns).to_string();
+      let ns = $ns.to_string();
       let action = stringify!($action).to_string();
 
       $crate::middleware::guard::service_ap_fn(session, ns, action, req, next)

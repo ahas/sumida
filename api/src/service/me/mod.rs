@@ -103,11 +103,11 @@ impl MeService {
 }
 
 impl ApiService<ApCondition, Users> for MeService {
-  fn select(&self, query: Select<Users>) -> Select<Users> {
-    self.user_service.select(query)
-  }
-
   fn ap(&self) -> ApCondition {
     self.user_service.ap()
+  }
+
+  fn select(&self, query: Select<Users>) -> Select<Users> {
+    self.user_service.select(query)
   }
 }

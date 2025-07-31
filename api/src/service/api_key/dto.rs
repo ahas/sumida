@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::ap::ApForUser;
-use crate::util::crud::{wrap_ilike, wrap_ilike_col};
+use crate::util::db::{wrap_ilike, wrap_ilike_col};
 
 #[derive(Deserialize)]
 pub struct ApiKeyFilter {

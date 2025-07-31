@@ -11,7 +11,7 @@ use sea_orm::{
 };
 
 use self::dto::*;
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 
 pub struct BoardCategoryService;
 

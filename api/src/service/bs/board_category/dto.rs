@@ -12,7 +12,7 @@ use serde_json::json;
 
 use entity::bs::board_categories::*;
 
-use crate::util::crud::wrap_ilike;
+use crate::util::db::wrap_ilike;
 
 #[derive(Deserialize)]
 pub struct BoardCategoryFilter {

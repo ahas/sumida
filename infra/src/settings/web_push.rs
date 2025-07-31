@@ -5,9 +5,9 @@ lazy_static! {
   pub static ref WEB_PUSH_PRIVATE_KEY_PEM: jsonwebtoken::EncodingKey = {
     let pem = std::fs::read_to_string(std::path::Path::new(&super::get().web_push.private_key))
       .expect("failed to read web-push private key file");
-    let key = jsonwebtoken::EncodingKey::from_ec_pem(pem.as_bytes())
-      .expect("failed to parse web-push private key file to jwt encoding key");
-    key
+
+    jsonwebtoken::EncodingKey::from_ec_pem(pem.as_bytes())
+      .expect("failed to parse web-push private key file to jwt encoding key")
   };
 }
 

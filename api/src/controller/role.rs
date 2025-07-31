@@ -5,11 +5,12 @@ use axum::{
 };
 
 use crate::service::prelude::*;
-use crate::util::crud::{List, Pagination};
+use crate::util::pagination::{List, Pagination};
 use crate::{service_ap, user_guard};
 
 use super::ApiController;
 
+#[derive(Clone, Debug, Default)]
 pub struct RoleController<S> {
   _state: std::marker::PhantomData<S>,
 }
@@ -82,16 +83,16 @@ where
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(role, read));
+      .route_layer(service_ap!("role", read));
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(role, create));
+      .route_layer(service_ap!("role", create));
     let route_update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(role, update));
+      .route_layer(service_ap!("role", update));
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(role, delete));
+      .route_layer(service_ap!("role", delete));
 
     Router::new()
       .merge(route_read)

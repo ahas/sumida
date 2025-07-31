@@ -4,13 +4,13 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::{db, session::UserSession};
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Select, Set,
+  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Set,
   TransactionTrait, sea_query::Expr,
 };
 
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
@@ -95,10 +95,6 @@ impl OrganizationService {
 }
 
 impl ApiService<ApCondition, Organizations> for OrganizationService {
-  fn select(&self, query: Select<Organizations>) -> Select<Organizations> {
-    self.ap().action("read").apply(query)
-  }
-
   fn ap(&self) -> ApCondition {
     use entity::organizations::Column;
 

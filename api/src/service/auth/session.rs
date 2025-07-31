@@ -1,11 +1,11 @@
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
-use infra::settings;
-use infra::{db, session::UserSession};
 use entity::{
   prelude::*,
   user_logs::{LoginCode, LoginMethod},
 };
 use error::SumidaError;
+use infra::settings;
+use infra::{db, session::UserSession};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 
 use crate::service::auth::dto::LoginSession;
@@ -24,9 +24,8 @@ impl AuthSessionService {
     let Ok(parsed_hash) = PasswordHash::new(password_hash) else {
       return false;
     };
-    let result = argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok();
 
-    result
+    argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok()
   }
 
   pub async fn login(&mut self, data: LoginSession) -> Result<(), SumidaError> {
@@ -61,12 +60,12 @@ impl AuthSessionService {
       self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::Success).await?;
 
       let expiry = if let Some(remember_me) = data.remember_me {
-        let settings = settings::get();
+        let settings = &settings::get().session.cookie;
 
         Some(if remember_me {
-          settings.session.expiry.remember_me_expiry()?
+          settings.expiry.remember_me_expiry()?
         } else {
-          settings.session.expiry.default_expiry()?
+          settings.expiry.default_expiry()?
         })
       } else {
         None

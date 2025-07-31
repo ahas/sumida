@@ -1,9 +1,9 @@
 pub mod dto;
 
 use chrono::{Duration, Utc};
-use infra::{db, session::UserSession, settings};
 use entity::prelude::*;
 use error::SumidaError;
+use infra::{db, session::UserSession, settings};
 use rand::Rng;
 use sea_orm::{
   ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
@@ -25,12 +25,12 @@ impl UserVerificationService {
     Self { session }
   }
 
-  pub async fn verify<'db, KindT, CodeT, DbConnT>(
+  pub async fn verify<KindT, CodeT, DbConnT>(
     &self,
     kind: KindT,
     user_id: i32,
     code: CodeT,
-    txn: &'db DbConnT,
+    txn: &DbConnT,
   ) -> Result<bool, SumidaError>
   where
     KindT: AsRef<str>,

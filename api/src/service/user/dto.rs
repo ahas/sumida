@@ -17,7 +17,7 @@ use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::crud::wrap_ilike_col;
+use crate::util::db::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct UserFilter {
@@ -35,8 +35,8 @@ impl UserFilter {
       .apply_if(self.search.as_ref(), |q, v| {
         q.filter(
           Condition::any() //
-            .add(wrap_ilike_col(Column::Username, &v))
-            .add(wrap_ilike_col(Column::FullName, &v)),
+            .add(wrap_ilike_col(Column::Username, v))
+            .add(wrap_ilike_col(Column::FullName, v)),
         )
       })
       .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Username, v)))

@@ -19,6 +19,12 @@ pub mod user_verification;
 pub mod prelude;
 
 pub trait ApiService<A: ApGuard, E: EntityTrait> {
+  fn default_query_with(query: Select<E>) -> Select<E> {
+    query
+  }
+
   fn ap(&self) -> A;
-  fn select(&self, query: Select<E>) -> Select<E>;
+  fn select(&self, query: Select<E>) -> Select<E> {
+    self.ap().action("read").apply(Self::default_query_with(query))
+  }
 }

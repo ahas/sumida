@@ -1,58 +1,66 @@
 use anyhow::Context;
-use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 
-pub async fn setup_test_db() -> anyhow::Result<()> {
-  let settings = infra::settings::get();
-  let admin_url = std::env::var("DATABASE_ADMIN_URL").context("Missing env: DATABASE_ADMIN_URL")?;
-  let test_url = settings.database.url.clone();
-
-  let db_name = test_url //
-    .split('/')
-    .last()
-    .ok_or_else(|| anyhow::anyhow!("Invalid DATABASE_URL: missing DB name"))?;
-
-  // 1. Connect to admin DB
-  let admin = Database::connect(&admin_url).await.context("Failed to connect to admin DB")?;
-
-  // 2. Create test DB if it doesn't exist
-  let exists = admin
-    .query_one(Statement::from_string(
-      DbBackend::Postgres,
-      format!("SELECT 1 FROM pg_database WHERE datname = '{db_name}'"),
-    ))
-    .await?
-    .is_some();
-
-  if !exists {
-    admin
-      .execute(Statement::from_string(DbBackend::Postgres, format!("CREATE DATABASE {db_name}")))
-      .await
-      .context("Failed to create test database")?;
-
-    println!("✅ Created database `{db_name}`");
-  } else {
-    println!("ℹ️ Database `{db_name}` already exists");
-  }
-
-  // 3. Connect to test DB
-  let db = infra::db::get_connection();
-
-  // 4. Run `sea-orm-cli migrate fresh`
-  run_migration_fresh(&db).await?;
-
-  Ok(())
+#[allow(dead_code)]
+pub struct TestDb {
+  name: String,
 }
 
-async fn run_migration_fresh(db: &DatabaseConnection) -> anyhow::Result<()> {
-  use crate::migration::Migrator;
-  use sea_orm_cli::MigrateSubcommands;
-  use sea_orm_migration::prelude::*;
+impl TestDb {
+  pub async fn setup() -> anyhow::Result<Self> {
+    let db_name = Self::find_or_create().await?;
+    Self::run_migration_fresh().await?;
 
-  cli::run_migrate(Migrator, db, Some(MigrateSubcommands::Fresh), false)
-    .await
-    .expect("Migration fresh command failed");
+    Ok(Self { name: db_name })
+  }
 
-  println!("✅ Applied fresh migrations");
+  pub async fn find_or_create() -> anyhow::Result<String> {
+    let settings = infra::settings::get();
+    let admin_url = std::env::var("DATABASE_ADMIN_URL").context("Missing env: DATABASE_ADMIN_URL")?;
+    let test_url = settings.database.url.clone();
 
-  Ok(())
+    let db_name = test_url //
+      .split('/')
+      .next_back()
+      .ok_or_else(|| anyhow::anyhow!("Invalid DATABASE_URL: missing DB name"))?;
+
+    // 1. Connect to admin DB
+    let admin = Database::connect(&admin_url).await.context("Failed to connect to admin DB")?;
+
+    // 2. Create test DB if it doesn't exist
+    let exists = admin
+      .query_one(Statement::from_string(
+        DbBackend::Postgres,
+        format!("SELECT 1 FROM pg_database WHERE datname = '{db_name}'"),
+      ))
+      .await?
+      .is_some();
+
+    if !exists {
+      admin
+        .execute(Statement::from_string(DbBackend::Postgres, format!("CREATE DATABASE {db_name}")))
+        .await
+        .context("Failed to create test database")?;
+
+      println!("✅ Created database `{db_name}`");
+    } else {
+      println!("ℹ️ Database `{db_name}` already exists");
+    }
+
+    Ok(db_name.to_string())
+  }
+
+  async fn run_migration_fresh() -> anyhow::Result<()> {
+    use crate::common::migration::Migrator;
+    use sea_orm_cli::MigrateSubcommands;
+    use sea_orm_migration::prelude::*;
+
+    cli::run_migrate(Migrator, infra::db::get_connection(), Some(MigrateSubcommands::Fresh), false)
+      .await
+      .expect("Migration fresh command failed");
+
+    println!("✅ Applied fresh migrations");
+
+    Ok(())
+  }
 }

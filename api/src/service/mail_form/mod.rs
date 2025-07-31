@@ -9,14 +9,14 @@ use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::{
   ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
-  Select, Set, TransactionTrait, sea_query::Expr,
+  Set, TransactionTrait, sea_query::Expr,
 };
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
@@ -197,10 +197,6 @@ impl MailFormService {
 }
 
 impl ApiService<ApCondition, MailForms> for MailFormService {
-  fn select(&self, query: Select<MailForms>) -> Select<MailForms> {
-    self.ap().action("read").apply(query)
-  }
-
   fn ap(&self) -> ApCondition {
     use entity::mail_forms::Column;
 

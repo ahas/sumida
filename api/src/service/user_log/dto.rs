@@ -5,7 +5,7 @@ use sea_orm::{Condition, FromQueryResult, IntoSimpleExpr, QueryTrait, prelude::*
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::crud::wrap_ilike;
+use crate::util::db::wrap_ilike;
 
 #[derive(Deserialize)]
 pub struct UserLogFilter {
@@ -26,8 +26,8 @@ impl UserLogFilter {
         q.filter(
           Condition::any() //
             .add(col_user_id.clone().into_simple_expr().cast_as("text").eq(v))
-            .add(wrap_ilike(col_username.clone(), &v))
-            .add(wrap_ilike(col_full_name.clone(), &v)),
+            .add(wrap_ilike(col_username.clone(), v))
+            .add(wrap_ilike(col_full_name.clone(), v)),
         )
       })
       .apply_if(self.user_id, |q, v| q.filter(col_user_id.into_simple_expr().eq(v)))

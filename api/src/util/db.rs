@@ -1,4 +1,11 @@
-use sea_orm::DbErr;
+use std::fmt;
+use std::marker::PhantomData;
+
+use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::{ColumnTrait, DbErr};
+use serde::de;
+use serde::{Deserialize, Deserializer};
 
 pub fn is_serialization_failure(error: &DbErr) -> bool {
   // PostgreSQL의 직렬화 실패 오류 코드 40001을 확인합니다.
@@ -7,4 +14,62 @@ pub fn is_serialization_failure(error: &DbErr) -> bool {
     DbErr::Exec(err) => err.to_string().contains("could not serialize access"),
     _ => false,
   }
+}
+
+pub fn wrap_ilike_col<C, S>(col: C, text: S) -> SimpleExpr
+where
+  C: ColumnTrait,
+  S: AsRef<str>,
+{
+  Expr::col(col).ilike(format!("%{text}%", text = text.as_ref()))
+}
+
+pub fn wrap_ilike<S>(col: Expr, text: S) -> SimpleExpr
+where
+  S: AsRef<str>,
+{
+  col.ilike(format!("%{text}%", text = text.as_ref()))
+}
+
+pub fn i32_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+  T: Deserialize<'de> + From<i32>,
+  D: Deserializer<'de>,
+{
+  struct I32OrStruct<T>(PhantomData<fn() -> T>);
+
+  impl<'de, T> de::Visitor<'de> for I32OrStruct<T>
+  where
+    T: Deserialize<'de> + From<i32>,
+  {
+    type Value = T;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+      formatter.write_str("an integer or a map representing the struct")
+    }
+
+    fn visit_i32<E>(self, value: i32) -> Result<T, E>
+    where
+      E: de::Error,
+    {
+      Ok(T::from(value))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<T, E>
+    where
+      E: de::Error,
+    {
+      let id: i32 = value.parse().map_err(E::custom)?;
+      Ok(T::from(id))
+    }
+
+    fn visit_map<M>(self, map: M) -> Result<T, M::Error>
+    where
+      M: de::MapAccess<'de>,
+    {
+      Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
+    }
+  }
+
+  deserializer.deserialize_any(I32OrStruct(PhantomData))
 }

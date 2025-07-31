@@ -7,7 +7,8 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::{ap::ApForUser, crud::wrap_ilike_col};
+use crate::util::ap::ApForUser;
+use crate::util::db::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct RoleFilter {

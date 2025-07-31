@@ -6,13 +6,13 @@ use error::SumidaError;
 use infra::db;
 use infra::session::UserSession;
 use sea_orm::sea_query::Expr;
-use sea_orm::{ActiveValue::*, DbErr, EntityTrait, Select, TransactionTrait};
+use sea_orm::{ActiveValue::*, DbErr, EntityTrait, TransactionTrait};
 use sea_orm::{ColumnTrait, ConnectionTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelect};
 use uuid::Uuid;
 
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
@@ -145,10 +145,6 @@ impl UserInvitationService {
 }
 
 impl ApiService<ApCondition, UserInvitations> for UserInvitationService {
-  fn select(&self, query: Select<UserInvitations>) -> Select<UserInvitations> {
-    self.ap().action("read").apply(query)
-  }
-
   fn ap(&self) -> ApCondition {
     use entity::user_invitations::Column;
 

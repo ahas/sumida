@@ -7,14 +7,14 @@ use infra::settings;
 use serde_json::json;
 
 use crate::service::prelude::*;
-use crate::util::crud::{List, Pagination};
+use crate::util::pagination::{List, Pagination};
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
 use crate::{service_ap, user_guard};
 
 use super::ApiController;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct MailFormController<S> {
   _state: std::marker::PhantomData<S>,
 }
@@ -131,17 +131,17 @@ where
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{kind}", routing::get(Self::get))
-      .route_layer(service_ap!(mail_form, read));
+      .route_layer(service_ap!("mail_form", read));
     let route_create = Router::new()
       .route("/", routing::post(Self::create))
       .route("/files", routing::post(Self::upload_files))
-      .route_layer(service_ap!(mail_form, create));
+      .route_layer(service_ap!("mail_form", create));
     let route_update = Router::new() //
       .route("/{kind}", routing::patch(Self::update))
-      .route_layer(service_ap!(mail_form, update));
+      .route_layer(service_ap!("mail_form", update));
     let route_delete = Router::new() //
       .route("/{kind}", routing::delete(Self::delete))
-      .route_layer(service_ap!(mail_form, delete));
+      .route_layer(service_ap!("mail_form", delete));
 
     Router::<S>::new()
       .merge(route_read)

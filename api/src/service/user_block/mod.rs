@@ -15,7 +15,7 @@ use sea_orm::{EntityTrait, InsertResult, IntoActiveModel, TransactionTrait};
 
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
@@ -129,21 +129,19 @@ impl UserBlockService {
 }
 
 impl ApiService<ApCondition, UserBlocks> for UserBlockService {
-  fn select(&self, query: Select<UserBlocks>) -> Select<UserBlocks> {
-    self.ap().action("read").apply({
-      let user_alias = Alias::new("u");
-      let blocked_by_alias = Alias::new("b");
+  fn default_query_with(query: Select<UserBlocks>) -> Select<UserBlocks> {
+    let user_alias = Alias::new("u");
+    let blocked_by_alias = Alias::new("b");
 
-      query
-        .select_only()
-        .expr(Expr::col((UserBlocks, Asterisk)))
-        .join_as(JoinType::LeftJoin, entity::user_blocks::Relation::User.def(), user_alias.clone())
-        .join_as(
-          JoinType::LeftJoin,
-          entity::user_blocks::Relation::BlockedByUser.def(),
-          blocked_by_alias.clone(),
-        )
-    })
+    query
+      .select_only()
+      .expr(Expr::col((UserBlocks, Asterisk)))
+      .join_as(JoinType::LeftJoin, entity::user_blocks::Relation::User.def(), user_alias.clone())
+      .join_as(
+        JoinType::LeftJoin,
+        entity::user_blocks::Relation::BlockedByUser.def(),
+        blocked_by_alias.clone(),
+      )
   }
 
   fn ap(&self) -> ApCondition {

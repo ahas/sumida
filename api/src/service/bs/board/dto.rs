@@ -1,4 +1,3 @@
-use crate::util::crud::wrap_ilike;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -9,6 +8,8 @@ use sea_orm::{QueryTrait, prelude::*};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::util::db::wrap_ilike;
 
 #[derive(Deserialize)]
 pub struct BoardFilter {

@@ -4,7 +4,7 @@ use tower_sessions::{cookie::SameSite, SessionManagerLayer, SessionStore};
 pub async fn new<Store: SessionStore>(
   store: Store,
 ) -> Result<SessionManagerLayer<Store>, anyhow::Error> {
-  let settings = &settings::get().session;
+  let settings = &settings::get().session.cookie;
   let name = settings.name.clone().unwrap_or(String::from("sid"));
   let secure = settings.secure.unwrap_or(true);
   let domain = settings.domain.clone();

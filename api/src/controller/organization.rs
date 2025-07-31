@@ -2,11 +2,12 @@ use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
 use crate::service::prelude::*;
-use crate::util::crud::{List, Pagination};
+use crate::util::pagination::{List, Pagination};
 use crate::{service_ap, user_guard};
 
 use super::ApiController;
 
+#[derive(Clone, Debug, Default)]
 pub struct OrganizationController<S> {
   _state: std::marker::PhantomData<S>,
 }
@@ -76,15 +77,15 @@ where
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(organization, read));
+      .route_layer(service_ap!("organization", read));
     let route_create =
-      Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!(organization, create));
+      Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!("organization", create));
     let route_update = Router::new()
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(organization, update));
+      .route_layer(service_ap!("organization", update));
     let route_delete = Router::new()
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(organization, delete));
+      .route_layer(service_ap!("organization", delete));
 
     Router::new()
       .merge(route_read)

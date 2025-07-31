@@ -1,6 +1,6 @@
 pub mod dto;
 
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 use infra::db;
 use infra::session::UserSession;
 use entity::prelude::*;

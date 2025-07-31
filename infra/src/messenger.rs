@@ -1,10 +1,10 @@
 use axum::extract::FromRequestParts;
+use error::SumidaError;
+use socketioxide::BroadcastError;
 use socketioxide::extract::State;
 use socketioxide::layer::SocketIoLayer;
-use socketioxide::BroadcastError;
-use socketioxide::{extract::SocketRef, SocketIo};
+use socketioxide::{SocketIo, extract::SocketRef};
 use socketioxide_core::adapter::{Room, RoomParam};
-use error::SumidaError;
 
 use crate::session::UserSession;
 
@@ -49,13 +49,15 @@ impl SumidaMessenger {
   }
 
   #[inline]
-  pub fn org(&self, org_ids: impl RoomParam) -> Self {
-    self.clone().within(org_ids.into_room_iter().map(|x| format!("org:{x}")).collect::<Vec<String>>())
+  pub fn org(&self, org_ids: impl IntoIterator<Item = i32>) -> Self {
+    let org_rooms = org_ids.into_iter().map(|x| format!("org:{x}")).collect::<Vec<_>>();
+    self.clone().within(org_rooms)
   }
 
   #[inline]
-  pub fn user(&self, user_ids: impl RoomParam) -> Self {
-    self.clone().within(user_ids.into_room_iter().map(|x| format!("user:{x}")).collect::<Vec<String>>())
+  pub fn user(&self, user_ids: impl IntoIterator<Item = i32>) -> Self {
+    let user_rooms = user_ids.into_iter().map(|x| format!("user:{x}")).collect::<Vec<_>>();
+    self.clone().within(user_rooms)
   }
 
   #[inline]

@@ -11,7 +11,7 @@ use sea_orm::{EntityTrait, TransactionTrait};
 
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
@@ -69,21 +69,19 @@ impl UserLogService {
 }
 
 impl ApiService<ApCondition, UserLogs> for UserLogService {
-  fn select(&self, query: Select<UserLogs>) -> Select<UserLogs> {
-    self.ap().action("read").apply({
-      let user_alias = Alias::new("user");
-      let col_user_id = Expr::col((user_alias.clone(), "id"));
-      let col_username = Expr::col((user_alias.clone(), "username"));
-      let col_full_name = Expr::col((user_alias.clone(), "full_name"));
+  fn default_query_with(query: Select<UserLogs>) -> Select<UserLogs> {
+    let user_alias = Alias::new("user");
+    let col_user_id = Expr::col((user_alias.clone(), "id"));
+    let col_username = Expr::col((user_alias.clone(), "username"));
+    let col_full_name = Expr::col((user_alias.clone(), "full_name"));
 
-      query
-        .select_only()
-        .expr(Expr::col((entity::user_logs::Entity, Asterisk)))
-        .expr_as(col_user_id, "user_id")
-        .expr_as(col_username, "user_username")
-        .expr_as(col_full_name, "user_full_name")
-        .join_as(JoinType::LeftJoin, entity::user_logs::Relation::User.def(), user_alias.clone())
-    })
+    query
+      .select_only()
+      .expr(Expr::col((entity::user_logs::Entity, Asterisk)))
+      .expr_as(col_user_id, "user_id")
+      .expr_as(col_username, "user_username")
+      .expr_as(col_full_name, "user_full_name")
+      .join_as(JoinType::LeftJoin, entity::user_logs::Relation::User.def(), user_alias.clone())
   }
 
   fn ap(&self) -> ApCondition {

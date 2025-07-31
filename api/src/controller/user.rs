@@ -7,11 +7,12 @@ use axum::{
 use axum_extra::extract::Query;
 
 use crate::service::prelude::*;
-use crate::util::crud::{List, Pagination};
+use crate::util::pagination::{List, Pagination};
 use crate::{service_ap, user_guard};
 
 use super::ApiController;
 
+#[derive(Clone, Debug, Default)]
 pub struct UserController<S> {
   _state: std::marker::PhantomData<S>,
 }
@@ -118,17 +119,17 @@ where
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{user_id}", routing::get(Self::get))
-      .route_layer(service_ap!(user, read));
+      .route_layer(service_ap!("user", read));
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(user, create));
+      .route_layer(service_ap!("user", create));
     let route_update = Router::new()
       .route("/{user_id}", routing::patch(Self::update))
       .route("/{user_id}/invite", routing::post(Self::invite))
-      .route_layer(service_ap!(user, update));
+      .route_layer(service_ap!("user", update));
     let route_delete = Router::new()
       .route("/{user_id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(user, delete));
+      .route_layer(service_ap!("user", delete));
 
     Router::new()
       .merge(route_read)

@@ -10,7 +10,7 @@ use crate::settings;
 static CONN: OnceCell<DatabaseConnection> = OnceCell::const_new();
 
 fn parse_to_duration(value: Option<&String>) -> Option<std::time::Duration> {
-  value.map(|x| humantime::parse_duration(&x).ok()).flatten()
+  value.and_then(|x| humantime::parse_duration(x).ok())
 }
 
 fn get_pg_pool_options() -> (String, PoolOptions<Postgres>) {

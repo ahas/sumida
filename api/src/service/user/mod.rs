@@ -21,7 +21,7 @@ use sea_orm_crud::Optional;
 use crate::service::ApiService;
 use crate::service::auth::session::AuthSessionService;
 use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::crud::Pagination;
+use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
@@ -244,14 +244,14 @@ impl UserService {
 
   pub async fn impersonate(&mut self, user_id: i32) -> Result<(), SumidaError> {
     let db = db::get_connection();
-    let settings = settings::get();
+    let settings = &settings::get().session.cookie;
     let Some(user) = Users::find_by_id(user_id).one(db).await? else {
       return Err(SumidaError::InvalidAccount);
     };
 
     self
       .session
-      .authorize(user_id, &user.username, Some(settings.session.expiry.default_expiry()?))
+      .authorize(user_id, &user.username, Some(settings.expiry.default_expiry()?))
       .await?;
 
     Ok(())
@@ -268,22 +268,20 @@ impl UserService {
 }
 
 impl ApiService<ApCondition, Users> for UserService {
-  fn select(&self, query: Select<Users>) -> Select<Users> {
-    self.ap().action("read").apply({
-      let org_alias = Alias::new("org");
-      let role_alias = Alias::new("role");
+  fn default_query_with(query: Select<Users>) -> Select<Users> {
+    let org_alias = Alias::new("org");
+    let role_alias = Alias::new("role");
 
-      query
-        .select_only()
-        .expr(Expr::col((entity::users::Entity, Asterisk)))
-        .expr_as(UserBlockService::exists_expr(), "is_blocked")
-        .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
-        .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
-        .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")
-        .expr_as(Expr::col((role_alias.clone(), "name")), "role_name")
-        .join_as(JoinType::LeftJoin, entity::users::Relation::Organization.def(), org_alias.clone())
-        .join_as(JoinType::LeftJoin, entity::users::Relation::Role.def(), role_alias.clone())
-    })
+    query
+      .select_only()
+      .expr(Expr::col((entity::users::Entity, Asterisk)))
+      .expr_as(UserBlockService::exists_expr(), "is_blocked")
+      .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
+      .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
+      .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")
+      .expr_as(Expr::col((role_alias.clone(), "name")), "role_name")
+      .join_as(JoinType::LeftJoin, entity::users::Relation::Organization.def(), org_alias.clone())
+      .join_as(JoinType::LeftJoin, entity::users::Relation::Role.def(), role_alias.clone())
   }
 
   fn ap(&self) -> ApCondition {

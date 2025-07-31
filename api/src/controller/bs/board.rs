@@ -1,6 +1,6 @@
 use crate::controller::ApiController;
 use crate::service::bs::prelude::*;
-use crate::util::crud::{List, Pagination};
+use crate::util::pagination::{List, Pagination};
 use crate::{service_ap, user_guard};
 use axum::{
   Json, Router,
@@ -11,6 +11,7 @@ use error::SumidaError;
 use infra::session::UserSession;
 use std::marker::PhantomData;
 
+#[derive(Clone, Debug, Default)]
 pub struct BoardController<S>(PhantomData<S>);
 
 impl<S> BoardController<S> {
@@ -76,19 +77,19 @@ where
     let read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(board, read));
+      .route_layer(service_ap!("board", read));
 
     let create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(board, create));
+      .route_layer(service_ap!("board", create));
 
     let update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(board, update));
+      .route_layer(service_ap!("board", update));
 
     let delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(board, delete));
+      .route_layer(service_ap!("board", delete));
 
     Router::new() //
       .merge(read)

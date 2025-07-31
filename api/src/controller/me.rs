@@ -9,6 +9,7 @@ use crate::service::prelude::*;
 use crate::util::ap::{self, ApForUser};
 use crate::{controller::ApiController, user_guard};
 
+#[derive(Clone, Debug, Default)]
 pub struct MeController<S> {
   _state: std::marker::PhantomData<S>,
 }

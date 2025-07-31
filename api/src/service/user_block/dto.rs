@@ -12,7 +12,7 @@ use serde_json::json;
 
 use entity::user_blocks::*;
 
-use crate::util::crud::wrap_ilike;
+use crate::util::db::wrap_ilike;
 
 #[derive(Deserialize)]
 pub struct UserBlockFilter {
@@ -32,8 +32,8 @@ impl UserBlockFilter {
       .apply_if(self.search.as_ref(), |q, v| {
         q.filter(
           Condition::any() //
-            .add(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::Username)), &v))
-            .add(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::FullName)), &v)),
+            .add(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::Username)), v))
+            .add(wrap_ilike(Expr::col((user_alias.clone(), entity::users::Column::FullName)), v)),
         )
       })
       .apply_if(self.username.as_ref(), |q, v| {

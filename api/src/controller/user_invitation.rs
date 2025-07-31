@@ -6,11 +6,12 @@ use axum::{
 use uuid::Uuid;
 
 use crate::user_guard;
-use crate::util::crud::{List, Pagination};
+use crate::util::pagination::{List, Pagination};
 use crate::{service::prelude::*, service_ap};
 
 use super::ApiController;
 
+#[derive(Clone, Debug, Default)]
 pub struct UserInvitationController<S> {
   _state: std::marker::PhantomData<S>,
 }
@@ -88,16 +89,16 @@ where
     let route_read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{uuid}", routing::get(Self::get))
-      .route_layer(service_ap!(user_invitation, read));
+      .route_layer(service_ap!("user_invitation", read));
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(user_invitation, create));
+      .route_layer(service_ap!("user_invitation", create));
     let route_update = Router::new() //
       .route("/{uuid}", routing::patch(Self::update))
-      .route_layer(service_ap!(user_invitation, update));
+      .route_layer(service_ap!("user_invitation", update));
     let route_delete = Router::new() //
       .route("/{uuid}", routing::delete(Self::delete))
-      .route_layer(service_ap!(user_invitation, delete));
+      .route_layer(service_ap!("user_invitation", delete));
 
     Router::new()
       .merge(route_read)

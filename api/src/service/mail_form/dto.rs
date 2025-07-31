@@ -8,7 +8,7 @@ use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::crud::wrap_ilike_col;
+use crate::util::db::wrap_ilike_col;
 
 #[derive(Deserialize)]
 pub struct MailFormFilter {
