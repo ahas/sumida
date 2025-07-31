@@ -1,7 +1,8 @@
 use infra::session::UserSession;
 
-use axum::{Json, Router, extract::State, http::StatusCode, routing};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing};
 use error::SumidaError;
+use serde_json::json;
 
 use crate::{controller::ApiController, service::prelude::*, user_guard};
 
@@ -21,14 +22,14 @@ impl<S> AuthSessionController<S> {
     session: UserSession,
     State(_state): State<S>,
     Json(body): Json<LoginSession>,
-  ) -> Result<StatusCode, SumidaError> {
+  ) -> Result<impl IntoResponse, SumidaError> {
     AuthSessionService::new(session).login(body).await?;
-    Ok(StatusCode::OK)
+    Ok((StatusCode::OK, Json(json!({}))))
   }
 
-  async fn logout(session: UserSession, State(_state): State<S>) -> Result<StatusCode, SumidaError> {
+  async fn logout(session: UserSession, State(_state): State<S>) -> Result<impl IntoResponse, SumidaError> {
     AuthSessionService::new(session).logout().await?;
-    Ok(StatusCode::OK)
+    Ok((StatusCode::OK, Json(json!({}))))
   }
 }
 

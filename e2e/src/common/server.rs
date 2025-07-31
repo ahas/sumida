@@ -1,5 +1,5 @@
-use axum::{Extension, Router};
-use reqwest::{Method, RequestBuilder, Url};
+use axum::{Extension, Router, routing};
+use reqwest::{Method, RequestBuilder, StatusCode, Url};
 use std::{net::SocketAddr, time::Duration};
 use tokio::sync::{OnceCell, oneshot};
 
@@ -33,13 +33,16 @@ impl TestServer {
     infra::db::establish_connection().await;
     TestDb::setup().await?;
 
-    // infra::tracing::subscribe();
-    // infra::aws::load_sdk_config().await;
+    let _ = tracing_subscriber::fmt()
+      .with_test_writer()
+      .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+      .try_init();
 
     let state = TestServerState;
 
     let (messenger_layer, messenger) = infra::messenger::new_layer();
     let app = Router::new()
+      .route("/health", routing::get(|| async { StatusCode::NO_CONTENT }))
       .merge(
         api::Sumida::new() //
           .set_state(&state)
@@ -72,14 +75,34 @@ impl TestServer {
       }
     });
 
-    let client =
-      reqwest::Client::builder().cookie_store(true).redirect(reqwest::redirect::Policy::none()).build()?;
+    let client = reqwest::Client::builder() //
+      .cookie_store(true)
+      .redirect(reqwest::redirect::Policy::none())
+      .timeout(Duration::from_secs(10))
+      .connect_timeout(Duration::from_secs(3))
+      .build()?;
 
-    Ok(Self {
+    let this = Self {
       addr,
       client,
       _shutdown: shutdown_tx,
-    })
+    };
+    this.wait_ready().await?;
+
+    Ok(this)
+  }
+
+  pub async fn wait_ready(&self) -> anyhow::Result<()> {
+    let url = self.url("/health");
+
+    for _ in 0..50 {
+      match self.client.get(url.clone()).send().await {
+        Ok(res) if res.status().is_success() => return Ok(()),
+        _ => tokio::time::sleep(Duration::from_millis(100)).await,
+      }
+    }
+
+    anyhow::bail!("server not ready after retries");
   }
 
   // Basic HTTP method helpers
@@ -90,7 +113,6 @@ impl TestServer {
 
   #[inline]
   pub fn url(&self, path: &str) -> Url {
-    println!("mother fucking {}", self.base_url().join(path.trim_start_matches('/')).unwrap());
     self.base_url().join(path.trim_start_matches('/')).unwrap()
   }
 

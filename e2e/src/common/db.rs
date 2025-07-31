@@ -42,9 +42,9 @@ impl TestDb {
         .await
         .context("Failed to create test database")?;
 
-      println!("✅ Created database `{db_name}`");
+      tracing::info!("✅ Created database `{db_name}`");
     } else {
-      println!("ℹ️ Database `{db_name}` already exists");
+      tracing::info!("ℹ️ Database `{db_name}` already exists");
     }
 
     Ok(db_name.to_string())
@@ -59,7 +59,7 @@ impl TestDb {
       .await
       .expect("Migration fresh command failed");
 
-    println!("✅ Applied fresh migrations");
+    tracing::info!("✅ Applied fresh migrations");
 
     Ok(())
   }
