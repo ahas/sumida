@@ -4,7 +4,7 @@ use entity::prelude::*;
 use reqwest::Response;
 use sea_orm::{ConnectionTrait, EntityTrait, Set};
 
-use crate::common::server::TestServer;
+use crate::common::prelude::*;
 
 pub struct TestOrg {
   pub model: entity::organizations::Model,
@@ -81,9 +81,9 @@ impl TestUser {
     })
   }
 
-  pub async fn login(&self, server: &TestServer) -> Response {
+  pub async fn login(&self, client: &TestClient<'_>) -> Response {
     let path = "/auth/sessions";
-    server
+    client
       .post(path)
       .json(&LoginSession {
         username: self.model.username.clone(),

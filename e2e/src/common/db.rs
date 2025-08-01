@@ -1,12 +1,19 @@
 use anyhow::Context;
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+use tokio::sync::OnceCell;
 
 #[allow(dead_code)]
 pub struct TestDb {
   name: String,
 }
 
+static TEST_DB: OnceCell<TestDb> = OnceCell::const_new();
+
 impl TestDb {
+  pub async fn get() -> &'static TestDb {
+    TEST_DB.get_or_init(|| async { TestDb::setup().await.unwrap() }).await
+  }
+
   pub async fn setup() -> anyhow::Result<Self> {
     let db_name = Self::find_or_create().await?;
     Self::run_migration_fresh().await?;
@@ -14,7 +21,7 @@ impl TestDb {
     Ok(Self { name: db_name })
   }
 
-  pub async fn find_or_create() -> anyhow::Result<String> {
+  async fn find_or_create() -> anyhow::Result<String> {
     let settings = infra::settings::get();
     let admin_url = std::env::var("DATABASE_ADMIN_URL").context("Missing env: DATABASE_ADMIN_URL")?;
     let test_url = settings.database.url.clone();
