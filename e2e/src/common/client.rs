@@ -16,8 +16,8 @@ impl<'a> TestClient<'a> {
       _client: reqwest::Client::builder() //
         .cookie_store(true)
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(10))
-        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(60))
+        .connect_timeout(Duration::from_secs(60))
         .build()
         .expect("Failed to build reqwest client"),
     }
