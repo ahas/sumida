@@ -1,7 +1,7 @@
 use api::service::prelude::*;
 use e2e::common::prelude::*;
+use e2e::reqwest::StatusCode;
 use entity::prelude::*;
-use reqwest::StatusCode;
 use sea_orm::{EntityTrait, Set};
 
 #[tokio::test]
