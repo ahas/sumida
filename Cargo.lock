@@ -170,6 +170,7 @@ dependencies = [
  "base64 0.22.1",
  "cfg-if",
  "chrono",
+ "e2e",
  "entity",
  "error",
  "humantime",

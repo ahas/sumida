@@ -19,6 +19,9 @@ storage-local = []
 full-local = ["image", "jwt-secret-store-static", "storage-local"]
 full-aws = ["aws-s3", "image", "jwt-secret-store-aws-ssm", "storage-aws-s3"]
 
+[dev-dependencies]
+e2e = { path = "../e2e" }
+
 [dependencies]
 infra = { path = "../infra" }
 entity = { path = "../entity" }
