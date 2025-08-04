@@ -7,7 +7,21 @@ use tokio::sync::OnceCell;
 
 use crate::settings;
 
-static CONN: OnceCell<DatabaseConnection> = OnceCell::const_new();
+static DB: OnceCell<DatabaseConnection> = OnceCell::const_new();
+
+pub async fn establish_connection() -> &'static DatabaseConnection {
+  DB.get_or_init(|| async { connect().await }).await
+}
+
+pub fn get_connection() -> &'static DatabaseConnection {
+  DB.get().unwrap()
+}
+
+pub async fn connect() -> DatabaseConnection {
+  let (url, pool_opts) = get_pg_pool_options();
+  let pg_pool: Pool<Postgres> = pool_opts.connect(&url).await.expect("Failed to connect Postgres pool");
+  SqlxPostgresConnector::from_sqlx_postgres_pool(pg_pool)
+}
 
 fn parse_to_duration(value: Option<&String>) -> Option<std::time::Duration> {
   value.and_then(|x| humantime::parse_duration(x).ok())
@@ -21,10 +35,7 @@ fn get_pg_pool_options() -> (String, PoolOptions<Postgres>) {
   let acquire_slow_threshold = parse_to_duration(config.acquire_slow_threshold.as_ref());
   let max_lifetime = parse_to_duration(config.max_lifetime.as_ref());
 
-  // Connection Options
   let mut conn_opts = ConnectOptions::new(&config.url);
-
-  tracing::info!("database connection established");
 
   if let Some(v) = config.max_connections {
     conn_opts.max_connections(v);
@@ -64,18 +75,4 @@ fn get_pg_pool_options() -> (String, PoolOptions<Postgres>) {
   };
 
   (config.url.clone(), pool_opts)
-}
-
-pub async fn establish_connection() {
-  let _conn = CONN
-    .get_or_init(|| async {
-      let (url, pool_opts) = get_pg_pool_options();
-      let pg_pool: Pool<Postgres> = pool_opts.connect(&url).await.expect("Failed to connect Postgres pool");
-      SqlxPostgresConnector::from_sqlx_postgres_pool(pg_pool)
-    })
-    .await;
-}
-
-pub fn get_connection() -> &'static DatabaseConnection {
-  CONN.get().unwrap()
 }

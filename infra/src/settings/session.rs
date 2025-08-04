@@ -19,7 +19,8 @@ pub struct SessionSettings {
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct SessionRedisSettings {
-  pub url: String,
+  pub url: Option<String>,
+  pub size: Option<usize>,
 }
 
 #[cfg(feature = "session-store-aws-dynamodb")]

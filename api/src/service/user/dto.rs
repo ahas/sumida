@@ -2,7 +2,6 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::users::*;
-use infra::settings::web_push::WEB_PUSH_PRIVATE_KEY_PEM;
 use sea_orm::Condition;
 use sea_orm::FromQueryResult;
 use sea_orm::JoinType;
@@ -240,43 +239,4 @@ pub struct UserActivation {
   pub user_id: i32,
   pub password: String,
   pub uuid: Uuid,
-}
-
-#[derive(Debug, Serialize)]
-pub struct VapidClaims {
-  pub aud: String,
-  pub exp: usize,
-  pub sub: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GetVapid {
-  pub token: String,
-}
-
-impl GetVapid {
-  pub async fn new(audience: &str, expiration: &str, subject: &str) -> Self {
-    let expiration = chrono::Utc::now()
-      + humantime::parse_duration(expiration).unwrap_or_else(|_| std::time::Duration::from_secs(0));
-    let claims = VapidClaims {
-      aud: audience.to_string(),
-      exp: expiration.timestamp() as usize,
-      sub: subject.to_string(),
-    };
-    let header = jsonwebtoken::Header {
-      alg: jsonwebtoken::Algorithm::ES256,
-      ..Default::default()
-    };
-    let token =
-      jsonwebtoken::encode(&header, &claims, &WEB_PUSH_PRIVATE_KEY_PEM).expect("jwt encoding failed");
-
-    GetVapid { token }
-  }
-}
-
-impl IntoResponse for GetVapid {
-  fn into_response(self) -> axum::response::Response {
-    Json(self).into_response()
-  }
 }

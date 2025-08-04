@@ -105,10 +105,6 @@ impl<S> UserController<S> {
     UserService::new(session).impersonate(user_id).await?;
     Ok(StatusCode::ACCEPTED)
   }
-
-  async fn get_vapid(session: UserSession, State(_state): State<S>) -> Result<GetVapid, SumidaError> {
-    UserService::new(session).get_vapid().await
-  }
 }
 
 impl<S> ApiController<S> for UserController<S>
@@ -131,7 +127,7 @@ where
       .route("/{user_id}", routing::delete(Self::delete))
       .route_layer(service_ap!("user", delete));
 
-    Router::new()
+    let router = Router::new()
       .merge(route_read)
       .merge(route_create)
       .merge(route_update)
@@ -139,7 +135,8 @@ where
       .route_layer(user_guard!(state))
       .route("/change-password", routing::post(Self::change_password))
       .route("/activate", routing::post(Self::activate))
-      .route("/{user_id}/impersonate", routing::post(Self::impersonate))
-      .route("/vapid", routing::get(Self::get_vapid))
+      .route("/{user_id}/impersonate", routing::post(Self::impersonate));
+
+    router
   }
 }

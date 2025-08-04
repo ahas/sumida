@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[serde(default)]
 #[allow(dead_code)]
 pub struct ServerSettings {
   pub host: String,

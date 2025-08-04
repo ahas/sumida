@@ -1,23 +1,31 @@
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 use reqwest::{Method, RequestBuilder, Url};
+use tokio::sync::OnceCell;
 
-use crate::common::server::TestServer;
+static CLIENT: OnceCell<TestClient> = OnceCell::const_new();
 
-pub struct TestClient<'a> {
-  _server: &'a TestServer,
+pub async fn use_client(addr: SocketAddr) -> &'static TestClient {
+  CLIENT.get_or_init(|| async { TestClient::new(addr) }).await
+}
+
+pub struct TestClient {
+  base_url: SocketAddr,
   _client: reqwest::Client,
 }
 
-impl<'a> TestClient<'a> {
-  pub fn new(server: &'a TestServer) -> Self {
+impl TestClient {
+  pub fn new(base_url: SocketAddr) -> Self {
     Self {
-      _server: server,
+      base_url,
       _client: reqwest::Client::builder() //
-        .cookie_store(true)
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(30))
+        .pool_idle_timeout(Duration::from_secs(30))
+        .pool_max_idle_per_host(30)
+        .tcp_keepalive(Duration::from_secs(60))
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(60))
-        .connect_timeout(Duration::from_secs(60))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
         .build()
         .expect("Failed to build reqwest client"),
     }
@@ -26,7 +34,7 @@ impl<'a> TestClient<'a> {
   // Basic HTTP method helpers
   #[inline]
   pub fn base_url(&self) -> Url {
-    Url::parse(&format!("http://{}/", self._server.addr)).unwrap()
+    Url::parse(&format!("http://{}/", self.base_url)).unwrap()
   }
 
   #[inline]

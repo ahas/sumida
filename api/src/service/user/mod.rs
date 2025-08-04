@@ -249,21 +249,9 @@ impl UserService {
       return Err(SumidaError::InvalidAccount);
     };
 
-    self
-      .session
-      .authorize(user_id, &user.username, Some(settings.expiry.default_expiry()?))
-      .await?;
+    self.session.authorize(user_id, &user.username, Some(settings.expiry.default_expiry()?)).await?;
 
     Ok(())
-  }
-
-  pub async fn get_vapid(&self) -> Result<GetVapid, SumidaError> {
-    let settings = &infra::settings::get().web_push;
-    let audience = &settings.audience;
-    let exp = &settings.expiration;
-    let sub = &settings.subject;
-
-    Ok(GetVapid::new(audience, exp, sub).await)
   }
 }
 

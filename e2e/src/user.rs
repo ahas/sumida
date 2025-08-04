@@ -4,7 +4,7 @@ use entity::prelude::*;
 use reqwest::Response;
 use sea_orm::{ConnectionTrait, EntityTrait, Set};
 
-use crate::common::prelude::*;
+use crate::prelude::*;
 
 pub struct TestOrg {
   pub model: entity::organizations::Model,
@@ -56,7 +56,8 @@ impl TestUser {
   pub async fn create<C: ConnectionTrait>(db: &C) -> anyhow::Result<Self> {
     let org = TestOrg::create(db).await?;
     let role = TestRole::create(db).await?;
-    let password = generate_url_safe_string(8).unwrap();
+    // let password = generate_url_safe_string(8).unwrap();
+    let password = String::from("1234");
     let hashed_password = UserService::hash_password(password.clone()).expect("Failed to hash password");
 
     let id = Users::insert(entity::users::ActiveModel {
@@ -81,7 +82,7 @@ impl TestUser {
     })
   }
 
-  pub async fn login(&self, client: &TestClient<'_>) -> Response {
+  pub async fn login(&self, client: &TestClient) -> Response {
     let path = "/auth/sessions";
     client
       .post(path)

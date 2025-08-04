@@ -58,7 +58,7 @@ impl TestDb {
   }
 
   async fn run_migration_fresh() -> anyhow::Result<()> {
-    use crate::common::migration::Migrator;
+    use crate::migration::Migrator;
     use sea_orm_cli::MigrateSubcommands;
     use sea_orm_migration::prelude::*;
 
