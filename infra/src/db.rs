@@ -72,7 +72,7 @@ pub fn log_pool_status(conn: &DatabaseConnection) {
   };
 
   if let Some(pg_conn) = pool {
-    tracing::info!(
+    tracing::debug!(
       "PG pool status: size = {}, idle = {}, connections_in_use = {}",
       pg_conn.size(),
       pg_conn.num_idle(),

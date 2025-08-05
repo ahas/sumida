@@ -30,6 +30,7 @@ impl AuthSessionService {
   }
 
   pub async fn login(&mut self, data: LoginSession) -> Result<(), SumidaError> {
+    tracing::debug!("Hi there !");
     let db = db::get_connection();
     db::log_pool_status(db);
     let txn = db.begin().await?;
