@@ -30,7 +30,9 @@ impl AuthSessionService {
   }
 
   pub async fn login(&mut self, data: LoginSession) -> Result<(), SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let db = db::get_connection();
+    db::log_pool_status(db);
+    let txn = db.begin().await?;
 
     // 1) Return error if the user does not exist
     let Some(user) = Users::find()

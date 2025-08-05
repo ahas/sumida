@@ -1,4 +1,4 @@
-use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
+use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbBackend, DbErr};
 use std::str::FromStr;
 use tokio::sync::OnceCell;
 
@@ -60,4 +60,23 @@ fn get_connect_options() -> ConnectOptions {
   }
 
   conn_opts
+}
+
+pub fn log_pool_status(conn: &DatabaseConnection) {
+  let pool = match conn.get_database_backend() {
+    DbBackend::Postgres => {
+      let pg_conn = conn.get_postgres_connection_pool();
+      Some(pg_conn)
+    }
+    _ => None,
+  };
+
+  if let Some(pg_conn) = pool {
+    tracing::info!(
+      "PG pool status: size = {}, idle = {}, connections_in_use = {}",
+      pg_conn.size(),
+      pg_conn.num_idle(),
+      (pg_conn.size() as usize) - pg_conn.num_idle(),
+    );
+  }
 }

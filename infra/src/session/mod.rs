@@ -384,6 +384,7 @@ impl UserSession {
         .await?
         .ok_or(SumidaError::InvalidAccount)?;
       profile.update(user, &txn).await?;
+
       txn.commit().await?;
     } else {
       self.logout().await?;
