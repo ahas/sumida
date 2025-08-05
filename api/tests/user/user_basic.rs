@@ -3,9 +3,7 @@ use e2e::prelude::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn it_should_be_logged_in() {
-  let Mock {
-    ref db, ref client, ..
-  } = Mock::new().await;
+  let Mock { db, ref client, .. } = Mock::new().await;
 
   let user = TestUser::create(db).await.expect("Failed to create a test user");
   let resp = user.login(client).await;
@@ -14,9 +12,7 @@ async fn it_should_be_logged_in() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn it_returns_profile_of_authenticated_user() {
-  let Mock {
-    ref db, ref client, ..
-  } = Mock::new().await;
+  let Mock { db, ref client, .. } = Mock::new().await;
   let user = TestUser::create(db).await.expect("Failed to create a test user");
 
   // 1. Login to the test user
