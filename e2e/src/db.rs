@@ -62,9 +62,14 @@ impl TestDb {
     use sea_orm_cli::MigrateSubcommands;
     use sea_orm_migration::prelude::*;
 
-    cli::run_migrate(Migrator, infra::db::get_connection(), Some(MigrateSubcommands::Fresh), false)
-      .await
-      .expect("Migration fresh command failed");
+    tokio::spawn(async {
+      let db = infra::db::connect().await;
+      cli::run_migrate(Migrator, &db, Some(MigrateSubcommands::Fresh), false)
+        .await
+        .expect("Migration fresh command failed");
+      db.close().await.ok();
+    })
+    .await?;
 
     tracing::info!("✅ Applied fresh migrations");
 

@@ -71,7 +71,7 @@ sea-orm-migration = { version = "1.1.14", features = [
 ] }
 tinytemplate = "1.2.1"
 time = "0.3.41"
-tokio = "1.47.0"
+tokio = { version = "1.47.0", features = ["full"] }
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["full"] }
 tower-sessions = "0.14.0"

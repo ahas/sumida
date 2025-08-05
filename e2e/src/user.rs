@@ -56,8 +56,7 @@ impl TestUser {
   pub async fn create<C: ConnectionTrait>(db: &C) -> anyhow::Result<Self> {
     let org = TestOrg::create(db).await?;
     let role = TestRole::create(db).await?;
-    // let password = generate_url_safe_string(8).unwrap();
-    let password = String::from("1234");
+    let password = generate_url_safe_string(8).unwrap();
     let hashed_password = UserService::hash_password(password.clone()).expect("Failed to hash password");
 
     let id = Users::insert(entity::users::ActiveModel {

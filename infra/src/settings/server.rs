@@ -14,7 +14,7 @@ pub struct ServerSettings {
 impl Default for ServerSettings {
   fn default() -> Self {
     Self {
-      host: "0.0.0.0".to_string(),
+      host: "0.0.0.0:0".to_string(),
       stage: "dev".to_string(),
       logging: Some("info".to_string()),
       cors: None,

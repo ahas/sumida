@@ -3,14 +3,12 @@ pub mod user;
 pub use e2e::prelude::*;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn health_should_return_ok() -> anyhow::Result<()> {
-  let Mock { client, .. } = Mock::new().await;
+async fn health_should_return_ok() {
+  let Mock { ref client, .. } = Mock::new().await;
 
-  let resp = client.get("/health").send().await?;
+  let resp = client.get("/health").send().await.expect("Failed to fetch GET from /health");
   assert!(resp.status().is_success());
 
-  let body = resp.text().await?;
+  let body = resp.text().await.expect("Failed to read text from response");
   assert_eq!(body, "ok");
-
-  Ok(())
 }

@@ -19,10 +19,11 @@ impl TestClient {
     Self {
       base_url,
       _client: reqwest::Client::builder() //
-        .connect_timeout(Duration::from_secs(30))
-        .timeout(Duration::from_secs(30))
-        .pool_idle_timeout(Duration::from_secs(30))
-        .pool_max_idle_per_host(30)
+        .cookie_store(true)
+        .connect_timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(60))
+        .pool_idle_timeout(Duration::from_secs(60))
+        .pool_max_idle_per_host(60)
         .tcp_keepalive(Duration::from_secs(60))
         .redirect(reqwest::redirect::Policy::none())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use entity::{
   prelude::*,
@@ -29,8 +30,7 @@ impl AuthSessionService {
   }
 
   pub async fn login(&mut self, data: LoginSession) -> Result<(), SumidaError> {
-    let db = db::get_connection();
-    let txn = db.begin().await?;
+    let txn = db::get_connection().begin().await?;
 
     // 1) Return error if the user does not exist
     let Some(user) = Users::find()

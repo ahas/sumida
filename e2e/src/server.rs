@@ -1,6 +1,11 @@
-use axum::{Extension, Router, extract::connect_info::IntoMakeServiceWithConnectInfo, routing};
+use axum::{Extension, Router, routing};
+use infra::{session::redis_store::RedisSessionStore, settings};
 use reqwest::{Client, StatusCode};
-use std::{net::SocketAddr, time::Duration};
+use std::{
+  net::SocketAddr,
+  sync::{Arc, Mutex},
+  time::Duration,
+};
 use tokio::{
   sync::{OnceCell, oneshot},
   task::JoinHandle,
@@ -17,38 +22,75 @@ pub struct TestServerState;
 
 pub struct TestServer {
   pub addr: SocketAddr,
-  // shutdown_tx: Option<oneshot::Sender<()>>,
-  // handle: Option<JoinHandle<anyhow::Result<()>>>,
+  shutdown_tx: Option<oneshot::Sender<()>>,
+  handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
+  redis_store: Arc<Mutex<RedisSessionStore>>,
 }
 
 impl TestServer {
   pub async fn spawn() -> anyhow::Result<Self> {
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await?;
+    let _ = infra::db::establish_connection().await;
+    let settings = settings::get();
+    let listener = tokio::net::TcpListener::bind(&settings.server.host).await?;
     let addr = listener.local_addr()?;
-    let app = build_app().await?;
 
-    tokio::spawn(async move {
-      axum::serve(listener, app).await.unwrap();
+    let state = TestServerState;
+    let (messenger_layer, messenger) = infra::messenger::new_layer();
+    let redis_store = Arc::new(Mutex::new(RedisSessionStore::new(&settings.session.redis).await?));
+
+    let api = Router::new()
+      .merge(
+        api::Sumida::new() //
+          .set_state(&state)
+          .router(),
+      )
+      .layer(messenger_layer)
+      .layer(api::layer::session::new(redis_store.clone().lock().unwrap().store()).await?)
+      .layer(api::layer::cors::new())
+      .layer(Extension(messenger))
+      .layer(Extension(settings))
+      .with_state(state)
+      .layer(settings.session.ip_source.clone().into_extension());
+
+    let app = Router::new()
+      .route("/health", routing::get(|| async { (StatusCode::OK, "ok") }))
+      .merge(api)
+      .into_make_service_with_connect_info::<SocketAddr>();
+
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    let handle = tokio::spawn(async move {
+      axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+          shutdown_rx.await.ok();
+        })
+        .await?;
+
+      Ok::<(), anyhow::Error>(())
     });
-
-    // let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-    // let handle = tokio::spawn(async move {
-    //   let server = axum::serve(listener, app).with_graceful_shutdown(async move {
-    //     let _ = shutdown_rx.await;
-    //   });
-    //
-    //   server.await.map_err(|err| err.into())
-    // });
 
     let server = Self {
       addr,
-      // shutdown_tx: Some(shutdown_tx),
-      // handle: Some(handle),
+      shutdown_tx: Some(shutdown_tx),
+      handle: Some(handle),
+      redis_store: redis_store.clone(),
     };
-
-    // server.wait_ready().await?;
+    server.wait_ready().await?;
 
     Ok(server)
+  }
+
+  pub async fn stop(&mut self) {
+    if let Some(tx) = self.shutdown_tx.take() {
+      let _ = tx.send(());
+    }
+
+    // if let Some(handle) = self.handle.take() {
+    //   let _ = handle.await;
+    // }
+
+    let redis_store = self.redis_store.lock().unwrap();
+    let redis_conn = redis_store.handle.lock().unwrap();
+    redis_conn.abort_handle().abort();
   }
 
   async fn wait_ready(&self) -> anyhow::Result<()> {
@@ -70,50 +112,4 @@ impl TestServer {
       }
     }
   }
-
-  // pub async fn stop(mut self) {
-  //   if let Some(tx) = self.shutdown_tx.take() {
-  //     let _ = tx.send(());
-  //   }
-  //   if let Some(handle) = self.handle.take() {
-  //     let _ = handle.await;
-  //   }
-  // }
-}
-
-// impl Drop for TestServer {
-//   fn drop(&mut self) {
-//     if let Some(tx) = self.shutdown_tx.take() {
-//       let _ = tx.send(());
-//     }
-//   }
-// }
-
-async fn build_app() -> anyhow::Result<IntoMakeServiceWithConnectInfo<Router, SocketAddr>> {
-  let settings = infra::settings::get();
-  let state = TestServerState;
-  let (messenger_layer, messenger) = infra::messenger::new_layer();
-
-  let api = Router::new()
-    .merge(
-      api::Sumida::new() //
-        .set_state(&state)
-        .router(),
-    )
-    .layer(messenger_layer)
-    .layer(
-      api::layer::session::new(infra::session::redis_store::new(&settings.session.redis).await?).await?,
-    )
-    .layer(api::layer::cors::new())
-    .layer(Extension(messenger))
-    .layer(Extension(settings))
-    .with_state(state)
-    .layer(settings.session.ip_source.clone().into_extension());
-
-  let app = Router::new()
-    .route("/health", routing::get(|| async { (StatusCode::OK, "ok") }))
-    .merge(api)
-    .into_make_service_with_connect_info::<SocketAddr>();
-
-  Ok(app)
 }
