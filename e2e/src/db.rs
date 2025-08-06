@@ -1,24 +1,32 @@
 use anyhow::Context;
-use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
-use tokio::sync::OnceCell;
+use entity::prelude::*;
+use sea_orm::{Database, DbBackend, Set, Statement, prelude::*};
 
 #[allow(dead_code)]
-pub struct TestDb {
-  name: String,
-}
-
-static TEST_DB: OnceCell<TestDb> = OnceCell::const_new();
+pub struct TestDb;
 
 impl TestDb {
-  pub async fn get() -> &'static TestDb {
-    TEST_DB.get_or_init(|| async { TestDb::setup().await.unwrap() }).await
-  }
+  pub async fn setup() -> Result<Self, anyhow::Error> {
+    let db = infra::db::connect().await;
 
-  pub async fn setup() -> anyhow::Result<Self> {
-    let db_name = Self::find_or_create().await?;
-    Self::run_migration_fresh().await?;
+    Self::find_or_create().await?;
+    Self::run_migration_fresh(&db).await?;
 
-    Ok(Self { name: db_name })
+    AccessPolicies::insert(entity::access_policies::ActiveModel {
+      namespace: Set("*".to_string()),
+      user: Set("user:admin".to_string()),
+      object: Set("*".to_string()),
+      action: Set(vec!["*".to_string()]),
+      effect: Set("allow".to_string()),
+      ..Default::default()
+    })
+    .exec(&db)
+    .await
+    .expect("Failed to insert the admin access policy");
+
+    db.close().await?;
+
+    Ok(Self)
   }
 
   async fn find_or_create() -> anyhow::Result<String> {
@@ -57,18 +65,11 @@ impl TestDb {
     Ok(db_name.to_string())
   }
 
-  async fn run_migration_fresh() -> anyhow::Result<()> {
+  async fn run_migration_fresh(db: &DatabaseConnection) -> anyhow::Result<()> {
     use crate::migration::Migrator;
-    use sea_orm_cli::MigrateSubcommands;
     use sea_orm_migration::prelude::*;
 
-    tokio::spawn(async {
-      let db = infra::db::get_connection();
-      cli::run_migrate(Migrator, &db, Some(MigrateSubcommands::Fresh), false)
-        .await
-        .expect("Migration fresh command failed");
-    })
-    .await?;
+    Migrator::fresh(db).await.expect("Migration fresh command failed");
 
     tracing::info!("✅ Applied fresh migrations");
 

@@ -9,6 +9,7 @@ pub struct DatabaseSettings {
   pub connect_timeout: Option<String>,
   pub idle_timeout: Option<String>,
   pub acquire_timeout: Option<String>,
+  pub acquire_slow_threshold: Option<String>,
   pub max_lifetime: Option<String>,
   pub logging: Option<String>,
 }

@@ -20,6 +20,7 @@ pub async fn use_server() -> &'static TestServer {
 #[derive(Clone)]
 pub struct TestServerState;
 
+#[allow(dead_code)]
 pub struct TestServer {
   pub addr: SocketAddr,
   shutdown_tx: Option<oneshot::Sender<()>>,
@@ -29,8 +30,8 @@ pub struct TestServer {
 
 impl TestServer {
   pub async fn spawn() -> anyhow::Result<Self> {
-    let _ = infra::db::establish_connection().await;
     let settings = settings::get();
+    let _ = infra::db::establish_connection().await;
     let listener = tokio::net::TcpListener::bind(&settings.server.host).await?;
     let addr = listener.local_addr()?;
 
