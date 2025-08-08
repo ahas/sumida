@@ -1,7 +1,7 @@
 use crate::controller::ApiController;
 use crate::service::bs::prelude::*;
 use crate::util::pagination::{List, Pagination};
-use crate::{service_ap, user_guard};
+use crate::{SumidaState, service_ap, user_guard};
 use axum::{
   Json, Router,
   extract::{Path, Query, State},
@@ -12,28 +12,28 @@ use infra::session::UserSession;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug, Default)]
-pub struct BoardController<S>(PhantomData<S>);
+pub struct BoardController<S: SumidaState>(PhantomData<S>);
 
-impl<S> BoardController<S> {
+impl<S: SumidaState> BoardController<S> {
   pub fn new() -> Self {
     Self(PhantomData)
   }
 
   async fn list(
     session: UserSession,
-    State(_): State<S>,
+    State(state): State<S>,
     Query(filter): Query<BoardFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardListItem>, SumidaError> {
-    Ok(BoardService::new(session).list(filter, pagination).await?.into())
+    Ok(BoardService::new(state, session).list(filter, pagination).await?.into())
   }
 
   async fn get(
     session: UserSession,
-    State(_): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetBoard, SumidaError> {
-    BoardService::new(session)
+    BoardService::new(state, session)
       .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("Board".into(), id.to_string()))
@@ -41,55 +41,55 @@ impl<S> BoardController<S> {
 
   async fn create(
     session: UserSession,
-    State(_): State<S>,
+    State(state): State<S>,
     Json(body): Json<CreateBoard>,
   ) -> Result<BoardCreated, SumidaError> {
     Ok(BoardCreated {
-      id: BoardService::new(session).create(body).await?.last_insert_id,
+      id: BoardService::new(state, session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
     session: UserSession,
-    State(_): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
     Json(body): Json<UpdateBoard>,
   ) -> Result<BoardUpdated, SumidaError> {
-    BoardService::new(session).update(id, body).await?;
+    BoardService::new(state, session).update(id, body).await?;
     Ok(BoardUpdated)
   }
 
   async fn delete(
     session: UserSession,
-    State(_): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<BoardDeleted, SumidaError> {
-    BoardService::new(session).delete(id).await?;
+    BoardService::new(state, session).delete(id).await?;
     Ok(BoardDeleted)
   }
 }
 
 impl<S> ApiController<S> for BoardController<S>
 where
-  S: Clone + Send + Sync + 'static,
+  S: SumidaState,
 {
   fn router(self, state: &S) -> Router<S> {
     let read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!("board", read));
+      .route_layer(service_ap!(state, "board", read));
 
     let create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!("board", create));
+      .route_layer(service_ap!(state, "board", create));
 
     let update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!("board", update));
+      .route_layer(service_ap!(state, "board", update));
 
     let delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!("board", delete));
+      .route_layer(service_ap!(state, "board", delete));
 
     Router::new() //
       .merge(read)

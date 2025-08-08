@@ -3,7 +3,7 @@ pub mod dto;
 use chrono::{Duration, Utc};
 use entity::prelude::*;
 use error::SumidaError;
-use infra::{db, session::UserSession, settings};
+use infra::{session::UserSession, settings};
 use rand::Rng;
 use sea_orm::{
   ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
@@ -12,17 +12,19 @@ use sea_orm::{
 
 use self::dto::*;
 
+use crate::SumidaState;
 use crate::service::mail_form::MailFormSendOptions;
 use crate::service::prelude::MailFormService;
 use crate::service::user::mail_form_context::*;
 
-pub struct UserVerificationService {
+pub struct UserVerificationService<S: SumidaState> {
+  pub state: S,
   pub session: UserSession,
 }
 
-impl UserVerificationService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
+impl<S: SumidaState> UserVerificationService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub async fn verify<KindT, CodeT, DbConnT>(
@@ -75,7 +77,7 @@ impl UserVerificationService {
       (0..6).map(|_| rng.random_range(0..10).to_string()).collect()
     };
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let user_id = data.user_id;
     let kind = data.kind.clone();
@@ -118,12 +120,12 @@ impl UserVerificationService {
         auth: opts.auth.clone(),
       });
 
-      MailFormService::send(
+      MailFormService::<S>::send(
         "verification",
         &email,
         VerificationContext { code },
         opts,
-        db::get_connection(),
+        self.state.db(),
       )
       .await?;
     }

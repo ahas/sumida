@@ -1,6 +1,8 @@
+use api::SumidaState;
 use axum::{Extension, Router, routing};
 use infra::{session::redis_store::RedisSessionStore, settings};
 use reqwest::{Client, StatusCode};
+use sea_orm::DatabaseConnection;
 use std::{
   net::SocketAddr,
   sync::{Arc, Mutex},
@@ -18,7 +20,15 @@ pub async fn use_server() -> &'static TestServer {
 }
 
 #[derive(Clone)]
-pub struct TestServerState;
+pub struct TestServerState {
+  db: DatabaseConnection,
+}
+
+impl SumidaState for TestServerState {
+  fn db(&self) -> &DatabaseConnection {
+    &self.db
+  }
+}
 
 #[allow(dead_code)]
 pub struct TestServer {
@@ -31,11 +41,11 @@ pub struct TestServer {
 impl TestServer {
   pub async fn spawn() -> anyhow::Result<Self> {
     let settings = settings::get();
-    let _ = infra::db::establish_connection().await;
+    let db = infra::db::connect().await;
     let listener = tokio::net::TcpListener::bind(&settings.server.host).await?;
     let addr = listener.local_addr()?;
 
-    let state = TestServerState;
+    let state = TestServerState { db };
     let (messenger_layer, messenger) = infra::messenger::new_layer();
     let redis_store = Arc::new(Mutex::new(RedisSessionStore::new(&settings.session.redis).await?));
 

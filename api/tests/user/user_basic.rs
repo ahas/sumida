@@ -1,27 +1,34 @@
 use api::service::prelude::*;
 use e2e::prelude::*;
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn it_should_be_logged_in() {
-  let Mock { ref db, ref client, .. } = Mock::new().await;
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
 
-  let user = TestUser::create(db).await.expect("Failed to create a test user");
-  let resp = user.login(client).await;
+  infra::db::log_pool_status(&db);
+  let user = TestUser::create(&db).await.expect("Failed to create a test user");
+  let resp = user.login(&mock.client).await;
+  drop(mock);
+  infra::db::log_pool_status(&db);
   assert!(resp.status().is_success());
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn it_returns_profile_of_authenticated_user() {
-  let Mock { ref db, ref client, .. } = Mock::new().await;
-  let user = TestUser::create(db).await.expect("Failed to create a test user");
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let user = TestUser::create(&db).await.expect("Failed to create a test user");
 
   // 1. Login to the test user
-  user.login(client).await;
+  user.login(&mock.client).await;
 
   // 2. Fetch the user
   let path = &format!("/users/{}", user.model.id);
-  let resp = client.get(path).send().await.expect(&format!("Failed to fetch from {path}"));
+  let resp = mock.client.get(path).send().await.expect(&format!("Failed to fetch from {path}"));
   assert_eq!(resp.status(), reqwest::StatusCode::OK);
+
+  drop(mock);
 
   // 3. Compare the user data with current session
   let json = resp.json::<serde_json::Value>().await.expect("Failed to parse the user item into JSON");

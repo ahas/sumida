@@ -4,18 +4,18 @@ use axum::{
   routing,
 };
 
-use crate::service::prelude::*;
 use crate::util::pagination::{List, Pagination};
+use crate::{SumidaState, service::prelude::*};
 use crate::{service_ap, user_guard};
 
 use super::ApiController;
 
 #[derive(Clone, Debug, Default)]
-pub struct UserBlockController<S> {
+pub struct UserBlockController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,
 }
 
-impl<S> UserBlockController<S> {
+impl<S: SumidaState> UserBlockController<S> {
   pub fn new() -> Self {
     Self {
       _state: std::marker::PhantomData,
@@ -24,19 +24,19 @@ impl<S> UserBlockController<S> {
 
   async fn list(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Query(filter): Query<UserBlockFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<UserBlockListItem>, SumidaError> {
-    Ok(UserBlockService::new(session).list(filter, pagination).await?.into())
+    Ok(UserBlockService::new(state, session).list(filter, pagination).await?.into())
   }
 
   async fn get(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetUserBlock, SumidaError> {
-    UserBlockService::new(session)
+    UserBlockService::new(state, session)
       .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("UserBlock".to_owned(), id.to_string()))
@@ -44,52 +44,52 @@ impl<S> UserBlockController<S> {
 
   async fn create(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Json(body): Json<CreateUserBlock>,
   ) -> Result<UserBlockCreated, SumidaError> {
     Ok(UserBlockCreated {
-      id: UserBlockService::new(session).create(body).await?.last_insert_id,
+      id: UserBlockService::new(state, session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
     Json(body): Json<UpdateUserBlock>,
   ) -> Result<UserBlockUpdated, SumidaError> {
-    UserBlockService::new(session).update(id, body).await?;
+    UserBlockService::new(state, session).update(id, body).await?;
     Ok(UserBlockUpdated)
   }
 
   async fn delete(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<UserBlockDeleted, SumidaError> {
-    UserBlockService::new(session).delete(id).await?;
+    UserBlockService::new(state, session).delete(id).await?;
     Ok(UserBlockDeleted)
   }
 }
 
 impl<S> ApiController<S> for UserBlockController<S>
 where
-  S: Clone + Send + Sync + 'static,
+  S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!("user_block", read));
+      .route_layer(service_ap!(state, "user_block", read));
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!("user_block", create));
+      .route_layer(service_ap!(state, "user_block", create));
     let route_update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!("user_block", update));
+      .route_layer(service_ap!(state, "user_block", update));
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!("user_block", delete));
+      .route_layer(service_ap!(state, "user_block", delete));
 
     Router::new()
       .merge(route_read)

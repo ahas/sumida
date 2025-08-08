@@ -2,25 +2,27 @@ pub mod dto;
 
 use entity::prelude::*;
 use error::SumidaError;
-use infra::{db, session::UserSession};
+use infra::session::UserSession;
 use sea_orm::{
   ActiveValue::*, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
   TransactionTrait, sea_query::Expr,
 };
 
+use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard, ApUser};
 use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
-pub struct RoleService {
+pub struct RoleService<S: SumidaState> {
+  state: S,
   session: UserSession,
 }
 
-impl RoleService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
+impl<S: SumidaState> RoleService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub async fn list(
@@ -30,7 +32,7 @@ impl RoleService {
   ) -> Result<(Vec<RoleListItem>, u64), SumidaError> {
     use entity::roles::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let mut query = filter.apply(self.select(Roles::find()));
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
@@ -50,7 +52,7 @@ impl RoleService {
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetRole>, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(id).action("read").try_access(&txn).await?;
 
     let Some(mut role) = Roles::find_by_id(id).into_model::<GetRole>().one(&txn).await? else {
@@ -68,7 +70,7 @@ impl RoleService {
     &self,
     data: CreateRole,
   ) -> Result<InsertResult<entity::roles::ActiveModel>, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     let user_aps = data.access_policies.clone();
     let result = Roles::insert(data.into_active_model()).exec(&txn).await?;
     ap::for_users().user(ApUser::Role(result.last_insert_id)).update(user_aps, &txn).await?;
@@ -78,7 +80,7 @@ impl RoleService {
   }
 
   pub async fn update(&self, id: i32, data: UpdateRole) -> Result<entity::roles::Model, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(id).action("update").try_access(&txn).await?;
 
     if let Some(user_aps) = data.access_policies.clone() {
@@ -95,7 +97,7 @@ impl RoleService {
   }
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(id).action("delete").try_access(&txn).await?;
 
     ap::for_users().user(ApUser::Role(id)).clear(&txn).await?;
@@ -106,7 +108,7 @@ impl RoleService {
   }
 }
 
-impl ApiService<ApCondition, Roles> for RoleService {
+impl<S: SumidaState> ApiService<ApCondition, Roles> for RoleService<S> {
   fn ap(&self) -> ApCondition {
     use entity::roles::Column;
 

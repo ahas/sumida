@@ -3,7 +3,6 @@ pub mod dto;
 use chrono::Utc;
 use entity::prelude::*;
 use error::SumidaError;
-use infra::db;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Alias, Asterisk, Expr, SimpleExpr};
@@ -13,19 +12,21 @@ use sea_orm::{
 };
 use sea_orm::{EntityTrait, InsertResult, IntoActiveModel, TransactionTrait};
 
+use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
-pub struct UserBlockService {
+pub struct UserBlockService<S: SumidaState> {
+  state: S,
   session: UserSession,
 }
 
-impl UserBlockService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
+impl<S: SumidaState> UserBlockService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub fn exists_expr() -> SimpleExpr {
@@ -55,7 +56,7 @@ impl UserBlockService {
   ) -> Result<(Vec<UserBlockListItem>, u64), SumidaError> {
     use entity::user_blocks::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let mut query = filter.apply(self.select(UserBlocks::find()));
 
@@ -75,7 +76,7 @@ impl UserBlockService {
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetUserBlock>, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     let item = self
       .select(UserBlocks::find_by_id(id))
       .select_only()
@@ -95,7 +96,7 @@ impl UserBlockService {
     data: CreateUserBlock,
   ) -> Result<InsertResult<entity::user_blocks::ActiveModel>, SumidaError> {
     let active_model = data.into_active_model();
-    let result = UserBlocks::insert(active_model).exec(db::get_connection()).await?;
+    let result = UserBlocks::insert(active_model).exec(self.state.db()).await?;
 
     Ok(result)
   }
@@ -105,7 +106,7 @@ impl UserBlockService {
     id: i32,
     data: UpdateUserBlock,
   ) -> Result<entity::user_blocks::Model, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(id).action("update").try_access(&txn).await?;
 
     let mut active_model = data.into_active_model();
@@ -118,7 +119,7 @@ impl UserBlockService {
   }
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(id).action("delete").try_access(&txn).await?;
 
     let result = UserBlocks::delete_by_id(id).exec(&txn).await?;
@@ -128,7 +129,7 @@ impl UserBlockService {
   }
 }
 
-impl ApiService<ApCondition, UserBlocks> for UserBlockService {
+impl<S: SumidaState> ApiService<ApCondition, UserBlocks> for UserBlockService<S> {
   fn default_query_with(query: Select<UserBlocks>) -> Select<UserBlocks> {
     let user_alias = Alias::new("u");
     let blocked_by_alias = Alias::new("b");

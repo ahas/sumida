@@ -2,26 +2,27 @@ pub mod dto;
 
 use entity::prelude::*;
 use error::SumidaError;
-use infra::db;
 use infra::session::UserSession;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{DeleteResult, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect, RelationTrait, Select};
 use sea_orm::{EntityTrait, TransactionTrait};
 
+use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
-pub struct UserLogService {
+pub struct UserLogService<S: SumidaState> {
+  state: S,
   session: UserSession,
 }
 
-impl UserLogService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
+impl<S: SumidaState> UserLogService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub async fn list(
@@ -31,7 +32,7 @@ impl UserLogService {
   ) -> Result<(Vec<UserLogListItem>, u64), SumidaError> {
     use entity::user_logs::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     let col_user_id = Expr::col("user_id");
     let col_username = Expr::col("user_username");
     let col_full_name = Expr::col("user_full_name");
@@ -54,11 +55,11 @@ impl UserLogService {
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetUserLog>, SumidaError> {
-    Ok(self.select(UserLogs::find_by_id(id)).into_model::<GetUserLog>().one(db::get_connection()).await?)
+    Ok(self.select(UserLogs::find_by_id(id)).into_model::<GetUserLog>().one(self.state.db()).await?)
   }
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(id).action("delete").try_access(&txn).await?;
 
     let result = UserLogs::delete_by_id(id).exec(&txn).await?;
@@ -68,7 +69,7 @@ impl UserLogService {
   }
 }
 
-impl ApiService<ApCondition, UserLogs> for UserLogService {
+impl<S: SumidaState> ApiService<ApCondition, UserLogs> for UserLogService<S> {
   fn default_query_with(query: Select<UserLogs>) -> Select<UserLogs> {
     let user_alias = Alias::new("user");
     let col_user_id = Expr::col((user_alias.clone(), "id"));

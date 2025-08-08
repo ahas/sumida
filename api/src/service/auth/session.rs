@@ -4,19 +4,20 @@ use entity::{
   user_logs::{LoginCode, LoginMethod},
 };
 use error::SumidaError;
+use infra::session::UserSession;
 use infra::settings;
-use infra::{db, session::UserSession};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-use crate::service::auth::dto::LoginSession;
+use crate::{SumidaState, service::auth::dto::LoginSession};
 
-pub struct AuthSessionService {
+pub struct AuthSessionService<S: SumidaState> {
+  pub state: S,
   pub session: UserSession,
 }
 
-impl AuthSessionService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
+impl<S: SumidaState> AuthSessionService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub fn verify_password(&self, password: &str, password_hash: &str) -> bool {
@@ -29,37 +30,34 @@ impl AuthSessionService {
   }
 
   pub async fn login(&mut self, data: LoginSession) -> Result<(), SumidaError> {
-    tracing::debug!("Hi there !");
-    let db = db::get_connection();
-    db::log_pool_status(db);
-    let txn = db.begin().await?;
+    let db = self.state.db();
 
     // 1) Return error if the user does not exist
     let Some(user) = Users::find()
       .filter(entity::users::Column::Username.eq(&data.username))
       .filter(entity::users::Column::IsEnabled.eq(true))
-      .one(&txn)
+      .one(db)
       .await?
     else {
-      self.session.write_log(None, LoginMethod::Password, LoginCode::AccountNotFound).await?;
+      self.session.write_log(None, LoginMethod::Password, LoginCode::AccountNotFound, db).await?;
       return Err(SumidaError::InvalidAccount);
     };
 
     // 2) Check the user is blocked
-    if self.session.check_blocked(Some(user.id), &txn).await? {
-      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBlocked).await?;
+    if self.session.check_blocked(Some(user.id), db).await? {
+      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBlocked, db).await?;
       return Err(SumidaError::AccountBlocked);
     }
 
     // 3) Return error if the user is inactive
     if !user.is_enabled {
-      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountInactive).await?;
+      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountInactive, db).await?;
       return Err(SumidaError::InactiveAccount);
     }
 
     // 4) Check the user password
     let result = if self.verify_password(&data.password, &user.password) {
-      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::Success).await?;
+      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::Success, db).await?;
 
       let expiry = if let Some(remember_me) = data.remember_me {
         let settings = &settings::get().session.cookie;
@@ -73,17 +71,15 @@ impl AuthSessionService {
         None
       };
 
-      self.session.authorize(user.id, &data.username, expiry).await?;
+      self.session.authorize(user.id, &data.username, expiry, db).await?;
 
       Ok(())
     } else {
-      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch).await?;
-      let blocked = self.session.block_if_exceeded_limit(Some(user.id), &txn).await?;
+      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch, db).await?;
+      let blocked = self.session.block_if_exceeded_limit(Some(user.id), db).await?;
 
       Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
     };
-
-    txn.commit().await?;
 
     result
   }

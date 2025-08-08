@@ -9,11 +9,11 @@ pub async fn init_once() {
     .get_or_init(|| async {
       dotenvy::from_filename(".env.e2e").expect("Failed to load .env.e2e");
       let settings = infra::settings::get();
-      tracing_subscriber::fmt()
-        .with_test_writer()
-        .with_env_filter(settings.server.logging.as_deref().unwrap_or("trace"))
-        .try_init()
-        .ok();
+
+      if let Some(filter) = settings.server.logging.as_deref() {
+        tracing_subscriber::fmt().with_env_filter(filter).try_init().ok();
+      }
+
       TestDb::setup().await.expect("Failed to setup test db");
     })
     .await;

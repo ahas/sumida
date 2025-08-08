@@ -3,16 +3,16 @@ use axum::{Json, Router, routing};
 
 use crate::service::prelude::*;
 use crate::util::pagination::{List, Pagination};
-use crate::{service_ap, user_guard};
+use crate::{SumidaState, service_ap, user_guard};
 
 use super::ApiController;
 
 #[derive(Clone, Debug, Default)]
-pub struct OrganizationController<S> {
+pub struct OrganizationController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,
 }
 
-impl<S> OrganizationController<S> {
+impl<S: SumidaState> OrganizationController<S> {
   pub fn new() -> Self {
     Self {
       _state: std::marker::PhantomData,
@@ -21,19 +21,19 @@ impl<S> OrganizationController<S> {
 
   async fn list(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Query(filter): Query<OrganizationFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<OrganizationListItem>, SumidaError> {
-    Ok(OrganizationService::new(session).list(filter, pagination).await?.into())
+    Ok(OrganizationService::new(state, session).list(filter, pagination).await?.into())
   }
 
   async fn get(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetOrganization, SumidaError> {
-    OrganizationService::new(session)
+    OrganizationService::new(state, session)
       .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("Organization".to_owned(), id.to_string()))
@@ -41,51 +41,52 @@ impl<S> OrganizationController<S> {
 
   async fn create(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Json(body): Json<CreateOrganization>,
   ) -> Result<OrganizationCreated, SumidaError> {
     Ok(OrganizationCreated {
-      id: OrganizationService::new(session).create(body).await?.last_insert_id,
+      id: OrganizationService::new(state, session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
     Json(body): Json<UpdateOrganization>,
   ) -> Result<OrganizationUpdated, SumidaError> {
-    OrganizationService::new(session).update(id, body).await?;
+    OrganizationService::new(state, session).update(id, body).await?;
     Ok(OrganizationUpdated)
   }
 
   async fn delete(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<OrganizationDeleted, SumidaError> {
-    OrganizationService::new(session).delete(id).await?;
+    OrganizationService::new(state, session).delete(id).await?;
     Ok(OrganizationDeleted)
   }
 }
 
 impl<S> ApiController<S> for OrganizationController<S>
 where
-  S: Clone + Send + Sync + 'static,
+  S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
-    let route_read = Router::new()
+    let route_read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!("organization", read));
-    let route_create =
-      Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!("organization", create));
-    let route_update = Router::new()
+      .route_layer(service_ap!(state, "organization", read));
+    let route_create = Router::new() //
+      .route("/", routing::post(Self::create))
+      .route_layer(service_ap!(state, "organization", create));
+    let route_update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!("organization", update));
-    let route_delete = Router::new()
+      .route_layer(service_ap!(state, "organization", update));
+    let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!("organization", delete));
+      .route_layer(service_ap!(state, "organization", delete));
 
     Router::new()
       .merge(route_read)

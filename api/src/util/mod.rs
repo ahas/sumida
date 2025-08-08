@@ -1,5 +1,6 @@
 pub mod ap;
 pub mod db;
+pub mod user;
 
 #[cfg(feature = "image")]
 pub mod image;

@@ -6,17 +6,22 @@ pub mod util;
 
 use axum::Router;
 use controller::{ApiController, prelude::*};
+use sea_orm::DatabaseConnection;
+
+pub trait SumidaState: Clone + Send + Sync + 'static {
+  fn db(&self) -> &DatabaseConnection;
+}
 
 pub struct Sumida<'a, StateT>
 where
-  StateT: Clone + Send + Sync + 'static,
+  StateT: SumidaState,
 {
   pub state: Option<&'a StateT>,
 }
 
 impl<'a, StateT> Sumida<'a, StateT>
 where
-  StateT: Clone + Send + Sync + 'static,
+  StateT: SumidaState,
 {
   pub fn new() -> Self {
     Self::default()
@@ -70,7 +75,7 @@ where
 
 impl<StateT> Default for Sumida<'_, StateT>
 where
-  StateT: Clone + Send + Sync + 'static,
+  StateT: SumidaState,
 {
   fn default() -> Self {
     Self { state: None }

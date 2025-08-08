@@ -4,17 +4,17 @@ use axum::{
   routing,
 };
 
-use crate::controller::ApiController;
 use crate::service::prelude::*;
 use crate::util::pagination::{List, Pagination};
+use crate::{SumidaState, controller::ApiController};
 use crate::{service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
-pub struct BoardCategoryController<S> {
+pub struct BoardCategoryController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,
 }
 
-impl<S> BoardCategoryController<S> {
+impl<S: SumidaState> BoardCategoryController<S> {
   pub fn new() -> Self {
     Self {
       _state: std::marker::PhantomData,
@@ -22,67 +22,76 @@ impl<S> BoardCategoryController<S> {
   }
 
   async fn list(
-    State(_state): State<S>,
+    session: UserSession,
+    State(state): State<S>,
     Query(filter): Query<BoardCategoryFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardCategoryListItem>, SumidaError> {
-    Ok(BoardCategoryService::list(filter, pagination).await?.into())
+    Ok(BoardCategoryService::new(state, session).list(filter, pagination).await?.into())
   }
 
-  async fn get(State(_state): State<S>, Path(id): Path<i32>) -> Result<GetBoardCategory, SumidaError> {
-    BoardCategoryService::get(id)
+  async fn get(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+  ) -> Result<GetBoardCategory, SumidaError> {
+    BoardCategoryService::new(state, session)
+      .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("BoardCategory".to_owned(), id.to_string()))
   }
 
   async fn create(
-    State(_state): State<S>,
+    session: UserSession,
+    State(state): State<S>,
     Json(body): Json<CreateBoardCategory>,
   ) -> Result<BoardCategoryCreated, SumidaError> {
     Ok(BoardCategoryCreated {
-      id: BoardCategoryService::create(body).await?.last_insert_id,
+      id: BoardCategoryService::new(state, session).create(body).await?.last_insert_id,
     })
   }
 
   async fn update(
-    State(_state): State<S>,
+    session: UserSession,
+    State(state): State<S>,
     Path(id): Path<i32>,
     Json(body): Json<UpdateBoardCategory>,
   ) -> Result<BoardCategoryUpdated, SumidaError> {
-    BoardCategoryService::update(id, body).await?;
+    BoardCategoryService::new(state, session).update(id, body).await?;
     Ok(BoardCategoryUpdated)
   }
 
   async fn delete(
-    State(_state): State<S>,
+    session: UserSession,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<BoardCategoryDeleted, SumidaError> {
-    BoardCategoryService::delete(id).await?;
+    BoardCategoryService::new(state, session).delete(id).await?;
     Ok(BoardCategoryDeleted)
   }
 }
 
 impl<S> ApiController<S> for BoardCategoryController<S>
 where
-  S: Clone + Send + Sync + 'static,
+  S: SumidaState,
 {
   fn router(self, state: &S) -> Router<S> {
     let route_read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!("board_category", read));
+      .route_layer(service_ap!(state, "board_category", read));
 
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!("board_category", create));
+      .route_layer(service_ap!(state, "board_category", create));
 
     let route_update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!("board_category", update));
+      .route_layer(service_ap!(state, "board_category", update));
 
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!("board_category", delete));
+      .route_layer(service_ap!(state, "board_category", delete));
 
     Router::new()
       .merge(route_read)

@@ -2,7 +2,6 @@ pub mod dto;
 
 use entity::prelude::*;
 use error::SumidaError;
-use infra::db;
 use infra::session::UserSession;
 use lettre::message::{Message, header::ContentType};
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
@@ -14,6 +13,7 @@ use sea_orm::{
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
+use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
@@ -41,13 +41,14 @@ impl MailFormSendOptions {
   }
 }
 
-pub struct MailFormService {
+pub struct MailFormService<S: SumidaState> {
+  state: S,
   session: UserSession,
 }
 
-impl MailFormService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
+impl<S: SumidaState> MailFormService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub fn render(model: &entity::mail_forms::Model, context: impl Serialize) -> Result<String, SumidaError> {
@@ -123,7 +124,7 @@ impl MailFormService {
   ) -> Result<(Vec<MailFormListItem>, u64), SumidaError> {
     use entity::mail_forms::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let mut query = filter.apply(self.select(MailForms::find()));
     let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;
@@ -142,15 +143,15 @@ impl MailFormService {
     Ok((items, count))
   }
 
-  pub async fn get<S>(&self, kind: S) -> Result<Option<GetMailForm>, SumidaError>
+  pub async fn get<K>(&self, kind: K) -> Result<Option<GetMailForm>, SumidaError>
   where
-    S: AsRef<str>,
+    K: AsRef<str>,
   {
     Ok(
       self
         .select(MailForms::find_by_id(kind.as_ref()))
         .into_model::<GetMailForm>()
-        .one(db::get_connection())
+        .one(self.state.db())
         .await?,
     )
   }
@@ -159,18 +160,18 @@ impl MailFormService {
     &self,
     data: CreateMailForm,
   ) -> Result<InsertResult<entity::mail_forms::ActiveModel>, SumidaError> {
-    Ok(MailForms::insert(data.into_active_model()).exec(db::get_connection()).await?)
+    Ok(MailForms::insert(data.into_active_model()).exec(self.state.db()).await?)
   }
 
-  pub async fn update<S>(
+  pub async fn update<K>(
     &self,
-    kind: S,
+    kind: K,
     data: UpdateMailForm,
   ) -> Result<entity::mail_forms::Model, SumidaError>
   where
-    S: AsRef<str>,
+    K: AsRef<str>,
   {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(kind.as_ref()).action("update").try_access(&txn).await?;
 
     let mut model = data.into_active_model();
@@ -182,11 +183,11 @@ impl MailFormService {
     Ok(result)
   }
 
-  pub async fn delete<S>(&self, kind: S) -> Result<DeleteResult, SumidaError>
+  pub async fn delete<K>(&self, kind: K) -> Result<DeleteResult, SumidaError>
   where
-    S: AsRef<str>,
+    K: AsRef<str>,
   {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(kind.as_ref()).action("delete").try_access(&txn).await?;
 
     let result = MailForms::delete_by_id(kind.as_ref()).exec(&txn).await?;
@@ -196,7 +197,7 @@ impl MailFormService {
   }
 }
 
-impl ApiService<ApCondition, MailForms> for MailFormService {
+impl<S: SumidaState> ApiService<ApCondition, MailForms> for MailFormService<S> {
   fn ap(&self) -> ApCondition {
     use entity::mail_forms::Column;
 

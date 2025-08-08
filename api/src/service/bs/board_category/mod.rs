@@ -1,8 +1,8 @@
 pub mod dto;
 
-use infra::db;
 use entity::prelude::*;
 use error::SumidaError;
+use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
@@ -11,18 +11,27 @@ use sea_orm::{
 };
 
 use self::dto::*;
+use crate::SumidaState;
 use crate::util::pagination::Pagination;
 
-pub struct BoardCategoryService;
+pub struct BoardCategoryService<S: SumidaState> {
+  state: S,
+  session: UserSession,
+}
 
-impl BoardCategoryService {
+impl<S: SumidaState> BoardCategoryService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
+  }
+
   pub async fn list(
+    &self,
     filter: BoardCategoryFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardCategoryListItem>, u64), SumidaError> {
     use entity::bs::board_categories::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let mut query =
       filter.apply(BoardCategories::find().select_only().expr(Expr::col((BoardCategories, Asterisk))));
@@ -41,31 +50,28 @@ impl BoardCategoryService {
     Ok((items, count))
   }
 
-  pub async fn get(id: i32) -> Result<Option<GetBoardCategory>, SumidaError> {
-    Ok(
-      BoardCategories::find_by_id(id)
-        .into_partial_model::<GetBoardCategory>()
-        .one(db::get_connection())
-        .await?,
-    )
+  pub async fn get(&self, id: i32) -> Result<Option<GetBoardCategory>, SumidaError> {
+    Ok(BoardCategories::find_by_id(id).into_partial_model::<GetBoardCategory>().one(self.state.db()).await?)
   }
 
   pub async fn create(
+    &self,
     data: CreateBoardCategory,
   ) -> Result<InsertResult<entity::bs::board_categories::ActiveModel>, SumidaError> {
-    Ok(BoardCategories::insert(data.into_active_model()).exec(db::get_connection()).await?)
+    Ok(BoardCategories::insert(data.into_active_model()).exec(self.state.db()).await?)
   }
 
   pub async fn update(
+    &self,
     id: i32,
     data: UpdateBoardCategory,
   ) -> Result<entity::bs::board_categories::Model, SumidaError> {
     let mut am = data.into_active_model();
     am.id = Set(id);
-    Ok(BoardCategories::update(am).exec(db::get_connection()).await?)
+    Ok(BoardCategories::update(am).exec(self.state.db()).await?)
   }
 
-  pub async fn delete(id: i32) -> Result<DeleteResult, SumidaError> {
-    Ok(BoardCategories::delete_by_id(id).exec(db::get_connection()).await?)
+  pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
+    Ok(BoardCategories::delete_by_id(id).exec(self.state.db()).await?)
   }
 }

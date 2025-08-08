@@ -2,7 +2,7 @@ pub mod dto;
 
 use entity::prelude::*;
 use error::SumidaError;
-use infra::{db, session::UserSession};
+use infra::session::UserSession;
 use sea_orm::{
   ActiveValue::Unchanged,
   DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType,
@@ -11,19 +11,23 @@ use sea_orm::{
   sea_query::{Alias, Asterisk},
 };
 
-use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
+use crate::{
+  SumidaState,
+  util::ap::{self, ApCondition, ApGuard},
+};
 use crate::{service::ApiService, util::ap::ApUser};
 
 use self::dto::*;
 
-pub struct ApiKeyService {
+pub struct ApiKeyService<S: SumidaState> {
+  state: S,
   session: UserSession,
 }
 
-impl ApiKeyService {
-  pub fn new(session: UserSession) -> Self {
-    ApiKeyService { session }
+impl<S: SumidaState> ApiKeyService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    ApiKeyService { state, session }
   }
 
   pub async fn list(
@@ -33,7 +37,7 @@ impl ApiKeyService {
   ) -> Result<(Vec<ApiKeyListItem>, u64), SumidaError> {
     use entity::api_keys::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     let col_username = Expr::col("user_username");
     let col_full_name = Expr::col("user_full_name");
 
@@ -56,7 +60,7 @@ impl ApiKeyService {
   }
 
   pub async fn get(&self, key: &str) -> Result<Option<GetApiKey>, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let Some(mut api_key) =
       self.select(ApiKeys::find_by_id(key)).into_model::<GetApiKey>().one(&txn).await?
@@ -83,7 +87,7 @@ impl ApiKeyService {
     data: CreateApiKey,
   ) -> Result<InsertResult<entity::api_keys::ActiveModel>, SumidaError> {
     loop {
-      let txn = db::get_connection().begin().await?;
+      let txn = self.state.db().begin().await?;
       let key = match crate::util::random::generate_url_safe_string(64) {
         Ok(v) => v,
         _ => {
@@ -128,7 +132,7 @@ impl ApiKeyService {
     key: &str,
     data: UpdateApiKey,
   ) -> Result<entity::api_keys::Model, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     self.ap().object(key).action("update").try_access(&txn).await?;
 
@@ -152,7 +156,7 @@ impl ApiKeyService {
   }
 
   pub async fn delete(&self, key: &str) -> Result<DeleteResult, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(key).action("delete").try_access(&txn).await?;
     ap::for_users().user(ApUser::ApiKey(key.to_owned())).clear(&txn).await?;
 
@@ -163,7 +167,7 @@ impl ApiKeyService {
   }
 }
 
-impl ApiService<ApCondition, ApiKeys> for ApiKeyService {
+impl<S: SumidaState> ApiService<ApCondition, ApiKeys> for ApiKeyService<S> {
   fn default_query_with(query: Select<ApiKeys>) -> Select<ApiKeys> {
     let user_alias = Alias::new("user");
     let col_id = Expr::col((user_alias.clone(), "id"));

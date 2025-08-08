@@ -1,20 +1,20 @@
-use infra::db;
 use infra::session::UserSession;
 
 use axum::{Json, Router, extract::State, routing};
 use error::SumidaError;
 use serde_json::json;
 
+use crate::SumidaState;
 use crate::service::prelude::*;
 use crate::util::ap::{self, ApForUser};
 use crate::{controller::ApiController, user_guard};
 
 #[derive(Clone, Debug, Default)]
-pub struct MeController<S> {
+pub struct MeController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,
 }
 
-impl<S> MeController<S> {
+impl<S: SumidaState> MeController<S> {
   pub fn new() -> Self {
     Self {
       _state: std::marker::PhantomData,
@@ -23,45 +23,45 @@ impl<S> MeController<S> {
 
   async fn update_me(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Json(body): Json<UpdateMe>,
   ) -> Result<MeUpdated, SumidaError> {
-    MeService::new(session).update_me(body).await?;
+    MeService::new(state, session).update_me(body).await?;
     Ok(MeUpdated)
   }
 
-  async fn get_me(session: UserSession, State(_state): State<S>) -> Result<Me, SumidaError> {
-    MeService::new(session).get_session().await?.ok_or(SumidaError::InvalidAccount)
+  async fn get_me(session: UserSession, State(state): State<S>) -> Result<Me, SumidaError> {
+    MeService::new(state, session).get_session().await?.ok_or(SumidaError::InvalidAccount)
   }
 
   async fn get_prefs(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
   ) -> Result<Json<serde_json::Value>, SumidaError> {
-    Ok(Json(MeService::new(session).get_prefs().await?))
+    Ok(Json(MeService::new(state, session).get_prefs().await?))
   }
 
   async fn update_prefs(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Json(body): Json<serde_json::Value>,
   ) -> Result<Json<serde_json::Value>, SumidaError> {
-    MeService::new(session).update_prefs(body).await?;
+    MeService::new(state, session).update_prefs(body).await?;
     Ok(Json(json!({})))
   }
 
   async fn get_access_policies(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
   ) -> Result<Json<Vec<ApForUser>>, SumidaError> {
-    let access_policies = ap::for_users().who(&session).find_all(db::get_connection()).await?;
+    let access_policies = ap::for_users().who(&session).find_all(state.db()).await?;
     Ok(Json(access_policies))
   }
 }
 
 impl<S> ApiController<S> for MeController<S>
 where
-  S: Clone + Send + Sync + 'static,
+  S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
     Router::new()

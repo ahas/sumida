@@ -1,5 +1,6 @@
 use api::service::prelude::*;
 use api::util::random::generate_url_safe_string;
+use api::util::user::hash_password;
 use entity::prelude::*;
 use reqwest::Response;
 use sea_orm::{ConnectionTrait, EntityTrait, Set};
@@ -57,7 +58,7 @@ impl TestUser {
     let org = TestOrg::create(db).await?;
     let role = TestRole::create(db).await?;
     let password = generate_url_safe_string(8).unwrap();
-    let hashed_password = UserService::hash_password(password.clone()).expect("Failed to hash password");
+    let hashed_password = hash_password(password.clone()).expect("Failed to hash password");
 
     let id = Users::insert(entity::users::ActiveModel {
       username: Set(format!("test-{}", generate_url_safe_string(8).unwrap())),

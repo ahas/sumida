@@ -2,7 +2,7 @@ pub mod user;
 
 pub use e2e::prelude::*;
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn health_should_return_ok() {
   let Mock { ref client, .. } = Mock::new().await;
 

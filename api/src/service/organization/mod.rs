@@ -2,25 +2,27 @@ pub mod dto;
 
 use entity::prelude::*;
 use error::SumidaError;
-use infra::{db, session::UserSession};
+use infra::session::UserSession;
 use sea_orm::{
   DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Set,
   TransactionTrait, sea_query::Expr,
 };
 
+use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
-pub struct OrganizationService {
+pub struct OrganizationService<S: SumidaState> {
+  state: S,
   session: UserSession,
 }
 
-impl OrganizationService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
+impl<S: SumidaState> OrganizationService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub async fn list(
@@ -30,7 +32,7 @@ impl OrganizationService {
   ) -> Result<(Vec<OrganizationListItem>, u64), SumidaError> {
     use entity::organizations::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let mut query = filter.apply(self.select(Organizations::find()));
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
@@ -54,7 +56,7 @@ impl OrganizationService {
       self
         .select(Organizations::find_by_id(id))
         .into_model::<GetOrganization>()
-        .one(db::get_connection())
+        .one(self.state.db())
         .await?,
     )
   }
@@ -63,7 +65,7 @@ impl OrganizationService {
     &self,
     data: CreateOrganization,
   ) -> Result<InsertResult<entity::organizations::ActiveModel>, SumidaError> {
-    Ok(Organizations::insert(data.into_active_model()).exec(db::get_connection()).await?)
+    Ok(Organizations::insert(data.into_active_model()).exec(self.state.db()).await?)
   }
 
   pub async fn update(
@@ -71,7 +73,7 @@ impl OrganizationService {
     id: i32,
     data: UpdateOrganization,
   ) -> Result<entity::organizations::Model, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(id).action("update").try_access(&txn).await?;
 
     let mut model = data.into_active_model();
@@ -84,7 +86,7 @@ impl OrganizationService {
   }
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(id).action("delete").try_access(&txn).await?;
 
     let result = Organizations::delete_by_id(id).exec(&txn).await?;
@@ -94,7 +96,7 @@ impl OrganizationService {
   }
 }
 
-impl ApiService<ApCondition, Organizations> for OrganizationService {
+impl<S: SumidaState> ApiService<ApCondition, Organizations> for OrganizationService<S> {
   fn ap(&self) -> ApCondition {
     use entity::organizations::Column;
 

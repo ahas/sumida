@@ -1,15 +1,9 @@
 pub mod dto;
 pub mod mail_form_context;
 
-use argon2::Argon2;
-use argon2::password_hash::PasswordHasher;
-use argon2::password_hash::SaltString;
-use argon2::password_hash::rand_core::OsRng;
 use chrono::Utc;
 use entity::prelude::*;
-use error::SumidaError;
-use infra::session::UserSession;
-use infra::{db, settings};
+use infra::settings;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{ActiveValue::*, JoinType, Select};
 use sea_orm::{
@@ -18,33 +12,26 @@ use sea_orm::{
 };
 use sea_orm_crud::Optional;
 
+use crate::SumidaState;
 use crate::service::ApiService;
 use crate::service::auth::session::AuthSessionService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
+use crate::util::user::hash_password;
 
 use self::dto::*;
 
 use super::mail_form::MailFormSendOptions;
 use super::prelude::*;
 
-pub struct UserService {
+pub struct UserService<S: SumidaState> {
+  state: S,
   session: UserSession,
 }
 
-impl UserService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
-  }
-
-  pub fn hash_password<S>(password: S) -> argon2::password_hash::Result<String>
-  where
-    S: AsRef<str>,
-  {
-    let argon2 = Argon2::default();
-    let salt = SaltString::generate(&mut OsRng);
-
-    Ok(argon2.hash_password(password.as_ref().as_bytes(), &salt)?.to_string())
+impl<S: SumidaState> UserService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub async fn list(
@@ -54,7 +41,7 @@ impl UserService {
   ) -> Result<(Vec<UserListItem>, u64), SumidaError> {
     use entity::users::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let mut query = filter.apply(self.select(Users::find()));
     let count = query.clone().select_only().column(Column::Username).count(&txn).await?;
@@ -75,7 +62,7 @@ impl UserService {
   }
 
   pub async fn get(&self, user_id: i32) -> Result<Option<GetUser>, SumidaError> {
-    Ok(self.select(Users::find_by_id(user_id)).into_model::<GetUser>().one(db::get_connection()).await?)
+    Ok(self.select(Users::find_by_id(user_id)).into_model::<GetUser>().one(self.state.db()).await?)
   }
 
   pub async fn create(
@@ -86,13 +73,13 @@ impl UserService {
 
     let mut active_model = data.into_active_model();
     active_model.password =
-      Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
+      Set(hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
 
-    Ok(Users::insert(active_model).exec(db::get_connection()).await?)
+    Ok(Users::insert(active_model).exec(self.state.db()).await?)
   }
 
   pub async fn update(&self, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(user_id).action("update").try_access(&txn).await?;
 
     let Optional(password) = data.password.clone();
@@ -101,8 +88,7 @@ impl UserService {
     model.id = Unchanged(user_id);
 
     if let Some(password) = password {
-      model.password =
-        Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
+      model.password = Set(hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
     }
 
     let result = Users::update(model).exec(&txn).await?;
@@ -112,7 +98,7 @@ impl UserService {
   }
 
   pub async fn delete(&self, user_id: i32) -> Result<DeleteResult, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(user_id).action("delete").try_access(&txn).await?;
 
     let result = Users::delete_by_id(user_id).exec(&txn).await?;
@@ -122,7 +108,7 @@ impl UserService {
   }
 
   pub async fn invite(&self, user_id: i32) -> Result<(), SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
       return Err(SumidaError::InvalidAccount);
@@ -133,7 +119,7 @@ impl UserService {
 
     let uuid = uuid::Uuid::new_v4();
 
-    UserInvitationService::upsert(user_id, uuid, &txn).await?;
+    UserInvitationService::<S>::upsert(user_id, uuid, &txn).await?;
 
     let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
       username: opts.username.clone(),
@@ -142,7 +128,7 @@ impl UserService {
       server: opts.server.clone(),
     });
 
-    MailFormService::send(
+    MailFormService::<S>::send(
       "invitation",
       receiver,
       mail_form_context::InvitationContext {
@@ -164,7 +150,7 @@ impl UserService {
     let user_id = activation.user_id;
     let password = &activation.password;
     let uuid = &activation.uuid;
-    let db = db::get_connection();
+    let db = self.state.db();
     let txn = db.begin().await?;
 
     let Some(user) = Users::find_by_id(user_id).one(db).await? else {
@@ -186,14 +172,14 @@ impl UserService {
     let mut active_model = user.into_active_model();
     active_model.is_enabled = Set(true);
     active_model.password =
-      Set(Self::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
+      Set(hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
 
     Users::update(active_model).exec(&txn).await?;
     UserInvitations::delete_by_id(*uuid).exec(&txn).await?;
 
     txn.commit().await?;
 
-    let mut auth_session_service = AuthSessionService::new(self.session.clone());
+    let mut auth_session_service = AuthSessionService::new(self.state.clone(), self.session.clone());
     auth_session_service
       .login(LoginSession {
         username,
@@ -207,7 +193,7 @@ impl UserService {
   }
 
   pub async fn change_password(&mut self, data: ChangePassword) -> Result<(), SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let Some(user) =
       Users::find().filter(entity::users::Column::Username.eq(&data.username)).one(&txn).await?
@@ -216,7 +202,8 @@ impl UserService {
       return Err(SumidaError::InvalidAccount);
     };
 
-    let user_verification_service = UserVerificationService::new(self.session.clone());
+    let user_verification_service =
+      UserVerificationService::<S>::new(self.state.clone(), self.session.clone());
     let is_verified =
       user_verification_service.verify("password-change", user.id, &data.code, &txn).await?;
     self.session = user_verification_service.session;
@@ -226,8 +213,7 @@ impl UserService {
       return Err(SumidaError::VerificationFailed);
     }
 
-    let password =
-      Self::hash_password(&data.password).map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+    let password = hash_password(&data.password).map_err(|e| SumidaError::Unsupported(e.to_string()))?;
 
     let active_model = entity::users::ActiveModel {
       username: Unchanged(data.username),
@@ -243,19 +229,19 @@ impl UserService {
   }
 
   pub async fn impersonate(&mut self, user_id: i32) -> Result<(), SumidaError> {
-    let db = db::get_connection();
+    let db = self.state.db();
     let settings = &settings::get().session.cookie;
     let Some(user) = Users::find_by_id(user_id).one(db).await? else {
       return Err(SumidaError::InvalidAccount);
     };
 
-    self.session.authorize(user_id, &user.username, Some(settings.expiry.default_expiry()?)).await?;
+    self.session.authorize(user_id, &user.username, Some(settings.expiry.default_expiry()?), db).await?;
 
     Ok(())
   }
 }
 
-impl ApiService<ApCondition, Users> for UserService {
+impl<S: SumidaState> ApiService<ApCondition, Users> for UserService<S> {
   fn default_query_with(query: Select<Users>) -> Select<Users> {
     let org_alias = Alias::new("org");
     let role_alias = Alias::new("role");
@@ -263,7 +249,7 @@ impl ApiService<ApCondition, Users> for UserService {
     query
       .select_only()
       .expr(Expr::col((entity::users::Entity, Asterisk)))
-      .expr_as(UserBlockService::exists_expr(), "is_blocked")
+      .expr_as(UserBlockService::<S>::exists_expr(), "is_blocked")
       .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
       .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
       .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")

@@ -1,16 +1,17 @@
 use axum::extract::State;
 use axum::{Json, Router, routing};
 
+use crate::SumidaState;
 use crate::service::prelude::*;
 
 use super::ApiController;
 
 #[derive(Clone, Debug, Default)]
-pub struct UserVerificationController<S> {
+pub struct UserVerificationController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,
 }
 
-impl<S> UserVerificationController<S> {
+impl<S: SumidaState> UserVerificationController<S> {
   pub fn new() -> Self {
     Self {
       _state: std::marker::PhantomData,
@@ -19,10 +20,10 @@ impl<S> UserVerificationController<S> {
 
   async fn send(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Json(body): Json<SendUserVerification>,
   ) -> Result<UserVerificationSent, SumidaError> {
-    UserVerificationService::new(session).send(body).await?;
+    UserVerificationService::new(state, session).send(body).await?;
 
     Ok(UserVerificationSent)
   }
@@ -30,7 +31,7 @@ impl<S> UserVerificationController<S> {
 
 impl<S> ApiController<S> for UserVerificationController<S>
 where
-  S: Clone + Send + Sync + 'static,
+  S: SumidaState,
 {
   fn router(self, _state: &S) -> axum::Router<S> {
     Router::new() //

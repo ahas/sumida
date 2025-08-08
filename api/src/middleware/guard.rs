@@ -13,6 +13,8 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Expiry;
 
+use crate::SumidaState;
+
 #[macro_export]
 macro_rules! service_ap {
   ($ns: literal, $action: ident) => {
@@ -46,7 +48,11 @@ pub struct JwtClaims {
   pub exp: usize,
 }
 
-async fn verify_jwt(session: &mut UserSession, token: &str) -> Result<(), SumidaError> {
+pub async fn verify_jwt<S: SumidaState>(
+  session: &mut UserSession,
+  state: S,
+  token: &str,
+) -> Result<(), SumidaError> {
   let settings = settings::get();
   #[cfg(not(any(feature = "jwt-secret-store-static", feature = "jwt-secret-store-aws-ssm")))]
   compile_error!("Either `jwt-secret-store-static` or `jwt-secret-store-aws-ssm` feature must be enabled");
@@ -85,13 +91,17 @@ async fn verify_jwt(session: &mut UserSession, token: &str) -> Result<(), Sumida
   .map_err(|_err| SumidaError::InvalidJwt)?;
   let expiry = settings.jwt.as_ref().ok_or(SumidaError::NoJwtSecret)?.expiry.access_token_expiry()?;
 
-  session.authorize(token.claims.user_id, &token.claims.username, Some(expiry)).await?;
+  session.authorize(token.claims.user_id, &token.claims.username, Some(expiry), state.db()).await?;
 
   Ok(())
 }
 
-async fn verify_api_key(session: &mut UserSession, key: &str) -> Result<(), SumidaError> {
-  let txn = db::get_connection().begin().await?;
+pub async fn verify_api_key<S: SumidaState>(
+  session: &mut UserSession,
+  state: S,
+  key: &str,
+) -> Result<(), SumidaError> {
+  let txn = state.db().begin().await?;
 
   let api_key = ApiKeys::find()
     .filter(entity::api_keys::Column::Key.eq(key))
@@ -101,7 +111,7 @@ async fn verify_api_key(session: &mut UserSession, key: &str) -> Result<(), Sumi
   let user = Users::find_by_id(api_key.user_id).one(&txn).await?;
 
   if let Some(user) = user {
-    session.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd)).await?;
+    session.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd), &txn).await?;
 
     if api_key.is_secured {
       session.profile.api_key = Some(key.to_owned());
@@ -115,8 +125,9 @@ async fn verify_api_key(session: &mut UserSession, key: &str) -> Result<(), Sumi
   Ok(())
 }
 
-pub async fn verify(
+pub async fn verify<S: SumidaState>(
   session: &mut UserSession,
+  state: S,
   headers: &HeaderMap<HeaderValue>,
 ) -> Result<bool, SumidaError> {
   if let Some(v) = headers.get::<String>("Authorization".into()) {
@@ -130,8 +141,8 @@ pub async fn verify(
     let token = pair[1];
 
     match method.to_uppercase().as_str() {
-      "BEARER" => verify_jwt(session, token).await?,
-      "APIKEY" => verify_api_key(session, token).await?,
+      "BEARER" => verify_jwt(session, state, token).await?,
+      "APIKEY" => verify_api_key(session, state, token).await?,
       _ => return Err(SumidaError::InvalidAuthorizationMethod(method.to_string())),
     }
   } else {
@@ -142,8 +153,9 @@ pub async fn verify(
 }
 
 #[allow(dead_code)]
-pub async fn service_ap_fn(
+pub async fn service_ap_fn<S: SumidaState>(
   session: UserSession,
+  state: S,
   ns: String,
   action: String,
   req: Request,
@@ -177,8 +189,9 @@ pub async fn user_guard_fn(
 }
 
 #[allow(dead_code)]
-pub async fn admin_guard_fn(
+pub async fn admin_guard_fn<S: SumidaState>(
   session: UserSession,
+  state: S,
   req: Request,
   next: Next,
 ) -> Result<Response, SumidaError> {

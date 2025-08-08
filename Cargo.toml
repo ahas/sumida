@@ -64,7 +64,6 @@ sea-orm = { version = "1.1.14", features = [
   "postgres-array",
   "macros",
   "runtime-tokio-rustls",
-  "mock",
 ] }
 sea-orm-migration = { version = "1.1.14", features = [
   "runtime-tokio-rustls",

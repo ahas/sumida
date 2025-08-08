@@ -31,10 +31,13 @@ impl SumidaSettings {
   where
     T: Deserialize<'de>,
   {
-    let source = File::from(
-      std::env::current_dir()?
-        .join(std::env::var("SUMIDA_SETTINGS").unwrap_or_else(|_| "settings.toml".to_string())),
-    );
+    let settings_file = std::env::var("SUMIDA_SETTINGS").unwrap_or_else(|_| "settings.toml".to_string());
+    let settings_path = if std::path::Path::new(&settings_file).is_absolute() {
+      settings_file
+    } else {
+      std::env::current_dir()?.join(settings_file).to_string_lossy().to_string()
+    };
+    let source = File::from(std::path::PathBuf::from(settings_path));
     let config = Config::builder().add_source(source).build()?;
 
     Ok(config.try_deserialize()?)

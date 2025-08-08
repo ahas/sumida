@@ -3,19 +3,8 @@ use sea_orm::{
   sqlx::{Pool, Postgres, pool::PoolOptions},
 };
 use std::str::FromStr;
-use tokio::sync::OnceCell;
 
 use crate::settings;
-
-static DB: OnceCell<DatabaseConnection> = OnceCell::const_new();
-
-pub async fn establish_connection() -> &'static DatabaseConnection {
-  DB.get_or_init(|| async { connect().await }).await
-}
-
-pub fn get_connection() -> &'static DatabaseConnection {
-  DB.get().unwrap()
-}
 
 pub async fn connect() -> DatabaseConnection {
   let (url, pool_opts) = get_pg_pool_options();
@@ -36,30 +25,25 @@ fn get_pg_pool_options() -> (String, PoolOptions<Postgres>) {
   let max_lifetime = parse_to_duration(config.max_lifetime.as_ref());
 
   let mut conn_opts = ConnectOptions::new(&config.url);
+  tracing::info!("{:?}", config);
 
   if let Some(v) = config.max_connections {
     conn_opts.max_connections(v);
-    println!("{}", 1)
   }
   if let Some(v) = config.min_connections {
     conn_opts.min_connections(v);
-    println!("{}", 2)
   }
   if let Some(v) = connect_timeout {
     conn_opts.connect_timeout(v);
-    println!("{}", 3)
   }
   if let Some(v) = idle_timeout {
     conn_opts.idle_timeout(v);
-    println!("{}", 4)
   }
   if let Some(v) = acquire_timeout {
     conn_opts.acquire_timeout(v);
-    println!("{}", 5)
   }
   if let Some(v) = max_lifetime {
     conn_opts.max_lifetime(v);
-    println!("{}", 6)
   }
 
   let logging = config.logging.clone().unwrap_or("off".to_string());
@@ -93,7 +77,7 @@ pub fn log_pool_status(conn: &DatabaseConnection) {
   };
 
   if let Some(pg_conn) = pool {
-    tracing::debug!(
+    tracing::info!(
       "PG pool status: size = {}, idle = {}, connections_in_use = {}",
       pg_conn.size(),
       pg_conn.num_idle(),

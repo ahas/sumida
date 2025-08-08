@@ -2,7 +2,6 @@ pub mod dto;
 
 use entity::prelude::*;
 use error::SumidaError;
-use infra::db;
 use infra::session::UserSession;
 use sea_orm::{
   ActiveModelTrait,
@@ -14,19 +13,21 @@ use serde_json::json;
 
 use dto::*;
 
-use crate::service::ApiService;
-use crate::service::user::UserService;
 use crate::util::ap::ApCondition;
+use crate::{SumidaState, service::ApiService};
+use crate::{service::user::UserService, util::user::hash_password};
 
-pub struct MeService {
+pub struct MeService<S: SumidaState> {
+  state: S,
   session: UserSession,
-  user_service: UserService,
+  user_service: UserService<S>,
 }
 
-impl MeService {
-  pub fn new(session: UserSession) -> Self {
+impl<S: SumidaState> MeService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
     Self {
-      user_service: UserService::new(session.clone()),
+      user_service: UserService::new(state.clone(), session.clone()),
+      state,
       session,
     }
   }
@@ -39,7 +40,7 @@ impl MeService {
     let Some(mut me_session) = self
       .select(Users::find_by_id(self.session.profile.id))
       .into_model::<Me>()
-      .one(db::get_connection())
+      .one(self.state.db())
       .await?
     else {
       return Ok(None);
@@ -60,8 +61,7 @@ impl MeService {
     model.username = Set(username.clone());
 
     if let Some(ref password) = password {
-      model.password =
-        Set(UserService::hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
+      model.password = Set(hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
     }
 
     model.role_id = NotSet;
@@ -69,13 +69,15 @@ impl MeService {
     model.is_admin = NotSet;
     model.is_enabled = NotSet;
 
-    self.session.identify().await?;
+    let db = self.state.db();
 
-    Ok(Users::update(model).exec(db::get_connection()).await?)
+    self.session.identify(db).await?;
+
+    Ok(Users::update(model).exec(db).await?)
   }
 
   pub async fn get_prefs(&self) -> Result<serde_json::Value, SumidaError> {
-    let db = db::get_connection();
+    let db = self.state.db();
     let pref = UserPrefs::find_by_id(self.session.profile.id).one(db).await?;
 
     Ok(pref.map(|x| x.data).unwrap_or_else(|| json!({})))
@@ -84,7 +86,7 @@ impl MeService {
   pub async fn update_prefs(&self, data: serde_json::Value) -> Result<(), SumidaError> {
     use entity::user_prefs::ActiveModel;
 
-    let db = db::get_connection();
+    let db = self.state.db();
     let user_id = self.session.profile.id;
     let pref = UserPrefs::find_by_id(user_id).one(db).await?;
     let mut am = ActiveModel {
@@ -102,7 +104,7 @@ impl MeService {
   }
 }
 
-impl ApiService<ApCondition, Users> for MeService {
+impl<S: SumidaState> ApiService<ApCondition, Users> for MeService<S> {
   fn ap(&self) -> ApCondition {
     self.user_service.ap()
   }

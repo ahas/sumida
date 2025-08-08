@@ -3,26 +3,27 @@ pub mod dto;
 use chrono::{Duration, Utc};
 use entity::prelude::*;
 use error::SumidaError;
-use infra::db;
 use infra::session::UserSession;
 use sea_orm::sea_query::Expr;
 use sea_orm::{ActiveValue::*, DbErr, EntityTrait, TransactionTrait};
 use sea_orm::{ColumnTrait, ConnectionTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelect};
 use uuid::Uuid;
 
+use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 use self::dto::*;
 
-pub struct UserInvitationService {
+pub struct UserInvitationService<S: SumidaState> {
+  state: S,
   session: UserSession,
 }
 
-impl UserInvitationService {
-  pub fn new(session: UserSession) -> Self {
-    Self { session }
+impl<S: SumidaState> UserInvitationService<S> {
+  pub fn new(state: S, session: UserSession) -> Self {
+    Self { state, session }
   }
 
   pub async fn upsert<C>(user_id: i32, uuid: Uuid, db: &C) -> Result<(), DbErr>
@@ -54,7 +55,7 @@ impl UserInvitationService {
   ) -> Result<(Vec<UserInvitationListItem>, u64), SumidaError> {
     use entity::user_invitations::Column;
 
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let mut query = filter.apply(self.select(UserInvitations::find()));
     let count = query.clone().select_only().column(Column::Uuid).count(&txn).await?;
@@ -73,7 +74,7 @@ impl UserInvitationService {
   }
 
   pub async fn get(&self, uuid: Uuid) -> Result<Option<GetUserInvitation>, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     let item = self
       .select(UserInvitations::find_by_id(uuid))
       .filter(entity::user_invitations::Column::ExpiresAt.gt(Utc::now()))
@@ -86,7 +87,7 @@ impl UserInvitationService {
   }
 
   pub async fn create(&self, user_id: i32) -> Result<entity::user_invitations::Model, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
 
     let uuid = Uuid::new_v4();
     let expires_at = Utc::now() + Duration::days(30);
@@ -110,7 +111,7 @@ impl UserInvitationService {
   }
 
   pub async fn update(&self, user_id: i32) -> Result<entity::user_invitations::Model, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     let uuid = Uuid::new_v4();
     let expires_at = Utc::now() + Duration::days(30);
 
@@ -134,7 +135,7 @@ impl UserInvitationService {
   }
 
   pub async fn delete(&self, uuid: Uuid) -> Result<DeleteResult, SumidaError> {
-    let txn = db::get_connection().begin().await?;
+    let txn = self.state.db().begin().await?;
     self.ap().object(uuid).action("delete").try_access(&txn).await?;
 
     let result = UserInvitations::delete_by_id(uuid).exec(&txn).await?;
@@ -144,7 +145,7 @@ impl UserInvitationService {
   }
 }
 
-impl ApiService<ApCondition, UserInvitations> for UserInvitationService {
+impl<S: SumidaState> ApiService<ApCondition, UserInvitations> for UserInvitationService<S> {
   fn ap(&self) -> ApCondition {
     use entity::user_invitations::Column;
 

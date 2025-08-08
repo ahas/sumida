@@ -4,18 +4,18 @@ use axum::{
   routing,
 };
 
-use crate::service::prelude::*;
 use crate::util::pagination::{List, Pagination};
+use crate::{SumidaState, service::prelude::*};
 use crate::{service_ap, user_guard};
 
 use super::ApiController;
 
 #[derive(Clone, Debug, Default)]
-pub struct UserLogController<S> {
+pub struct UserLogController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,
 }
 
-impl<S> UserLogController<S> {
+impl<S: SumidaState> UserLogController<S> {
   pub fn new() -> Self {
     Self {
       _state: std::marker::PhantomData,
@@ -24,19 +24,19 @@ impl<S> UserLogController<S> {
 
   async fn list(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Query(filter): Query<UserLogFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<UserLogListItem>, SumidaError> {
-    Ok(UserLogService::new(session).list(filter, pagination).await?.into())
+    Ok(UserLogService::new(state, session).list(filter, pagination).await?.into())
   }
 
   async fn get(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<GetUserLog, SumidaError> {
-    UserLogService::new(session)
+    UserLogService::new(state, session)
       .get(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("UserLog".to_owned(), id.to_string()))
@@ -44,26 +44,26 @@ impl<S> UserLogController<S> {
 
   async fn delete(
     session: UserSession,
-    State(_state): State<S>,
+    State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<UserLogDeleted, SumidaError> {
-    UserLogService::new(session).delete(id).await?;
+    UserLogService::new(state, session).delete(id).await?;
     Ok(UserLogDeleted)
   }
 }
 
 impl<S> ApiController<S> for UserLogController<S>
 where
-  S: Clone + Send + Sync + 'static,
+  S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!("user_log", read));
+      .route_layer(service_ap!(state, "user_log", read));
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!("user_log", delete));
+      .route_layer(service_ap!(state, "user_log", delete));
 
     Router::new() //
       .merge(route_read)

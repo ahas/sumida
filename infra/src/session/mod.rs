@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use tower_sessions::{Expiry, Session};
 use uaparser::{Parser, UserAgentParser};
 
-use crate::{db, settings};
+use crate::settings;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -200,11 +200,12 @@ impl UserSession {
   pub const USER_ENV_KEY: &'static str = "user.env";
   pub const USER_STATE_KEY: &'static str = "user.state";
 
-  pub async fn authorize(
+  pub async fn authorize<C: TransactionTrait>(
     &mut self,
     id: i32,
     username: &str,
     expiry: Option<Expiry>,
+    db: &C,
   ) -> Result<(), SumidaError> {
     self.profile.id = id;
     self.profile.username = username.to_owned();
@@ -214,7 +215,7 @@ impl UserSession {
     self.state.failed_login_attempts = 0;
 
     self.inner.set_expiry(expiry);
-    self.identify().await?;
+    self.identify(db).await?;
 
     Ok(())
   }
@@ -224,6 +225,7 @@ impl UserSession {
     user_id: Option<i32>,
     method: LoginMethod,
     code: LoginCode,
+    db: &DatabaseConnection,
   ) -> Result<InsertResult<entity::user_logs::ActiveModel>, DbErr> {
     UserLogs::insert(entity::user_logs::ActiveModel {
       user_id: Set(user_id.unwrap_or(self.profile.id)),
@@ -241,7 +243,7 @@ impl UserSession {
       os_patch_minor: Set(self.env.os_patch_minor.clone()),
       ..Default::default()
     })
-    .exec(db::get_connection())
+    .exec(db)
     .await
   }
 
@@ -366,10 +368,10 @@ impl UserSession {
     }
   }
 
-  pub async fn identify(&mut self) -> Result<(), SumidaError> {
+  pub async fn identify<C: TransactionTrait>(&mut self, db: &C) -> Result<(), SumidaError> {
     if self.profile.is_authorized {
       let profile = &mut self.profile;
-      let txn = db::get_connection().begin().await?;
+      let txn = db.begin().await?;
 
       Users::update(entity::users::ActiveModel {
         id: Unchanged(profile.id),

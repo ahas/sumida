@@ -176,6 +176,7 @@ dependencies = [
  "e2e",
  "entity",
  "error",
+ "futures",
  "humantime",
  "image",
  "infra",
