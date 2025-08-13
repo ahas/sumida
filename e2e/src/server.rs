@@ -47,7 +47,8 @@ impl TestServer {
 
     let state = TestServerState { db };
     let (messenger_layer, messenger) = infra::messenger::new_layer();
-    let redis_store = Arc::new(Mutex::new(RedisSessionStore::new(&settings.session.redis).await?));
+    let redis_store =
+      Arc::new(Mutex::new(RedisSessionStore::new(settings.session.redis.as_ref().unwrap()).await?));
 
     let api = Router::new()
       .merge(

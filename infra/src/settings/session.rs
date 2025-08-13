@@ -7,9 +7,9 @@ use tower_sessions::Expiry;
 #[allow(dead_code)]
 pub struct SessionSettings {
   #[cfg(feature = "session-store-redis")]
-  pub redis: SessionRedisSettings,
+  pub redis: Option<SessionRedisSettings>,
   #[cfg(feature = "session-store-aws-dynamodb")]
-  pub dynamodb: SessionDynamodbSettings,
+  pub dynamodb: Option<SessionDynamodbSettings>,
 
   pub ip_source: ClientIpSource,
   pub cookie: SessionCookieSettings,

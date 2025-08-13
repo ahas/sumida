@@ -25,7 +25,6 @@ fn get_pg_pool_options() -> (String, PoolOptions<Postgres>) {
   let max_lifetime = parse_to_duration(config.max_lifetime.as_ref());
 
   let mut conn_opts = ConnectOptions::new(&config.url);
-  tracing::info!("{:?}", config);
 
   if let Some(v) = config.max_connections {
     conn_opts.max_connections(v);

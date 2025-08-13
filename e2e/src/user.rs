@@ -55,20 +55,32 @@ pub struct TestUser {
 
 impl TestUser {
   pub async fn create<C: ConnectionTrait>(db: &C) -> anyhow::Result<Self> {
+    Self::create_with_admin(db, false).await
+  }
+
+  pub async fn create_admin<C: ConnectionTrait>(db: &C) -> anyhow::Result<Self> {
+    Self::create_with_admin(db, true).await
+  }
+
+  pub async fn create_with_admin<C: ConnectionTrait>(db: &C, is_admin: bool) -> anyhow::Result<Self> {
     let org = TestOrg::create(db).await?;
     let role = TestRole::create(db).await?;
     let password = generate_url_safe_string(8).unwrap();
     let hashed_password = hash_password(password.clone()).expect("Failed to hash password");
+    
+    // Use timestamp to ensure unique username
+    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
+    let random_suffix = generate_url_safe_string(8).unwrap();
 
     let id = Users::insert(entity::users::ActiveModel {
-      username: Set(format!("test-{}", generate_url_safe_string(8).unwrap())),
+      username: Set(format!("test-{}-{}", timestamp, random_suffix)),
       password: Set(hashed_password),
-      email: Set(Some(generate_url_safe_string(8).unwrap())),
-      full_name: Set(Some(generate_url_safe_string(8).unwrap())),
-      phone: Set(Some(generate_url_safe_string(8).unwrap())),
+      email: Set(Some(format!("test-{}@example.com", random_suffix))),
+      full_name: Set(Some(format!("Test User {}", random_suffix))),
+      phone: Set(Some(format!("+1555{}", generate_url_safe_string(7).unwrap()))),
       role_id: Set(role.model.id),
       organization_id: Set(org.model.id),
-      is_admin: Set(true),
+      is_admin: Set(is_admin),
       is_enabled: Set(true),
       ..Default::default()
     })
