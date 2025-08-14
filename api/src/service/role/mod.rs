@@ -110,10 +110,16 @@ impl<S: SumidaState> RoleService<S> {
 
 impl<S: SumidaState> ApiService<ApCondition, Roles> for RoleService<S> {
   fn ap(&self) -> ApCondition {
+    ap::ns("role").who(&self.session)
+  }
+
+  fn select(&self, query: sea_orm::Select<Roles>) -> sea_orm::Select<Roles> {
     use entity::roles::Column;
 
-    ap::ns("role") //
-      .who(&self.session)
+    self
+      .ap()
       .object_ref(Expr::col((Roles, Column::Id)).cast_as("varchar"))
+      .action("read")
+      .apply(query)
   }
 }

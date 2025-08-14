@@ -183,10 +183,16 @@ impl<S: SumidaState> ApiService<ApCondition, ApiKeys> for ApiKeyService<S> {
   }
 
   fn ap(&self) -> ApCondition {
+    ap::ns("api_key").who(&self.session)
+  }
+
+  fn select(&self, query: sea_orm::Select<ApiKeys>) -> sea_orm::Select<ApiKeys> {
     use entity::api_keys::Column;
 
-    ap::ns("api_key") //
-      .who(&self.session)
+    self
+      .ap()
       .object_ref(Expr::col((ApiKeys, Column::Key)).cast_as("varchar"))
+      .action("read")
+      .apply(Self::default_query_with(query))
   }
 }

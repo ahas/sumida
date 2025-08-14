@@ -98,10 +98,16 @@ impl<S: SumidaState> OrganizationService<S> {
 
 impl<S: SumidaState> ApiService<ApCondition, Organizations> for OrganizationService<S> {
   fn ap(&self) -> ApCondition {
+    ap::ns("organization").who(&self.session)
+  }
+
+  fn select(&self, query: sea_orm::Select<Organizations>) -> sea_orm::Select<Organizations> {
     use entity::organizations::Column;
 
-    ap::ns("organization") //
-      .who(&self.session)
+    self
+      .ap()
       .object_ref(Expr::col((Organizations, Column::Id)).cast_as("varchar"))
+      .action("read")
+      .apply(query)
   }
 }

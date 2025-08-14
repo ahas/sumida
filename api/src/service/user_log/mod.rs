@@ -86,10 +86,16 @@ impl<S: SumidaState> ApiService<ApCondition, UserLogs> for UserLogService<S> {
   }
 
   fn ap(&self) -> ApCondition {
+    ap::ns("user_log").who(&self.session)
+  }
+
+  fn select(&self, query: sea_orm::Select<UserLogs>) -> sea_orm::Select<UserLogs> {
     use entity::user_logs::Column;
 
-    ap::ns("user_log") //
-      .who(&self.session)
+    self
+      .ap()
       .object_ref(Expr::col((UserLogs, Column::Id)).cast_as("varchar"))
+      .action("read")
+      .apply(Self::default_query_with(query))
   }
 }

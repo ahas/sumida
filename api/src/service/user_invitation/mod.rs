@@ -147,10 +147,16 @@ impl<S: SumidaState> UserInvitationService<S> {
 
 impl<S: SumidaState> ApiService<ApCondition, UserInvitations> for UserInvitationService<S> {
   fn ap(&self) -> ApCondition {
+    ap::ns("user_invitation").who(&self.session)
+  }
+
+  fn select(&self, query: sea_orm::Select<UserInvitations>) -> sea_orm::Select<UserInvitations> {
     use entity::user_invitations::Column;
 
-    ap::ns("user_invitation")
-      .who(&self.session)
+    self
+      .ap()
       .object_ref(Expr::col((UserInvitations, Column::Uuid)).cast_as("varchar"))
+      .action("read")
+      .apply(query)
   }
 }

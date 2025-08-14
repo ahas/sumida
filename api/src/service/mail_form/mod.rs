@@ -199,10 +199,16 @@ impl<S: SumidaState> MailFormService<S> {
 
 impl<S: SumidaState> ApiService<ApCondition, MailForms> for MailFormService<S> {
   fn ap(&self) -> ApCondition {
+    ap::ns("mail_form").who(&self.session)
+  }
+
+  fn select(&self, query: sea_orm::Select<MailForms>) -> sea_orm::Select<MailForms> {
     use entity::mail_forms::Column;
 
-    ap::ns("mail_form") //
-      .who(&self.session)
+    self
+      .ap()
       .object_ref(Expr::col((MailForms, Column::Kind)).cast_as("varchar"))
+      .action("read")
+      .apply(query)
   }
 }

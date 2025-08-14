@@ -92,10 +92,16 @@ impl<S: SumidaState> ApiService<ApCondition, Boards> for BoardService<S> {
   }
 
   fn ap(&self) -> ApCondition {
+    ap::ns("board").who(&self.session)
+  }
+
+  fn select(&self, query: sea_orm::Select<Boards>) -> sea_orm::Select<Boards> {
     use entity::bs::boards::Column;
 
-    ap::ns("board") //
-      .who(&self.session)
+    self
+      .ap()
       .object_ref(Expr::col((Boards, Column::Id)).cast_as("varchar"))
+      .action("read")
+      .apply(Self::default_query_with(query))
   }
 }
