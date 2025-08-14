@@ -74,7 +74,11 @@ impl<S: SumidaState> OrganizationService<S> {
     data: UpdateOrganization,
   ) -> Result<entity::organizations::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().object(id).action("update").try_access(&txn).await?;
+    self
+      .ap()
+      .action("update")
+      .try_access(self.select(Organizations::find_by_id(id)), &txn)
+      .await?;
 
     let mut model = data.into_active_model();
     model.id = Set(id);
@@ -87,7 +91,11 @@ impl<S: SumidaState> OrganizationService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().object(id).action("delete").try_access(&txn).await?;
+    self
+      .ap()
+      .action("delete")
+      .try_access(self.select(Organizations::find_by_id(id)), &txn)
+      .await?;
 
     let result = Organizations::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -98,15 +106,16 @@ impl<S: SumidaState> OrganizationService<S> {
 
 impl<S: SumidaState> ApiService<ApCondition, Organizations> for OrganizationService<S> {
   fn ap(&self) -> ApCondition {
-    ap::ns("organization").who(&self.session)
+    use entity::organizations::Column;
+
+    ap::ns("organization")
+      .who(&self.session)
+      .object_ref(Expr::col((Organizations, Column::Id)).cast_as("varchar"))
   }
 
   fn select(&self, query: sea_orm::Select<Organizations>) -> sea_orm::Select<Organizations> {
-    use entity::organizations::Column;
-
     self
       .ap()
-      .object_ref(Expr::col((Organizations, Column::Id)).cast_as("varchar"))
       .action("read")
       .apply(query)
   }

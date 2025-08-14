@@ -172,7 +172,11 @@ impl<S: SumidaState> MailFormService<S> {
     K: AsRef<str>,
   {
     let txn = self.state.db().begin().await?;
-    self.ap().object(kind.as_ref()).action("update").try_access(&txn).await?;
+    self
+      .ap()
+      .action("update")
+      .try_access(self.select(MailForms::find_by_id(kind.as_ref())), &txn)
+      .await?;
 
     let mut model = data.into_active_model();
     model.kind = Set(kind.as_ref().to_string());
@@ -188,7 +192,11 @@ impl<S: SumidaState> MailFormService<S> {
     K: AsRef<str>,
   {
     let txn = self.state.db().begin().await?;
-    self.ap().object(kind.as_ref()).action("delete").try_access(&txn).await?;
+    self
+      .ap()
+      .action("delete")
+      .try_access(self.select(MailForms::find_by_id(kind.as_ref())), &txn)
+      .await?;
 
     let result = MailForms::delete_by_id(kind.as_ref()).exec(&txn).await?;
     txn.commit().await?;
@@ -199,15 +207,16 @@ impl<S: SumidaState> MailFormService<S> {
 
 impl<S: SumidaState> ApiService<ApCondition, MailForms> for MailFormService<S> {
   fn ap(&self) -> ApCondition {
-    ap::ns("mail_form").who(&self.session)
+    use entity::mail_forms::Column;
+
+    ap::ns("mail_form")
+      .who(&self.session)
+      .object_ref(Expr::col((MailForms, Column::Kind)).cast_as("varchar"))
   }
 
   fn select(&self, query: sea_orm::Select<MailForms>) -> sea_orm::Select<MailForms> {
-    use entity::mail_forms::Column;
-
     self
       .ap()
-      .object_ref(Expr::col((MailForms, Column::Kind)).cast_as("varchar"))
       .action("read")
       .apply(query)
   }

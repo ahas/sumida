@@ -60,7 +60,11 @@ impl<S: SumidaState> UserLogService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().object(id).action("delete").try_access(&txn).await?;
+    self
+      .ap()
+      .action("delete")
+      .try_access(self.select(UserLogs::find_by_id(id)), &txn)
+      .await?;
 
     let result = UserLogs::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -86,15 +90,16 @@ impl<S: SumidaState> ApiService<ApCondition, UserLogs> for UserLogService<S> {
   }
 
   fn ap(&self) -> ApCondition {
-    ap::ns("user_log").who(&self.session)
+    use entity::user_logs::Column;
+
+    ap::ns("user_log")
+      .who(&self.session)
+      .object_ref(Expr::col((UserLogs, Column::Id)).cast_as("varchar"))
   }
 
   fn select(&self, query: sea_orm::Select<UserLogs>) -> sea_orm::Select<UserLogs> {
-    use entity::user_logs::Column;
-
     self
       .ap()
-      .object_ref(Expr::col((UserLogs, Column::Id)).cast_as("varchar"))
       .action("read")
       .apply(Self::default_query_with(query))
   }

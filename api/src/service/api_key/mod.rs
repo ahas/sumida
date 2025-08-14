@@ -134,7 +134,7 @@ impl<S: SumidaState> ApiKeyService<S> {
   ) -> Result<entity::api_keys::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    self.ap().object(key).action("update").try_access(&txn).await?;
+    self.ap().action("update").try_access(self.select(ApiKeys::find_by_id(key)), &txn).await?;
 
     let user_aps = if data.is_secured.0.unwrap_or_default() {
       data.access_policies.clone()
@@ -157,7 +157,7 @@ impl<S: SumidaState> ApiKeyService<S> {
 
   pub async fn delete(&self, key: &str) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().object(key).action("delete").try_access(&txn).await?;
+    self.ap().action("delete").try_access(self.select(ApiKeys::find_by_id(key)), &txn).await?;
     ap::for_users().user(ApUser::ApiKey(key.to_owned())).clear(&txn).await?;
 
     let result = ApiKeys::delete_by_id(key).exec(&txn).await?;
@@ -183,12 +183,14 @@ impl<S: SumidaState> ApiService<ApCondition, ApiKeys> for ApiKeyService<S> {
   }
 
   fn ap(&self) -> ApCondition {
-    ap::ns("api_key").who(&self.session)
+    use entity::api_keys::Column;
+    ap::ns("api_key") //
+      .who(&self.session)
+      .object_ref(Expr::col((ApiKeys, Column::Key)).cast_as("varchar"))
   }
 
   fn select(&self, query: sea_orm::Select<ApiKeys>) -> sea_orm::Select<ApiKeys> {
     use entity::api_keys::Column;
-
     self
       .ap()
       .object_ref(Expr::col((ApiKeys, Column::Key)).cast_as("varchar"))

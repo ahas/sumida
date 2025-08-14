@@ -91,7 +91,7 @@ where
 
       use crate::util::ap::{self, ApGuard};
       let is_allowed =
-        ap::ns(namespace).object("service").action(action).who(&session).can_access(state.db()).await;
+        ap::ns(namespace).object("service").action(action).who(&session).check_allowed(state.db()).await;
 
       if is_allowed {
         inner.call(req).await

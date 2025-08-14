@@ -117,8 +117,17 @@ pub trait ApGuard {
   fn who(self, session: &UserSession) -> Self;
   fn condition(&self) -> Condition;
   fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E>;
-  fn can_access<C: ConnectionTrait>(self, db: &C) -> impl Future<Output = bool>;
-  fn try_access<C: ConnectionTrait>(self, db: &C) -> impl Future<Output = Result<(), SumidaError>>;
+  fn check_allowed<C: ConnectionTrait>(self, db: &C) -> impl Future<Output = bool>;
+  fn can_access<E: EntityTrait, C: ConnectionTrait>(
+    self,
+    query: Select<E>,
+    db: &C,
+  ) -> impl Future<Output = bool>;
+  fn try_access<E: EntityTrait, C: ConnectionTrait>(
+    self,
+    query: Select<E>,
+    db: &C,
+  ) -> impl Future<Output = Result<(), SumidaError>>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -234,7 +243,7 @@ impl ApGuard for ApCondition {
     query.filter(self.condition())
   }
 
-  async fn can_access<C>(self, db: &C) -> bool
+  async fn check_allowed<C>(self, db: &C) -> bool
   where
     C: ConnectionTrait,
   {
@@ -249,12 +258,21 @@ impl ApGuard for ApCondition {
     allowed_count > 0 && denied_count == 0
   }
 
-  async fn try_access<C>(self, db: &C) -> Result<(), SumidaError>
+  async fn can_access<E, C>(self, query: Select<E>, db: &C) -> bool
   where
+    E: EntityTrait,
     C: ConnectionTrait,
   {
-    if !self.can_access(db).await {
-      return Err(SumidaError::NoServiceAvailable);
+    query.filter(self.condition()).one(db).await.ok().flatten().is_some()
+  }
+
+  async fn try_access<E, C>(self, query: Select<E>, db: &C) -> Result<(), SumidaError>
+  where
+    E: EntityTrait,
+    C: ConnectionTrait,
+  {
+    if !self.can_access(query, db).await {
+      return Err(SumidaError::NoAccessPermission);
     }
 
     Ok(())
@@ -334,12 +352,12 @@ impl ApGuard for ApChain {
     query.filter(self.condition())
   }
 
-  async fn can_access<C>(self, db: &C) -> bool
+  async fn check_allowed<C>(self, db: &C) -> bool
   where
     C: ConnectionTrait,
   {
     for child in self.children {
-      if !child.can_access(db).await {
+      if !child.check_allowed(db).await {
         return false;
       }
     }
@@ -347,13 +365,28 @@ impl ApGuard for ApChain {
     true
   }
 
-  async fn try_access<C>(self, db: &C) -> Result<(), SumidaError>
+  async fn can_access<E, C>(self, query: Select<E>, db: &C) -> bool
   where
+    E: EntityTrait,
     C: ConnectionTrait,
   {
     for child in self.children {
-      if !child.can_access(db).await {
-        return Err(SumidaError::NoServiceAvailable);
+      if !child.can_access(query.clone(), db).await {
+        return false;
+      }
+    }
+
+    true
+  }
+
+  async fn try_access<E, C>(self, query: Select<E>, db: &C) -> Result<(), SumidaError>
+  where
+    E: EntityTrait,
+    C: ConnectionTrait,
+  {
+    for child in self.children {
+      if !child.can_access(query.clone(), db).await {
+        return Err(SumidaError::NoAccessPermission);
       }
     }
 

@@ -80,7 +80,7 @@ impl<S: SumidaState> UserService<S> {
 
   pub async fn update(&self, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().object(user_id).action("update").try_access(&txn).await?;
+    self.ap().action("update").try_access(self.select(Users::find_by_id(user_id)), &txn).await?;
 
     let Optional(password) = data.password.clone();
 
@@ -99,7 +99,7 @@ impl<S: SumidaState> UserService<S> {
 
   pub async fn delete(&self, user_id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().object(user_id).action("delete").try_access(&txn).await?;
+    self.ap().action("delete").try_access(self.select(Users::find_by_id(user_id)), &txn).await?;
 
     let result = Users::delete_by_id(user_id).exec(&txn).await?;
     txn.commit().await?;

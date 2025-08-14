@@ -36,6 +36,8 @@ pub enum SumidaError {
   NotAuthorized(i32),
   #[error("user credentials required")]
   NoCredentials,
+  #[error("no access permission for this resource")]
+  NoAccessPermission,
   #[error("no service available")]
   NoServiceAvailable,
   #[error("no jwt secret")]
