@@ -32,10 +32,9 @@ impl<S: SumidaState> RoleService<S> {
   ) -> Result<(Vec<RoleListItem>, u64), SumidaError> {
     use entity::roles::Column;
 
-    let txn = self.state.db().begin().await?;
-
+    let db = self.state.db();
     let mut query = filter.apply(self.select(Roles::find()));
-    let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
+    let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
       "name" => Column::Name,
@@ -45,8 +44,7 @@ impl<S: SumidaState> RoleService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<RoleListItem>().all(&txn).await?;
-    txn.commit().await?;
+    let items = query.into_model::<RoleListItem>().all(db).await?;
 
     Ok((items, count))
   }

@@ -32,13 +32,13 @@ impl<S: SumidaState> UserLogService<S> {
   ) -> Result<(Vec<UserLogListItem>, u64), SumidaError> {
     use entity::user_logs::Column;
 
-    let txn = self.state.db().begin().await?;
+    let db = self.state.db();
     let col_user_id = Expr::col("user_id");
     let col_username = Expr::col("user_username");
     let col_full_name = Expr::col("user_full_name");
 
     let mut query = filter.apply(self.select(UserLogs::find()));
-    let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
+    let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
       "userId" => col_user_id.into_simple_expr(),
@@ -48,8 +48,7 @@ impl<S: SumidaState> UserLogService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<UserLogListItem>().all(&txn).await?;
-    txn.commit().await?;
+    let items = query.into_model::<UserLogListItem>().all(db).await?;
 
     Ok((items, count))
   }

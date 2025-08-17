@@ -17,6 +17,7 @@ use self::dto::*;
 
 pub struct BoardPostService<S: SumidaState> {
   state: S,
+  #[allow(dead_code)]
   session: UserSession,
 }
 
@@ -41,11 +42,9 @@ impl<S: SumidaState> BoardPostService<S> {
   ) -> Result<(Vec<BoardPostListItem>, u64), SumidaError> {
     use entity::bs::board_posts::Column;
 
-    let txn = self.state.db().begin().await?;
-
+    let db = self.state.db();
     let mut query = filter.apply(self.select(BoardPosts::find()));
-
-    let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
+    let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
       "title" => Column::Title.into_simple_expr(),
@@ -53,9 +52,8 @@ impl<S: SumidaState> BoardPostService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_partial_model::<BoardPostListItem>().all(&txn).await?;
+    let items = query.into_partial_model::<BoardPostListItem>().all(db).await?;
 
-    txn.commit().await?;
     Ok((items, count))
   }
 

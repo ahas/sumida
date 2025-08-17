@@ -15,6 +15,7 @@ use sea_orm::{ActiveValue::Set, DeleteResult, EntityTrait, InsertResult, QuerySe
 
 pub struct BoardCommentService<S: SumidaState> {
   state: S,
+  #[allow(dead_code)]
   session: UserSession,
 }
 

@@ -32,10 +32,9 @@ impl<S: SumidaState> OrganizationService<S> {
   ) -> Result<(Vec<OrganizationListItem>, u64), SumidaError> {
     use entity::organizations::Column;
 
-    let txn = self.state.db().begin().await?;
-
+    let db = self.state.db();
     let mut query = filter.apply(self.select(Organizations::find()));
-    let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
+    let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
       "name" => Column::Name,
@@ -45,8 +44,7 @@ impl<S: SumidaState> OrganizationService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<OrganizationListItem>().all(&txn).await?;
-    txn.commit().await?;
+    let items = query.into_model::<OrganizationListItem>().all(db).await?;
 
     Ok((items, count))
   }

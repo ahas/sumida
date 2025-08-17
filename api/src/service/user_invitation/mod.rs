@@ -55,10 +55,9 @@ impl<S: SumidaState> UserInvitationService<S> {
   ) -> Result<(Vec<UserInvitationListItem>, u64), SumidaError> {
     use entity::user_invitations::Column;
 
-    let txn = self.state.db().begin().await?;
-
+    let db = self.state.db();
     let mut query = filter.apply(self.select(UserInvitations::find()));
-    let count = query.clone().select_only().column(Column::Uuid).count(&txn).await?;
+    let count = query.clone().select_only().column(Column::Uuid).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
       "user_id" => Column::UserId,
@@ -67,8 +66,7 @@ impl<S: SumidaState> UserInvitationService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<UserInvitationListItem>().all(&txn).await?;
-    txn.commit().await?;
+    let items = query.into_model::<UserInvitationListItem>().all(db).await?;
 
     Ok((items, count))
   }

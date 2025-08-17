@@ -85,8 +85,6 @@ pub async fn get_session(
 }
 
 pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerState>) {
-  tracing::info!("connect socket");
-
   let Some(session) = get_session(&socket, &state).await.ok() else {
     tracing::error!("socket session failed");
     socket.disconnect().ok();

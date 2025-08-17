@@ -10,7 +10,7 @@ use error::SumidaError;
 use futures::future::BoxFuture;
 use infra::session::UserSession;
 use jsonwebtoken as jwt;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
@@ -52,7 +52,10 @@ pub struct UserGuardService<S, T> {
 impl<S, T> Service<Request<Body>> for UserGuardService<S, T>
 where
   S: SumidaState,
-  T: Service<Request<Body>, Response = Response<Body>, Error = std::convert::Infallible> + Clone + Send + 'static,
+  T: Service<Request<Body>, Response = Response<Body>, Error = std::convert::Infallible>
+    + Clone
+    + Send
+    + 'static,
   T::Future: Send + 'static,
 {
   type Response = Response<Body>;
@@ -150,17 +153,16 @@ pub async fn verify_api_key<S: SumidaState>(
   state: S,
   key: &str,
 ) -> Result<(), SumidaError> {
-  let txn = state.db().begin().await?;
-
+  let db = state.db();
   let api_key = ApiKeys::find()
     .filter(entity::api_keys::Column::Key.eq(key))
-    .one(&txn)
+    .one(db)
     .await?
     .ok_or(SumidaError::InvalidApiKey)?;
-  let user = Users::find_by_id(api_key.user_id).one(&txn).await?;
+  let user = Users::find_by_id(api_key.user_id).one(db).await?;
 
   if let Some(user) = user {
-    session.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd), &txn).await?;
+    session.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd), db).await?;
 
     if api_key.is_secured {
       session.profile.api_key = Some(key.to_owned());
@@ -168,8 +170,6 @@ pub async fn verify_api_key<S: SumidaState>(
   } else {
     return Err(SumidaError::InvalidAccount);
   }
-
-  txn.commit().await?;
 
   Ok(())
 }

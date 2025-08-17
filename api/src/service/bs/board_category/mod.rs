@@ -7,7 +7,6 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
   DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, PaginatorTrait, QuerySelect,
-  TransactionTrait,
 };
 
 use self::dto::*;
@@ -16,6 +15,7 @@ use crate::util::pagination::Pagination;
 
 pub struct BoardCategoryService<S: SumidaState> {
   state: S,
+  #[allow(dead_code)]
   session: UserSession,
 }
 
@@ -31,12 +31,10 @@ impl<S: SumidaState> BoardCategoryService<S> {
   ) -> Result<(Vec<BoardCategoryListItem>, u64), SumidaError> {
     use entity::bs::board_categories::Column;
 
-    let txn = self.state.db().begin().await?;
-
+    let db = self.state.db();
     let mut query =
       filter.apply(BoardCategories::find().select_only().expr(Expr::col((BoardCategories, Asterisk))));
-
-    let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
+    let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
       "name" => Column::Name.into_simple_expr(),
@@ -44,8 +42,7 @@ impl<S: SumidaState> BoardCategoryService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_partial_model::<BoardCategoryListItem>().all(&txn).await?;
-    txn.commit().await?;
+    let items = query.into_partial_model::<BoardCategoryListItem>().all(db).await?;
 
     Ok((items, count))
   }

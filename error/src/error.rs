@@ -112,6 +112,7 @@ impl From<SumidaError> for StatusCode {
       | SumidaError::InvalidAuthorizationToken
       | SumidaError::OnlyAdminAllowed
       | SumidaError::VerificationFailed => Ok(StatusCode::UNAUTHORIZED),
+      SumidaError::NoAccessPermission => Ok(StatusCode::FORBIDDEN),
       SumidaError::NoServiceAvailable => Ok(StatusCode::FORBIDDEN),
       SumidaError::InvalidAuthorizationMethod(_) => Ok(StatusCode::NOT_IMPLEMENTED),
 

@@ -263,6 +263,7 @@ impl ApGuard for ApCondition {
     E: EntityTrait,
     C: ConnectionTrait,
   {
+    println!("{:?}", query.clone().filter(self.condition()).build(db.get_database_backend()).to_string());
     query.filter(self.condition()).one(db).await.ok().flatten().is_some()
   }
 

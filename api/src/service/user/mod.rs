@@ -41,10 +41,9 @@ impl<S: SumidaState> UserService<S> {
   ) -> Result<(Vec<UserListItem>, u64), SumidaError> {
     use entity::users::Column;
 
-    let txn = self.state.db().begin().await?;
-
+    let db = self.state.db();
     let mut query = filter.apply(self.select(Users::find()));
-    let count = query.clone().select_only().column(Column::Username).count(&txn).await?;
+    let count = query.clone().select_only().column(Column::Username).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
       "name" => Column::FullName,
@@ -55,8 +54,7 @@ impl<S: SumidaState> UserService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<UserListItem>().all(&txn).await?;
-    txn.commit().await?;
+    let items = query.into_model::<UserListItem>().all(db).await?;
 
     Ok((items, count))
   }
@@ -80,7 +78,7 @@ impl<S: SumidaState> UserService<S> {
 
   pub async fn update(&self, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().action("update").try_access(self.select(Users::find_by_id(user_id)), &txn).await?;
+    self.ap().action("update").try_access(Users::find_by_id(user_id), &txn).await?;
 
     let Optional(password) = data.password.clone();
 
@@ -99,7 +97,7 @@ impl<S: SumidaState> UserService<S> {
 
   pub async fn delete(&self, user_id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().action("delete").try_access(self.select(Users::find_by_id(user_id)), &txn).await?;
+    self.ap().action("delete").try_access(Users::find_by_id(user_id), &txn).await?;
 
     let result = Users::delete_by_id(user_id).exec(&txn).await?;
     txn.commit().await?;

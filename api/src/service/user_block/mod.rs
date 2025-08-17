@@ -107,11 +107,7 @@ impl<S: SumidaState> UserBlockService<S> {
     data: UpdateUserBlock,
   ) -> Result<entity::user_blocks::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("update")
-      .try_access(self.select(UserBlocks::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("update").try_access(self.select(UserBlocks::find_by_id(id)), &txn).await?;
 
     let mut active_model = data.into_active_model();
     active_model.id = Set(id);
@@ -124,11 +120,7 @@ impl<S: SumidaState> UserBlockService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("delete")
-      .try_access(self.select(UserBlocks::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("delete").try_access(self.select(UserBlocks::find_by_id(id)), &txn).await?;
 
     let result = UserBlocks::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -162,11 +154,6 @@ impl<S: SumidaState> ApiService<ApCondition, UserBlocks> for UserBlockService<S>
   }
 
   fn select(&self, query: sea_orm::Select<UserBlocks>) -> sea_orm::Select<UserBlocks> {
-    use entity::user_blocks::Column;
-
-    self
-      .ap()
-      .action("read")
-      .apply(Self::default_query_with(query))
+    self.ap().action("read").apply(Self::default_query_with(query))
   }
 }

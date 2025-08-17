@@ -16,8 +16,6 @@ pub fn new() -> CorsLayer {
         .collect()
     });
 
-  tracing::info!("allowed cors origins:");
-
   CorsLayer::new()
     .allow_credentials(true)
     .allow_origin(origins)
