@@ -4,7 +4,7 @@ use axum::{Json, Router, extract::State, http::StatusCode, response::IntoRespons
 use error::SumidaError;
 use serde_json::json;
 
-use crate::{controller::ApiController, layer::UserGuardLayer, service::prelude::*, SumidaState};
+use crate::{SumidaState, controller::ApiController, layer::UserGuardLayer, service::prelude::*};
 
 #[derive(Clone, Debug, Default)]
 pub struct AuthSessionController<S: SumidaState> {

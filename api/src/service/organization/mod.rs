@@ -72,11 +72,7 @@ impl<S: SumidaState> OrganizationService<S> {
     data: UpdateOrganization,
   ) -> Result<entity::organizations::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("update")
-      .try_access(self.select(Organizations::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("update").try_access(Organizations::find_by_id(id), &txn).await?;
 
     let mut model = data.into_active_model();
     model.id = Set(id);
@@ -89,11 +85,7 @@ impl<S: SumidaState> OrganizationService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("delete")
-      .try_access(self.select(Organizations::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("delete").try_access(Organizations::find_by_id(id), &txn).await?;
 
     let result = Organizations::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
@@ -112,9 +104,6 @@ impl<S: SumidaState> ApiService<ApCondition, Organizations> for OrganizationServ
   }
 
   fn select(&self, query: sea_orm::Select<Organizations>) -> sea_orm::Select<Organizations> {
-    self
-      .ap()
-      .action("read")
-      .apply(query)
+    self.ap().action("read").apply(query)
   }
 }

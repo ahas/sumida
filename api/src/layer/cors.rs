@@ -4,17 +4,9 @@ use tower_http::cors::CorsLayer;
 
 pub fn new() -> CorsLayer {
   let settings = settings::get();
-  let origins = settings
-    .server
-    .cors
-    .as_ref()
-    .map_or_else(Vec::new, |x| {
-      x.allow_origins
-        .clone()
-        .into_iter()
-        .filter_map(|v| v.parse().ok())
-        .collect()
-    });
+  let origins = settings.server.cors.as_ref().map_or_else(Vec::new, |x| {
+    x.allow_origins.clone().into_iter().filter_map(|v| v.parse().ok()).collect()
+  });
 
   CorsLayer::new()
     .allow_credentials(true)

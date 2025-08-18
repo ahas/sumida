@@ -63,11 +63,7 @@ impl<S: SumidaState> BoardService<S> {
 
   pub async fn update(&self, id: i32, data: UpdateBoard) -> Result<entity::bs::boards::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("update")
-      .try_access(self.select(Boards::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("update").try_access(Boards::find_by_id(id), &txn).await?;
 
     let mut am = data.into_active_model();
     am.id = Set(id);
@@ -80,11 +76,7 @@ impl<S: SumidaState> BoardService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("delete")
-      .try_access(self.select(Boards::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("delete").try_access(Boards::find_by_id(id), &txn).await?;
     let result = Boards::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
@@ -102,15 +94,8 @@ impl<S: SumidaState> ApiService<ApCondition, Boards> for BoardService<S> {
   fn ap(&self) -> ApCondition {
     use entity::bs::boards::Column;
 
-    ap::ns("board")
+    ap::ns("board") //
       .who(&self.session)
       .object_ref(Expr::col((Boards, Column::Id)).cast_as("varchar"))
-  }
-
-  fn select(&self, query: sea_orm::Select<Boards>) -> sea_orm::Select<Boards> {
-    self
-      .ap()
-      .action("read")
-      .apply(Self::default_query_with(query))
   }
 }

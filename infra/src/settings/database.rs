@@ -13,4 +13,3 @@ pub struct DatabaseSettings {
   pub max_lifetime: Option<String>,
   pub logging: Option<String>,
 }
-

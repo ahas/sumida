@@ -67,10 +67,11 @@ impl TestUser {
     let role = TestRole::create(db).await?;
     let password = generate_url_safe_string(8).unwrap();
     let hashed_password = hash_password(password.clone()).expect("Failed to hash password");
-    
-    // Use timestamp to ensure unique username
-    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
-    let random_suffix = generate_url_safe_string(8).unwrap();
+
+    // Use timestamp + nanoseconds + random suffix to ensure unique username
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
+    let timestamp = now.as_nanos();
+    let random_suffix = generate_url_safe_string(12).unwrap();
 
     let id = Users::insert(entity::users::ActiveModel {
       username: Set(format!("test-{}-{}", timestamp, random_suffix)),

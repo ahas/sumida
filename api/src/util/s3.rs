@@ -2,9 +2,9 @@
 
 use anyhow::anyhow;
 use aws_smithy_types::byte_stream::{AggregatedBytes, ByteStream};
-use infra::{aws, settings};
 #[cfg(feature = "image")]
 use image::{self, DynamicImage, ImageFormat};
+use infra::{aws, settings};
 use std::{fmt::Display, io::Cursor};
 
 pub trait IntoS3Uri {

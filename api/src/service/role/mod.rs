@@ -51,11 +51,7 @@ impl<S: SumidaState> RoleService<S> {
 
   pub async fn get(&self, id: i32) -> Result<Option<GetRole>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("read")
-      .try_access(self.select(Roles::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("read").try_access(self.select(Roles::find_by_id(id)), &txn).await?;
 
     let Some(mut role) = Roles::find_by_id(id).into_model::<GetRole>().one(&txn).await? else {
       return Ok(None);
@@ -83,11 +79,7 @@ impl<S: SumidaState> RoleService<S> {
 
   pub async fn update(&self, id: i32, data: UpdateRole) -> Result<entity::roles::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("update")
-      .try_access(self.select(Roles::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("update").try_access(Roles::find_by_id(id), &txn).await?;
 
     if let Some(user_aps) = data.access_policies.clone() {
       ap::for_users().user(ApUser::Role(id)).update(user_aps, &txn).await?;
@@ -104,11 +96,7 @@ impl<S: SumidaState> RoleService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("delete")
-      .try_access(self.select(Roles::find_by_id(id)), &txn)
-      .await?;
+    self.ap().action("delete").try_access(Roles::find_by_id(id), &txn).await?;
 
     ap::for_users().user(ApUser::Role(id)).clear(&txn).await?;
     let result = Roles::delete_by_id(id).exec(&txn).await?;
@@ -122,15 +110,10 @@ impl<S: SumidaState> ApiService<ApCondition, Roles> for RoleService<S> {
   fn ap(&self) -> ApCondition {
     use entity::roles::Column;
 
-    ap::ns("role")
-      .who(&self.session)
-      .object_ref(Expr::col((Roles, Column::Id)).cast_as("varchar"))
+    ap::ns("role").who(&self.session).object_ref(Expr::col((Roles, Column::Id)).cast_as("varchar"))
   }
 
   fn select(&self, query: sea_orm::Select<Roles>) -> sea_orm::Select<Roles> {
-    self
-      .ap()
-      .action("read")
-      .apply(query)
+    self.ap().action("read").apply(query)
   }
 }

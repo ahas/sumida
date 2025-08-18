@@ -11,4 +11,3 @@ impl MigratorTrait for Migrator {
     ]
   }
 }
-

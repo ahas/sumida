@@ -134,11 +134,7 @@ impl<S: SumidaState> UserInvitationService<S> {
 
   pub async fn delete(&self, uuid: Uuid) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("delete")
-      .try_access(self.select(UserInvitations::find_by_id(uuid)), &txn)
-      .await?;
+    self.ap().action("delete").try_access(self.select(UserInvitations::find_by_id(uuid)), &txn).await?;
 
     let result = UserInvitations::delete_by_id(uuid).exec(&txn).await?;
     txn.commit().await?;
@@ -157,9 +153,6 @@ impl<S: SumidaState> ApiService<ApCondition, UserInvitations> for UserInvitation
   }
 
   fn select(&self, query: sea_orm::Select<UserInvitations>) -> sea_orm::Select<UserInvitations> {
-    self
-      .ap()
-      .action("read")
-      .apply(query)
+    self.ap().action("read").apply(query)
   }
 }

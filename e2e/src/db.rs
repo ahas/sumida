@@ -65,6 +65,40 @@ impl TestDb {
     Ok(db_name.to_string())
   }
 
+  async fn run_migration_up(db: &DatabaseConnection) -> anyhow::Result<()> {
+    use crate::migration::Migrator;
+    use sea_orm_migration::prelude::*;
+
+    Migrator::up(db, None).await.expect("Migration up command failed");
+
+    tracing::info!("✅ Applied pending migrations");
+
+    Ok(())
+  }
+
+  /// Use this method only when you need to completely reset the database
+  #[allow(dead_code)]
+  pub async fn reset_database() -> anyhow::Result<()> {
+    let db = infra::db::connect().await;
+    Self::run_migration_fresh(&db).await?;
+    
+    // Re-insert admin policy
+    AccessPolicies::insert(entity::access_policies::ActiveModel {
+      namespace: Set("*".to_string()),
+      user: Set("user:admin".to_string()),
+      object: Set("*".to_string()),
+      action: Set(vec!["*".to_string()]),
+      effect: Set("allow".to_string()),
+      ..Default::default()
+    })
+    .exec(&db)
+    .await
+    .expect("Failed to insert the admin access policy");
+
+    db.close().await?;
+    Ok(())
+  }
+
   async fn run_migration_fresh(db: &DatabaseConnection) -> anyhow::Result<()> {
     use crate::migration::Migrator;
     use sea_orm_migration::prelude::*;

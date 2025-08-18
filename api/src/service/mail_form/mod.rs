@@ -172,11 +172,7 @@ impl<S: SumidaState> MailFormService<S> {
     K: AsRef<str>,
   {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("update")
-      .try_access(self.select(MailForms::find_by_id(kind.as_ref())), &txn)
-      .await?;
+    self.ap().action("update").try_access(self.select(MailForms::find_by_id(kind.as_ref())), &txn).await?;
 
     let mut model = data.into_active_model();
     model.kind = Set(kind.as_ref().to_string());
@@ -192,11 +188,7 @@ impl<S: SumidaState> MailFormService<S> {
     K: AsRef<str>,
   {
     let txn = self.state.db().begin().await?;
-    self
-      .ap()
-      .action("delete")
-      .try_access(self.select(MailForms::find_by_id(kind.as_ref())), &txn)
-      .await?;
+    self.ap().action("delete").try_access(self.select(MailForms::find_by_id(kind.as_ref())), &txn).await?;
 
     let result = MailForms::delete_by_id(kind.as_ref()).exec(&txn).await?;
     txn.commit().await?;
@@ -215,9 +207,6 @@ impl<S: SumidaState> ApiService<ApCondition, MailForms> for MailFormService<S> {
   }
 
   fn select(&self, query: sea_orm::Select<MailForms>) -> sea_orm::Select<MailForms> {
-    self
-      .ap()
-      .action("read")
-      .apply(query)
+    self.ap().action("read").apply(query)
   }
 }
