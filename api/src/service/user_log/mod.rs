@@ -59,7 +59,7 @@ impl<S: SumidaState> UserLogService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().action("delete").try_access(self.select(UserLogs::find_by_id(id)), &txn).await?;
+    self.try_access("delete", UserLogs::find_by_id(id), &txn).await?;
 
     let result = UserLogs::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;

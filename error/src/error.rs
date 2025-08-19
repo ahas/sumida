@@ -10,11 +10,11 @@ use thiserror::Error;
 #[derive(Clone, Debug, Error)]
 pub enum SumidaError {
   // do not use this error type in general situations
-  #[error("status = {0}, reason = {1}")]
+  #[error("status: {0}, reason: {1}")]
   Unknown(u16, String),
 
   // data errors
-  #[error("type = {0}, key = {1}")]
+  #[error("type: {0}, key: {1}")]
   NoData(String, String),
   #[error("no content to serve")]
   NoContent,
@@ -57,34 +57,34 @@ pub enum SumidaError {
 
   #[error("no mail form `{0}`")]
   NoMailForm(String),
-  #[error("could not add mail form template: reason = `{0}`")]
+  #[error("could not add mail form template: reason: `{0}`")]
   MailFormAddTemplateFailed(String),
-  #[error("could not render mail form: reason = `{0}`")]
+  #[error("could not render mail form: reason: `{0}`")]
   MailFormRenderFailed(String),
   #[error("could not parse email address")]
   EmailParseFailed,
-  #[error("could not build a e-mail message: reason = `{0}`")]
+  #[error("could not build a e-mail message: reason: `{0}`")]
   EmailMessageBuildFailed(String),
-  #[error("could not send email: reason = `{0}`")]
+  #[error("could not send email: reason: `{0}`")]
   EmailSendFailed(String),
   #[error("invalid verification code")]
   VerificationFailed,
 
   // runtime errors
-  #[error("reason = {0}")]
+  #[error("reason: {0}")]
   Unsupported(String),
-  #[error("reason = {0}")]
+  #[error("reason: {0}")]
   Timeout(String),
-  #[error("reason = {0}")]
+  #[error("reason: {0}")]
   Busy(String),
   #[error("client disconnected")]
   Disconnected,
 
   // external crate errors
-  #[error("status = {0}, reason = {1}")]
+  #[error("status: {0}, reason: {1}")]
   DatabaseError(u16, String),
   #[cfg(feature = "aws-s3")]
-  #[error("status = {0}, reason = {1}")]
+  #[error("status: {0}, reason: {1}")]
   AwsS3SdkError(u16, String),
 }
 

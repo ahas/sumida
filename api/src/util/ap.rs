@@ -118,6 +118,7 @@ pub trait ApGuard {
   fn condition(&self) -> Condition;
   fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E>;
   fn check_allowed<C: ConnectionTrait>(self, db: &C) -> impl Future<Output = bool>;
+  fn try_check_allowed<C: ConnectionTrait>(self, db: &C) -> impl Future<Output = Result<(), SumidaError>>;
   fn can_access<E: EntityTrait, C: ConnectionTrait>(
     self,
     query: Select<E>,
@@ -258,12 +259,19 @@ impl ApGuard for ApCondition {
     allowed_count > 0 && denied_count == 0
   }
 
+  async fn try_check_allowed<C: ConnectionTrait>(self, db: &C) -> Result<(), SumidaError> {
+    if self.check_allowed(db).await {
+      Ok(())
+    } else {
+      Err(SumidaError::NoAccessPermission)
+    }
+  }
+
   async fn can_access<E, C>(self, query: Select<E>, db: &C) -> bool
   where
     E: EntityTrait,
     C: ConnectionTrait,
   {
-    println!("{:?}", query.clone().filter(self.condition()).build(db.get_database_backend()).to_string());
     query.filter(self.condition()).one(db).await.ok().flatten().is_some()
   }
 
@@ -364,6 +372,14 @@ impl ApGuard for ApChain {
     }
 
     true
+  }
+
+  async fn try_check_allowed<C: ConnectionTrait>(self, db: &C) -> Result<(), SumidaError> {
+    if self.check_allowed(db).await {
+      Ok(())
+    } else {
+      Err(SumidaError::NoAccessPermission)
+    }
   }
 
   async fn can_access<E, C>(self, query: Select<E>, db: &C) -> bool
@@ -531,15 +547,6 @@ impl FindUsersOfAp {
     }
   }
 
-  pub fn alias(mut self, alias: Alias) -> Self {
-    self.alias = Some(alias);
-    self
-  }
-
-  fn unwrap_alias(&self) -> Alias {
-    self.alias.clone().unwrap_or_else(|| Alias::new("ap"))
-  }
-
   pub fn object<O: ToString>(mut self, object: O) -> Self {
     self.objects.push(object.to_string());
     self
@@ -584,16 +591,29 @@ impl FindUsersOfAp {
       }
     }
 
-    let ap_alias = self.unwrap_alias();
+    let ap_alias = Alias::new(ApEntity.table_name());
+
+    let mut cond = Condition::all()
+      .add(Expr::col((ap_alias.clone(), ApCol::Effect)).eq("allow"))
+      .add(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)));
+
+    if !self.objects.is_empty() {
+      cond = cond.add(_build_object_condition(
+        //
+        &self.objects,
+        &self.object_refs,
+        (ap_alias.clone(), ApCol::Object),
+      ));
+    }
+
+    if !self.actions.is_empty() {
+      cond = cond.add(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)));
+    }
+
     let rows = ApEntity::find()
       .select_only()
       .expr(Expr::col((ap_alias.clone(), ApCol::User)))
-      .filter(
-        Condition::all()
-          .add(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)))
-          .add(_build_object_condition(&self.objects, &self.object_refs, (ap_alias.clone(), ApCol::Object)))
-          .add(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action))),
-      )
+      .filter(cond)
       .into_model::<ApUserColumnOnly>()
       .all(db)
       .await

@@ -132,7 +132,7 @@ impl<S: SumidaState> ApiKeyService<S> {
   ) -> Result<entity::api_keys::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    self.ap().action("update").try_access(self.select(ApiKeys::find_by_id(key)), &txn).await?;
+    self.try_access("update", ApiKeys::find_by_id(key), &txn).await?;
 
     let user_aps = if data.is_secured.0.unwrap_or_default() {
       data.access_policies.clone()
@@ -155,7 +155,7 @@ impl<S: SumidaState> ApiKeyService<S> {
 
   pub async fn delete(&self, key: &str) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().action("delete").try_access(self.select(ApiKeys::find_by_id(key)), &txn).await?;
+    self.try_access("delete", ApiKeys::find_by_id(key), &txn).await?;
     ap::for_users().user(ApUser::ApiKey(key.to_owned())).clear(&txn).await?;
 
     let result = ApiKeys::delete_by_id(key).exec(&txn).await?;

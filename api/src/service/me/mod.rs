@@ -37,8 +37,7 @@ impl<S: SumidaState> MeService<S> {
       return Err(SumidaError::NoCredentials);
     }
 
-    let Some(mut me_session) = self
-      .select(Users::find_by_id(self.session.profile.id))
+    let Some(mut me_session) = Self::default_query_with(Users::find_by_id(self.session.profile.id))
       .into_model::<Me>()
       .one(self.state.db())
       .await?
@@ -107,6 +106,10 @@ impl<S: SumidaState> MeService<S> {
 impl<S: SumidaState> ApiService<ApCondition, Users> for MeService<S> {
   fn ap(&self) -> ApCondition {
     self.user_service.ap()
+  }
+
+  fn default_query_with(query: Select<Users>) -> Select<Users> {
+    UserService::<S>::default_query_with(query)
   }
 
   fn select(&self, query: Select<Users>) -> Select<Users> {

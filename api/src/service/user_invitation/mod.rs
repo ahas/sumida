@@ -134,7 +134,7 @@ impl<S: SumidaState> UserInvitationService<S> {
 
   pub async fn delete(&self, uuid: Uuid) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.ap().action("delete").try_access(self.select(UserInvitations::find_by_id(uuid)), &txn).await?;
+    self.try_access("delete", UserInvitations::find_by_id(uuid), &txn).await?;
 
     let result = UserInvitations::delete_by_id(uuid).exec(&txn).await?;
     txn.commit().await?;

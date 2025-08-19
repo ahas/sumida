@@ -1,4 +1,5 @@
-use sea_orm::{EntityTrait, Select};
+use error::SumidaError;
+use sea_orm::{ConnectionTrait, EntityTrait, Select};
 
 use crate::util::ap::ApGuard;
 
@@ -24,6 +25,20 @@ pub trait ApiService<A: ApGuard, E: EntityTrait> {
   }
 
   fn ap(&self) -> A;
+
+  fn try_access<Action, C>(
+    &self,
+    action: Action,
+    query: Select<E>,
+    db: &C,
+  ) -> impl Future<Output = Result<(), SumidaError>>
+  where
+    Action: AsRef<str>,
+    C: ConnectionTrait,
+  {
+    self.ap().action(action.as_ref()).try_access(Self::default_query_with(query), db)
+  }
+
   fn select(&self, query: Select<E>) -> Select<E> {
     self.ap().action("read").apply(Self::default_query_with(query))
   }
