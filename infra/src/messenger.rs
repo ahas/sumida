@@ -91,8 +91,8 @@ pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerSt
     return;
   };
 
-  if session.verify().is_err() {
-    tracing::error!("socket session verifying failed");
+  if let Err(err) = session.verify() {
+    tracing::error!("socket session verifying failed: {}", err);
     socket.disconnect().ok();
     return;
   }

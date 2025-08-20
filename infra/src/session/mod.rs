@@ -426,7 +426,7 @@ where
     let inner = Session::from_request_parts(req, state).await?;
     let profile = inner.get(Self::USER_PROFILE_KEY).await.ok().flatten().unwrap_or_default();
     let user_state = inner.get(Self::USER_STATE_KEY).await.ok().flatten().unwrap_or_default();
-    let env = UserEnvironment::from_request_parts(req, state).await?;
+    let env = UserEnvironment::from_request_parts(req, state).await.unwrap_or_default();
 
     let mut session = Self {
       inner,
