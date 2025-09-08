@@ -23,12 +23,8 @@ pub fn new_client() -> aws_sdk_s3::Client {
 }
 
 #[allow(dead_code)]
-pub fn static_uri(data_type: impl Display, id: impl Display, path: impl Display) -> String {
-  format!(
-    "s3://{bucket}/static/{stage}/{data_type}/{id}/{path}",
-    bucket = get_bucket().unwrap_or_default(),
-    stage = &settings::get().server.stage
-  )
+pub fn static_uri(data_type: impl Display, stage: impl Display, id: impl Display, path: impl Display) -> String {
+  format!("s3://{bucket}/static/{stage}/{data_type}/{id}/{path}", bucket = get_bucket().unwrap_or_default(),)
 }
 
 #[allow(dead_code)]
