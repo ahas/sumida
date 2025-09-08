@@ -23,7 +23,12 @@ pub fn new_client() -> aws_sdk_s3::Client {
 }
 
 #[allow(dead_code)]
-pub fn static_uri(data_type: impl Display, stage: impl Display, id: impl Display, path: impl Display) -> String {
+pub fn static_uri(
+  data_type: impl Display,
+  stage: impl Display,
+  id: impl Display,
+  path: impl Display,
+) -> String {
   format!("s3://{bucket}/static/{stage}/{data_type}/{id}/{path}", bucket = get_bucket().unwrap_or_default(),)
 }
 
@@ -112,13 +117,18 @@ pub async fn put_image(
 }
 
 #[allow(dead_code)]
-pub async fn exists(client: &aws_sdk_s3::Client, uri: String) -> bool {
+pub async fn exists(client: &aws_sdk_s3::Client, uri: String) -> Result<bool, anyhow::Error> {
   let Ok((bucket, key)) = parse_uri(uri) else {
-    return false;
+    return Ok(false);
   };
-  let resp = client.head_object().bucket(bucket).key(key).send().await.ok();
 
-  resp.is_some()
+  match client.head_object().bucket(bucket).key(key).send().await {
+    Ok(_) => Ok(true),
+    Err(err) => match err.into_service_error() {
+      aws_sdk_s3::operation::head_object::HeadObjectError::NotFound(_) => Ok(false),
+      other => Err(anyhow::Error::from(other)),
+    },
+  }
 }
 
 #[allow(dead_code)]
