@@ -65,6 +65,7 @@ impl TestDb {
     Ok(db_name.to_string())
   }
 
+  #[allow(dead_code)]
   async fn run_migration_up(db: &DatabaseConnection) -> anyhow::Result<()> {
     use crate::migration::Migrator;
     use sea_orm_migration::prelude::*;

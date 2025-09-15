@@ -44,6 +44,10 @@ pub enum SumidaError {
   NoJwtSecret,
   #[error("invalid jwt")]
   InvalidJwt,
+  #[error("jwt generation failed")]
+  JwtGenerationFailed,
+  #[error("invalid jwt expiry")]
+  InvalidJwtExpiry,
   #[error("invalid api key")]
   InvalidApiKey,
   #[error("invalid authorization token")]
@@ -107,6 +111,8 @@ impl From<SumidaError> for StatusCode {
       | SumidaError::NoUserOrganization(_)
       | SumidaError::NoUserRole(_)
       | SumidaError::InvalidJwt
+      | SumidaError::JwtGenerationFailed
+      | SumidaError::InvalidJwtExpiry
       | SumidaError::NoJwtSecret
       | SumidaError::InvalidApiKey
       | SumidaError::InvalidAuthorizationToken

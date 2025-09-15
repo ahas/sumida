@@ -1,4 +1,3 @@
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use entity::{
   prelude::*,
   user_logs::{LoginCode, LoginMethod},
@@ -18,15 +17,6 @@ pub struct AuthSessionService<S: SumidaState> {
 impl<S: SumidaState> AuthSessionService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
-  }
-
-  pub fn verify_password(&self, password: &str, password_hash: &str) -> bool {
-    let argon2 = Argon2::default();
-    let Ok(parsed_hash) = PasswordHash::new(password_hash) else {
-      return false;
-    };
-
-    argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok()
   }
 
   pub async fn login(&mut self, data: LoginSession) -> Result<(), SumidaError> {
@@ -56,7 +46,7 @@ impl<S: SumidaState> AuthSessionService<S> {
     }
 
     // 4) Check the user password
-    let result = if self.verify_password(&data.password, &user.password) {
+    let result = if super::helper::verify_password(&data.password, &user.password) {
       self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::Success, db).await?;
 
       let expiry = if let Some(remember_me) = data.remember_me {

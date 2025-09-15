@@ -533,7 +533,6 @@ pub struct FindUsersOfAp {
   actions: Vec<String>,
   objects: Vec<String>,
   object_refs: Vec<SimpleExpr>,
-  alias: Option<Alias>,
 }
 
 impl FindUsersOfAp {
@@ -543,7 +542,6 @@ impl FindUsersOfAp {
       actions: Vec::new(),
       objects: Vec::new(),
       object_refs: Vec::new(),
-      alias: None,
     }
   }
 

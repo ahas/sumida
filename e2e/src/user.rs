@@ -96,7 +96,7 @@ impl TestUser {
   }
 
   pub async fn login(&self, client: &TestClient) -> Response {
-    let path = "/auth/sessions";
+    let path = "/auth/session";
     client
       .post(path)
       .json(&LoginSession {

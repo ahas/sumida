@@ -13,7 +13,7 @@ aws = ["aws-config"]
 aws-s3 = ["aws", "aws-sdk-s3"]
 aws-dynamodb = ["aws", "aws-sdk-dynamodb"]
 session = []
-session-store-redis = ["session", "tower-sessions-redis-store"]
+session-store-redis = ["session", "tower-sessions-redis-store", "fred"]
 session-store-aws-dynamodb = [
   "session",
   "aws-dynamodb",
@@ -25,7 +25,9 @@ entity = { path = "../entity" }
 error = { path = "../error" }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 axum = { workspace = true }
+cfg-if = "1.0"
 chrono = { workspace = true }
 humantime = { workspace = true }
 serde = { workspace = true }
@@ -38,12 +40,14 @@ tokio = { workspace = true }
 tower-http = { workspace = true }
 tower-sessions = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
 
 aws-config = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true, optional = true }
 aws-sdk-dynamodb = { workspace = true, optional = true }
 config = "0.15.11"
 tower-sessions-redis-store = { version = "0.16.0", optional = true }
+fred = { version = "10.1.0", optional = true }
 tower-sessions-dynamodb-store = { version = "0.3.0", optional = true }
 
 socketioxide = { version = "0.17.0", features = ["state"] }

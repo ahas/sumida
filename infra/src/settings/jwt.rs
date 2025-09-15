@@ -25,12 +25,12 @@ impl JwtExpirySettings {
   }
 
   pub fn refresh_token_expiry(&self) -> anyhow::Result<Expiry> {
-    let duration = humantime::parse_duration(&self.access_token)?;
+    let duration = humantime::parse_duration(&self.refresh_token)?;
     Ok(Expiry::AtDateTime(OffsetDateTime::now_utc() + duration))
   }
 
   pub fn remember_me_expiry(&self) -> anyhow::Result<Expiry> {
-    let duration = humantime::parse_duration(&self.access_token)?;
+    let duration = humantime::parse_duration(&self.remember_me)?;
     Ok(Expiry::AtDateTime(OffsetDateTime::now_utc() + duration))
   }
 }

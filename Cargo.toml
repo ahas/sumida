@@ -43,6 +43,7 @@ sea-orm-crud = { path = "../sea-orm-crud" }
 
 anyhow = "1.0.98"
 argon2 = "0.5.3"
+async-trait = "0.1.89"
 aws-config = "1.6.3"
 aws-sdk-s3 = "1.90.0"
 aws-sdk-ssm = "1.79.0"
@@ -82,9 +83,10 @@ base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 
 [dependencies]
 api = { path = "./api", default-features = false }
-aws-smithy-types.workspace = true
-cfg-if.workspace = true
 infra = { path = "./infra", default-features = false }
 entity = { path = "./entity", default-features = false }
 error = { path = "./error", default-features = false }
 e2e = { path = "./e2e", default-features = false }
+
+aws-smithy-types.workspace = true
+cfg-if.workspace = true

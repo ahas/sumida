@@ -1,4 +1,5 @@
 pub mod db;
+pub mod jwt;
 pub mod messenger;
 pub mod session;
 pub mod settings;

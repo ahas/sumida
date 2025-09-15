@@ -56,7 +56,7 @@ where
       .nest("/api-keys", api_key_controller.router(state))
       .nest("/organizations", org_controller.router(state))
       .nest("/roles", role_controller.router(state))
-      .nest("/auth/sessions", auth_session_controller.router(state))
+      .nest("/auth/session", auth_session_controller.router(state))
       .nest("/me", me_controller.router(state))
       .nest("/users", user_controller.router(state))
       .nest("/user-logs", user_log_controller.router(state))
