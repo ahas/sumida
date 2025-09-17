@@ -36,6 +36,7 @@ enum BoardPosts {
   UserId,
   Title,
   Content,
+  Text,
   CreatedAt,
   UpdatedAt,
 }
@@ -199,7 +200,8 @@ impl MigrationTrait for Migration {
           .col(integer(BoardPosts::BoardId))
           .col(integer(BoardPosts::UserId))
           .col(string(BoardPosts::Title))
-          .col(text(BoardPosts::Content))
+          .col(json_binary_null(BoardPosts::Content))
+          .col(text_null(BoardPosts::Text))
           .col(timestamp_with_time_zone(BoardPosts::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(BoardPosts::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_board_posts__id").col(BoardPosts::Id))

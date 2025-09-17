@@ -83,6 +83,8 @@ pub enum SumidaError {
   Busy(String),
   #[error("client disconnected")]
   Disconnected,
+  #[error("internal server error: {0}")]
+  InternalServerError(String),
 
   // external crate errors
   #[error("status: {0}, reason: {1}")]
