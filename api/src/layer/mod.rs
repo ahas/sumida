@@ -1,4 +1,5 @@
 pub mod admin_guard;
+pub mod board_ap;
 pub mod cors;
 pub mod service_ap;
 pub mod session;

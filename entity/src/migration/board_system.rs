@@ -22,6 +22,14 @@ enum Boards {
   CategoryId,
   Name,
   Description,
+  IsSystem,
+  SystemCategory,
+  MaxFileSize,
+  AllowedFileTypes,
+  MaxFilesPerPost,
+  EnableFileUpload,
+  EnablePostHistory,
+  MaxHistoryCount,
   CreatedAt,
   UpdatedAt,
 }
@@ -37,6 +45,11 @@ enum BoardPosts {
   Title,
   Content,
   Text,
+  Status,
+  PublishedAt,
+  ScheduledAt,
+  AutoSaveContent,
+  LastAutoSaveAt,
   CreatedAt,
   UpdatedAt,
 }
@@ -74,16 +87,6 @@ enum BoardCommentLikes {
   CreatedAt,
 }
 
-/// board_post_attachments
-#[derive(DeriveIden)]
-enum BoardPostAttachments {
-  Table,
-  Id,
-  PostId,
-  FileUrl,
-  FileType,
-  UploadedAt,
-}
 
 /// board_post_views
 #[derive(DeriveIden)]
@@ -116,6 +119,28 @@ enum BoardCommentReports {
   UserId,
   Reason,
   CreatedAt,
+}
+
+/// board_files
+#[derive(DeriveIden)]
+enum BoardFiles {
+  Table,
+  Id,
+  BoardId,
+  PostId,
+  CommentId,
+  UserId,
+  OriginalFilename,
+  FilePath,
+  FileUrl,
+  FileSize,
+  MimeType,
+  FileHash,
+  UploadStatus,
+  IsTemporary,
+  ExpiresAt,
+  CreatedAt,
+  UpdatedAt,
 }
 
 /// board_post_histories
@@ -173,6 +198,14 @@ impl MigrationTrait for Migration {
           .col(integer_null(Boards::CategoryId))
           .col(string(Boards::Name))
           .col(string_null(Boards::Description))
+          .col(boolean(Boards::IsSystem).default(false))
+          .col(string_null(Boards::SystemCategory))
+          .col(big_integer(Boards::MaxFileSize).default(10485760)) // 10MB
+          .col(json(Boards::AllowedFileTypes).default(r#"["jpg","jpeg","png","gif","pdf","doc","docx","txt"]"#))
+          .col(integer(Boards::MaxFilesPerPost).default(5))
+          .col(boolean(Boards::EnableFileUpload).default(true))
+          .col(boolean(Boards::EnablePostHistory).default(false))
+          .col(integer(Boards::MaxHistoryCount).default(10))
           .col(timestamp_with_time_zone(Boards::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Boards::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_boards__id").col(Boards::Id))
@@ -202,6 +235,11 @@ impl MigrationTrait for Migration {
           .col(string(BoardPosts::Title))
           .col(json_binary_null(BoardPosts::Content))
           .col(text_null(BoardPosts::Text))
+          .col(string(BoardPosts::Status).default("draft"))
+          .col(timestamp_with_time_zone_null(BoardPosts::PublishedAt))
+          .col(timestamp_with_time_zone_null(BoardPosts::ScheduledAt))
+          .col(text_null(BoardPosts::AutoSaveContent))
+          .col(timestamp_with_time_zone_null(BoardPosts::LastAutoSaveAt))
           .col(timestamp_with_time_zone(BoardPosts::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(BoardPosts::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_board_posts__id").col(BoardPosts::Id))
@@ -307,31 +345,6 @@ impl MigrationTrait for Migration {
       )
       .await?;
 
-    // board_post_attachments
-    manager
-      .create_table(
-        Table::create()
-          .if_not_exists()
-          .table(BoardPostAttachments::Table)
-          .col(integer(BoardPostAttachments::Id).auto_increment())
-          .col(integer(BoardPostAttachments::PostId))
-          .col(string(BoardPostAttachments::FileUrl))
-          .col(string(BoardPostAttachments::FileType))
-          .col(
-            timestamp_with_time_zone(BoardPostAttachments::UploadedAt).default(Expr::current_timestamp()),
-          )
-          .primary_key(Index::create().name("pk_board_post_attachments__id").col(BoardPostAttachments::Id))
-          .foreign_key(
-            ForeignKey::create()
-              .name("fk_board_post_attachments__post_id")
-              .from(BoardPostAttachments::Table, BoardPostAttachments::PostId)
-              .to(BoardPosts::Table, BoardPosts::Id)
-              .on_delete(Cascade)
-              .on_update(Cascade),
-          )
-          .to_owned(),
-      )
-      .await?;
 
     // board_post_views
     manager
@@ -405,6 +418,58 @@ impl MigrationTrait for Migration {
       )
       .await?;
 
+    // board_files
+    manager
+      .create_table(
+        Table::create()
+          .if_not_exists()
+          .table(BoardFiles::Table)
+          .col(integer(BoardFiles::Id).auto_increment())
+          .col(integer_null(BoardFiles::BoardId))
+          .col(integer_null(BoardFiles::PostId))
+          .col(integer_null(BoardFiles::CommentId))
+          .col(integer_null(BoardFiles::UserId))
+          .col(string(BoardFiles::OriginalFilename))
+          .col(string(BoardFiles::FilePath))
+          .col(string_null(BoardFiles::FileUrl))
+          .col(big_integer(BoardFiles::FileSize))
+          .col(string(BoardFiles::MimeType))
+          .col(string_null(BoardFiles::FileHash))
+          .col(string(BoardFiles::UploadStatus).default("pending"))
+          .col(boolean(BoardFiles::IsTemporary).default(false))
+          .col(timestamp_with_time_zone_null(BoardFiles::ExpiresAt))
+          .col(timestamp_with_time_zone(BoardFiles::CreatedAt).default(Expr::current_timestamp()))
+          .col(timestamp_with_time_zone(BoardFiles::UpdatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_board_files__id").col(BoardFiles::Id))
+          .foreign_key(
+            ForeignKey::create()
+              .name("fk_board_files__board_id")
+              .from(BoardFiles::Table, BoardFiles::BoardId)
+              .to(Boards::Table, Boards::Id)
+              .on_delete(Cascade)
+              .on_update(Cascade),
+          )
+          .foreign_key(
+            ForeignKey::create()
+              .name("fk_board_files__post_id")
+              .from(BoardFiles::Table, BoardFiles::PostId)
+              .to(BoardPosts::Table, BoardPosts::Id)
+              .on_delete(Cascade)
+              .on_update(Cascade),
+          )
+          .foreign_key(
+            ForeignKey::create()
+              .name("fk_board_files__comment_id")
+              .from(BoardFiles::Table, BoardFiles::CommentId)
+              .to(BoardComments::Table, BoardComments::Id)
+              .on_delete(Cascade)
+              .on_update(Cascade),
+          )
+          .to_owned(),
+      )
+      .await?;
+    db.execute_unprepared("SELECT manage_updated_at('board_files');").await?;
+
     // board_post_histories
     manager
       .create_table(
@@ -435,10 +500,10 @@ impl MigrationTrait for Migration {
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     // Tables
     manager.drop_table(Table::drop().if_exists().table(BoardPostHistories::Table).to_owned()).await?;
+    manager.drop_table(Table::drop().if_exists().table(BoardFiles::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardCommentReports::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardPostReports::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardPostViews::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(BoardPostAttachments::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardCommentLikes::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardPostLikes::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardComments::Table).to_owned()).await?;

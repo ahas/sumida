@@ -116,3 +116,13 @@ macro_rules! service_ap {
     $crate::layer::ServiceApLayer::new($state.clone(), $ns, stringify!($action))
   };
 }
+
+#[macro_export]
+macro_rules! board_ap {
+  ($state:expr, $board_id:expr, $action:ident) => {
+    $crate::layer::BoardApLayer::new($state.clone(), Some($board_id), stringify!($action))
+  };
+  ($state:expr, $action:ident) => {
+    $crate::layer::BoardApLayer::new($state.clone(), None, stringify!($action))
+  };
+}

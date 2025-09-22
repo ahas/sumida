@@ -86,6 +86,10 @@ pub enum SumidaError {
   #[error("internal server error: {0}")]
   InternalServerError(String),
 
+  // validation errors
+  #[error("bad request: {0}")]
+  BadRequest(String),
+
   // external crate errors
   #[error("status: {0}, reason: {1}")]
   DatabaseError(u16, String),
@@ -128,6 +132,9 @@ impl From<SumidaError> for StatusCode {
       SumidaError::Unsupported(_) => Ok(StatusCode::NOT_IMPLEMENTED),
       SumidaError::Timeout(_) => Ok(StatusCode::REQUEST_TIMEOUT),
       SumidaError::Busy(_) => Ok(StatusCode::TOO_MANY_REQUESTS),
+
+      // validation errors
+      SumidaError::BadRequest(_) => Ok(StatusCode::BAD_REQUEST),
 
       // external crate errors
       SumidaError::DatabaseError(v, _) => StatusCode::from_u16(v),

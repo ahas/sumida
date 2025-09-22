@@ -18,6 +18,7 @@ use crate::util::db::wrap_ilike;
 pub struct BoardPostFilter {
   pub search: Option<String>,
   pub title: Option<String>,
+  pub board_id: Option<i32>,
 }
 
 impl BoardPostFilter {
@@ -32,6 +33,7 @@ impl BoardPostFilter {
         )
       })
       .apply_if(self.title.as_ref(), |q, v| q.filter(Expr::col(Column::Title).eq(v)))
+      .apply_if(self.board_id.as_ref(), |q, v| q.filter(Expr::col(Column::BoardId).eq(*v)))
   }
 }
 
@@ -40,10 +42,13 @@ impl BoardPostFilter {
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostListItem {
   pub id: i32,
+  pub board_id: i32,
   pub parent_id: Option<i32>,
   pub user_id: Option<i32>,
   pub title: String,
   pub content: Option<String>,
+  pub status: String,
+  pub published_at: Option<DateTimeWithTimeZone>,
   #[sea_orm(skip)]
   pub view_count: i32,
   pub created_at: DateTimeWithTimeZone,
@@ -54,14 +59,41 @@ pub struct BoardPostListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPost {
   pub id: i32,
+  pub board_id: i32,
   pub parent_id: Option<i32>,
   pub user_id: Option<i32>,
   pub title: String,
   pub content: Option<String>,
+  pub status: String,
+  pub published_at: Option<DateTimeWithTimeZone>,
+  pub scheduled_at: Option<DateTimeWithTimeZone>,
+  pub auto_save_content: Option<String>,
+  pub last_auto_save_at: Option<DateTimeWithTimeZone>,
   #[sea_orm(skip)]
   pub view_count: i32,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
+}
+
+impl From<Model> for GetBoardPost {
+  fn from(model: Model) -> Self {
+    Self {
+      id: model.id,
+      board_id: model.board_id,
+      parent_id: model.parent_id,
+      user_id: model.user_id,
+      title: model.title,
+      content: model.content,
+      status: model.status,
+      published_at: model.published_at,
+      scheduled_at: model.scheduled_at,
+      auto_save_content: model.auto_save_content,
+      last_auto_save_at: model.last_auto_save_at,
+      view_count: 0, // This should be fetched separately
+      created_at: model.created_at,
+      updated_at: model.updated_at,
+    }
+  }
 }
 
 impl IntoResponse for GetBoardPost {
@@ -74,6 +106,7 @@ impl IntoResponse for GetBoardPost {
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPost {
   pub id: Optional<i32>,
+  pub board_id: i32,
   pub parent_id: Nullable<i32>,
   pub user_id: Nullable<i32>,
   pub title: String,
@@ -116,5 +149,54 @@ pub struct BoardPostDeleted;
 impl IntoResponse for BoardPostDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
+  }
+}
+
+// Post history management DTOs
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoSavePost {
+  pub content: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoSaveResult {
+  pub success: bool,
+}
+
+impl IntoResponse for AutoSaveResult {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishResult {
+  pub success: bool,
+}
+
+impl IntoResponse for PublishResult {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulePost {
+  pub scheduled_at: DateTimeWithTimeZone,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleResult {
+  pub success: bool,
+}
+
+impl IntoResponse for ScheduleResult {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
   }
 }
