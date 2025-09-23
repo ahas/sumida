@@ -1,6 +1,7 @@
+use chrono::Utc;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
-use chrono::Utc;
+use serde_json::Value as JsonValue;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum PostStatus {
@@ -9,6 +10,13 @@ pub enum PostStatus {
   Archived,
   Deleted,
   Scheduled,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum PostKind {
+  Article,
+  Comment,
+  Reply,
 }
 
 impl From<String> for PostStatus {
@@ -35,6 +43,26 @@ impl From<PostStatus> for String {
   }
 }
 
+impl From<String> for PostKind {
+  fn from(value: String) -> Self {
+    match value.as_str() {
+      "comment" => PostKind::Comment,
+      "reply" => PostKind::Reply,
+      _ => PostKind::Article,
+    }
+  }
+}
+
+impl From<PostKind> for String {
+  fn from(kind: PostKind) -> Self {
+    match kind {
+      PostKind::Article => "article".to_string(),
+      PostKind::Comment => "comment".to_string(),
+      PostKind::Reply => "reply".to_string(),
+    }
+  }
+}
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "board_posts")]
 pub struct Model {
@@ -44,12 +72,17 @@ pub struct Model {
   pub parent_id: Option<i32>,
   pub user_id: Option<i32>,
   pub title: String,
-  pub content: Option<String>,
+  #[sea_orm(column_type = "JsonBinary")]
+  pub content: Option<JsonValue>,
+  pub text: Option<String>,
+  pub kind: String,
   pub status: String,
   pub published_at: Option<DateTimeWithTimeZone>,
   pub scheduled_at: Option<DateTimeWithTimeZone>,
-  pub auto_save_content: Option<String>,
+  #[sea_orm(column_type = "JsonBinary")]
+  pub auto_save_content: Option<JsonValue>,
   pub last_auto_save_at: Option<DateTimeWithTimeZone>,
+  pub tags: Option<Vec<String>>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -64,8 +97,6 @@ pub enum Relation {
     on_delete = "Cascade"
   )]
   Board,
-  #[sea_orm(has_many = "super::board_comments::Entity")]
-  Comments,
   #[sea_orm(has_many = "super::board_post_views::Entity")]
   Views,
   #[sea_orm(belongs_to = "Entity", from = "Column::ParentId", to = "Column::Id", on_delete = "Cascade")]
@@ -99,6 +130,10 @@ impl Model {
     PostStatus::from(self.status.clone())
   }
 
+  pub fn get_kind(&self) -> PostKind {
+    PostKind::from(self.kind.clone())
+  }
+
   pub fn is_published(&self) -> bool {
     matches!(self.get_status(), PostStatus::Published)
   }
@@ -117,6 +152,18 @@ impl Model {
 
   pub fn is_deleted(&self) -> bool {
     matches!(self.get_status(), PostStatus::Deleted)
+  }
+
+  pub fn is_article(&self) -> bool {
+    matches!(self.get_kind(), PostKind::Article)
+  }
+
+  pub fn is_comment(&self) -> bool {
+    matches!(self.get_kind(), PostKind::Comment)
+  }
+
+  pub fn is_reply(&self) -> bool {
+    matches!(self.get_kind(), PostKind::Reply)
   }
 
   pub fn is_visible_to_public(&self) -> bool {
@@ -139,8 +186,8 @@ impl Model {
     self.auto_save_content.is_some() && self.last_auto_save_at.is_some()
   }
 
-  pub fn get_auto_save_content(&self) -> Option<&str> {
-    self.auto_save_content.as_deref()
+  pub fn get_auto_save_content(&self) -> Option<&JsonValue> {
+    self.auto_save_content.as_ref()
   }
 
   pub fn is_auto_save_newer_than_content(&self) -> bool {
@@ -188,12 +235,46 @@ impl Model {
     }
   }
 
-  pub fn get_effective_content(&self) -> &str {
+  pub fn get_effective_content(&self) -> Option<&JsonValue> {
     // 자동 저장된 내용이 더 최신이면 그것을 반환, 아니면 기본 내용
     if self.is_auto_save_newer_than_content() {
-      self.get_auto_save_content().unwrap_or(self.content.as_deref().unwrap_or(""))
+      self.get_auto_save_content().or(self.content.as_ref())
     } else {
-      self.content.as_deref().unwrap_or("")
+      self.content.as_ref().or(self.get_auto_save_content())
     }
+  }
+
+  pub fn get_tags(&self) -> Vec<String> {
+    self.tags.clone().unwrap_or_default()
+  }
+
+  pub fn has_tag(&self, tag: &str) -> bool {
+    self.get_tags().contains(&tag.to_string())
+  }
+
+  pub fn has_any_tags(&self, tags: &[String]) -> bool {
+    let post_tags = self.get_tags();
+    tags.iter().any(|tag| post_tags.contains(tag))
+  }
+
+  pub fn add_tag(&mut self, tag: String) {
+    let mut current_tags = self.get_tags();
+    if !current_tags.contains(&tag) {
+      current_tags.push(tag);
+      self.tags = Some(current_tags);
+    }
+  }
+
+  pub fn remove_tag(&mut self, tag: &str) {
+    if let Some(ref mut tags) = self.tags {
+      tags.retain(|t| t != tag);
+      if tags.is_empty() {
+        self.tags = None;
+      }
+    }
+  }
+
+  pub fn set_tags(&mut self, tags: Vec<String>) {
+    self.tags = if tags.is_empty() { None } else { Some(tags) };
   }
 }

@@ -2,6 +2,7 @@ pub mod dto;
 
 use crate::SumidaState;
 use crate::service::ApiService;
+use crate::service::prelude::BoardFileListItem;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 use entity::prelude::*;
@@ -11,8 +12,8 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::Alias;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType, PaginatorTrait,
-  QuerySelect, RelationTrait, Select, TransactionTrait,
+  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, JoinType, PaginatorTrait,
+  QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait,
 };
 
 use self::dto::*;
@@ -69,11 +70,20 @@ impl<S: SumidaState> BoardPostService<S> {
     board_helpers::check_hierarchical_read_permission(&self.session, board_id, "read", &txn).await?;
 
     // Then get the post
-    let result = self
+    let mut result = self
       .query_with_views(self.select(BoardPosts::find_by_id(id)))
       .into_partial_model::<GetBoardPost>()
       .one(&txn)
       .await?;
+
+    // Load attached files together 
+    if let Some(ref mut result) = result {
+      result.attached_files = BoardFiles::find()
+        .filter(entity::bs::board_files::Column::PostId.eq(id))
+        .into_partial_model::<BoardFileListItem>()
+        .all(&txn)
+        .await?;
+    }
 
     txn.commit().await?;
 
@@ -121,12 +131,39 @@ impl<S: SumidaState> BoardPostService<S> {
       .ok_or_else(|| SumidaError::NoData("Board".into(), data.board_id.to_string()))?;
 
     // Use ap condition to check board write permission
-    let condition = self.ap().action("write").object(format!("board:{}", data.board_id));
-    if !condition.check_allowed(&txn).await {
-      return Err(SumidaError::NoAccessPermission);
+    ap::ns("board")
+      .who(&self.session)
+      .action("write")
+      .object(data.board_id.to_string())
+      .try_check_allowed(&txn)
+      .await?;
+
+    // Store attached file IDs for later processing
+    let attached_file_ids = data.attached_file_ids.clone();
+
+    let mut am = data.into_active_model();
+    am.user_id = Set(Some(self.session.profile.id));
+
+    let result = BoardPosts::insert(am).exec(&txn).await?;
+    let post_id = result.last_insert_id;
+
+    // Associate attached files with the created post
+    if let Some(file_ids) = attached_file_ids {
+      for file_id in file_ids {
+        // Update each file to associate with the post
+        use entity::bs::board_files;
+        let file_am = board_files::ActiveModel {
+          id: Set(file_id),
+          post_id: Set(Some(post_id)),
+          is_temporary: Set(false),
+          expires_at: Set(None),
+          ..Default::default()
+        };
+
+        board_files::Entity::update(file_am).exec(&txn).await?;
+      }
     }
 
-    let result = BoardPosts::insert(data.into_active_model()).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
@@ -198,23 +235,40 @@ impl<S: SumidaState> BoardPostService<S> {
       .ok_or_else(|| SumidaError::NoData("BoardPost".into(), id.to_string()))?;
 
     // Check if history is enabled for this board and content is being updated
-    if !data.content.is_none() {
-      let history_manager = PostHistoryManager::from_board_id(current_post.board_id, &txn).await?;
+    let history_manager = PostHistoryManager::from_board_id(current_post.board_id, &txn).await?;
 
-      if history_manager.is_history_enabled() {
-        // Save current content to history before update
-        if let Some(current_content) = &current_post.content {
-          history_manager
-            .save_history(id, &current_content.to_string(), self.session.profile.id, &txn)
-            .await?;
-        }
+    if history_manager.is_history_enabled() {
+      // Save current content to history before update
+      if let Some(current_content) = &current_post.content {
+        history_manager.save_history(id, current_content, self.session.profile.id, &txn).await?;
       }
     }
+
+    // Store attached file IDs for later processing
+    let attached_file_ids = data.attached_file_ids.clone();
 
     let mut am = data.into_active_model();
     am.id = Set(id);
 
     let item = BoardPosts::update(am).exec(&txn).await?;
+
+    // Associate attached files with the updated post
+    if let Some(file_ids) = attached_file_ids {
+      for file_id in file_ids {
+        // Update each file to associate with the post
+        use entity::bs::board_files;
+        let file_am = board_files::ActiveModel {
+          id: Set(file_id),
+          post_id: Set(Some(id)),
+          is_temporary: Set(false),
+          expires_at: Set(None),
+          ..Default::default()
+        };
+
+        board_files::Entity::update(file_am).exec(&txn).await?;
+      }
+    }
+
     txn.commit().await?;
 
     Ok(item)

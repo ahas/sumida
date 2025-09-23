@@ -6,6 +6,7 @@ pub mod security;
 pub mod server;
 pub mod session;
 pub mod smtp;
+pub mod storage;
 
 use config::{Config, File};
 use lazy_static::lazy_static;
@@ -20,6 +21,8 @@ pub struct SumidaSettings {
   pub session: session::SessionSettings,
   #[serde(default)]
   pub security: security::SecuritySettings,
+  #[serde(default)]
+  pub storage: storage::StorageSettings,
   pub smtp: Option<smtp::SmtpSettings>,
   pub jwt: Option<jwt::JwtSettings>,
   #[cfg(feature = "aws")]

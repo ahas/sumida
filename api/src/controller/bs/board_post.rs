@@ -174,28 +174,28 @@ where
 {
   fn router(self, state: &S) -> Router<S> {
     // Read operations - basic authentication required
-    let read = Router::new()
+    let read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(state, "board_post", read));
 
     // Write operations - board-level permissions checked in handlers
-    let create = Router::new()
+    let create = Router::new() //
       .route("/", routing::post(Self::create))
       .route_layer(service_ap!(state, "board_post", create));
 
     // Update operations - ownership/moderate permissions checked in handlers
-    let update = Router::new()
+    let update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
       .route_layer(service_ap!(state, "board_post", update));
 
     // Delete operations - ownership/moderate permissions checked in handlers
-    let delete = Router::new()
+    let delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
       .route_layer(service_ap!(state, "board_post", delete));
 
     // Post management operations - ownership/moderate permissions checked in handlers
-    let management = Router::new()
+    let management = Router::new()//
       .route("/{id}/auto-save", routing::post(Self::auto_save))
       .route("/{id}/publish", routing::post(Self::publish))
       .route("/{id}/schedule", routing::post(Self::schedule))
@@ -204,7 +204,7 @@ where
       // .route("/{id}/history/{history_id}/restore", routing::post(Self::restore_version))
       .route_layer(service_ap!(state, "board_post", update));
 
-    Router::new()
+    Router::new() //
       .merge(read)
       .merge(create)
       .merge(update)

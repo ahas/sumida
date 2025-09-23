@@ -12,8 +12,6 @@ pub use super::users::Entity as Users;
 
 // Board System
 pub use super::bs::board_categories::Entity as BoardCategories;
-pub use super::bs::board_comment_likes::Entity as BoardCommentLikes;
-pub use super::bs::board_comments::Entity as BoardComments;
 pub use super::bs::board_files::Entity as BoardFiles;
 pub use super::bs::board_post_histories::Entity as BoardPostHistories;
 pub use super::bs::board_post_likes::Entity as BoardPostLikes;

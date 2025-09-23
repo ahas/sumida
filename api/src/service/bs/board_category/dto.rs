@@ -5,8 +5,7 @@ use sea_orm::DeriveIntoActiveModel;
 use sea_orm::EntityTrait;
 use sea_orm::QueryTrait;
 use sea_orm::prelude::*;
-use sea_orm::sea_query::Alias;
-use sea_orm_crud::Optional;
+use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -18,16 +17,20 @@ use crate::util::db::wrap_ilike;
 pub struct BoardCategoryFilter {
   pub search: Option<String>,
   pub name: Option<String>,
+  pub parent_id: Option<i32>,
 }
 
 impl BoardCategoryFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
-    let alias = Alias::new("bc");
+    let query = if let Some(parent_id) = self.parent_id {
+      query.filter(Column::ParentId.eq(parent_id))
+    } else {
+      query.filter(Column::ParentId.is_null())
+    };
+
     query
-      .apply_if(self.search.as_ref(), |q, v| {
-        q.filter(wrap_ilike(Expr::col((alias.clone(), Column::Name)), v))
-      })
-      .apply_if(self.name.as_ref(), |q, v| q.filter(Expr::col(Column::Name).eq(v)))
+      .apply_if(self.search.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(Column::Name.eq(v)))
   }
 }
 
@@ -39,6 +42,7 @@ pub struct BoardCategoryListItem {
   pub name: String,
   pub description: Option<String>,
   pub created_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
@@ -46,6 +50,7 @@ pub struct BoardCategoryListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardCategory {
   pub id: i32,
+  pub parent_id: Option<i32>,
   pub name: String,
   pub description: Option<String>,
   pub created_at: DateTimeWithTimeZone,
@@ -64,6 +69,8 @@ pub struct CreateBoardCategory {
   pub id: Optional<i32>,
   pub name: String,
   pub description: Optional<String>,
+  #[serde(default)]
+  pub parent_id: Nullable<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,6 +90,8 @@ impl IntoResponse for BoardCategoryCreated {
 pub struct UpdateBoardCategory {
   pub name: Optional<String>,
   pub description: Optional<String>,
+  #[serde(default)]
+  pub parent_id: Nullable<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

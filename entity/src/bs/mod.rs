@@ -1,6 +1,4 @@
 pub mod board_categories;
-pub mod board_comment_likes;
-pub mod board_comments;
 pub mod board_files;
 pub mod board_post_histories;
 pub mod board_post_likes;

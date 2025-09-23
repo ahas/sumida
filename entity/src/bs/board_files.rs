@@ -1,6 +1,5 @@
-use sea_orm::entity::prelude::*;
 use chrono::Utc;
-
+use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "board_files")]
@@ -9,7 +8,6 @@ pub struct Model {
   pub id: i32,
   pub board_id: Option<i32>,
   pub post_id: Option<i32>,
-  pub comment_id: Option<i32>,
   pub user_id: Option<i32>,
   pub original_filename: String,
   pub file_path: String,
@@ -43,14 +41,6 @@ pub enum Relation {
   )]
   Post,
   #[sea_orm(
-    belongs_to = "super::board_comments::Entity",
-    from = "Column::CommentId",
-    to = "super::board_comments::Column::Id",
-    on_update = "Cascade",
-    on_delete = "Cascade"
-  )]
-  Comment,
-  #[sea_orm(
     belongs_to = "crate::users::Entity",
     from = "Column::UserId",
     to = "crate::users::Column::Id",
@@ -69,12 +59,6 @@ impl Related<super::boards::Entity> for Entity {
 impl Related<super::board_posts::Entity> for Entity {
   fn to() -> RelationDef {
     Relation::Post.def()
-  }
-}
-
-impl Related<super::board_comments::Entity> for Entity {
-  fn to() -> RelationDef {
-    Relation::Comment.def()
   }
 }
 
@@ -136,20 +120,18 @@ impl Model {
   pub fn is_document(&self) -> bool {
     matches!(
       self.mime_type.as_str(),
-      "application/pdf" 
-      | "application/msword" 
-      | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      | "application/vnd.ms-excel"
-      | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      | "text/plain"
-      | "text/csv"
+      "application/pdf"
+        | "application/msword"
+        | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        | "application/vnd.ms-excel"
+        | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        | "text/plain"
+        | "text/csv"
     )
   }
 
   pub fn get_file_extension(&self) -> Option<String> {
-    self.original_filename
-      .rfind('.')
-      .map(|pos| self.original_filename[pos + 1..].to_lowercase())
+    self.original_filename.rfind('.').map(|pos| self.original_filename[pos + 1..].to_lowercase())
   }
 
   pub fn is_expired(&self) -> bool {
@@ -189,3 +171,4 @@ impl Model {
     }
   }
 }
+

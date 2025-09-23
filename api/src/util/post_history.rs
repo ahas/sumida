@@ -3,6 +3,7 @@ use entity::bs::{board_posts, board_post_histories, boards};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
+use serde_json::Value as JsonValue;
 use sea_orm::{
   ActiveModelBehavior, ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, 
   EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
@@ -47,7 +48,7 @@ impl PostHistoryManager {
 
 
   /// Auto-save draft content
-  pub async fn auto_save<C>(&self, post_id: i32, content: &str, db: &C) -> Result<(), SumidaError>
+  pub async fn auto_save<C>(&self, post_id: i32, content: &JsonValue, db: &C) -> Result<(), SumidaError>
   where
     C: ConnectionTrait,
   {
@@ -57,7 +58,7 @@ impl PostHistoryManager {
 
     let mut post_model = board_posts::ActiveModel::new();
     post_model.id = Set(post_id);
-    post_model.auto_save_content = Set(Some(content.to_string()));
+    post_model.auto_save_content = Set(Some(content.clone()));
     post_model.last_auto_save_at = Set(Some(Utc::now().fixed_offset()));
 
     post_model.update(db).await?;
@@ -127,7 +128,7 @@ impl PostHistoryManager {
   pub async fn save_history<C>(
     &self,
     post_id: i32,
-    content: &str,
+    content: &JsonValue,
     modified_by: i32,
     db: &C,
   ) -> Result<(), SumidaError>
@@ -141,7 +142,7 @@ impl PostHistoryManager {
     // Save current content to history
     let history_model = board_post_histories::ActiveModel {
       post_id: Set(post_id),
-      content: Set(content.to_string()),
+      content: Set(content.clone()),
       modified_by: Set(modified_by),
       modified_at: Set(Utc::now().fixed_offset()),
       ..Default::default()
@@ -221,16 +222,13 @@ impl PostHistoryManager {
 
     // Save current content as history
     if let Some(current_content) = &current_post.content {
-      self.save_history(post_id, &current_content.to_string(), modified_by, &txn).await?;
+      self.save_history(post_id, current_content, modified_by, &txn).await?;
     }
 
     // Restore to history version
     let mut post_model = board_posts::ActiveModel::new();
     post_model.id = Set(post_id);
-    post_model.content = Set(Some(
-      serde_json::from_str(&history.content)
-        .map_err(|e| SumidaError::BadRequest(format!("Invalid JSON in history: {}", e)))?
-    ));
+    post_model.content = Set(Some(history.content.clone()));
     post_model.updated_at = Set(Utc::now().fixed_offset());
 
     post_model.update(&txn).await?;
@@ -244,7 +242,7 @@ impl PostHistoryManager {
   pub async fn update_with_history<C>(
     &self,
     post_id: i32,
-    new_content: &str,
+    new_content: &JsonValue,
     session: &UserSession,
     db: &C,
   ) -> Result<(), SumidaError>
@@ -262,17 +260,14 @@ impl PostHistoryManager {
 
       // Save current content as history
       if let Some(current_content) = &current_post.content {
-        self.save_history(post_id, &current_content.to_string(), session.profile.id, &txn).await?;
+        self.save_history(post_id, current_content, session.profile.id, &txn).await?;
       }
     }
 
     // Update post with new content
     let mut post_model = board_posts::ActiveModel::new();
     post_model.id = Set(post_id);
-    post_model.content = Set(Some(
-      serde_json::from_str(new_content)
-        .map_err(|e| SumidaError::BadRequest(format!("Invalid JSON content: {}", e)))?
-    ));
+    post_model.content = Set(Some(new_content.clone()));
     post_model.updated_at = Set(Utc::now().fixed_offset());
 
     post_model.update(&txn).await?;

@@ -50,7 +50,6 @@ where
     let board_category_controller = BoardCategoryController::<StateT>::new();
     let board_controller = BoardController::<StateT>::new();
     let board_post_controller = BoardPostController::<StateT>::new();
-    let board_comment_controller = BoardCommentController::<StateT>::new();
     let board_files_controller = BoardFileController::<StateT>::new();
 
     Router::new()
@@ -69,7 +68,6 @@ where
       .nest("/boards", board_controller.router(state))
       .nest("/board-categories", board_category_controller.router(state))
       .nest("/board-posts", board_post_controller.router(state))
-      .nest("/board-comments", board_comment_controller.router(state))
       .nest("/board-files", board_files_controller.router(state))
   }
 }

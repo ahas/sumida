@@ -1,10 +1,10 @@
 /// Board-specific permission helper functions
 pub mod helpers {
   use crate::util::ap::{self, ApGuard};
-  use infra::session::UserSession;
   use entity::prelude::*;
   use error::SumidaError;
-  use sea_orm::{EntityTrait, ConnectionTrait};
+  use infra::session::UserSession;
+  use sea_orm::{ConnectionTrait, EntityTrait};
 
   /// Check if user can read board
   pub async fn can_read_board<C>(session: &UserSession, board_id: i32, db: &C) -> bool
@@ -57,21 +57,8 @@ pub mod helpers {
       .one(db)
       .await?
       .ok_or_else(|| SumidaError::NoData("BoardPost".into(), post_id.to_string()))?;
-    
-    Ok(post.board_id)
-  }
 
-  /// Extract board_id from board_comment via post
-  pub async fn get_board_id_from_comment<C>(comment_id: i32, db: &C) -> Result<i32, SumidaError>
-  where
-    C: ConnectionTrait,
-  {
-    let comment = BoardComments::find_by_id(comment_id)
-      .one(db)
-      .await?
-      .ok_or_else(|| SumidaError::NoData("BoardComment".into(), comment_id.to_string()))?;
-    
-    get_board_id_from_post(comment.post_id, db).await
+    Ok(post.board_id)
   }
 
   /// Extract board_id from board_file
@@ -83,20 +70,16 @@ pub mod helpers {
       .one(db)
       .await?
       .ok_or_else(|| SumidaError::NoData("BoardFile".into(), file_id.to_string()))?;
-    
+
     // BoardFile can be associated with board directly, or through post/comment
     if let Some(board_id) = file.board_id {
       return Ok(Some(board_id));
     }
-    
+
     if let Some(post_id) = file.post_id {
       return Ok(Some(get_board_id_from_post(post_id, db).await?));
     }
-    
-    if let Some(comment_id) = file.comment_id {
-      return Ok(Some(get_board_id_from_comment(comment_id, db).await?));
-    }
-    
+
     Ok(None)
   }
 

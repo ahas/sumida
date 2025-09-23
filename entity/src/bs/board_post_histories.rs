@@ -1,4 +1,5 @@
 use sea_orm::entity::prelude::*;
+use serde_json::Value as JsonValue;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "board_post_histories")]
@@ -6,7 +7,8 @@ pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id: i32,
   pub post_id: i32,
-  pub content: String,
+  #[sea_orm(column_type = "JsonBinary")]
+  pub content: JsonValue,
   pub modified_by: i32,
   pub modified_at: DateTimeWithTimeZone,
 }

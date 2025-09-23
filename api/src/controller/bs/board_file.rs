@@ -1,25 +1,31 @@
 use crate::controller::ApiController;
+use crate::layer::board_ap::helpers as board_helpers;
 use crate::service::bs::board_file::BoardFileService;
 use crate::service::bs::board_file::dto::*;
+use crate::util::file_validation::{FileInfo, FileValidator};
 use crate::util::pagination::{List, Pagination};
-use crate::util::file_validation::{FileValidator, FileInfo};
-use crate::layer::board_ap::helpers as board_helpers;
 use crate::{SumidaState, service_ap, user_guard};
-use sea_orm::EntityTrait;
 use axum::{
   Json, Router,
   body::Body,
-  extract::{Path, Query, State},
+  extract::{FromRequest, Multipart, Path, Query, Request, State},
   http::{StatusCode, header},
   response::Response,
   routing,
 };
 use error::SumidaError;
 use infra::session::UserSession;
+use sea_orm::EntityTrait;
 use std::io::SeekFrom;
 use tokio::fs::File;
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
+
+#[derive(Debug, Default)]
+struct MultipartFormData {
+  metadata: Option<CreateBoardFile>,
+  file_data: Option<(String, Vec<u8>, String)>,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct BoardFileController<S: SumidaState>(std::marker::PhantomData<S>);
@@ -27,6 +33,44 @@ pub struct BoardFileController<S: SumidaState>(std::marker::PhantomData<S>);
 impl<S: SumidaState> BoardFileController<S> {
   pub fn new() -> Self {
     Self(std::marker::PhantomData)
+  }
+
+  async fn parse_multipart_form(multipart: &mut Multipart) -> Result<MultipartFormData, SumidaError> {
+    let mut form_data = MultipartFormData::default();
+
+    while let Some(field) = multipart
+      .next_field()
+      .await
+      .map_err(|e| SumidaError::BadRequest(format!("Multipart error: {}", e)))?
+    {
+      let name = field.name().unwrap_or("").to_string();
+
+      match name.as_str() {
+        "metadata" => {
+          let text =
+            field.text().await.map_err(|e| SumidaError::BadRequest(format!("Invalid metadata: {}", e)))?;
+          form_data.metadata = Some(
+            serde_json::from_str(&text)
+              .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata JSON: {}", e)))?,
+          );
+        }
+        "file" => {
+          let filename = field.file_name().unwrap_or("unknown").to_string();
+          let content_type = field.content_type().unwrap_or("application/octet-stream").to_string();
+          let data = field
+            .bytes()
+            .await
+            .map_err(|e| SumidaError::BadRequest(format!("Failed to read file: {}", e)))?;
+
+          form_data.file_data = Some((filename, data.to_vec(), content_type));
+        }
+        _ => {
+          // Skip unknown fields
+        }
+      }
+    }
+
+    Ok(form_data)
   }
 
   async fn list(
@@ -52,22 +96,81 @@ impl<S: SumidaState> BoardFileController<S> {
   async fn create(
     session: UserSession,
     State(state): State<S>,
-    Json(body): Json<CreateBoardFile>,
+    request: Request,
   ) -> Result<BoardFileCreated, SumidaError> {
-    // Validate file if board_id is provided
-    if let Some(board_id) = body.board_id.0 {
+    use crate::util::storage::create_storage;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    // Detect content type
+    let content_type =
+      request.headers().get(header::CONTENT_TYPE).and_then(|ct| ct.to_str().ok()).unwrap_or("");
+
+    let (board_id, post_id, file_data, metadata_only) = if content_type.starts_with("multipart/form-data") {
+      // Handle multipart upload
+      let mut multipart = Multipart::from_request(request, &state)
+        .await
+        .map_err(|_| SumidaError::BadRequest("Invalid multipart data".into()))?;
+
+      let form_data = Self::parse_multipart_form(&mut multipart).await?;
+      let metadata =
+        form_data.metadata.ok_or_else(|| SumidaError::BadRequest("metadata is required".into()))?;
+      let board_id =
+        metadata.board_id.0.ok_or_else(|| SumidaError::BadRequest("board_id is required".into()))?;
+      (board_id, metadata.post_id.0, form_data.file_data, false)
+    } else {
+      // Handle JSON metadata
+      let json = Json::<CreateBoardFile>::from_request(request, &state)
+        .await
+        .map_err(|_| SumidaError::BadRequest("Invalid JSON data".into()))?;
+      let body = json.0;
+      let board_id =
+        body.board_id.0.ok_or_else(|| SumidaError::BadRequest("board_id is required".into()))?;
+      (board_id, body.post_id.0, None, true)
+    };
+
+    // Check board permission
+    board_helpers::check_hierarchical_read_permission(&session, board_id, "write", state.db()).await?;
+
+    let create_dto = if let Some((original_filename, file_bytes, mime_type)) = file_data {
+      // File upload case
+      // Validate file
       let validator = FileValidator::from_board_id(board_id, state.db()).await?;
-      
-      let file_info = FileInfo::new(
-        body.original_filename.clone(),
-        body.file_size,
-        body.mime_type.clone(),
-      );
-      
+      let file_info = FileInfo::new(original_filename.clone(), file_bytes.len() as i64, mime_type.clone());
       validator.validate_file(&file_info)?;
-    }
-    
-    let res = BoardFileService::new(state, session).create(body).await?;
+
+      // Generate unique filename and store file
+      let file_extension =
+        Path::new(&original_filename).extension().and_then(|ext| ext.to_str()).unwrap_or("");
+
+      let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
+
+      // Store file using storage abstraction
+      let storage = create_storage();
+      let file_path = storage.store(&file_bytes, &unique_filename).await?;
+      let file_url = storage.get_url(&file_path);
+
+      CreateBoardFile {
+        board_id: sea_orm_crud::Optional(Some(board_id)),
+        post_id: sea_orm_crud::Optional(post_id),
+        user_id: sea_orm_crud::Optional(Some(session.profile.id)),
+        original_filename,
+        file_path,
+        file_url: sea_orm_crud::Optional(Some(file_url)),
+        file_size: file_bytes.len() as i64,
+        mime_type,
+        file_hash: sea_orm_crud::Optional(None), // Could add hash calculation later
+        upload_status: "completed".to_string(),
+        is_temporary: sea_orm_crud::Optional(Some(false)),
+        expires_at: sea_orm_crud::Optional(None),
+      }
+    } else if metadata_only {
+      return Err(SumidaError::BadRequest("Metadata-only creation not supported via this endpoint".into()));
+    } else {
+      return Err(SumidaError::BadRequest("file is required".into()));
+    };
+
+    let res = BoardFileService::new(state, session).create(create_dto).await?;
     Ok(BoardFileCreated {
       id: res.last_insert_id,
     })
@@ -107,28 +210,26 @@ impl<S: SumidaState> BoardFileController<S> {
     Path(id): Path<i32>,
   ) -> Result<Response<Body>, SumidaError> {
     let service = BoardFileService::new(state.clone(), session.clone());
-    
+
     // Get file info and check board-specific permissions
-    let file = service
-      .get(id)
-      .await?
-      .ok_or_else(|| SumidaError::NoData("BoardFile".into(), id.to_string()))?;
-    
+    let file =
+      service.get(id).await?.ok_or_else(|| SumidaError::NoData("BoardFile".into(), id.to_string()))?;
+
     // Check board visibility if file is attached to a board
     if let Some(board_id) = file.board_id {
       use entity::bs::boards;
-      
+
       let _board = boards::Entity::find_by_id(board_id)
         .one(state.db())
         .await?
         .ok_or_else(|| SumidaError::NoData("Board".into(), board_id.to_string()))?;
-      
+
       // Use board_helpers to check if user can read the board
       if !board_helpers::can_read_board(&session, board_id, state.db()).await {
         return Err(SumidaError::NoAccessPermission);
       }
     }
-    
+
     let download_info = service
       .get_download_info(id)
       .await?
@@ -204,7 +305,6 @@ impl<S: SumidaState> BoardFileController<S> {
   }
 }
 
-
 impl<S> ApiController<S> for BoardFileController<S>
 where
   S: SumidaState,
@@ -217,9 +317,11 @@ where
       .route("/{id}/download", routing::get(Self::download))
       .route_layer(service_ap!(state, "board_files", read));
 
-    let create = Router::new()
-      .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(state, "board_files", create));
+    let create = Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!(
+      state,
+      "board_files",
+      create
+    ));
 
     let update = Router::new()
       .route("/{id}", routing::patch(Self::update))
@@ -227,9 +329,11 @@ where
       .route("/{id}/fail", routing::post(Self::mark_failed))
       .route_layer(service_ap!(state, "board_files", update));
 
-    let delete = Router::new()
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "board_files", delete));
+    let delete = Router::new().route("/{id}", routing::delete(Self::delete)).route_layer(service_ap!(
+      state,
+      "board_files",
+      delete
+    ));
 
     let admin = Router::new()
       .route("/cleanup/expired", routing::post(Self::cleanup_expired))
@@ -245,4 +349,3 @@ where
       .route_layer(user_guard!(state))
   }
 }
-

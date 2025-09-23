@@ -165,6 +165,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argon2",
+ "async-trait",
  "aws-sdk-s3",
  "aws-sdk-ssm",
  "aws-smithy-types",

@@ -16,7 +16,6 @@ use crate::util::db::wrap_ilike;
 pub struct BoardFileFilter {
   pub board_id: Option<i32>,
   pub post_id: Option<i32>,
-  pub comment_id: Option<i32>,
   pub user_id: Option<i32>,
   pub mime_type: Option<String>,
   pub upload_status: Option<String>,
@@ -29,7 +28,6 @@ impl BoardFileFilter {
     query
       .apply_if(self.board_id.as_ref(), |q, v| q.filter(Expr::col(Column::BoardId).eq(*v)))
       .apply_if(self.post_id.as_ref(), |q, v| q.filter(Expr::col(Column::PostId).eq(*v)))
-      .apply_if(self.comment_id.as_ref(), |q, v| q.filter(Expr::col(Column::CommentId).eq(*v)))
       .apply_if(self.user_id.as_ref(), |q, v| q.filter(Expr::col(Column::UserId).eq(*v)))
       .apply_if(self.mime_type.as_ref(), |q, v| q.filter(Expr::col(Column::MimeType).eq(v)))
       .apply_if(self.upload_status.as_ref(), |q, v| q.filter(Expr::col(Column::UploadStatus).eq(v)))
@@ -47,7 +45,6 @@ pub struct BoardFileListItem {
   pub id: i32,
   pub board_id: Option<i32>,
   pub post_id: Option<i32>,
-  pub comment_id: Option<i32>,
   pub user_id: Option<i32>,
   pub original_filename: String,
   pub file_url: Option<String>,
@@ -57,6 +54,7 @@ pub struct BoardFileListItem {
   pub is_temporary: bool,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub created_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -65,7 +63,6 @@ pub struct GetBoardFile {
   pub id: i32,
   pub board_id: Option<i32>,
   pub post_id: Option<i32>,
-  pub comment_id: Option<i32>,
   pub user_id: Option<i32>,
   pub original_filename: String,
   pub file_path: String,
@@ -86,7 +83,6 @@ impl From<Model> for GetBoardFile {
       id: model.id,
       board_id: model.board_id,
       post_id: model.post_id,
-      comment_id: model.comment_id,
       user_id: model.user_id,
       original_filename: model.original_filename,
       file_path: model.file_path,
@@ -109,13 +105,12 @@ impl IntoResponse for GetBoardFile {
   }
 }
 
-#[derive(Deserialize, DeriveIntoActiveModel)]
+#[derive(Debug, Deserialize, DeriveIntoActiveModel)]
 #[sea_orm(entity = "Entity")]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardFile {
   pub board_id: Optional<i32>,
   pub post_id: Optional<i32>,
-  pub comment_id: Optional<i32>,
   pub user_id: Optional<i32>,
   pub original_filename: String,
   pub file_path: String,
