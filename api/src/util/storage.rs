@@ -3,6 +3,8 @@ use crate::util::s3;
 use error::SumidaError;
 use infra::settings;
 use std::path::Path;
+use std::pin::Pin;
+use tokio::io::AsyncRead;
 
 pub enum FileStorage {
   Local(LocalStorage),
@@ -24,6 +26,22 @@ impl FileStorage {
       FileStorage::Local(storage) => storage.delete(path).await,
       #[cfg(feature = "storage-aws-s3")]
       FileStorage::S3(storage) => storage.delete(path).await,
+    }
+  }
+
+  pub async fn download(&self, path: &str) -> Result<Pin<Box<dyn AsyncRead + Send>>, SumidaError> {
+    match self {
+      FileStorage::Local(storage) => storage.download(path).await,
+      #[cfg(feature = "storage-aws-s3")]
+      FileStorage::S3(storage) => storage.download(path).await,
+    }
+  }
+
+  pub async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
+    match self {
+      FileStorage::Local(storage) => storage.get_file_size(path).await,
+      #[cfg(feature = "storage-aws-s3")]
+      FileStorage::S3(storage) => storage.get_file_size(path).await,
     }
   }
 
@@ -100,6 +118,23 @@ impl LocalStorage {
     Ok(())
   }
 
+  pub async fn download(&self, path: &str) -> Result<Pin<Box<dyn AsyncRead + Send>>, SumidaError> {
+    use tokio::fs::File;
+
+    let file = File::open(path).await.map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
+
+    Ok(Box::pin(file))
+  }
+
+  pub async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
+    use tokio::fs;
+
+    let metadata =
+      fs::metadata(path).await.map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
+
+    Ok(metadata.len())
+  }
+
   pub fn get_url(&self, path: &str) -> String {
     // For local storage, return a relative API path for download
     let filename = Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or("unknown");
@@ -168,6 +203,45 @@ impl S3Storage {
       .map_err(|e| SumidaError::InternalServerError(format!("Failed to delete from S3: {}", e)))?;
 
     Ok(())
+  }
+
+  pub async fn download(&self, path: &str) -> Result<Pin<Box<dyn AsyncRead + Send>>, SumidaError> {
+    use aws_sdk_s3::primitives::ByteStream;
+    use std::io::Cursor;
+
+    let response = self
+      .client
+      .get_object()
+      .bucket(&self.bucket)
+      .key(path)
+      .send()
+      .await
+      .map_err(|e| SumidaError::NoData("S3 Object".into(), format!("{}: {}", path, e)))?;
+
+    // Collect the entire ByteStream into memory
+    let bytes = response
+      .body
+      .collect()
+      .await
+      .map_err(|e| SumidaError::InternalServerError(format!("Failed to read S3 object: {}", e)))?
+      .into_bytes();
+
+    // Create a Cursor over the bytes, which implements AsyncRead
+    let cursor = Cursor::new(bytes);
+    Ok(Box::pin(cursor))
+  }
+
+  pub async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
+    let response = self
+      .client
+      .head_object()
+      .bucket(&self.bucket)
+      .key(path)
+      .send()
+      .await
+      .map_err(|e| SumidaError::NoData("S3 Object".into(), format!("{}: {}", path, e)))?;
+
+    Ok(response.content_length().unwrap_or(0) as u64)
   }
 
   pub fn get_url(&self, path: &str) -> String {

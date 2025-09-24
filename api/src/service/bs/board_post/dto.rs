@@ -21,6 +21,7 @@ pub struct BoardPostFilter {
   pub search: Option<String>,
   pub title: Option<String>,
   pub board_id: Option<i32>,
+  pub parent_id: Option<i32>,
   pub kind: Option<String>,
   pub status: Option<String>,
 }
@@ -38,6 +39,7 @@ impl BoardPostFilter {
       })
       .apply_if(self.title.as_ref(), |q, v| q.filter(Expr::col(Column::Title).eq(v)))
       .apply_if(self.board_id.as_ref(), |q, v| q.filter(Expr::col(Column::BoardId).eq(*v)))
+      .apply_if(self.parent_id.as_ref(), |q, v| q.filter(Expr::col(Column::ParentId).eq(*v)))
       .apply_if(self.kind.as_ref(), |q, v| q.filter(Expr::col(Column::Kind).eq(v)))
       .apply_if(self.status.as_ref(), |q, v| q.filter(Expr::col(Column::Status).eq(v)))
   }

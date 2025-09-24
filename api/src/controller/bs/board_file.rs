@@ -16,9 +16,6 @@ use axum::{
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::EntityTrait;
-use std::io::SeekFrom;
-use tokio::fs::File;
-use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
 
 #[derive(Debug, Default)]
@@ -235,24 +232,15 @@ impl<S: SumidaState> BoardFileController<S> {
       .await?
       .ok_or_else(|| SumidaError::NoData("BoardFile".into(), id.to_string()))?;
 
-    // Check if file exists
-    let mut file = File::open(&download_info.file_path)
-      .await
-      .map_err(|_| SumidaError::NoData("File".into(), download_info.file_path.clone()))?;
-
-    // Get file size
-    let file_size = file
-      .seek(SeekFrom::End(0))
-      .await
-      .map_err(|_| SumidaError::InternalServerError("Failed to get file size".into()))?;
-
-    file
-      .seek(SeekFrom::Start(0))
-      .await
-      .map_err(|_| SumidaError::InternalServerError("Failed to reset file position".into()))?;
+    // Use storage abstraction for download
+    use crate::util::storage::create_storage;
+    
+    let storage = create_storage();
+    let file_stream = storage.download(&download_info.file_path).await?;
+    let file_size = storage.get_file_size(&download_info.file_path).await?;
 
     // Create file stream
-    let stream = ReaderStream::new(file);
+    let stream = ReaderStream::new(file_stream);
     let body = Body::from_stream(stream);
 
     // Create response with appropriate headers
