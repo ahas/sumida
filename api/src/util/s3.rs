@@ -82,16 +82,11 @@ pub async fn get_json(
 
 #[allow(dead_code)]
 #[cfg(feature = "image")]
-pub async fn get_image(client: &aws_sdk_s3::Client, uri: String) -> Option<DynamicImage> {
-  let bytes = get_bytes(client, uri.clone()).await.ok();
+pub async fn get_image(client: &aws_sdk_s3::Client, uri: String) -> Result<DynamicImage, anyhow::Error> {
+  let bytes = get_bytes(client, uri.clone()).await?;
+  let cursor = Cursor::new(bytes.into_bytes());
 
-  bytes.map(|x| x.into_bytes()).map(Cursor::new).and_then(|x| {
-    if let Ok(format) = ImageFormat::from_path(&uri) {
-      image::load(x, format).ok()
-    } else {
-      None
-    }
-  })
+  ImageFormat::from_path(&uri).and_then(|x| image::load(cursor, x)).map_err(anyhow::Error::from)
 }
 
 #[allow(dead_code)]
