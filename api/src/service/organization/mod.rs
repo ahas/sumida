@@ -5,7 +5,7 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
   DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Set,
-  TransactionTrait, sea_query::Expr,
+  TransactionTrait,
 };
 
 use crate::SumidaState;
@@ -98,9 +98,7 @@ impl<S: SumidaState> ApiService<ApCondition, Organizations> for OrganizationServ
   fn ap(&self) -> ApCondition {
     use entity::organizations::Column;
 
-    ap::ns("organization")
-      .who(&self.session)
-      .object_ref(Expr::col((Organizations, Column::Id)).cast_as("varchar"))
+    ap::ns("organization").who(&self.session).join(Organizations, Column::Id)
   }
 
   fn select(&self, query: sea_orm::Select<Organizations>) -> sea_orm::Select<Organizations> {

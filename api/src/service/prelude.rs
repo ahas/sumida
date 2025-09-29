@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 pub use super::ApiService;
+pub use super::access_policy::{AccessPolicyService, dto::*};
 pub use super::admin::{AdminService, dto::*};
 pub use super::api_key::{ApiKeyService, dto::*};
 pub use super::auth::{dto::*, session::AuthSessionService};

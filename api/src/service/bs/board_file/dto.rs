@@ -216,3 +216,16 @@ pub struct CleanupFailedParams {
 pub struct CleanupResult {
   pub deleted_count: u64,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileTypeInfo {
+  pub is_image: bool,
+  pub is_video: bool,
+  pub is_audio: bool,
+  pub is_document: bool,
+  pub file_extension: Option<String>,
+  pub formatted_size: String,
+  pub is_expired: bool,
+  pub upload_status: entity::bs::board_files::UploadStatus,
+}

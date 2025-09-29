@@ -74,44 +74,18 @@ pub struct GetBoardPost {
   pub parent_id: Option<i32>,
   pub user_id: Option<i32>,
   pub title: String,
-  pub content: Option<JsonValue>,
-  pub kind: String,
-  pub status: String,
+  pub content: Option<String>,
+  pub kind: BoardPostKind,
+  pub status: BoardPostStatus,
   pub tags: Option<Vec<String>>,
   pub published_at: Option<DateTimeWithTimeZone>,
   pub scheduled_at: Option<DateTimeWithTimeZone>,
-  pub auto_save_content: Option<JsonValue>,
-  pub last_auto_save_at: Option<DateTimeWithTimeZone>,
-  #[sea_orm(skip)]
-  pub view_count: i32,
+  pub views: i32,
+  pub reactions: JsonValue,
   #[sea_orm(skip)]
   pub attached_files: Vec<BoardFileListItem>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
-}
-
-impl From<Model> for GetBoardPost {
-  fn from(model: Model) -> Self {
-    Self {
-      id: model.id,
-      board_id: model.board_id,
-      parent_id: model.parent_id,
-      user_id: model.user_id,
-      title: model.title,
-      content: model.content,
-      kind: model.kind,
-      status: model.status,
-      tags: model.tags,
-      published_at: model.published_at,
-      scheduled_at: model.scheduled_at,
-      auto_save_content: model.auto_save_content,
-      last_auto_save_at: model.last_auto_save_at,
-      view_count: 0, // This should be fetched separately
-      attached_files: Vec::new(),
-      created_at: model.created_at,
-      updated_at: model.updated_at,
-    }
-  }
 }
 
 impl IntoResponse for GetBoardPost {
@@ -127,9 +101,9 @@ pub struct CreateBoardPost {
   pub board_id: i32,
   pub parent_id: Nullable<i32>,
   pub title: String,
-  pub content: Nullable<JsonValue>,
-  pub kind: Optional<String>,
-  pub status: Optional<String>,
+  pub content: Nullable<String>,
+  pub kind: Optional<BoardPostKind>,
+  pub status: Optional<BoardPostStatus>,
   pub published_at: Nullable<DateTimeWithTimeZone>,
   pub tags: Nullable<Vec<String>>,
   pub attached_file_ids: Option<Vec<i32>>,
@@ -168,9 +142,9 @@ impl IntoResponse for BoardPostCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
   pub title: Optional<String>,
-  pub content: Nullable<JsonValue>,
-  pub kind: Optional<String>,
-  pub status: Optional<String>,
+  pub content: Nullable<String>,
+  pub kind: Optional<BoardPostKind>,
+  pub status: Optional<BoardPostStatus>,
   pub published_at: Nullable<DateTimeWithTimeZone>,
   pub tags: Nullable<Vec<String>>,
   pub attached_file_ids: Option<Vec<i32>>,

@@ -3,6 +3,7 @@ use sea_orm::{ConnectionTrait, EntityTrait, Select};
 
 use crate::util::ap::ApGuard;
 
+pub mod access_policy;
 pub mod admin;
 pub mod api_key;
 pub mod auth;

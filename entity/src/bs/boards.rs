@@ -1,5 +1,13 @@
 use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+pub enum BoardPostRecordVisibility {
+  Public,
+  Private,
+  AuthorOnly,
+}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "boards")]
@@ -9,14 +17,13 @@ pub struct Model {
   pub category_id: Option<i32>,
   pub name: String,
   pub description: Option<String>,
-  pub is_system: bool,
-  pub system_category: Option<String>,
+  pub can_upload_file: bool,
   pub max_file_size: i64,
+  pub max_file_count: i32,
   pub allowed_file_types: Json,
-  pub max_files_per_post: i32,
-  pub enable_file_upload: bool,
-  pub enable_post_history: bool,
-  pub max_history_count: i32,
+  pub emotion_visibility: BoardPostRecordVisibility,
+  pub viewer_visibility: BoardPostRecordVisibility,
+  pub is_logged: bool,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -45,20 +52,9 @@ impl Related<super::board_categories::Entity> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
-  pub fn is_file_upload_allowed(&self) -> bool {
-    self.enable_file_upload
-  }
-
-  pub fn get_max_file_size(&self) -> i64 {
-    self.max_file_size
-  }
-
   pub fn get_allowed_file_types(&self) -> Vec<String> {
     match &self.allowed_file_types {
-      Json::Array(arr) => arr
-        .iter()
-        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-        .collect(),
+      Json::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
       _ => vec![], // fallback to empty if not an array
     }
   }
@@ -70,23 +66,6 @@ impl Model {
   }
 
   pub fn can_upload_more_files(&self, current_count: i32) -> bool {
-    current_count < self.max_files_per_post
+    current_count < self.max_file_count
   }
-
-  pub fn is_history_enabled(&self) -> bool {
-    self.enable_post_history
-  }
-
-  pub fn get_max_history_count(&self) -> i32 {
-    self.max_history_count
-  }
-
-  pub fn is_system_board(&self) -> bool {
-    self.is_system
-  }
-
-  pub fn get_system_category(&self) -> Option<&str> {
-    self.system_category.as_deref()
-  }
-
 }

@@ -56,18 +56,10 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetBoardFile>, SumidaError> {
-    use crate::layer::board_ap::helpers as board_helpers;
-    
     let txn = self.state.db().begin().await?;
-    
-    // Get board_id and check hierarchical permission
-    if let Some(board_id) = board_helpers::get_board_id_from_file(id, &txn).await? {
-      board_helpers::check_hierarchical_read_permission(&self.session, board_id, "read", &txn).await?;
-    }
-    
     let model = self.select(BoardFiles::find_by_id(id)).one(&txn).await?;
     txn.commit().await?;
-    
+
     Ok(model.map(Into::into))
   }
 
@@ -96,15 +88,8 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   pub async fn update(&self, id: i32, body: UpdateBoardFile) -> Result<(), SumidaError> {
-    use crate::layer::board_ap::helpers as board_helpers;
-    
     let txn = self.state.db().begin().await?;
-    
-    // Get board_id and check hierarchical permission
-    if let Some(board_id) = board_helpers::get_board_id_from_file(id, &txn).await? {
-      board_helpers::check_hierarchical_read_permission(&self.session, board_id, "write", &txn).await?;
-    }
-    
+
     // Then check file-specific permission
     self.try_access("update", BoardFiles::find_by_id(id), &txn).await?;
 
@@ -120,18 +105,11 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
-    use crate::layer::board_ap::helpers as board_helpers;
-    
     let txn = self.state.db().begin().await?;
-    
-    // Get board_id and check hierarchical permission
-    if let Some(board_id) = board_helpers::get_board_id_from_file(id, &txn).await? {
-      board_helpers::check_hierarchical_read_permission(&self.session, board_id, "moderate", &txn).await?;
-    }
-    
+
     // Then check file-specific permission
     self.try_access("delete", BoardFiles::find_by_id(id), &txn).await?;
-    
+
     let result = BoardFiles::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
     Ok(result)
@@ -274,20 +252,38 @@ impl<S: SumidaState> BoardFileService<S> {
 
     Ok(result.rows_affected)
   }
+
+  pub async fn get_file_info(
+    &self,
+    id: i32,
+  ) -> Result<Option<entity::bs::board_files::Model>, SumidaError> {
+    let db = self.state.db();
+    let file = BoardFiles::find_by_id(id).one(db).await?;
+    Ok(file)
+  }
+
+  pub async fn get_expired_files(&self) -> Result<Vec<entity::bs::board_files::Model>, SumidaError> {
+    use entity::bs::board_files::Column;
+
+    let db = self.state.db();
+    let now = Utc::now().fixed_offset();
+    let files = BoardFiles::find()
+      .filter(Column::IsTemporary.eq(true))
+      .filter(Column::ExpiresAt.lt(now))
+      .all(db)
+      .await?;
+    Ok(files)
+  }
 }
 
 impl<S: SumidaState> ApiService<ApCondition, BoardFiles> for BoardFileService<S> {
   fn default_query_with(query: Select<BoardFiles>) -> Select<BoardFiles> {
-    query
-      .select_only()
-      .expr(Expr::col((BoardFiles, Asterisk)))
+    query.select_only().expr(Expr::col((BoardFiles, Asterisk)))
   }
 
   fn ap(&self) -> ApCondition {
     use entity::bs::board_files::Column;
 
-    ap::ns("board_file")
-      .who(&self.session)
-      .object_ref(Expr::col((BoardFiles, Column::Id)).cast_as("varchar"))
+    ap::ns("board_file").who(&self.session).join(BoardFiles, Column::Id)
   }
 }

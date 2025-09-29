@@ -5,19 +5,19 @@ use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct FileValidationConfig {
+  pub can_upload_file: bool,
   pub max_file_size: i64,
+  pub max_file_count: i32,
   pub allowed_file_types: Vec<String>,
-  pub max_files_per_post: i32,
-  pub enable_file_upload: bool,
 }
 
 impl From<&boards::Model> for FileValidationConfig {
   fn from(board: &boards::Model) -> Self {
     Self {
+      can_upload_file: board.can_upload_file,
       max_file_size: board.max_file_size,
+      max_file_count: board.max_file_count,
       allowed_file_types: board.get_allowed_file_types(),
-      max_files_per_post: board.max_files_per_post,
-      enable_file_upload: board.enable_file_upload,
     }
   }
 }
@@ -32,10 +32,8 @@ pub struct FileInfo {
 
 impl FileInfo {
   pub fn new(filename: String, size: i64, mime_type: String) -> Self {
-    let extension = Path::new(&filename)
-      .extension()
-      .and_then(|ext| ext.to_str())
-      .map(|ext| ext.to_lowercase());
+    let extension =
+      Path::new(&filename).extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_lowercase());
 
     Self {
       filename,
@@ -45,11 +43,7 @@ impl FileInfo {
     }
   }
 
-  pub fn from_multipart_field(
-    filename: String, 
-    size: i64, 
-    content_type: Option<String>
-  ) -> Self {
+  pub fn from_multipart_field(filename: String, size: i64, content_type: Option<String>) -> Self {
     let mime_type = content_type.unwrap_or_else(|| {
       // Fallback MIME type detection based on file extension
       detect_mime_type_from_extension(&filename)
@@ -77,13 +71,13 @@ impl FileInfo {
   pub fn is_document(&self) -> bool {
     matches!(
       self.mime_type.as_str(),
-      "application/pdf" 
-      | "application/msword" 
-      | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      | "application/vnd.ms-excel"
-      | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      | "text/plain"
-      | "text/csv"
+      "application/pdf"
+        | "application/msword"
+        | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        | "application/vnd.ms-excel"
+        | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        | "text/plain"
+        | "text/csv"
     )
   }
 }
@@ -91,9 +85,18 @@ impl FileInfo {
 #[derive(Debug)]
 pub enum FileValidationError {
   UploadDisabled,
-  FileTooLarge { size: i64, max_size: i64 },
-  InvalidFileType { extension: String, allowed_types: Vec<String> },
-  TooManyFiles { current_count: i32, max_count: i32 },
+  FileTooLarge {
+    size: i64,
+    max_size: i64,
+  },
+  InvalidFileType {
+    extension: String,
+    allowed_types: Vec<String>,
+  },
+  TooManyFiles {
+    current_count: i32,
+    max_count: i32,
+  },
   InvalidFilename(String),
   UnsupportedMimeType(String),
 }
@@ -104,25 +107,25 @@ impl From<FileValidationError> for SumidaError {
       FileValidationError::UploadDisabled => {
         SumidaError::BadRequest("File upload is disabled for this board".into())
       }
-      FileValidationError::FileTooLarge { size, max_size } => {
-        SumidaError::BadRequest(format!(
-          "File size {} bytes exceeds maximum allowed size {} bytes",
-          size, max_size
-        ))
-      }
-      FileValidationError::InvalidFileType { extension, allowed_types } => {
-        SumidaError::BadRequest(format!(
-          "File type '{}' is not allowed. Allowed types: {}",
-          extension,
-          allowed_types.join(", ")
-        ))
-      }
-      FileValidationError::TooManyFiles { current_count, max_count } => {
-        SumidaError::BadRequest(format!(
-          "Cannot upload more files. Current: {}, Maximum: {}",
-          current_count, max_count
-        ))
-      }
+      FileValidationError::FileTooLarge { size, max_size } => SumidaError::BadRequest(format!(
+        "File size {} bytes exceeds maximum allowed size {} bytes",
+        size, max_size
+      )),
+      FileValidationError::InvalidFileType {
+        extension,
+        allowed_types,
+      } => SumidaError::BadRequest(format!(
+        "File type '{}' is not allowed. Allowed types: {}",
+        extension,
+        allowed_types.join(", ")
+      )),
+      FileValidationError::TooManyFiles {
+        current_count,
+        max_count,
+      } => SumidaError::BadRequest(format!(
+        "Cannot upload more files. Current: {}, Maximum: {}",
+        current_count, max_count
+      )),
       FileValidationError::InvalidFilename(filename) => {
         SumidaError::BadRequest(format!("Invalid filename: {}", filename))
       }
@@ -155,7 +158,7 @@ impl FileValidator {
   }
 
   pub fn validate_upload_enabled(&self) -> Result<(), FileValidationError> {
-    if !self.config.enable_file_upload {
+    if !self.config.can_upload_file {
       return Err(FileValidationError::UploadDisabled);
     }
     Ok(())
@@ -186,10 +189,10 @@ impl FileValidator {
   }
 
   pub fn validate_file_count(&self, current_count: i32) -> Result<(), FileValidationError> {
-    if current_count >= self.config.max_files_per_post {
+    if current_count >= self.config.max_file_count {
       return Err(FileValidationError::TooManyFiles {
         current_count,
-        max_count: self.config.max_files_per_post,
+        max_count: self.config.max_file_count,
       });
     }
     Ok(())
@@ -208,9 +211,12 @@ impl FileValidator {
 
     // Check for reserved names (Windows)
     let name_upper = filename.to_uppercase();
-    if ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"]
-      .iter()
-      .any(|&reserved| name_upper.starts_with(reserved))
+    if [
+      "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+      "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ]
+    .iter()
+    .any(|&reserved| name_upper.starts_with(reserved))
     {
       return Err(FileValidationError::InvalidFilename(filename.to_string()));
     }
@@ -227,7 +233,7 @@ impl FileValidator {
     // Additional security checks for dangerous MIME types
     let dangerous_types = [
       "application/x-executable",
-      "application/x-msdownload", 
+      "application/x-msdownload",
       "application/x-msdos-program",
       "application/x-sh",
       "text/x-script",
@@ -249,7 +255,11 @@ impl FileValidator {
     Ok(())
   }
 
-  pub fn validate_file_with_count(&self, file: &FileInfo, current_count: i32) -> Result<(), FileValidationError> {
+  pub fn validate_file_with_count(
+    &self,
+    file: &FileInfo,
+    current_count: i32,
+  ) -> Result<(), FileValidationError> {
     self.validate_file_count(current_count)?;
     self.validate_file(file)?;
     Ok(())
@@ -262,11 +272,7 @@ impl FileValidator {
 
 /// Detect MIME type from file extension as fallback
 fn detect_mime_type_from_extension(filename: &str) -> String {
-  let extension = Path::new(filename)
-    .extension()
-    .and_then(|ext| ext.to_str())
-    .unwrap_or("")
-    .to_lowercase();
+  let extension = Path::new(filename).extension().and_then(|ext| ext.to_str()).unwrap_or("").to_lowercase();
 
   match extension.as_str() {
     // Images
@@ -322,4 +328,3 @@ fn detect_mime_type_from_extension(filename: &str) -> String {
   }
   .to_string()
 }
-

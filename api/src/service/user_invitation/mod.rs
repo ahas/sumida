@@ -4,7 +4,6 @@ use chrono::{Duration, Utc};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::sea_query::Expr;
 use sea_orm::{ActiveValue::*, DbErr, EntityTrait, TransactionTrait};
 use sea_orm::{ColumnTrait, ConnectionTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelect};
 use uuid::Uuid;
@@ -147,9 +146,7 @@ impl<S: SumidaState> ApiService<ApCondition, UserInvitations> for UserInvitation
   fn ap(&self) -> ApCondition {
     use entity::user_invitations::Column;
 
-    ap::ns("user_invitation")
-      .who(&self.session)
-      .object_ref(Expr::col((UserInvitations, Column::Uuid)).cast_as("varchar"))
+    ap::ns("user_invitation").who(&self.session).join(UserInvitations, Column::Uuid)
   }
 
   fn select(&self, query: sea_orm::Select<UserInvitations>) -> sea_orm::Select<UserInvitations> {

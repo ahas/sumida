@@ -92,10 +92,6 @@ impl<S: SumidaState> ApiService<ApCondition, Boards> for BoardService<S> {
   }
 
   fn ap(&self) -> ApCondition {
-    use entity::bs::boards::Column;
-
-    ap::ns("board") //
-      .who(&self.session)
-      .object_ref(Expr::col((Boards, Column::Id)).cast_as("varchar"))
+    ap::ns("board").who(&self.session).join(Boards, entity::bs::boards::Column::Id)
   }
 }

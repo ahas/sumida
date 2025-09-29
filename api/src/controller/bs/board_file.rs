@@ -1,5 +1,4 @@
 use crate::controller::ApiController;
-use crate::layer::board_ap::helpers as board_helpers;
 use crate::service::bs::board_file::BoardFileService;
 use crate::service::bs::board_file::dto::*;
 use crate::util::file_validation::{FileInfo, FileValidator};
@@ -15,7 +14,6 @@ use axum::{
 };
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::EntityTrait;
 use tokio_util::io::ReaderStream;
 
 #[derive(Debug, Default)]
@@ -126,9 +124,6 @@ impl<S: SumidaState> BoardFileController<S> {
       (board_id, body.post_id.0, None, true)
     };
 
-    // Check board permission
-    board_helpers::check_hierarchical_read_permission(&session, board_id, "write", state.db()).await?;
-
     let create_dto = if let Some((original_filename, file_bytes, mime_type)) = file_data {
       // File upload case
       // Validate file
@@ -207,26 +202,6 @@ impl<S: SumidaState> BoardFileController<S> {
     Path(id): Path<i32>,
   ) -> Result<Response<Body>, SumidaError> {
     let service = BoardFileService::new(state.clone(), session.clone());
-
-    // Get file info and check board-specific permissions
-    let file =
-      service.get(id).await?.ok_or_else(|| SumidaError::NoData("BoardFile".into(), id.to_string()))?;
-
-    // Check board visibility if file is attached to a board
-    if let Some(board_id) = file.board_id {
-      use entity::bs::boards;
-
-      let _board = boards::Entity::find_by_id(board_id)
-        .one(state.db())
-        .await?
-        .ok_or_else(|| SumidaError::NoData("Board".into(), board_id.to_string()))?;
-
-      // Use board_helpers to check if user can read the board
-      if !board_helpers::can_read_board(&session, board_id, state.db()).await {
-        return Err(SumidaError::NoAccessPermission);
-      }
-    }
-
     let download_info = service
       .get_download_info(id)
       .await?
@@ -234,7 +209,7 @@ impl<S: SumidaState> BoardFileController<S> {
 
     // Use storage abstraction for download
     use crate::util::storage::create_storage;
-    
+
     let storage = create_storage();
     let file_stream = storage.download(&download_info.file_path).await?;
     let file_size = storage.get_file_size(&download_info.file_path).await?;

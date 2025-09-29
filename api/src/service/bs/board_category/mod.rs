@@ -99,7 +99,7 @@ impl<S: SumidaState> ApiService<ApCondition, BoardCategories> for BoardCategoryS
   }
 
   fn ap(&self) -> ApCondition {
-    // Categories require admin permission
-    ap::ns("board_category").who(&self.session)
+    use entity::bs::board_categories::Column;
+    ap::ns("board_category").who(&self.session).join(BoardCategories, Column::Id)
   }
 }

@@ -1,5 +1,6 @@
 use chrono::Utc;
 use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "board_files")]
@@ -70,26 +71,14 @@ impl Related<crate::users::Entity> for Entity {
 
 impl ActiveModelBehavior for ActiveModel {}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 pub enum UploadStatus {
   Pending,
   Processing,
   Completed,
   Failed,
   Deleted,
-}
-
-impl From<String> for UploadStatus {
-  fn from(value: String) -> Self {
-    match value.as_str() {
-      "pending" => UploadStatus::Pending,
-      "processing" => UploadStatus::Processing,
-      "completed" => UploadStatus::Completed,
-      "failed" => UploadStatus::Failed,
-      "deleted" => UploadStatus::Deleted,
-      _ => UploadStatus::Pending,
-    }
-  }
 }
 
 impl From<UploadStatus> for String {
@@ -142,10 +131,6 @@ impl Model {
     }
   }
 
-  pub fn get_upload_status(&self) -> UploadStatus {
-    UploadStatus::from(self.upload_status.clone())
-  }
-
   pub fn format_file_size(&self) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = self.file_size as f64;
@@ -171,4 +156,3 @@ impl Model {
     }
   }
 }
-

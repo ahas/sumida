@@ -10,14 +10,15 @@ use sea_orm::{
   EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, Select, Set,
   Statement,
   sea_query::{
-    Alias, Expr, IntoColumnRef, IntoTableRef, SelectStatement, SimpleExpr, extension::postgres::PgExpr,
+    Alias, Expr, IntoColumnRef, IntoIden, IntoTableRef, SelectStatement, SimpleExpr,
+    extension::postgres::PgExpr,
   },
 };
 use serde::{Deserialize, Serialize};
 
 fn _build_object_condition<C: IntoColumnRef>(
   objects: &[String],
-  object_refs: &[SimpleExpr],
+  exprs: &[SimpleExpr],
   col: C,
 ) -> Condition {
   let col = Expr::col(col);
@@ -27,8 +28,8 @@ fn _build_object_condition<C: IntoColumnRef>(
     cond = cond.add(col.clone().eq(object.clone()));
   }
 
-  for object_ref in object_refs {
-    cond = cond.add(col.clone().eq(object_ref.clone()));
+  for expr in exprs {
+    cond = cond.add(col.clone().eq(expr.clone()));
   }
 
   cond
@@ -111,7 +112,9 @@ impl std::fmt::Display for ApUser {
 }
 pub trait ApGuard {
   fn object<O: ToString>(self, object: O) -> Self;
-  fn object_ref(self, expr: SimpleExpr) -> Self;
+  fn expr(self, expr: SimpleExpr) -> Self;
+  fn join<S: IntoIden + Clone + 'static, T: IntoIden + Clone + 'static>(self, entity: S, column: T)
+  -> Self;
   fn action<T: ApValue>(self, action: T) -> Self;
   fn user(self, user: ApUser) -> Self;
   fn who(self, session: &UserSession) -> Self;
@@ -136,7 +139,7 @@ pub struct ApCondition {
   namespace: String,
   actions: Vec<String>,
   objects: Vec<String>,
-  object_refs: Vec<SimpleExpr>,
+  exprs: Vec<SimpleExpr>,
   users: Vec<ApUser>,
   alias: Option<Alias>,
 }
@@ -147,7 +150,7 @@ impl ApCondition {
       namespace: namespace.to_string(),
       actions: Vec::new(),
       objects: Vec::new(),
-      object_refs: Vec::new(),
+      exprs: Vec::new(),
       users: Vec::new(),
       alias: None,
     }
@@ -168,7 +171,7 @@ impl ApCondition {
       .from_as(ApEntity.into_table_ref(), ap_alias.clone())
       .and_where(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)).into())
       .and_where(
-        _build_object_condition(&self.objects, &self.object_refs, (ap_alias.clone(), ApCol::Object)).into(),
+        _build_object_condition(&self.objects, &self.exprs, (ap_alias.clone(), ApCol::Object)).into(),
       )
       .and_where(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)).into())
       .and_where(_build_user_conditions(&self.users, (ap_alias.clone(), ApCol::User)).into())
@@ -178,7 +181,7 @@ impl ApCondition {
   pub fn build_condition(&self, ap_alias: Alias) -> Condition {
     Condition::all()
       .add(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)))
-      .add(_build_object_condition(&self.objects, &self.object_refs, (ap_alias.clone(), ApCol::Object)))
+      .add(_build_object_condition(&self.objects, &self.exprs, (ap_alias.clone(), ApCol::Object)))
       .add(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)))
       .add(_build_user_conditions(&self.users, (ap_alias.clone(), ApCol::User)))
   }
@@ -190,8 +193,17 @@ impl ApGuard for ApCondition {
     self
   }
 
-  fn object_ref(mut self, expr: SimpleExpr) -> Self {
-    self.object_refs.push(expr);
+  fn expr(mut self, expr: SimpleExpr) -> Self {
+    self.exprs.push(expr);
+    self
+  }
+
+  fn join<S, T>(mut self, entity: S, col: T) -> Self
+  where
+    S: IntoIden + Clone + 'static,
+    T: IntoIden + Clone + 'static,
+  {
+    self.exprs.push(Expr::col((entity, col)).cast_as("varchar"));
     self
   }
 
@@ -304,6 +316,18 @@ impl ApChain {
     self.children.push(child);
     self
   }
+
+  pub fn push_if<V, F>(mut self, value: Option<V>, mut cb: F) -> Self
+  where
+    V: ToString,
+    F: FnMut(V) -> ApCondition,
+  {
+    if let Some(v) = value {
+      self.children.push(cb(v));
+    }
+
+    self
+  }
 }
 
 impl ApGuard for ApChain {
@@ -315,9 +339,21 @@ impl ApGuard for ApChain {
     self
   }
 
-  fn object_ref(mut self, expr: SimpleExpr) -> Self {
+  fn expr(mut self, expr: SimpleExpr) -> Self {
     for child in &mut self.children {
-      *child = mem::take(child).object_ref(expr.clone());
+      *child = mem::take(child).expr(expr.clone());
+    }
+
+    self
+  }
+
+  fn join<S, T>(mut self, entity: S, col: T) -> Self
+  where
+    S: IntoIden + Clone + 'static,
+    T: IntoIden + Clone + 'static,
+  {
+    for child in &mut self.children {
+      *child = mem::take(child).join(entity.clone(), col.clone());
     }
 
     self
@@ -532,7 +568,7 @@ pub struct FindUsersOfAp {
   namespace: String,
   actions: Vec<String>,
   objects: Vec<String>,
-  object_refs: Vec<SimpleExpr>,
+  exprs: Vec<SimpleExpr>,
 }
 
 impl FindUsersOfAp {
@@ -541,7 +577,7 @@ impl FindUsersOfAp {
       namespace: namespace.to_string(),
       actions: Vec::new(),
       objects: Vec::new(),
-      object_refs: Vec::new(),
+      exprs: Vec::new(),
     }
   }
 
@@ -550,8 +586,17 @@ impl FindUsersOfAp {
     self
   }
 
-  pub fn object_ref(mut self, expr: SimpleExpr) -> Self {
-    self.object_refs.push(expr);
+  pub fn expr(mut self, expr: SimpleExpr) -> Self {
+    self.exprs.push(expr);
+    self
+  }
+
+  pub fn join<S, T>(mut self, entity: S, col: T) -> Self
+  where
+    S: IntoIden + Clone + 'static,
+    T: IntoIden + Clone + 'static,
+  {
+    self.exprs.push(Expr::col((entity, col)).cast_as("varchar"));
     self
   }
 
@@ -599,7 +644,7 @@ impl FindUsersOfAp {
       cond = cond.add(_build_object_condition(
         //
         &self.objects,
-        &self.object_refs,
+        &self.exprs,
         (ap_alias.clone(), ApCol::Object),
       ));
     }

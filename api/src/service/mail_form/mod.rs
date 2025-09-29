@@ -8,7 +8,7 @@ use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::{
   ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
-  Set, TransactionTrait, sea_query::Expr,
+  Set, TransactionTrait,
 };
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
@@ -201,9 +201,7 @@ impl<S: SumidaState> ApiService<ApCondition, MailForms> for MailFormService<S> {
   fn ap(&self) -> ApCondition {
     use entity::mail_forms::Column;
 
-    ap::ns("mail_form")
-      .who(&self.session)
-      .object_ref(Expr::col((MailForms, Column::Kind)).cast_as("varchar"))
+    ap::ns("mail_form").who(&self.session).join(MailForms, Column::Kind)
   }
 
   fn select(&self, query: sea_orm::Select<MailForms>) -> sea_orm::Select<MailForms> {

@@ -8,8 +8,7 @@ pub struct Model {
   pub id: i32,
   pub post_id: i32,
   pub user_id: Option<i32>,
-  pub ip_address: Option<String>,
-  pub viewed_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

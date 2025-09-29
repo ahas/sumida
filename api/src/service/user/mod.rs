@@ -259,8 +259,6 @@ impl<S: SumidaState> ApiService<ApCondition, Users> for UserService<S> {
   fn ap(&self) -> ApCondition {
     use entity::users::Column;
 
-    ap::ns("user") //
-      .who(&self.session)
-      .object_ref(Expr::col((Users, Column::Id)).cast_as("varchar"))
+    ap::ns("user").who(&self.session).join(Users, Column::Id)
   }
 }

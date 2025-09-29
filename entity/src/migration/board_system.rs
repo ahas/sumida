@@ -49,20 +49,21 @@ enum BoardPosts {
   Status,
   PublishedAt,
   ScheduledAt,
-  AutoSaveContent,
-  LastAutoSaveAt,
   Tags,
+  Views,
+  Reactions,
   CreatedAt,
   UpdatedAt,
 }
 
 /// board_post_likes
 #[derive(DeriveIden)]
-enum BoardPostLikes {
+enum BoardPostReactions {
   Table,
   Id,
   PostId,
   UserId,
+  Value,
   CreatedAt,
 }
 
@@ -73,7 +74,6 @@ enum BoardPostViews {
   Id,
   PostId,
   UserId,
-  IpAddress,
   ViewedAt,
 }
 
@@ -109,17 +109,6 @@ enum BoardFiles {
   UpdatedAt,
 }
 
-/// board_post_histories
-#[derive(DeriveIden)]
-enum BoardPostHistories {
-  Table,
-  Id,
-  PostId,
-  Content,
-  ModifiedBy,
-  ModifiedAt,
-}
-
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -149,6 +138,17 @@ impl MigrationTrait for Migration {
               .on_delete(Cascade)
               .on_update(Cascade),
           )
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_categories__parent_id")
+          .table(BoardCategories::Table)
+          .col(BoardCategories::ParentId)
+          .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;
@@ -186,6 +186,17 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_boards__category_id")
+          .table(Boards::Table)
+          .col(Boards::CategoryId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
     db.execute_unprepared("SELECT manage_updated_at('boards');").await?;
 
     // board_posts
@@ -205,12 +216,20 @@ impl MigrationTrait for Migration {
           .col(string(BoardPosts::Status).default("draft"))
           .col(timestamp_with_time_zone_null(BoardPosts::PublishedAt))
           .col(timestamp_with_time_zone_null(BoardPosts::ScheduledAt))
-          .col(json_binary_null(BoardPosts::AutoSaveContent))
-          .col(timestamp_with_time_zone_null(BoardPosts::LastAutoSaveAt))
+          .col(integer(BoardPosts::Views))
+          .col(json_binary_null(BoardPosts::Reactions))
           .col(ColumnDef::new(BoardPosts::Tags).array(ColumnType::Text).null())
           .col(timestamp_with_time_zone(BoardPosts::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(BoardPosts::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_board_posts__id").col(BoardPosts::Id))
+          .foreign_key(
+            ForeignKey::create()
+              .name("fk_board_posts__user_id")
+              .from(BoardPosts::Table, BoardPosts::UserId)
+              .to(Boards::Table, Boards::Id)
+              .on_delete(Cascade)
+              .on_update(Cascade),
+          )
           .foreign_key(
             ForeignKey::create()
               .name("fk_board_posts__board_id")
@@ -230,27 +249,72 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_posts__user_id")
+          .table(BoardPosts::Table)
+          .col(BoardPosts::UserId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_posts__board_id")
+          .table(BoardPosts::Table)
+          .col(BoardPosts::BoardId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_posts__parent_id")
+          .table(BoardPosts::Table)
+          .col(BoardPosts::ParentId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
     db.execute_unprepared("SELECT manage_updated_at('board_posts');").await?;
 
-    // board_post_likes
+    // board_post_reactions
     manager
       .create_table(
         Table::create()
           .if_not_exists()
-          .table(BoardPostLikes::Table)
-          .col(integer(BoardPostLikes::Id).auto_increment())
-          .col(integer(BoardPostLikes::PostId))
-          .col(integer(BoardPostLikes::UserId))
-          .col(timestamp_with_time_zone(BoardPostLikes::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_board_post_likes__id").col(BoardPostLikes::Id))
+          .table(BoardPostReactions::Table)
+          .col(integer(BoardPostReactions::Id).auto_increment())
+          .col(integer(BoardPostReactions::PostId))
+          .col(integer_null(BoardPostReactions::UserId))
+          .col(string(BoardPostReactions::Value))
+          .col(timestamp_with_time_zone(BoardPostReactions::CreatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_board_post_reactions__id").col(BoardPostReactions::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_board_post_likes__post_id")
-              .from(BoardPostLikes::Table, BoardPostLikes::PostId)
+              .name("fk_board_post_reactions__post_id")
+              .from(BoardPostReactions::Table, BoardPostReactions::PostId)
               .to(BoardPosts::Table, BoardPosts::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_post_reactions__post_id")
+          .table(BoardPostReactions::Table)
+          .col(BoardPostReactions::PostId)
+          .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;
@@ -264,7 +328,6 @@ impl MigrationTrait for Migration {
           .col(integer(BoardPostViews::Id).auto_increment())
           .col(integer(BoardPostViews::PostId))
           .col(integer_null(BoardPostViews::UserId))
-          .col(string_null(BoardPostViews::IpAddress))
           .col(timestamp_with_time_zone(BoardPostViews::ViewedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_board_post_views__id").col(BoardPostViews::Id))
           .foreign_key(
@@ -275,6 +338,17 @@ impl MigrationTrait for Migration {
               .on_delete(Cascade)
               .on_update(Cascade),
           )
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_post_views__post_id")
+          .table(BoardPostViews::Table)
+          .col(BoardPostViews::PostId)
+          .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;
@@ -299,6 +373,17 @@ impl MigrationTrait for Migration {
               .on_delete(Cascade)
               .on_update(Cascade),
           )
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_post_reports__post_id")
+          .table(BoardPostReports::Table)
+          .col(BoardPostReports::PostId)
+          .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;
@@ -344,42 +429,39 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db.execute_unprepared("SELECT manage_updated_at('board_files');").await?;
-
-    // board_post_histories
     manager
-      .create_table(
-        Table::create()
+      .create_index(
+        Index::create()
           .if_not_exists()
-          .table(BoardPostHistories::Table)
-          .col(integer(BoardPostHistories::Id).auto_increment())
-          .col(integer(BoardPostHistories::PostId))
-          .col(json_binary(BoardPostHistories::Content))
-          .col(integer(BoardPostHistories::ModifiedBy))
-          .col(timestamp_with_time_zone(BoardPostHistories::ModifiedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_board_post_histories__id").col(BoardPostHistories::Id))
-          .foreign_key(
-            ForeignKey::create()
-              .name("fk_board_post_histories__post_id")
-              .from(BoardPostHistories::Table, BoardPostHistories::PostId)
-              .to(BoardPosts::Table, BoardPosts::Id)
-              .on_delete(Cascade)
-              .on_update(Cascade),
-          )
+          .name("idx_board_files__board_id")
+          .table(BoardFiles::Table)
+          .col(BoardFiles::BoardId)
+          .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_files__post_id")
+          .table(BoardFiles::Table)
+          .col(BoardFiles::PostId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    db.execute_unprepared("SELECT manage_updated_at('board_files');").await?;
 
     Ok(())
   }
 
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     // Tables
-    manager.drop_table(Table::drop().if_exists().table(BoardPostHistories::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardFiles::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardPostReports::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardPostViews::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(BoardPostLikes::Table).to_owned()).await?;
+    manager.drop_table(Table::drop().if_exists().table(BoardPostReactions::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardPosts::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(Boards::Table).to_owned()).await?;
     manager.drop_table(Table::drop().if_exists().table(BoardCategories::Table).to_owned()).await?;

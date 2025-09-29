@@ -1,12 +1,13 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "board_post_likes")]
+#[sea_orm(table_name = "board_post_reactions")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id: i32,
   pub post_id: i32,
-  pub user_id: i32,
+  pub user_id: Option<i32>,
+  pub value: String,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -20,6 +21,14 @@ pub enum Relation {
     on_delete = "Cascade"
   )]
   Post,
+  #[sea_orm(
+    belongs_to = "crate::users::Entity",
+    from = "Column::UserId",
+    to = "crate::users::Column::Id",
+    on_update = "Cascade",
+    on_delete = "Cascade"
+  )]
+  User,
 }
 
 impl Related<super::board_posts::Entity> for Entity {

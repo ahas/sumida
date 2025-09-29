@@ -13,8 +13,7 @@ pub use super::users::Entity as Users;
 // Board System
 pub use super::bs::board_categories::Entity as BoardCategories;
 pub use super::bs::board_files::Entity as BoardFiles;
-pub use super::bs::board_post_histories::Entity as BoardPostHistories;
-pub use super::bs::board_post_likes::Entity as BoardPostLikes;
+pub use super::bs::board_post_reactions::Entity as BordPostReactions;
 pub use super::bs::board_post_views::Entity as BoardPostViews;
 pub use super::bs::board_posts::Entity as BoardPosts;
 pub use super::bs::boards::Entity as Boards;
