@@ -14,7 +14,7 @@ use entity::user_blocks::*;
 
 use crate::util::db::wrap_ilike;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserBlockFilter {
   pub search: Option<String>,
   pub user_id: Option<i32>,

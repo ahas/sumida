@@ -1,3 +1,4 @@
+use super::helper::*;
 use ForeignKeyAction::*;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::*;
@@ -261,7 +262,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db.execute_unprepared("SELECT manage_updated_at('organizations');").await?;
+    attach_timestamp_auto_update(db, "organizations").await?;
     // END organizations table
 
     // BEGIN roles table
@@ -279,7 +280,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db.execute_unprepared("SELECT manage_updated_at('roles');").await?;
+    attach_timestamp_auto_update(db, "roles").await?;
     // END roles table
 
     // BEGIN users table
@@ -351,7 +352,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db.execute_unprepared("SELECT manage_updated_at('users');").await?;
+    attach_timestamp_auto_update(db, "users").await?;
     // END users table
 
     // BEGIN user_prefs table
@@ -550,6 +551,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
+    attach_timestamp_auto_update(db, "mail_forms").await?;
 
     Ok(())
   }
@@ -557,18 +559,22 @@ impl MigrationTrait for Migration {
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
 
-    // Tables
-    manager.drop_table(Table::drop().if_exists().table(MailForms::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(UserVerifications::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(UserLogs::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(UserInvitations::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(UserBlocks::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(ApiKeys::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(UserPrefs::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(Users::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(Roles::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(Organizations::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(AccessPolicies::Table).to_owned()).await?;
+    detach_timestamp_auto_update(db, "organizations").await?;
+    detach_timestamp_auto_update(db, "roles").await?;
+    detach_timestamp_auto_update(db, "users").await?;
+    detach_timestamp_auto_update(db, "mail_forms").await?;
+
+    drop_table(manager, MailForms::Table).await?;
+    drop_table(manager, UserVerifications::Table).await?;
+    drop_table(manager, UserLogs::Table).await?;
+    drop_table(manager, UserInvitations::Table).await?;
+    drop_table(manager, UserBlocks::Table).await?;
+    drop_table(manager, ApiKeys::Table).await?;
+    drop_table(manager, UserPrefs::Table).await?;
+    drop_table(manager, Users::Table).await?;
+    drop_table(manager, Roles::Table).await?;
+    drop_table(manager, Organizations::Table).await?;
+    drop_table(manager, AccessPolicies::Table).await?;
 
     // Functions
     db.execute_unprepared("DROP FUNCTION IF EXISTS manage_updated_at(in _tbl regclass);").await?;

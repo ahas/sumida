@@ -7,7 +7,7 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostViewFilter {
   pub post_id: Option<i32>,
   pub user_id: Option<i32>,

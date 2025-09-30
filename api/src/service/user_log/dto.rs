@@ -7,7 +7,7 @@ use serde_json::json;
 
 use crate::util::db::wrap_ilike;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserLogFilter {
   pub search: Option<String>,
   pub user_id: Option<i32>,

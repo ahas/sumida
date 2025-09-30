@@ -8,12 +8,14 @@ use crate::util::pagination::Pagination;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::IntoActiveModel;
 use sea_orm::IntoSimpleExpr;
 use sea_orm::PaginatorTrait;
 use sea_orm::Select;
-use sea_orm::sea_query::{Asterisk, Expr};
-use sea_orm::{ActiveValue::Set, DeleteResult, EntityTrait, InsertResult, QuerySelect, TransactionTrait};
+use sea_orm::sea_query::{Alias, Asterisk, Expr};
+use sea_orm::{
+  ActiveValue::Set, DeleteResult, EntityTrait, InsertResult, QuerySelect, RelationTrait, TransactionTrait,
+};
+use sea_orm::{IntoActiveModel, JoinType};
 
 pub struct BoardService<S: SumidaState> {
   state: S,
@@ -43,7 +45,7 @@ impl<S: SumidaState> BoardService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_partial_model::<BoardListItem>().all(&txn).await?;
+    let items = query.into_model::<BoardListItem>().all(&txn).await?;
 
     txn.commit().await?;
 
@@ -51,7 +53,7 @@ impl<S: SumidaState> BoardService<S> {
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetBoard>, SumidaError> {
-    Ok(self.select(Boards::find_by_id(id)).into_partial_model::<GetBoard>().one(self.state.db()).await?)
+    Ok(self.select(Boards::find_by_id(id)).into_model::<GetBoard>().one(self.state.db()).await?)
   }
 
   pub async fn create(
@@ -86,9 +88,16 @@ impl<S: SumidaState> BoardService<S> {
 
 impl<S: SumidaState> ApiService<ApCondition, Boards> for BoardService<S> {
   fn default_query_with(query: Select<Boards>) -> Select<Boards> {
+    let bc = Alias::new("bc");
+    let bc_id = Expr::col((bc.clone(), Alias::new("id")));
+    let bc_name = Expr::col((bc.clone(), Alias::new("name")));
+
     query //
       .select_only()
       .expr(Expr::col((Boards, Asterisk)))
+      .expr_as(bc_id, "bc_id")
+      .expr_as(bc_name, "bc_name")
+      .join_as(JoinType::LeftJoin, entity::bs::boards::Relation::Category.def(), bc)
   }
 
   fn ap(&self) -> ApCondition {

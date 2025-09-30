@@ -18,7 +18,7 @@ use serde_json::json;
 
 use crate::util::db::wrap_ilike_col;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserFilter {
   pub search: Option<String>,
   pub username: Option<String>,

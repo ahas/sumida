@@ -10,7 +10,7 @@ use serde_json::json;
 use crate::util::ap::ApForUser;
 use crate::util::db::wrap_ilike_col;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct RoleFilter {
   pub name: Option<String>,
   pub description: Option<String>,

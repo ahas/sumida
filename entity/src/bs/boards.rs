@@ -21,7 +21,7 @@ pub struct Model {
   pub max_file_size: i64,
   pub max_file_count: i32,
   pub allowed_file_types: Json,
-  pub emotion_visibility: BoardPostRecordVisibility,
+  pub reaction_visibility: BoardPostRecordVisibility,
   pub viewer_visibility: BoardPostRecordVisibility,
   pub is_logged: bool,
   pub created_at: DateTimeWithTimeZone,

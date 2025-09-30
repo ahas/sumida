@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::util::db::wrap_ilike_col;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostReactionFilter {
   pub post_id: Option<i32>,
   pub user_id: Option<i32>,

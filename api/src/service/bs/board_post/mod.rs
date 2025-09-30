@@ -36,7 +36,7 @@ impl<S: SumidaState> BoardPostService<S> {
     use entity::bs::board_posts::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(self.select(BoardPosts::find())));
+    let mut query = filter.apply(self.select(BoardPosts::find()));
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -45,7 +45,7 @@ impl<S: SumidaState> BoardPostService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_partial_model::<BoardPostListItem>().all(db).await?;
+    let items = query.into_model::<BoardPostListItem>().all(db).await?;
 
     Ok((items, count))
   }
@@ -54,11 +54,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let txn = self.state.db().begin().await?;
 
     // Then get the post
-    let mut result = self
-      .select(self.select(BoardPosts::find_by_id(id)))
-      .into_partial_model::<GetBoardPost>()
-      .one(&txn)
-      .await?;
+    let mut result = self.select(BoardPosts::find_by_id(id)).into_model::<GetBoardPost>().one(&txn).await?;
 
     // Load attached files together
     if let Some(ref mut result) = result {
@@ -76,11 +72,7 @@ impl<S: SumidaState> BoardPostService<S> {
 
   pub async fn view(&self, session: &UserSession, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let Some(post) = self
-      .select(self.select(BoardPosts::find_by_id(id)))
-      .into_partial_model::<GetBoardPost>()
-      .one(&txn)
-      .await?
+    let Some(post) = self.select(BoardPosts::find_by_id(id)).into_model::<GetBoardPost>().one(&txn).await?
     else {
       return Err(SumidaError::NoData("BoardPost".into(), id.to_string()));
     };
@@ -209,8 +201,11 @@ impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
     query
       .select_only()
       .expr(Expr::col((BoardPosts, Asterisk)))
-      .expr(Expr::count(Expr::col((BoardPostViews, "id"))))
+      .expr(Expr::count(entity::bs::board_post_views::Column::Id.into_expr()))
+      .join(JoinType::LeftJoin, entity::bs::board_posts::Relation::Board.def())
+      .join(JoinType::LeftJoin, entity::bs::boards::Relation::Category.def())
       .join(JoinType::LeftJoin, entity::bs::board_posts::Relation::Views.def())
+      .group_by(entity::bs::board_posts::Column::Id)
   }
 
   fn ap(&self) -> ApChain {

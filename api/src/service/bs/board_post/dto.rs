@@ -3,12 +3,9 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bs::board_posts::*;
 use sea_orm::ActiveValue::Set;
-use sea_orm::Condition;
-use sea_orm::EntityTrait;
-use sea_orm::IntoActiveValue;
-use sea_orm::QueryTrait;
 use sea_orm::prelude::*;
 use sea_orm::sea_query::Alias;
+use sea_orm::{Condition, EntityTrait, FromQueryResult, IntoActiveValue, QueryTrait};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -16,14 +13,14 @@ use serde_json::{Value as JsonValue, json};
 use crate::service::prelude::BoardFileListItem;
 use crate::util::db::wrap_ilike;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostFilter {
   pub search: Option<String>,
   pub title: Option<String>,
   pub board_id: Option<i32>,
   pub parent_id: Option<i32>,
-  pub kind: Option<String>,
-  pub status: Option<String>,
+  pub kind: Option<BoardPostKind>,
+  pub status: Option<BoardPostStatus>,
 }
 
 impl BoardPostFilter {
@@ -40,39 +37,49 @@ impl BoardPostFilter {
       .apply_if(self.title.as_ref(), |q, v| q.filter(Expr::col(Column::Title).eq(v)))
       .apply_if(self.board_id.as_ref(), |q, v| q.filter(Expr::col(Column::BoardId).eq(*v)))
       .apply_if(self.parent_id.as_ref(), |q, v| q.filter(Expr::col(Column::ParentId).eq(*v)))
-      .apply_if(self.kind.as_ref(), |q, v| q.filter(Expr::col(Column::Kind).eq(v)))
-      .apply_if(self.status.as_ref(), |q, v| q.filter(Expr::col(Column::Status).eq(v)))
+      .apply_if(self.kind.as_ref(), |q, v| q.filter(Expr::col(Column::Kind).eq(v.clone().into_value())))
+      .apply_if(self.status.as_ref(), |q, v| q.filter(Expr::col(Column::Status).eq(v.clone().into_value())))
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
-#[sea_orm(entity = "Entity", from_query_result)]
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[sea_orm(entity = "entity::users::Entity")]
+pub struct BoardPostUser {
+  #[sea_orm(from_alias = "user_id")]
+  pub id: i32,
+  #[sea_orm(from_alias = "user_username")]
+  pub username: String,
+  #[sea_orm(from_alias = "user_full_name")]
+  pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostListItem {
   pub id: i32,
   pub board_id: i32,
   pub parent_id: Option<i32>,
-  pub user_id: i32,
+  #[sea_orm(nested, alias = "user")]
+  pub user: BoardPostUser,
   pub title: String,
   pub content: Option<JsonValue>,
-  pub kind: String,
-  pub status: String,
+  pub kind: BoardPostKind,
+  pub status: BoardPostStatus,
   pub tags: Option<Vec<String>>,
+  pub views: i32,
   pub published_at: Option<DateTimeWithTimeZone>,
-  #[sea_orm(skip)]
-  pub view_count: i32,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
-#[sea_orm(entity = "Entity", from_query_result)]
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPost {
   pub id: i32,
   pub board_id: i32,
   pub parent_id: Option<i32>,
-  pub user_id: Option<i32>,
+  #[sea_orm(nested, alias = "user")]
+  pub user: BoardPostUser,
   pub title: String,
   pub content: Option<String>,
   pub kind: BoardPostKind,
@@ -81,7 +88,7 @@ pub struct GetBoardPost {
   pub published_at: Option<DateTimeWithTimeZone>,
   pub scheduled_at: Option<DateTimeWithTimeZone>,
   pub views: i32,
-  pub reactions: JsonValue,
+  pub reactions: Option<JsonValue>,
   #[sea_orm(skip)]
   pub attached_files: Vec<BoardFileListItem>,
   pub created_at: DateTimeWithTimeZone,
@@ -184,50 +191,13 @@ impl IntoResponse for BoardPostDeleted {
   }
 }
 
-// Post history management DTOs
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AutoSavePost {
-  pub content: JsonValue,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutoSaveResult {
+pub struct BoardPostPublished {
   pub success: bool,
 }
 
-impl IntoResponse for AutoSaveResult {
-  fn into_response(self) -> axum::response::Response {
-    Json(self).into_response()
-  }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PublishResult {
-  pub success: bool,
-}
-
-impl IntoResponse for PublishResult {
-  fn into_response(self) -> axum::response::Response {
-    Json(self).into_response()
-  }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SchedulePost {
-  pub scheduled_at: DateTimeWithTimeZone,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScheduleResult {
-  pub success: bool,
-}
-
-impl IntoResponse for ScheduleResult {
+impl IntoResponse for BoardPostPublished {
   fn into_response(self) -> axum::response::Response {
     Json(self).into_response()
   }

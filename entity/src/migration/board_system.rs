@@ -1,3 +1,4 @@
+use super::helper::*;
 use ForeignKeyAction::*;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::*;
@@ -22,14 +23,14 @@ enum Boards {
   CategoryId,
   Name,
   Description,
-  IsSystem,
-  SystemCategory,
+  CanUploadFile,
   MaxFileSize,
+  MaxFileCount,
   AllowedFileTypes,
-  MaxFilesPerPost,
-  EnableFileUpload,
-  EnablePostHistory,
-  MaxHistoryCount,
+  ReactionVisibility,
+  ViewerVisibility,
+  IsLogged,
+  IsEnabled,
   CreatedAt,
   UpdatedAt,
 }
@@ -74,7 +75,7 @@ enum BoardPostViews {
   Id,
   PostId,
   UserId,
-  ViewedAt,
+  CreatedAt,
 }
 
 /// board_post_reports
@@ -152,7 +153,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db.execute_unprepared("SELECT manage_updated_at('board_categories');").await?;
+    attach_timestamp_auto_update(db, "board_categories").await?;
 
     // boards
     manager
@@ -164,14 +165,14 @@ impl MigrationTrait for Migration {
           .col(integer_null(Boards::CategoryId))
           .col(string(Boards::Name))
           .col(string_null(Boards::Description))
-          .col(boolean(Boards::IsSystem).default(false))
-          .col(string_null(Boards::SystemCategory))
-          .col(big_integer(Boards::MaxFileSize).default(10485760)) // 10MB
-          .col(json(Boards::AllowedFileTypes).default(r#"["jpg","jpeg","png","gif","pdf","doc","docx","txt"]"#))
-          .col(integer(Boards::MaxFilesPerPost).default(5))
-          .col(boolean(Boards::EnableFileUpload).default(true))
-          .col(boolean(Boards::EnablePostHistory).default(false))
-          .col(integer(Boards::MaxHistoryCount).default(10))
+          .col(boolean(Boards::CanUploadFile).default(false))
+          .col(integer(Boards::MaxFileCount).default(0))
+          .col(big_integer(Boards::MaxFileSize).default(0))
+          .col(json_null(Boards::AllowedFileTypes))
+          .col(string(Boards::ReactionVisibility).default("private"))
+          .col(string(Boards::ViewerVisibility).default("private"))
+          .col(boolean(Boards::IsLogged).default(false))
+          .col(boolean(Boards::IsEnabled).default(false))
           .col(timestamp_with_time_zone(Boards::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Boards::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_boards__id").col(Boards::Id))
@@ -197,7 +198,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db.execute_unprepared("SELECT manage_updated_at('boards');").await?;
+    attach_timestamp_auto_update(db, "boards").await?;
 
     // board_posts
     manager
@@ -282,7 +283,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db.execute_unprepared("SELECT manage_updated_at('board_posts');").await?;
+    attach_timestamp_auto_update(db, "board_posts").await?;
 
     // board_post_reactions
     manager
@@ -328,7 +329,7 @@ impl MigrationTrait for Migration {
           .col(integer(BoardPostViews::Id).auto_increment())
           .col(integer(BoardPostViews::PostId))
           .col(integer_null(BoardPostViews::UserId))
-          .col(timestamp_with_time_zone(BoardPostViews::ViewedAt).default(Expr::current_timestamp()))
+          .col(timestamp_with_time_zone(BoardPostViews::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_board_post_views__id").col(BoardPostViews::Id))
           .foreign_key(
             ForeignKey::create()
@@ -451,20 +452,27 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    db.execute_unprepared("SELECT manage_updated_at('board_files');").await?;
+    attach_timestamp_auto_update(db, "board_files").await?;
 
     Ok(())
   }
 
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-    // Tables
-    manager.drop_table(Table::drop().if_exists().table(BoardFiles::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(BoardPostReports::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(BoardPostViews::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(BoardPostReactions::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(BoardPosts::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(Boards::Table).to_owned()).await?;
-    manager.drop_table(Table::drop().if_exists().table(BoardCategories::Table).to_owned()).await?;
+    let db = manager.get_connection();
+
+    detach_timestamp_auto_update(db, "board_categories").await?;
+    detach_timestamp_auto_update(db, "boards").await?;
+    detach_timestamp_auto_update(db, "board_posts").await?;
+    detach_timestamp_auto_update(db, "board_files").await?;
+
+    drop_table(manager, BoardFiles::Table).await?;
+    drop_table(manager, BoardPostReports::Table).await?;
+    drop_table(manager, BoardPostViews::Table).await?;
+    drop_table(manager, BoardPostReactions::Table).await?;
+    drop_table(manager, BoardPosts::Table).await?;
+    drop_table(manager, Boards::Table).await?;
+    drop_table(manager, BoardCategories::Table).await?;
+
     Ok(())
   }
 }

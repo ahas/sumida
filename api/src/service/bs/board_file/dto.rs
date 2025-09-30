@@ -12,7 +12,7 @@ use serde_json::json;
 
 use crate::util::db::wrap_ilike;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFileFilter {
   pub board_id: Option<i32>,
   pub post_id: Option<i32>,

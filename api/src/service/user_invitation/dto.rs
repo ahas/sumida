@@ -8,7 +8,7 @@ use serde_json::json;
 
 use entity::user_invitations::*;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserInvitationFilter {
   pub user_id: Option<i32>,
   pub uuid: Option<Uuid>,

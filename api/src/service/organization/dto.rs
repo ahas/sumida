@@ -10,7 +10,7 @@ use serde_json::json;
 
 use crate::util::db::wrap_ilike_col;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct OrganizationFilter {
   pub name: Option<String>,
   pub parent_id: Option<i32>,
