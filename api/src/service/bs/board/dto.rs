@@ -71,6 +71,7 @@ pub struct GetBoard {
   pub reaction_visibility: BoardPostRecordVisibility,
   pub viewer_visibility: BoardPostRecordVisibility,
   pub is_logged: bool,
+  pub is_enabled: bool,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -97,6 +98,7 @@ pub struct CreateBoard {
   pub reaction_visibility: Optional<BoardPostRecordVisibility>,
   pub viewer_visibility: Optional<BoardPostRecordVisibility>,
   pub is_logged: Optional<bool>,
+  pub is_enabled: Optional<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -125,6 +127,7 @@ pub struct UpdateBoard {
   pub reaction_visibility: Optional<BoardPostRecordVisibility>,
   pub viewer_visibility: Optional<BoardPostRecordVisibility>,
   pub is_logged: Optional<bool>,
+  pub is_enabled: Optional<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

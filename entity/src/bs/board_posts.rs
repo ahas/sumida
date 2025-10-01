@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
 pub enum BoardPostStatus {
   Draft,
   Published,
@@ -14,6 +15,7 @@ pub enum BoardPostStatus {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
 pub enum BoardPostKind {
   Article,
   Comment,

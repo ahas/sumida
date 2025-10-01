@@ -33,6 +33,7 @@ enum Boards {
   IsEnabled,
   CreatedAt,
   UpdatedAt,
+  DeletedAt,
 }
 
 /// board_posts
@@ -55,6 +56,7 @@ enum BoardPosts {
   Reactions,
   CreatedAt,
   UpdatedAt,
+  DeletedAt,
 }
 
 /// board_post_likes
@@ -175,6 +177,7 @@ impl MigrationTrait for Migration {
           .col(boolean(Boards::IsEnabled).default(false))
           .col(timestamp_with_time_zone(Boards::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Boards::UpdatedAt).default(Expr::current_timestamp()))
+          .col(timestamp_with_time_zone_null(Boards::DeletedAt))
           .primary_key(Index::create().name("pk_boards__id").col(Boards::Id))
           .foreign_key(
             ForeignKey::create()
@@ -222,6 +225,7 @@ impl MigrationTrait for Migration {
           .col(ColumnDef::new(BoardPosts::Tags).array(ColumnType::Text).null())
           .col(timestamp_with_time_zone(BoardPosts::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(BoardPosts::UpdatedAt).default(Expr::current_timestamp()))
+          .col(timestamp_with_time_zone_null(BoardPosts::DeletedAt))
           .primary_key(Index::create().name("pk_board_posts__id").col(BoardPosts::Id))
           .foreign_key(
             ForeignKey::create()

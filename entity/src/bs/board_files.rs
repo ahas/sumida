@@ -73,6 +73,7 @@ impl ActiveModelBehavior for ActiveModel {}
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
 pub enum UploadStatus {
   Pending,
   Processing,

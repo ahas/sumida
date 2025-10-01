@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
 pub enum BoardPostRecordVisibility {
   Public,
   Private,
@@ -24,6 +25,7 @@ pub struct Model {
   pub reaction_visibility: BoardPostRecordVisibility,
   pub viewer_visibility: BoardPostRecordVisibility,
   pub is_logged: bool,
+  pub is_enabled: bool,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }

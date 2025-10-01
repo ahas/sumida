@@ -11,6 +11,7 @@ use crate::util::db::wrap_ilike_col;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct AccessPolicyFilter {
+  pub uuid: Option<Uuid>,
   pub namespace: Option<String>,
   pub effect: Option<String>,
   pub object: Option<String>,
@@ -138,4 +139,3 @@ impl IntoResponse for AccessPolicyDeleted {
     Json(json!({})).into_response()
   }
 }
-
