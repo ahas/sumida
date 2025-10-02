@@ -9,7 +9,7 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
-use sea_orm::sea_query::{Asterisk, Expr};
+use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, JoinType, PaginatorTrait,
   QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait,
@@ -198,21 +198,42 @@ impl<S: SumidaState> BoardPostService<S> {
 
 impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
   fn default_query_with(query: Select<BoardPosts>) -> Select<BoardPosts> {
+    let user_alias = Alias::new("user");
+    let user_id = Expr::col((user_alias.clone(), "id"));
+    let user_name = Expr::col((user_alias.clone(), "full_name"));
+    let user_username = Expr::col((user_alias.clone(), "username"));
+
+    let board_alias = Alias::new("board");
+    let board_id = Expr::col((board_alias.clone(), "id"));
+    let board_name = Expr::col((board_alias.clone(), "name"));
+    let board_category_id = Expr::col((board_alias.clone(), "category_id"));
+
     query
       .select_only()
       .expr(Expr::col((BoardPosts, Asterisk)))
       .expr(Expr::count(entity::bs::board_post_views::Column::Id.into_expr()))
-      .join(JoinType::LeftJoin, entity::bs::board_posts::Relation::Board.def())
-      .join(JoinType::LeftJoin, entity::bs::boards::Relation::Category.def())
+      .expr_as(user_id.clone(), "user_id")
+      .expr_as(user_name, "user_full_name")
+      .expr_as(user_username, "user_username")
+      .expr_as(board_id.clone(), "board_id")
+      .expr_as(board_name, "board_name")
+      .expr_as(board_category_id, "board_category_id")
+      .join_as(JoinType::LeftJoin, entity::bs::board_posts::Relation::User.def(), user_alias)
+      .join_as(JoinType::LeftJoin, entity::bs::board_posts::Relation::Board.def(), board_alias.clone())
+      .join(JoinType::LeftJoin, entity::bs::boards::Relation::Category.def().from_alias(board_alias))
       .join(JoinType::LeftJoin, entity::bs::board_posts::Relation::Views.def())
       .group_by(entity::bs::board_posts::Column::Id)
+      .group_by(board_id)
+      .group_by(user_id)
   }
 
   fn ap(&self) -> ApChain {
     use entity::bs::board_posts::Column;
 
+    let board_category_id = Expr::col((Alias::new("board"), "category_id")).cast_as("VARCHAR");
+
     ap::chain()
-      .push(ap::ns("board_category").join(Boards, entity::bs::boards::Column::CategoryId))
+      .push(ap::ns("board_category").expr(board_category_id))
       .push(ap::ns("board").join(BoardPosts, Column::BoardId))
       .who(&self.session)
   }

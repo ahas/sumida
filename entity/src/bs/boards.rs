@@ -15,19 +15,24 @@ pub enum BoardPostRecordVisibility {
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id: i32,
+  #[sea_orm(nullable)]
   pub category_id: Option<i32>,
   pub name: String,
+  #[sea_orm(nullable)]
   pub description: Option<String>,
   pub can_upload_file: bool,
   pub max_file_size: i64,
   pub max_file_count: i32,
-  pub allowed_file_types: Json,
+  #[sea_orm(nullable)]
+  pub allowed_file_types: Option<Json>,
   pub reaction_visibility: BoardPostRecordVisibility,
   pub viewer_visibility: BoardPostRecordVisibility,
   pub is_logged: bool,
   pub is_enabled: bool,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
+  #[sea_orm(nullable)]
+  pub deleted_at: Option<DateTimeWithTimeZone>
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -56,7 +61,7 @@ impl ActiveModelBehavior for ActiveModel {}
 impl Model {
   pub fn get_allowed_file_types(&self) -> Vec<String> {
     match &self.allowed_file_types {
-      Json::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
+      Some(Json::Array(arr)) => arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
       _ => vec![], // fallback to empty if not an array
     }
   }

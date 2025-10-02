@@ -44,16 +44,19 @@ enum BoardPosts {
   ParentId,
   BoardId,
   UserId,
-  Title,
-  Content,
-  Text,
   Kind,
   Status,
-  PublishedAt,
-  ScheduledAt,
+  Revision,
+  Title,
+  CompressionType,
+  ContentType,
+  Content,
+  Text,
   Tags,
   Views,
   Reactions,
+  PublishedAt,
+  ScheduledAt,
   CreatedAt,
   UpdatedAt,
   DeletedAt,
@@ -170,7 +173,7 @@ impl MigrationTrait for Migration {
           .col(boolean(Boards::CanUploadFile).default(false))
           .col(integer(Boards::MaxFileCount).default(0))
           .col(big_integer(Boards::MaxFileSize).default(0))
-          .col(json_null(Boards::AllowedFileTypes))
+          .col(json_binary_null(Boards::AllowedFileTypes))
           .col(string(Boards::ReactionVisibility).default("private"))
           .col(string(Boards::ViewerVisibility).default("private"))
           .col(boolean(Boards::IsLogged).default(false))
@@ -213,14 +216,17 @@ impl MigrationTrait for Migration {
           .col(integer_null(BoardPosts::ParentId))
           .col(integer(BoardPosts::BoardId))
           .col(integer_null(BoardPosts::UserId))
-          .col(string(BoardPosts::Title))
-          .col(json_binary_null(BoardPosts::Content))
-          .col(text_null(BoardPosts::Text))
           .col(string(BoardPosts::Kind).default("article"))
           .col(string(BoardPosts::Status).default("draft"))
+          .col(integer_null(BoardPosts::Revision))
+          .col(string(BoardPosts::Title))
+          .col(string_null(BoardPosts::CompressionType))
+          .col(string_null(BoardPosts::ContentType))
+          .col(text_null(BoardPosts::Content))
+          .col(text_null(BoardPosts::Text))
           .col(timestamp_with_time_zone_null(BoardPosts::PublishedAt))
           .col(timestamp_with_time_zone_null(BoardPosts::ScheduledAt))
-          .col(integer(BoardPosts::Views))
+          .col(integer(BoardPosts::Views).default(0))
           .col(json_binary_null(BoardPosts::Reactions))
           .col(ColumnDef::new(BoardPosts::Tags).array(ColumnType::Text).null())
           .col(timestamp_with_time_zone(BoardPosts::CreatedAt).default(Expr::current_timestamp()))

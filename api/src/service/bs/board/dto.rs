@@ -3,7 +3,6 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bs::boards::*;
 use sea_orm::prelude::*;
-use sea_orm::sea_query::{Alias, Expr};
 use sea_orm::{Condition, DeriveIntoActiveModel, EntityTrait, FromQueryResult, QueryTrait};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
@@ -15,20 +14,21 @@ use crate::util::db::wrap_ilike;
 pub struct BoardFilter {
   pub search: Option<String>,
   pub name: Option<String>,
+  pub category_id: Option<i32>,
 }
 
 impl BoardFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
-    let alias = Alias::new("b");
     query
       .apply_if(self.search.as_ref(), |q, v| {
         q.filter(
           Condition::any()
-            .add(wrap_ilike(Expr::col((alias.clone(), Column::Name)), v))
-            .add(wrap_ilike(Expr::col((alias.clone(), Column::Description)), v)),
+            .add(wrap_ilike(Column::Name.into_expr(), v))
+            .add(wrap_ilike(Column::Description.into_expr(), v)),
         )
       })
-      .apply_if(self.name.as_ref(), |q, v| q.filter(Expr::col(Column::Name).eq(v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(Column::Name.eq(v)))
+      .apply_if(self.category_id, |q, v| q.filter(Column::CategoryId.eq(v)))
   }
 }
 
@@ -56,12 +56,12 @@ pub struct BoardListItem {
   pub updated_at: DateTimeWithTimeZone,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
-#[sea_orm(entity = "Entity", from_query_result)]
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoard {
   pub id: i32,
-  pub category_id: Option<i32>,
+  #[sea_orm(nested, alias = "bc")]
+  pub category: Option<BoardBoardCategory>,
   pub name: String,
   pub description: Option<String>,
   pub can_upload_file: bool,

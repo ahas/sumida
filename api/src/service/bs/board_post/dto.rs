@@ -17,6 +17,7 @@ use crate::util::db::wrap_ilike;
 pub struct BoardPostFilter {
   pub search: Option<String>,
   pub title: Option<String>,
+  pub category_id: Option<i32>,
   pub board_id: Option<i32>,
   pub parent_id: Option<i32>,
   pub kind: Option<BoardPostKind>,
@@ -25,25 +26,25 @@ pub struct BoardPostFilter {
 
 impl BoardPostFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
-    let alias = Alias::new("bp");
     query
       .apply_if(self.search.as_ref(), |q, v| {
         q.filter(
           Condition::any()
-            .add(wrap_ilike(Expr::col((alias.clone(), Column::Title)), v))
-            .add(wrap_ilike(Expr::col((alias.clone(), Column::Content)), v)),
+            .add(wrap_ilike(Column::Title.into_expr(), v))
+            .add(wrap_ilike(Column::Content.into_expr(), v)),
         )
       })
-      .apply_if(self.title.as_ref(), |q, v| q.filter(Expr::col(Column::Title).eq(v)))
-      .apply_if(self.board_id.as_ref(), |q, v| q.filter(Expr::col(Column::BoardId).eq(*v)))
-      .apply_if(self.parent_id.as_ref(), |q, v| q.filter(Expr::col(Column::ParentId).eq(*v)))
-      .apply_if(self.kind.as_ref(), |q, v| q.filter(Expr::col(Column::Kind).eq(v.clone().into_value())))
-      .apply_if(self.status.as_ref(), |q, v| q.filter(Expr::col(Column::Status).eq(v.clone().into_value())))
+      .apply_if(self.title.as_ref(), |q, v| q.filter(Column::Title.eq(v)))
+      .apply_if(self.category_id, |q, v| q.filter(Expr::col((Alias::new("board"), "category_id")).eq(v)))
+      .apply_if(self.board_id, |q, v| q.filter(Column::BoardId.eq(v)))
+      .apply_if(self.parent_id, |q, v| q.filter(Column::ParentId.eq(v)))
+      .apply_if(self.kind.as_ref(), |q, v| q.filter(Column::Kind.eq(v.clone().into_value())))
+      .apply_if(self.status.as_ref(), |q, v| q.filter(Column::Status.eq(v.clone().into_value())))
   }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
-#[sea_orm(entity = "entity::users::Entity")]
+#[sea_orm(entity = "Users")]
 pub struct BoardPostUser {
   #[sea_orm(from_alias = "user_id")]
   pub id: i32,
@@ -54,15 +55,28 @@ pub struct BoardPostUser {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[sea_orm(entity = "Boards")]
+#[serde(rename_all = "camelCase")]
+pub struct BoardPostBoard {
+  #[sea_orm(from_alias = "board_id")]
+  pub id: i32,
+  #[sea_orm(from_alias = "board_name")]
+  pub name: String,
+  #[sea_orm(from_alias = "board_category_id")]
+  pub category_id: Option<i32>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostListItem {
   pub id: i32,
-  pub board_id: i32,
   pub parent_id: Option<i32>,
+  #[sea_orm(nested, alias = "board")]
+  pub board: BoardPostBoard,
   #[sea_orm(nested, alias = "user")]
   pub user: BoardPostUser,
   pub title: String,
-  pub content: Option<JsonValue>,
+  pub content: Option<String>,
   pub kind: BoardPostKind,
   pub status: BoardPostStatus,
   pub tags: Option<Vec<String>>,
@@ -76,8 +90,9 @@ pub struct BoardPostListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPost {
   pub id: i32,
-  pub board_id: i32,
   pub parent_id: Option<i32>,
+  #[sea_orm(nested, alias = "board")]
+  pub board: BoardPostBoard,
   #[sea_orm(nested, alias = "user")]
   pub user: BoardPostUser,
   pub title: String,
