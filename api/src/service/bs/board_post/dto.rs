@@ -150,6 +150,32 @@ impl CreateBoardPost {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CreateBoardDraft {
+  pub board_id: i32,
+  pub parent_id: Nullable<i32>,
+  pub title: String,
+  pub content: Nullable<String>,
+  pub kind: Optional<BoardPostKind>,
+  pub tags: Nullable<Vec<String>>,
+  pub attached_file_ids: Option<Vec<i32>>,
+}
+
+impl CreateBoardDraft {
+  pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
+    entity::bs::board_posts::ActiveModel {
+      board_id: Set(self.board_id),
+      parent_id: self.parent_id.into_active_value(),
+      title: Set(self.title),
+      content: self.content.into_active_value(),
+      kind: self.kind.into_active_value(),
+      tags: self.tags.into_active_value(),
+      ..Default::default()
+    }
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BoardPostCreated {
   pub id: i32,
 }

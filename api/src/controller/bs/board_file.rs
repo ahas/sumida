@@ -1,9 +1,3 @@
-use crate::controller::ApiController;
-use crate::service::bs::board_file::BoardFileService;
-use crate::service::bs::board_file::dto::*;
-use crate::util::file_validation::{FileInfo, FileValidator};
-use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 use axum::{
   Json, Router,
   body::Body,
@@ -14,7 +8,15 @@ use axum::{
 };
 use error::SumidaError;
 use infra::session::UserSession;
+use sea_orm_crud::Optional;
 use tokio_util::io::ReaderStream;
+
+use crate::controller::ApiController;
+use crate::service::bs::board_file::BoardFileService;
+use crate::service::bs::board_file::dto::*;
+use crate::util::file_validation::{FileInfo, FileValidator};
+use crate::util::pagination::{List, Pagination};
+use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Debug, Default)]
 struct MultipartFormData {
@@ -143,18 +145,18 @@ impl<S: SumidaState> BoardFileController<S> {
       let file_url = storage.get_url(&file_path);
 
       CreateBoardFile {
-        board_id: sea_orm_crud::Optional(Some(board_id)),
-        post_id: sea_orm_crud::Optional(post_id),
-        user_id: sea_orm_crud::Optional(Some(session.profile.id)),
+        board_id: Optional(Some(board_id)),
+        post_id: Optional(post_id),
+        user_id: Optional(Some(session.profile.id)),
         original_filename,
         file_path,
-        file_url: sea_orm_crud::Optional(Some(file_url)),
+        file_url: Optional(Some(file_url)),
         file_size: file_bytes.len() as i64,
         mime_type,
-        file_hash: sea_orm_crud::Optional(None), // Could add hash calculation later
+        file_hash: Optional(None), // Could add hash calculation later
         upload_status: "completed".to_string(),
-        is_temporary: sea_orm_crud::Optional(Some(false)),
-        expires_at: sea_orm_crud::Optional(None),
+        is_temporary: Optional(Some(false)),
+        expires_at: Optional(None),
       }
     } else if metadata_only {
       return Err(SumidaError::BadRequest("Metadata-only creation not supported via this endpoint".into()));

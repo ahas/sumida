@@ -5,14 +5,15 @@ use crate::service::ApiService;
 use crate::service::prelude::BoardFileListItem;
 use crate::util::ap::{self, ApChain, ApGuard};
 use crate::util::pagination::Pagination;
+use entity::bs::board_posts::BoardPostStatus;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, JoinType, PaginatorTrait,
-  QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait,
+  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, JoinType,
+  PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait,
 };
 
 use self::dto::*;
@@ -130,25 +131,66 @@ impl<S: SumidaState> BoardPostService<S> {
     let post_id = result.last_insert_id;
 
     // Associate attached files with the created post
-    if let Some(file_ids) = attached_file_ids {
-      for file_id in file_ids {
-        // Update each file to associate with the post
-        use entity::bs::board_files;
-        let file_am = board_files::ActiveModel {
-          id: Set(file_id),
-          post_id: Set(Some(post_id)),
-          is_temporary: Set(false),
-          expires_at: Set(None),
-          ..Default::default()
-        };
-
-        board_files::Entity::update(file_am).exec(&txn).await?;
-      }
-    }
+    self.update_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
 
     txn.commit().await?;
 
     Ok(result)
+  }
+
+  pub async fn create_draft(
+    &self,
+    data: CreateBoardDraft,
+  ) -> Result<InsertResult<entity::bs::board_posts::ActiveModel>, SumidaError> {
+    // Check write permission for the board
+    let txn = self.state.db().begin().await?;
+
+    let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
+      return Err(SumidaError::NoData("Board".into(), data.board_id.to_string()));
+    };
+    ap::chain()
+      .push_if(board.category_id, |x| ap::ns("board_category").action("create").object(x))
+      .push(ap::ns("board").action("create").object(board.id))
+      .who(&self.session)
+      .action("write")
+      .try_check_allowed(&txn)
+      .await?;
+
+    let attached_file_ids = data.attached_file_ids.clone();
+
+    let mut am = data.into_active_model();
+    am.user_id = Set(Some(self.session.profile.id));
+    am.status = Set(BoardPostStatus::Draft);
+
+    let result = BoardPosts::insert(am).exec(&txn).await?;
+    let post_id = result.last_insert_id;
+
+    self.update_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
+
+    txn.commit().await?;
+
+    Ok(result)
+  }
+
+  async fn update_files<'db, C: ConnectionTrait>(
+    &self,
+    post_id: i32,
+    file_ids: Vec<i32>,
+    db: &'db C,
+  ) -> Result<(), SumidaError> {
+    for file_id in file_ids {
+      let file_am = entity::bs::board_files::ActiveModel {
+        id: Set(file_id),
+        post_id: Set(Some(post_id)),
+        is_temporary: Set(false),
+        expires_at: Set(None),
+        ..Default::default()
+      };
+
+      entity::bs::board_files::Entity::update(file_am).exec(db).await?;
+    }
+
+    Ok(())
   }
 
   pub async fn update(

@@ -165,18 +165,21 @@ impl FileValidator {
   }
 
   pub fn validate_file_size(&self, file: &FileInfo) -> Result<(), FileValidationError> {
-    if file.size > self.config.max_file_size {
+    if self.config.max_file_size != 0 && file.size > self.config.max_file_size {
       return Err(FileValidationError::FileTooLarge {
         size: file.size,
         max_size: self.config.max_file_size,
       });
     }
+
     Ok(())
   }
 
   pub fn validate_file_type(&self, file: &FileInfo) -> Result<(), FileValidationError> {
     if let Some(extension) = &file.extension {
-      if !self.config.allowed_file_types.iter().any(|t| t.to_lowercase() == extension.to_lowercase()) {
+      if self.config.allowed_file_types.len() > 0
+        && !self.config.allowed_file_types.iter().any(|t| t.to_lowercase() == extension.to_lowercase())
+      {
         return Err(FileValidationError::InvalidFileType {
           extension: extension.clone(),
           allowed_types: self.config.allowed_file_types.clone(),
@@ -185,16 +188,18 @@ impl FileValidator {
     } else {
       return Err(FileValidationError::InvalidFilename(file.filename.clone()));
     }
+
     Ok(())
   }
 
   pub fn validate_file_count(&self, current_count: i32) -> Result<(), FileValidationError> {
-    if current_count >= self.config.max_file_count {
+    if self.config.max_file_count != 0 && current_count >= self.config.max_file_count {
       return Err(FileValidationError::TooManyFiles {
         current_count,
         max_count: self.config.max_file_count,
       });
     }
+
     Ok(())
   }
 

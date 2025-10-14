@@ -49,6 +49,17 @@ impl<S: SumidaState> BoardPostController<S> {
     })
   }
 
+  async fn create_draft(
+    session: UserSession,
+    State(state): State<S>,
+    Json(body): Json<CreateBoardDraft>,
+  ) -> Result<BoardPostCreated, SumidaError> {
+    let res = BoardPostService::new(state, session).create_draft(body).await?;
+    Ok(BoardPostCreated {
+      id: res.last_insert_id,
+    })
+  }
+
   async fn update(
     session: UserSession,
     State(state): State<S>,
@@ -83,6 +94,7 @@ where
     // Write operations - board-level permissions checked in handlers
     let create = Router::new() //
       .route("/", routing::post(Self::create))
+      .route("/draft", routing::post(Self::create_draft))
       .route_layer(service_ap!(state, "board_post", create));
 
     // Update operations - ownership/moderate permissions checked in handlers
