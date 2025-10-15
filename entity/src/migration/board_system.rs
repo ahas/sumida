@@ -98,21 +98,8 @@ enum BoardPostReports {
 #[derive(DeriveIden)]
 enum BoardFiles {
   Table,
-  Id,
-  BoardId,
   PostId,
-  UserId,
-  OriginalFilename,
-  FilePath,
-  FileUrl,
-  FileSize,
-  MimeType,
-  FileHash,
-  UploadStatus,
-  IsTemporary,
-  ExpiresAt,
-  CreatedAt,
-  UpdatedAt,
+  FileId,
 }
 
 #[derive(DeriveMigrationName)]
@@ -405,35 +392,21 @@ impl MigrationTrait for Migration {
         Table::create()
           .if_not_exists()
           .table(BoardFiles::Table)
-          .col(integer(BoardFiles::Id).auto_increment())
-          .col(integer_null(BoardFiles::BoardId))
           .col(integer_null(BoardFiles::PostId))
-          .col(integer_null(BoardFiles::UserId))
-          .col(string(BoardFiles::OriginalFilename))
-          .col(string(BoardFiles::FilePath))
-          .col(string_null(BoardFiles::FileUrl))
-          .col(big_integer(BoardFiles::FileSize))
-          .col(string(BoardFiles::MimeType))
-          .col(string_null(BoardFiles::FileHash))
-          .col(string(BoardFiles::UploadStatus).default("pending"))
-          .col(boolean(BoardFiles::IsTemporary).default(false))
-          .col(timestamp_with_time_zone_null(BoardFiles::ExpiresAt))
-          .col(timestamp_with_time_zone(BoardFiles::CreatedAt).default(Expr::current_timestamp()))
-          .col(timestamp_with_time_zone(BoardFiles::UpdatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_board_files__id").col(BoardFiles::Id))
-          .foreign_key(
-            ForeignKey::create()
-              .name("fk_board_files__board_id")
-              .from(BoardFiles::Table, BoardFiles::BoardId)
-              .to(Boards::Table, Boards::Id)
-              .on_delete(Cascade)
-              .on_update(Cascade),
-          )
+          .col(integer(BoardFiles::FileId))
           .foreign_key(
             ForeignKey::create()
               .name("fk_board_files__post_id")
               .from(BoardFiles::Table, BoardFiles::PostId)
               .to(BoardPosts::Table, BoardPosts::Id)
+              .on_delete(Cascade)
+              .on_update(Cascade),
+          )
+          .foreign_key(
+            ForeignKey::create()
+              .name("fk_board_files__file_id")
+              .from(BoardFiles::Table, BoardFiles::FileId)
+              .to(Boards::Table, Boards::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -444,9 +417,9 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_board_files__board_id")
+          .name("idx_board_files__file_id")
           .table(BoardFiles::Table)
-          .col(BoardFiles::BoardId)
+          .col(BoardFiles::FileId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )

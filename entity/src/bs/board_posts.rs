@@ -85,6 +85,16 @@ impl Related<crate::users::Entity> for Entity {
   }
 }
 
+impl Related<crate::fs::files::Entity> for Entity {
+  fn to() -> RelationDef {
+    super::board_files::Relation::File.def()
+  }
+
+  fn via() -> Option<RelationDef> {
+    Some(super::board_files::Relation::Post.def().rev())
+  }
+}
+
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {

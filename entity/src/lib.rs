@@ -1,6 +1,7 @@
 pub mod access_policies;
 pub mod api_keys;
 pub mod bs;
+pub mod fs;
 pub mod mail_forms;
 pub mod organizations;
 pub mod roles;
