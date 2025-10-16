@@ -1,17 +1,16 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
-use sea_orm::{QueryTrait, prelude::*};
+use entity::user_invitations::*;
+use sea_orm::prelude::*;
+use sea_orm::{DeriveIntoActiveModel, FromQueryResult, QueryTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-
-use entity::user_invitations::*;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserInvitationFilter {
   pub user_id: Option<i32>,
-  pub uuid: Option<Uuid>,
+  pub uuid:    Option<Uuid>,
 }
 
 impl UserInvitationFilter {
@@ -26,7 +25,7 @@ impl UserInvitationFilter {
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationListItem {
   pub user_id: i32,
-  pub uuid: Uuid,
+  pub uuid:    Uuid,
 
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
@@ -36,7 +35,7 @@ pub struct UserInvitationListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetUserInvitation {
   pub user_id: i32,
-  pub uuid: Uuid,
+  pub uuid:    Uuid,
 
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
@@ -55,7 +54,7 @@ pub struct CreateUserInvitation {}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationCreated {
-  pub uuid: Uuid,
+  pub uuid:       Uuid,
   pub expires_at: DateTimeWithTimeZone,
 }
 
@@ -72,7 +71,7 @@ pub struct UpdateUserInvitation {}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationUpdated {
-  pub uuid: Uuid,
+  pub uuid:       Uuid,
   pub expires_at: DateTimeWithTimeZone,
 }
 

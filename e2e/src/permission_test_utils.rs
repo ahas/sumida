@@ -1,12 +1,13 @@
-use crate::prelude::*;
 use api::util::ap::{ApUser, EditAp};
 use reqwest::StatusCode;
 use sea_orm::DatabaseConnection;
 
+use crate::prelude::*;
+
 /// Test configuration for permission testing
 pub struct PermissionTestConfig {
   pub namespace: &'static str,
-  pub base_url: &'static str,
+  pub base_url:  &'static str,
 }
 
 /// Helper to create access policies
@@ -87,7 +88,7 @@ pub struct CrudTestData {
 
 /// Comprehensive permission test suite for any controller
 pub struct PermissionTestSuite {
-  pub config: PermissionTestConfig,
+  pub config:    PermissionTestConfig,
   pub crud_data: CrudTestData,
 }
 
@@ -306,7 +307,11 @@ impl PermissionTestSuite {
       .await
       .expect("Failed to send GET request");
     tracing::info!("📖 Admin READ response status: {}", resp.status());
-    assert_eq!(resp.status(), StatusCode::OK, "Admin should be able to read without explicit permission");
+    assert_eq!(
+      resp.status(),
+      StatusCode::OK,
+      "Admin should be able to read without explicit permission"
+    );
 
     let resp = mock
       .client
@@ -328,10 +333,18 @@ impl PermissionTestSuite {
       .send()
       .await
       .expect("Failed to send PATCH request");
-    assert_eq!(resp.status(), StatusCode::OK, "Admin should be able to update without explicit permission");
+    assert_eq!(
+      resp.status(),
+      StatusCode::OK,
+      "Admin should be able to update without explicit permission"
+    );
 
     let resp = mock.client.get(self.config.base_url).send().await.expect("Failed to send GET request");
-    assert_eq!(resp.status(), StatusCode::OK, "Admin should be able to list without explicit permission");
+    assert_eq!(
+      resp.status(),
+      StatusCode::OK,
+      "Admin should be able to list without explicit permission"
+    );
   }
 
   /// Test explicit deny takes precedence over allow

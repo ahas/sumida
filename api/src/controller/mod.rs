@@ -2,6 +2,7 @@ pub mod access_policy;
 pub mod api_key;
 pub mod auth;
 pub mod bs;
+pub mod fs;
 pub mod mail_form;
 pub mod me;
 pub mod organization;

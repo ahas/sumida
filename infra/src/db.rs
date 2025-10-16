@@ -1,8 +1,8 @@
-use sea_orm::{
-  ConnectOptions, ConnectionTrait, DatabaseConnection, DbBackend, SqlxPostgresConnector,
-  sqlx::{Pool, Postgres, pool::PoolOptions},
-};
 use std::str::FromStr;
+
+use sea_orm::sqlx::pool::PoolOptions;
+use sea_orm::sqlx::{Pool, Postgres};
+use sea_orm::{ConnectOptions, ConnectionTrait, DatabaseConnection, DbBackend, SqlxPostgresConnector};
 
 use crate::settings;
 

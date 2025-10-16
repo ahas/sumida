@@ -19,7 +19,7 @@ async fn test_organization_read_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -45,7 +45,7 @@ async fn test_organization_create_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -71,7 +71,7 @@ async fn test_organization_update_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -97,7 +97,7 @@ async fn test_organization_delete_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -123,7 +123,7 @@ async fn test_organization_list_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -149,7 +149,7 @@ async fn test_organization_admin_bypass_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -175,7 +175,7 @@ async fn test_organization_explicit_deny_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -201,7 +201,7 @@ async fn test_organization_wildcard_action_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -228,9 +228,11 @@ async fn test_organization_wildcard_object_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "organization",
-    base_url: "/organizations",
+    base_url:  "/organizations",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
-  test_suite.test_wildcard_object_permissions(&mock, target_org1.model.id, target_org2.model.id).await;
+  test_suite
+    .test_wildcard_object_permissions(&mock, target_org1.model.id, target_org2.model.id)
+    .await;
 }

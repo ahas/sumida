@@ -1,25 +1,23 @@
 pub mod dto;
 
+use dto::*;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::{
-  ActiveModelTrait,
-  ActiveValue::{NotSet, Set, Unchanged},
-  EntityTrait, IntoActiveModel, Select,
-};
+use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
+use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Select};
 use sea_orm_crud::Optional;
 use serde_json::json;
 
-use dto::*;
-
+use crate::SumidaState;
+use crate::service::ApiService;
+use crate::service::user::UserService;
 use crate::util::ap::ApCondition;
-use crate::{SumidaState, service::ApiService};
-use crate::{service::user::UserService, util::user::hash_password};
+use crate::util::user::hash_password;
 
 pub struct MeService<S: SumidaState> {
-  state: S,
-  session: UserSession,
+  state:        S,
+  session:      UserSession,
   user_service: UserService<S>,
 }
 
@@ -90,7 +88,7 @@ impl<S: SumidaState> MeService<S> {
     let pref = UserPrefs::find_by_id(user_id).one(db).await?;
     let mut am = ActiveModel {
       user_id: Set(user_id),
-      data: Set(data),
+      data:    Set(data),
     };
 
     if pref.is_some() {

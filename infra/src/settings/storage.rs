@@ -4,14 +4,14 @@ use serde::Deserialize;
 #[serde(rename_all = "kebab-case")]
 pub struct StorageSettings {
   pub local: Option<LocalStorageSettings>,
-  pub s3: Option<S3StorageSettings>,
+  pub s3:    Option<S3StorageSettings>,
 }
 
 impl Default for StorageSettings {
   fn default() -> Self {
     Self {
       local: Some(LocalStorageSettings::default()),
-      s3: None,
+      s3:    None,
     }
   }
 }
@@ -37,4 +37,3 @@ pub struct S3StorageSettings {
   pub prefix: Option<String>,
   pub region: Option<String>,
 }
-

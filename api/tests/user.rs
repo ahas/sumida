@@ -37,7 +37,7 @@ async fn test_user_read_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -66,7 +66,7 @@ async fn test_user_create_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -95,7 +95,7 @@ async fn test_user_update_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -124,7 +124,7 @@ async fn test_user_delete_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -153,7 +153,7 @@ async fn test_user_list_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -182,7 +182,7 @@ async fn test_user_explicit_deny_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -213,7 +213,7 @@ async fn test_user_admin_bypass_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -251,8 +251,13 @@ async fn test_user_create_permission_debug() {
   tracing::info!("🧪 Testing CREATE with permission");
   user.login(&mock.client).await;
 
-  let resp =
-    mock.client.post("/users").json(&create_data).send().await.expect("Failed to send POST request");
+  let resp = mock
+    .client
+    .post("/users")
+    .json(&create_data)
+    .send()
+    .await
+    .expect("Failed to send POST request");
 
   let status = resp.status();
   tracing::info!("📝 CREATE response status: {}", status);
@@ -304,8 +309,13 @@ async fn test_user_wildcard_action_comprehensive() {
     "roleId": user.model.role_id
   });
 
-  let resp =
-    mock.client.post("/users").json(&new_user_data).send().await.expect("Failed to send POST request");
+  let resp = mock
+    .client
+    .post("/users")
+    .json(&new_user_data)
+    .send()
+    .await
+    .expect("Failed to send POST request");
   assert_eq!(resp.status(), reqwest::StatusCode::CREATED, "Wildcard action should allow create");
 
   let update_data = serde_json::json!({
@@ -354,7 +364,11 @@ async fn test_user_wildcard_object_comprehensive() {
     .send()
     .await
     .expect("Failed to send GET request");
-  assert_eq!(resp.status(), reqwest::StatusCode::OK, "Wildcard object should allow read on any other user");
+  assert_eq!(
+    resp.status(),
+    reqwest::StatusCode::OK,
+    "Wildcard object should allow read on any other user"
+  );
 
   // Test that other actions are still forbidden (only read was granted)
   let update_data = serde_json::json!({
@@ -572,7 +586,7 @@ async fn test_wildcard_action_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -602,9 +616,11 @@ async fn test_wildcard_object_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
-  test_suite.test_wildcard_object_permissions(&mock, target_user1.model.id, target_user2.model.id).await;
+  test_suite
+    .test_wildcard_object_permissions(&mock, target_user1.model.id, target_user2.model.id)
+    .await;
 }

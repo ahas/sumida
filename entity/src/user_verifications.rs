@@ -7,9 +7,9 @@ use super::users::Entity as Users;
 pub struct Model {
   #[sea_orm(primary_key)]
   pub user_id: i32,
-  pub kind: String,
-  pub method: String,
-  pub code: String,
+  pub kind:    String,
+  pub method:  String,
+  pub code:    String,
 
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,

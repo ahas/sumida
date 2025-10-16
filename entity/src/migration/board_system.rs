@@ -1,7 +1,8 @@
-use super::helper::*;
 use ForeignKeyAction::*;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::*;
+
+use super::helper::*;
 
 /// board_categories
 #[derive(DeriveIden)]

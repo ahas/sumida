@@ -1,14 +1,12 @@
+use axum::extract::{Path, Query, State};
+use axum::{Json, Router, routing};
+use error::SumidaError;
+use infra::session::UserSession;
+
 use crate::controller::ApiController;
 use crate::service::bs::prelude::*;
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
-use axum::{
-  Json, Router,
-  extract::{Path, Query, State},
-  routing,
-};
-use error::SumidaError;
-use infra::session::UserSession;
 
 #[derive(Clone, Debug, Default)]
 pub struct BoardPostController<S: SumidaState>(std::marker::PhantomData<S>);

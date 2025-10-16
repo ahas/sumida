@@ -3,28 +3,35 @@ pub mod dto;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use lettre::message::{Message, header::ContentType};
+use lettre::message::Message;
+use lettre::message::header::ContentType;
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::{
-  ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
-  Set, TransactionTrait,
+  ConnectionTrait,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QuerySelect,
+  Set,
+  TransactionTrait,
 };
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
+use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
-use self::dto::*;
-
 pub struct MailFormSendOptions {
   pub username: String,
   pub password: String,
-  pub auth: String,
-  pub server: String,
+  pub auth:     String,
+  pub server:   String,
 }
 
 impl MailFormSendOptions {
@@ -42,7 +49,7 @@ impl MailFormSendOptions {
 }
 
 pub struct MailFormService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -55,8 +62,9 @@ impl<S: SumidaState> MailFormService<S> {
     let mut tt = TinyTemplate::new();
     tt.add_template(&model.kind, &model.content)
       .map_err(|err| SumidaError::MailFormAddTemplateFailed(err.to_string()))?;
-    let rendered =
-      tt.render(&model.kind, &context).map_err(|err| SumidaError::MailFormRenderFailed(err.to_string()))?;
+    let rendered = tt
+      .render(&model.kind, &context)
+      .map_err(|err| SumidaError::MailFormRenderFailed(err.to_string()))?;
 
     Ok(rendered)
   }

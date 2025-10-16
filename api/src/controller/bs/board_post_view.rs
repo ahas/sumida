@@ -1,13 +1,10 @@
-use axum::{
-  Json, Router,
-  extract::{Path, Query, State},
-  routing,
-};
+use axum::extract::{Path, Query, State};
+use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
+use crate::service::prelude::*;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service::prelude::*};
-use crate::{service_ap, user_guard};
+use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct BoardPostViewController<S: SumidaState> {
@@ -98,4 +95,3 @@ where
       .route_layer(user_guard!(state))
   }
 }
-

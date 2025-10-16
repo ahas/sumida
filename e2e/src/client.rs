@@ -1,4 +1,5 @@
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use std::time::Duration;
 
 use reqwest::{Method, RequestBuilder, Url};
 use tokio::sync::OnceCell;
@@ -11,7 +12,7 @@ pub async fn use_client(addr: SocketAddr) -> &'static TestClient {
 
 pub struct TestClient {
   base_url: SocketAddr,
-  _client: reqwest::Client,
+  _client:  reqwest::Client,
 }
 
 impl TestClient {

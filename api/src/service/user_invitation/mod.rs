@@ -4,19 +4,28 @@ use chrono::{Duration, Utc};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::{ActiveValue::*, DbErr, EntityTrait, TransactionTrait};
-use sea_orm::{ColumnTrait, ConnectionTrait, DeleteResult, PaginatorTrait, QueryFilter, QuerySelect};
+use sea_orm::ActiveValue::*;
+use sea_orm::{
+  ColumnTrait,
+  ConnectionTrait,
+  DbErr,
+  DeleteResult,
+  EntityTrait,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  TransactionTrait,
+};
 use uuid::Uuid;
 
+use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
-use self::dto::*;
-
 pub struct UserInvitationService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 

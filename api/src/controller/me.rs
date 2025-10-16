@@ -1,13 +1,13 @@
-use infra::session::UserSession;
-
-use axum::{Json, Router, extract::State, routing};
+use axum::extract::State;
+use axum::{Json, Router, routing};
 use error::SumidaError;
+use infra::session::UserSession;
 use serde_json::json;
 
-use crate::SumidaState;
+use crate::controller::ApiController;
 use crate::service::prelude::*;
 use crate::util::ap::{self, ApForUser};
-use crate::{controller::ApiController, user_guard};
+use crate::{SumidaState, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct MeController<S: SumidaState> {

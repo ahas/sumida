@@ -15,13 +15,13 @@ use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostFilter {
-  pub search: Option<String>,
-  pub title: Option<String>,
+  pub search:      Option<String>,
+  pub title:       Option<String>,
   pub category_id: Option<i32>,
-  pub board_id: Option<i32>,
-  pub parent_id: Option<i32>,
-  pub kind: Option<BoardPostKind>,
-  pub status: Option<BoardPostStatus>,
+  pub board_id:    Option<i32>,
+  pub parent_id:   Option<i32>,
+  pub kind:        Option<BoardPostKind>,
+  pub status:      Option<BoardPostStatus>,
 }
 
 impl BoardPostFilter {
@@ -47,11 +47,11 @@ impl BoardPostFilter {
 #[sea_orm(entity = "Users")]
 pub struct BoardPostUser {
   #[sea_orm(from_alias = "user_id")]
-  pub id: i32,
+  pub id:       i32,
   #[sea_orm(from_alias = "user_username")]
   pub username: String,
   #[sea_orm(from_alias = "user_full_name")]
-  pub name: String,
+  pub name:     String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
@@ -59,9 +59,9 @@ pub struct BoardPostUser {
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostBoard {
   #[sea_orm(from_alias = "board_id")]
-  pub id: i32,
+  pub id:          i32,
   #[sea_orm(from_alias = "board_name")]
-  pub name: String,
+  pub name:        String,
   #[sea_orm(from_alias = "board_category_id")]
   pub category_id: Option<i32>,
 }
@@ -69,45 +69,45 @@ pub struct BoardPostBoard {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostListItem {
-  pub id: i32,
-  pub parent_id: Option<i32>,
+  pub id:           i32,
+  pub parent_id:    Option<i32>,
   #[sea_orm(nested, alias = "board")]
-  pub board: BoardPostBoard,
+  pub board:        BoardPostBoard,
   #[sea_orm(nested, alias = "user")]
-  pub user: BoardPostUser,
-  pub title: String,
-  pub content: Option<String>,
-  pub kind: BoardPostKind,
-  pub status: BoardPostStatus,
-  pub tags: Option<Vec<String>>,
-  pub views: i32,
+  pub user:         BoardPostUser,
+  pub title:        String,
+  pub content:      Option<String>,
+  pub kind:         BoardPostKind,
+  pub status:       BoardPostStatus,
+  pub tags:         Option<Vec<String>>,
+  pub views:        i32,
   pub published_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at:   DateTimeWithTimeZone,
+  pub updated_at:   DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPost {
-  pub id: i32,
-  pub parent_id: Option<i32>,
+  pub id:             i32,
+  pub parent_id:      Option<i32>,
   #[sea_orm(nested, alias = "board")]
-  pub board: BoardPostBoard,
+  pub board:          BoardPostBoard,
   #[sea_orm(nested, alias = "user")]
-  pub user: BoardPostUser,
-  pub title: String,
-  pub content: Option<String>,
-  pub kind: BoardPostKind,
-  pub status: BoardPostStatus,
-  pub tags: Option<Vec<String>>,
-  pub published_at: Option<DateTimeWithTimeZone>,
-  pub scheduled_at: Option<DateTimeWithTimeZone>,
-  pub views: i32,
-  pub reactions: Option<JsonValue>,
+  pub user:           BoardPostUser,
+  pub title:          String,
+  pub content:        Option<String>,
+  pub kind:           BoardPostKind,
+  pub status:         BoardPostStatus,
+  pub tags:           Option<Vec<String>>,
+  pub published_at:   Option<DateTimeWithTimeZone>,
+  pub scheduled_at:   Option<DateTimeWithTimeZone>,
+  pub views:          i32,
+  pub reactions:      Option<JsonValue>,
   #[sea_orm(skip)]
   pub attached_files: Vec<BoardFileListItem>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at:     DateTimeWithTimeZone,
+  pub updated_at:     DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetBoardPost {
@@ -119,15 +119,15 @@ impl IntoResponse for GetBoardPost {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPost {
-  pub id: Optional<i32>,
-  pub board_id: i32,
-  pub parent_id: Nullable<i32>,
-  pub title: String,
-  pub content: Nullable<String>,
-  pub kind: Optional<BoardPostKind>,
-  pub status: Optional<BoardPostStatus>,
-  pub published_at: Nullable<DateTimeWithTimeZone>,
-  pub tags: Nullable<Vec<String>>,
+  pub id:                Optional<i32>,
+  pub board_id:          i32,
+  pub parent_id:         Nullable<i32>,
+  pub title:             String,
+  pub content:           Nullable<String>,
+  pub kind:              Optional<BoardPostKind>,
+  pub status:            Optional<BoardPostStatus>,
+  pub published_at:      Nullable<DateTimeWithTimeZone>,
+  pub tags:              Nullable<Vec<String>>,
   pub attached_file_ids: Option<Vec<i32>>,
 }
 
@@ -151,12 +151,12 @@ impl CreateBoardPost {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardDraft {
-  pub board_id: i32,
-  pub parent_id: Nullable<i32>,
-  pub title: String,
-  pub content: Nullable<String>,
-  pub kind: Optional<BoardPostKind>,
-  pub tags: Nullable<Vec<String>>,
+  pub board_id:          i32,
+  pub parent_id:         Nullable<i32>,
+  pub title:             String,
+  pub content:           Nullable<String>,
+  pub kind:              Optional<BoardPostKind>,
+  pub tags:              Nullable<Vec<String>>,
   pub attached_file_ids: Option<Vec<i32>>,
 }
 
@@ -189,12 +189,12 @@ impl IntoResponse for BoardPostCreated {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
-  pub title: Optional<String>,
-  pub content: Nullable<String>,
-  pub kind: Optional<BoardPostKind>,
-  pub status: Optional<BoardPostStatus>,
-  pub published_at: Nullable<DateTimeWithTimeZone>,
-  pub tags: Nullable<Vec<String>>,
+  pub title:             Optional<String>,
+  pub content:           Nullable<String>,
+  pub kind:              Optional<BoardPostKind>,
+  pub status:            Optional<BoardPostStatus>,
+  pub published_at:      Nullable<DateTimeWithTimeZone>,
+  pub tags:              Nullable<Vec<String>>,
   pub attached_file_ids: Option<Vec<i32>>,
 }
 

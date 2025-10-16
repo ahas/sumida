@@ -12,8 +12,8 @@ use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFilter {
-  pub search: Option<String>,
-  pub name: Option<String>,
+  pub search:      Option<String>,
+  pub name:        Option<String>,
   pub category_id: Option<i32>,
 }
 
@@ -36,7 +36,7 @@ impl BoardFilter {
 #[sea_orm(entity = "entity::bs::board_categories::Entity")]
 pub struct BoardBoardCategory {
   #[sea_orm(from_alias = "bc_id")]
-  pub id: i32,
+  pub id:   i32,
   #[sea_orm(from_alias = "bc_name")]
   pub name: String,
 }
@@ -44,36 +44,36 @@ pub struct BoardBoardCategory {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardListItem {
-  pub id: i32,
+  pub id:              i32,
   #[sea_orm(nested, alias = "bc")]
-  pub category: Option<BoardBoardCategory>,
-  pub name: String,
-  pub description: Option<String>,
+  pub category:        Option<BoardBoardCategory>,
+  pub name:            String,
+  pub description:     Option<String>,
   pub can_upload_file: bool,
-  pub is_logged: bool,
-  pub is_enabled: bool,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub is_logged:       bool,
+  pub is_enabled:      bool,
+  pub created_at:      DateTimeWithTimeZone,
+  pub updated_at:      DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoard {
-  pub id: i32,
+  pub id:                  i32,
   #[sea_orm(nested, alias = "bc")]
-  pub category: Option<BoardBoardCategory>,
-  pub name: String,
-  pub description: Option<String>,
-  pub can_upload_file: bool,
-  pub max_file_size: i64,
-  pub max_file_count: i32,
-  pub allowed_file_types: Option<JsonValue>,
+  pub category:            Option<BoardBoardCategory>,
+  pub name:                String,
+  pub description:         Option<String>,
+  pub can_upload_file:     bool,
+  pub max_file_size:       i64,
+  pub max_file_count:      i32,
+  pub allowed_file_types:  Option<JsonValue>,
   pub reaction_visibility: BoardPostRecordVisibility,
-  pub viewer_visibility: BoardPostRecordVisibility,
-  pub is_logged: bool,
-  pub is_enabled: bool,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub viewer_visibility:   BoardPostRecordVisibility,
+  pub is_logged:           bool,
+  pub is_enabled:          bool,
+  pub created_at:          DateTimeWithTimeZone,
+  pub updated_at:          DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetBoard {
@@ -85,20 +85,20 @@ impl IntoResponse for GetBoard {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoard {
-  pub id: Optional<i32>,
+  pub id:                  Optional<i32>,
   #[serde(default)]
-  pub category_id: Nullable<i32>,
-  pub name: String,
+  pub category_id:         Nullable<i32>,
+  pub name:                String,
   #[serde(default)]
-  pub description: Nullable<String>,
-  pub can_upload_file: Optional<bool>,
-  pub max_file_size: Optional<i64>,
-  pub max_file_count: Optional<i32>,
-  pub allowed_file_types: Optional<JsonValue>,
+  pub description:         Nullable<String>,
+  pub can_upload_file:     Optional<bool>,
+  pub max_file_size:       Optional<i64>,
+  pub max_file_count:      Optional<i32>,
+  pub allowed_file_types:  Optional<JsonValue>,
   pub reaction_visibility: Optional<BoardPostRecordVisibility>,
-  pub viewer_visibility: Optional<BoardPostRecordVisibility>,
-  pub is_logged: Optional<bool>,
-  pub is_enabled: Optional<bool>,
+  pub viewer_visibility:   Optional<BoardPostRecordVisibility>,
+  pub is_logged:           Optional<bool>,
+  pub is_enabled:          Optional<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -117,17 +117,17 @@ impl IntoResponse for BoardCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoard {
   #[serde(default)]
-  pub category_id: Nullable<i32>,
-  pub name: Optional<String>,
-  pub description: Optional<String>,
-  pub can_upload_file: Optional<bool>,
-  pub max_file_size: Optional<i64>,
-  pub max_file_count: Optional<i32>,
-  pub allowed_file_types: Optional<JsonValue>,
+  pub category_id:         Nullable<i32>,
+  pub name:                Optional<String>,
+  pub description:         Optional<String>,
+  pub can_upload_file:     Optional<bool>,
+  pub max_file_size:       Optional<i64>,
+  pub max_file_count:      Optional<i32>,
+  pub allowed_file_types:  Optional<JsonValue>,
   pub reaction_visibility: Optional<BoardPostRecordVisibility>,
-  pub viewer_visibility: Optional<BoardPostRecordVisibility>,
-  pub is_logged: Optional<bool>,
-  pub is_enabled: Optional<bool>,
+  pub viewer_visibility:   Optional<BoardPostRecordVisibility>,
+  pub is_logged:           Optional<bool>,
+  pub is_enabled:          Optional<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

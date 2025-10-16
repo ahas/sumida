@@ -1,8 +1,9 @@
-use super::helper::*;
 use ForeignKeyAction::*;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::*;
 use serde_json::json;
+
+use super::helper::*;
 
 #[derive(DeriveIden)]
 enum AccessPolicies {
@@ -577,7 +578,8 @@ impl MigrationTrait for Migration {
     drop_table(manager, AccessPolicies::Table).await?;
 
     // Functions
-    db.execute_unprepared("DROP FUNCTION IF EXISTS manage_updated_at(in _tbl regclass);").await?;
+    db.execute_unprepared("DROP FUNCTION IF EXISTS manage_updated_at(in _tbl regclass);")
+      .await?;
     db.execute_unprepared("DROP FUNCTION IF EXISTS set_updated_at();").await?;
 
     // Extensions

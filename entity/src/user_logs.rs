@@ -41,23 +41,23 @@ pub enum LoginCode {
 #[sea_orm(table_name = "user_logs")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
+  pub id:      i32,
   pub user_id: i32,
-  pub method: LoginMethod,
-  pub code: LoginCode,
+  pub method:  LoginMethod,
+  pub code:    LoginCode,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family: String,
-  pub os_major: Option<String>,
-  pub os_minor: Option<String>,
-  pub os_patch: Option<String>,
+  pub os_family:      String,
+  pub os_major:       Option<String>,
+  pub os_minor:       Option<String>,
+  pub os_patch:       Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand: Option<String>,
-  pub device_model: Option<String>,
+  pub device_brand:  Option<String>,
+  pub device_model:  Option<String>,
 
   pub created_at: DateTimeWithTimeZone,
 }

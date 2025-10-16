@@ -1,22 +1,21 @@
-use axum::{
-  body::Body,
-  extract::FromRequestParts,
-  http::{Request, Response},
-  response::IntoResponse,
-};
+use std::task::{Context, Poll};
+
+use axum::body::Body;
+use axum::extract::FromRequestParts;
+use axum::http::{Request, Response};
+use axum::response::IntoResponse;
 use error::SumidaError;
 use futures::future::BoxFuture;
 use infra::session::UserSession;
-use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
 use crate::SumidaState;
 
 #[derive(Clone)]
 pub struct ServiceApLayer<S> {
-  state: S,
+  state:     S,
   namespace: String,
-  action: String,
+  action:    String,
 }
 
 impl<S> ServiceApLayer<S> {
@@ -47,10 +46,10 @@ where
 
 #[derive(Clone)]
 pub struct ServiceApService<S, T> {
-  state: S,
+  state:     S,
   namespace: String,
-  action: String,
-  inner: T,
+  action:    String,
+  inner:     T,
 }
 
 impl<S, T> Service<Request<Body>> for ServiceApService<S, T>
@@ -90,8 +89,12 @@ where
       let req = Request::from_parts(parts, body);
 
       use crate::util::ap::{self, ApGuard};
-      let is_allowed =
-        ap::ns(namespace).object("service").action(action).who(&session).check_allowed(state.db()).await;
+      let is_allowed = ap::ns(namespace)
+        .object("service")
+        .action(action)
+        .who(&session)
+        .check_allowed(state.db())
+        .await;
 
       if is_allowed {
         inner.call(req).await

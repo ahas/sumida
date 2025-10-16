@@ -1,9 +1,8 @@
 use axum::extract::FromRequestParts;
 use error::SumidaError;
-use socketioxide::BroadcastError;
-use socketioxide::extract::State;
+use socketioxide::extract::{SocketRef, State};
 use socketioxide::layer::SocketIoLayer;
-use socketioxide::{SocketIo, extract::SocketRef};
+use socketioxide::{BroadcastError, SocketIo};
 use socketioxide_core::adapter::{Room, RoomParam};
 
 use crate::session::UserSession;
@@ -13,8 +12,8 @@ pub struct SumidaMessengerState;
 
 #[derive(Clone, Debug)]
 pub struct SumidaMessenger {
-  pub io: SocketIo,
-  pub path: Option<String>,
+  pub io:    SocketIo,
+  pub path:  Option<String>,
   pub rooms: Option<Vec<Room>>,
 }
 

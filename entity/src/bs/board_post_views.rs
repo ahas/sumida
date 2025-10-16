@@ -5,9 +5,9 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "board_post_views")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id: i32,
-  pub post_id: i32,
-  pub user_id: Option<i32>,
+  pub id:         i32,
+  pub post_id:    i32,
+  pub user_id:    Option<i32>,
   pub created_at: DateTimeWithTimeZone,
 }
 

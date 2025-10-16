@@ -2,7 +2,8 @@ use std::io::{BufWriter, Cursor};
 
 use axum::http::header;
 use axum::response::IntoResponse;
-use image::{DynamicImage, ImageFormat, RgbImage, codecs::jpeg, imageops};
+use image::codecs::jpeg;
+use image::{DynamicImage, ImageFormat, RgbImage, imageops};
 
 #[derive(Clone, Debug)]
 pub struct ImageResponse(pub DynamicImage, pub ImageFormat);
@@ -14,7 +15,10 @@ impl IntoResponse for ImageResponse {
 
     let mut buffer = BufWriter::new(Cursor::new(Vec::new()));
     img.write_to(&mut buffer, format).expect("failed to write a image to buffer");
-    let bytes = buffer.into_inner().map(|x| x.into_inner()).expect("failed to convert a image into byte");
+    let bytes = buffer
+      .into_inner()
+      .map(|x| x.into_inner())
+      .expect("failed to convert a image into byte");
 
     ([(header::CONTENT_TYPE, format.to_mime_type().to_string())], bytes).into_response()
   }

@@ -4,14 +4,28 @@ pub mod mail_form_context;
 use chrono::Utc;
 use entity::prelude::*;
 use infra::settings;
-use sea_orm::sea_query::{Alias, Asterisk};
-use sea_orm::{ActiveValue::*, JoinType, Select};
+use sea_orm::ActiveValue::*;
+use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
-  QuerySelect, RelationTrait, TransactionTrait, Unchanged, sea_query::Expr,
+  ColumnTrait,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
+  Unchanged,
 };
 use sea_orm_crud::Optional;
 
+use self::dto::*;
+use super::mail_form::MailFormSendOptions;
+use super::prelude::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::service::auth::session::AuthSessionService;
@@ -19,13 +33,8 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
 
-use self::dto::*;
-
-use super::mail_form::MailFormSendOptions;
-use super::prelude::*;
-
 pub struct UserService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -60,7 +69,13 @@ impl<S: SumidaState> UserService<S> {
   }
 
   pub async fn get(&self, user_id: i32) -> Result<Option<GetUser>, SumidaError> {
-    Ok(self.select(Users::find_by_id(user_id)).into_model::<GetUser>().one(self.state.db()).await?)
+    Ok(
+      self
+        .select(Users::find_by_id(user_id))
+        .into_model::<GetUser>()
+        .one(self.state.db())
+        .await?,
+    )
   }
 
   pub async fn create(
@@ -122,8 +137,8 @@ impl<S: SumidaState> UserService<S> {
     let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
       username: opts.username.clone(),
       password: opts.password.clone(),
-      auth: opts.auth.clone(),
-      server: opts.server.clone(),
+      auth:     opts.auth.clone(),
+      server:   opts.server.clone(),
     });
 
     MailFormService::<S>::send(
@@ -193,8 +208,10 @@ impl<S: SumidaState> UserService<S> {
   pub async fn change_password(&mut self, data: ChangePassword) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    let Some(user) =
-      Users::find().filter(entity::users::Column::Username.eq(&data.username)).one(&txn).await?
+    let Some(user) = Users::find()
+      .filter(entity::users::Column::Username.eq(&data.username))
+      .one(&txn)
+      .await?
     else {
       txn.rollback().await?;
       return Err(SumidaError::InvalidAccount);
@@ -233,7 +250,10 @@ impl<S: SumidaState> UserService<S> {
       return Err(SumidaError::InvalidAccount);
     };
 
-    self.session.authorize(user_id, &user.username, Some(settings.expiry.default_expiry()?), db).await?;
+    self
+      .session
+      .authorize(user_id, &user.username, Some(settings.expiry.default_expiry()?), db)
+      .await?;
 
     Ok(())
   }

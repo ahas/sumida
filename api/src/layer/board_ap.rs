@@ -1,7 +1,7 @@
 pub mod helpers {
   use entity::prelude::*;
   use error::SumidaError;
-  use sea_orm::{ConnectionTrait, EntityTrait};
+  use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 
   /// Extract board_id from board_post
   pub async fn get_board_id_from_post<C>(post_id: i32, db: &C) -> Result<i32, SumidaError>
@@ -16,22 +16,17 @@ pub mod helpers {
     Ok(post.board_id)
   }
 
-  /// Extract board_id from board_file
+  /// Extract board_id from post that has this file attached
   pub async fn get_board_id_from_file<C>(file_id: i32, db: &C) -> Result<Option<i32>, SumidaError>
   where
     C: ConnectionTrait,
   {
-    let file = BoardFiles::find_by_id(file_id)
-      .one(db)
-      .await?
-      .ok_or_else(|| SumidaError::NoData("BoardFile".into(), file_id.to_string()))?;
+    use entity::bs::board_files::Column;
 
-    // BoardFile can be associated with board directly, or through post/comment
-    if let Some(board_id) = file.board_id {
-      return Ok(Some(board_id));
-    }
+    let board_file = BoardFiles::find().filter(Column::FileId.eq(file_id)).one(db).await?;
 
-    if let Some(post_id) = file.post_id {
+    if let Some(board_file) = board_file {
+      let post_id = board_file.post_id;
       return Ok(Some(get_board_id_from_post(post_id, db).await?));
     }
 

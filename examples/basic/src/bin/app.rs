@@ -1,7 +1,8 @@
-use axum::http::StatusCode;
-use axum::{Extension, Router, routing};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+
+use axum::http::StatusCode;
+use axum::{Extension, Router, routing};
 use sumida::infra::session::redis_store::RedisSessionStore;
 use tokio::signal;
 use tower_http::trace::TraceLayer;

@@ -4,7 +4,8 @@ pub mod service;
 pub mod util;
 
 use axum::Router;
-use controller::{ApiController, prelude::*};
+use controller::ApiController;
+use controller::prelude::*;
 use sea_orm::DatabaseConnection;
 
 use crate::controller::access_policy::AccessPolicyController;
@@ -49,6 +50,9 @@ where
     let user_verification_controller = UserVerificationController::<StateT>::new();
     let mail_form_controller = MailFormController::<StateT>::new();
 
+    // File System
+    let file_controller = FileController::<StateT>::new();
+
     // Board System
     let board_category_controller = BoardCategoryController::<StateT>::new();
     let board_controller = BoardController::<StateT>::new();
@@ -73,6 +77,8 @@ where
       .nest("/board-categories", board_category_controller.router(state))
       .nest("/board-posts", board_post_controller.router(state))
       .nest("/board-files", board_files_controller.router(state))
+      // File System
+      .nest("/files", file_controller.router(state))
   }
 }
 

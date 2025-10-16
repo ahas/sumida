@@ -1,13 +1,12 @@
-use axum::{
-  body::Body,
-  extract::FromRequestParts,
-  http::{Request, Response},
-  response::IntoResponse,
-};
+use std::task::{Context, Poll};
+
+use axum::body::Body;
+use axum::extract::FromRequestParts;
+use axum::http::{Request, Response};
+use axum::response::IntoResponse;
 use error::SumidaError;
 use futures::future::BoxFuture;
 use infra::session::UserSession;
-use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
 use crate::SumidaState;

@@ -6,19 +6,18 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "files")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id: i32,
-  pub user_id: Option<i32>,
-  pub original_filename: String,
-  pub file_path: String,
-  pub file_url: Option<String>,
-  pub file_size: i64,
-  pub mime_type: String,
-  pub file_hash: Option<String>,
-  pub upload_status: String,
+  pub id:           i32,
+  pub user_id:      Option<i32>,
+  pub path:         String,
+  pub uri:          Option<String>,
+  pub size:         i64,
+  pub mime_type:    String,
+  pub hash:         Option<String>,
+  pub status:       String,
   pub is_temporary: bool,
-  pub expires_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub expires_at:   Option<DateTimeWithTimeZone>,
+  pub created_at:   DateTimeWithTimeZone,
+  pub updated_at:   DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -101,7 +100,7 @@ impl Model {
   }
 
   pub fn get_file_extension(&self) -> Option<String> {
-    self.original_filename.rfind('.').map(|pos| self.original_filename[pos + 1..].to_lowercase())
+    self.path.rfind('.').map(|pos| self.path[pos + 1..].to_lowercase())
   }
 
   pub fn is_expired(&self) -> bool {
@@ -114,7 +113,7 @@ impl Model {
 
   pub fn format_file_size(&self) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = self.file_size as f64;
+    let mut size = self.size as f64;
     let mut unit_index = 0;
 
     while size >= 1024.0 && unit_index < UNITS.len() - 1 {
@@ -123,7 +122,7 @@ impl Model {
     }
 
     if unit_index == 0 {
-      format!("{} {}", self.file_size, UNITS[unit_index])
+      format!("{} {}", self.size, UNITS[unit_index])
     } else {
       format!("{:.1} {}", size, UNITS[unit_index])
     }

@@ -26,27 +26,27 @@ pub enum BoardPostKind {
 #[sea_orm(table_name = "board_posts")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id: i32,
-  pub board_id: i32,
-  pub parent_id: Option<i32>,
-  pub user_id: Option<i32>,
-  pub kind: BoardPostKind,
-  pub status: BoardPostStatus,
-  pub revision: Option<i32>,
-  pub title: String,
+  pub id:               i32,
+  pub board_id:         i32,
+  pub parent_id:        Option<i32>,
+  pub user_id:          Option<i32>,
+  pub kind:             BoardPostKind,
+  pub status:           BoardPostStatus,
+  pub revision:         Option<i32>,
+  pub title:            String,
   pub compression_type: Option<String>,
-  pub content_type: Option<String>,
-  pub content: Option<String>,
-  pub text: Option<String>,
-  pub tags: Option<Vec<String>>,
-  pub views: i32,
+  pub content_type:     Option<String>,
+  pub content:          Option<String>,
+  pub text:             Option<String>,
+  pub tags:             Option<Vec<String>>,
+  pub views:            i32,
   #[sea_orm(column_type = "JsonBinary")]
-  pub reactions: Option<Json>,
-  pub published_at: Option<DateTimeWithTimeZone>,
-  pub scheduled_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
-  pub deleted_at: Option<DateTimeWithTimeZone>,
+  pub reactions:        Option<Json>,
+  pub published_at:     Option<DateTimeWithTimeZone>,
+  pub scheduled_at:     Option<DateTimeWithTimeZone>,
+  pub created_at:       DateTimeWithTimeZone,
+  pub updated_at:       DateTimeWithTimeZone,
+  pub deleted_at:       Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -61,9 +61,18 @@ pub enum Relation {
   Board,
   #[sea_orm(has_many = "super::board_post_views::Entity")]
   Views,
-  #[sea_orm(belongs_to = "Entity", from = "Column::ParentId", to = "Column::Id", on_delete = "Cascade")]
+  #[sea_orm(
+    belongs_to = "Entity",
+    from = "Column::ParentId",
+    to = "Column::Id",
+    on_delete = "Cascade"
+  )]
   Parent,
-  #[sea_orm(belongs_to = "crate::users::Entity", from = "Column::UserId", to = "crate::users::Column::Id")]
+  #[sea_orm(
+    belongs_to = "crate::users::Entity",
+    from = "Column::UserId",
+    to = "crate::users::Column::Id"
+  )]
   User,
 }
 

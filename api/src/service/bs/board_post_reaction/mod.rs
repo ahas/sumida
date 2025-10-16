@@ -2,21 +2,26 @@ pub mod dto;
 
 use error::SumidaError;
 use infra::session::UserSession;
+use sea_orm::ActiveValue::*;
 use sea_orm::{
-  ActiveValue::*, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QuerySelect,
   TransactionTrait,
 };
 
+use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::service::prelude::BoardPostService;
 use crate::util::ap::{ApChain, ApGuard};
 use crate::util::pagination::Pagination;
 
-use self::dto::*;
-
 pub struct BoardPostReactionService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -50,7 +55,9 @@ impl<S: SumidaState> BoardPostReactionService<S> {
 
   pub async fn get(&self, id: i32) -> Result<Option<GetBoardPostReaction>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("read", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn).await?;
+    self
+      .try_access("read", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn)
+      .await?;
 
     let reaction = entity::bs::board_post_reactions::Entity::find_by_id(id)
       .into_model::<GetBoardPostReaction>()
@@ -66,8 +73,9 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     data: CreateBoardPostReaction,
   ) -> Result<InsertResult<entity::bs::board_post_reactions::ActiveModel>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let result =
-      entity::bs::board_post_reactions::Entity::insert(data.into_active_model()).exec(&txn).await?;
+    let result = entity::bs::board_post_reactions::Entity::insert(data.into_active_model())
+      .exec(&txn)
+      .await?;
     txn.commit().await?;
 
     Ok(result)
@@ -79,7 +87,9 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     data: UpdateBoardPostReaction,
   ) -> Result<entity::bs::board_post_reactions::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn).await?;
+    self
+      .try_access("update", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn)
+      .await?;
 
     let mut model = data.into_active_model();
     model.id = Set(id);
@@ -92,7 +102,9 @@ impl<S: SumidaState> BoardPostReactionService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn).await?;
+    self
+      .try_access("delete", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn)
+      .await?;
 
     let result = entity::bs::board_post_reactions::Entity::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;

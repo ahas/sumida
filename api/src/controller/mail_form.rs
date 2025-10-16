@@ -1,18 +1,16 @@
-use axum::extract::Multipart;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::{Json, Router, routing};
 #[cfg(feature = "storage-aws-s3")]
 use infra::aws;
 use infra::settings;
 use serde_json::json;
 
+use super::ApiController;
 use crate::service::prelude::*;
 use crate::util::pagination::{List, Pagination};
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
 use crate::{SumidaState, service_ap, user_guard};
-
-use super::ApiController;
 
 #[derive(Clone, Debug, Default)]
 pub struct MailFormController<S: SumidaState> {

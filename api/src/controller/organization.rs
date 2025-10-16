@@ -1,11 +1,10 @@
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
+use super::ApiController;
 use crate::service::prelude::*;
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
-
-use super::ApiController;
 
 #[derive(Clone, Debug, Default)]
 pub struct OrganizationController<S: SumidaState> {

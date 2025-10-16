@@ -4,19 +4,24 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Set,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QuerySelect,
+  Set,
   TransactionTrait,
 };
 
+use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
-use self::dto::*;
-
 pub struct OrganizationService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 

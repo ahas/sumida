@@ -1,22 +1,22 @@
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use api::SumidaState;
 use axum::{Extension, Router, routing};
-use infra::{session::redis_store::RedisSessionStore, settings};
+use infra::session::redis_store::RedisSessionStore;
+use infra::settings;
 use reqwest::{Client, StatusCode};
 use sea_orm::DatabaseConnection;
-use std::{
-  net::SocketAddr,
-  sync::{Arc, Mutex},
-  time::Duration,
-};
-use tokio::{
-  sync::{OnceCell, oneshot},
-  task::JoinHandle,
-};
+use tokio::sync::{OnceCell, oneshot};
+use tokio::task::JoinHandle;
 
 static SERVER: OnceCell<TestServer> = OnceCell::const_new();
 
 pub async fn use_server() -> &'static TestServer {
-  SERVER.get_or_init(|| async { TestServer::spawn().await.expect("Failed to spawn the server") }).await
+  SERVER
+    .get_or_init(|| async { TestServer::spawn().await.expect("Failed to spawn the server") })
+    .await
 }
 
 #[derive(Clone)]
@@ -32,9 +32,9 @@ impl SumidaState for TestServerState {
 
 #[allow(dead_code)]
 pub struct TestServer {
-  pub addr: SocketAddr,
+  pub addr:    SocketAddr,
   shutdown_tx: Option<oneshot::Sender<()>>,
-  handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
+  handle:      Option<JoinHandle<Result<(), anyhow::Error>>>,
   redis_store: Arc<Mutex<RedisSessionStore>>,
 }
 

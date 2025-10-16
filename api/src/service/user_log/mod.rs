@@ -5,18 +5,26 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
-use sea_orm::{DeleteResult, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect, RelationTrait, Select};
-use sea_orm::{EntityTrait, TransactionTrait};
+use sea_orm::{
+  DeleteResult,
+  EntityTrait,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
+};
 
+use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
-use self::dto::*;
-
 pub struct UserLogService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -54,7 +62,13 @@ impl<S: SumidaState> UserLogService<S> {
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetUserLog>, SumidaError> {
-    Ok(self.select(UserLogs::find_by_id(id)).into_model::<GetUserLog>().one(self.state.db()).await?)
+    Ok(
+      self
+        .select(UserLogs::find_by_id(id))
+        .into_model::<GetUserLog>()
+        .one(self.state.db())
+        .await?,
+    )
   }
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {

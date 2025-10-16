@@ -1,9 +1,9 @@
-use axum::{
-  body::Body,
-  extract::FromRequestParts,
-  http::{HeaderMap, HeaderValue, Request, Response},
-  response::IntoResponse,
-};
+use std::task::{Context, Poll};
+
+use axum::body::Body;
+use axum::extract::FromRequestParts;
+use axum::http::{HeaderMap, HeaderValue, Request, Response};
+use axum::response::IntoResponse;
 use cfg_if::cfg_if;
 use entity::prelude::*;
 use error::SumidaError;
@@ -12,7 +12,6 @@ use infra::session::UserSession;
 use jsonwebtoken as jwt;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
-use std::task::{Context, Poll};
 use tower::{Layer, Service};
 use tower_sessions::Expiry;
 
@@ -95,9 +94,9 @@ where
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
-  pub user_id: i32,
+  pub user_id:  i32,
   pub username: String,
-  pub exp: usize,
+  pub exp:      usize,
 }
 
 pub async fn verify_jwt<S: SumidaState>(
@@ -143,7 +142,9 @@ pub async fn verify_jwt<S: SumidaState>(
   .map_err(|_err| SumidaError::InvalidJwt)?;
   let expiry = settings.jwt.as_ref().ok_or(SumidaError::NoJwtSecret)?.expiry.access_token_expiry()?;
 
-  session.authorize(token.claims.user_id, &token.claims.username, Some(expiry), state.db()).await?;
+  session
+    .authorize(token.claims.user_id, &token.claims.username, Some(expiry), state.db())
+    .await?;
 
   Ok(())
 }

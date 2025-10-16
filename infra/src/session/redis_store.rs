@@ -8,7 +8,7 @@ use crate::settings::session::SessionRedisSettings;
 
 #[derive(Clone, Debug)]
 pub struct RedisSessionStore {
-  pub pool: Pool,
+  pub pool:   Pool,
   pub handle: Arc<Mutex<ConnectHandle>>,
 }
 

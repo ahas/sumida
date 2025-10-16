@@ -6,15 +6,15 @@ use super::users::Entity as Users;
 #[sea_orm(table_name = "user_blocks")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
-  pub user_id: Option<i32>,
+  pub id:         i32,
+  pub user_id:    Option<i32>,
   pub ip_address: Option<String>,
   pub blocked_at: DateTimeWithTimeZone,
   pub blocked_by: Option<i32>,
-  pub reason: String,
+  pub reason:     String,
   pub expires_at: Option<DateTimeWithTimeZone>,
-  pub lifted_at: Option<DateTimeWithTimeZone>,
-  pub note: Option<String>,
+  pub lifted_at:  Option<DateTimeWithTimeZone>,
+  pub note:       Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

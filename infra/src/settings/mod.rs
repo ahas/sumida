@@ -16,17 +16,17 @@ use serde::Deserialize;
 #[serde(rename_all = "kebab-case")]
 #[allow(dead_code)]
 pub struct SumidaSettings {
-  pub server: server::ServerSettings,
+  pub server:   server::ServerSettings,
   pub database: database::DatabaseSettings,
-  pub session: session::SessionSettings,
+  pub session:  session::SessionSettings,
   #[serde(default)]
   pub security: security::SecuritySettings,
   #[serde(default)]
-  pub storage: storage::StorageSettings,
-  pub smtp: Option<smtp::SmtpSettings>,
-  pub jwt: Option<jwt::JwtSettings>,
+  pub storage:  storage::StorageSettings,
+  pub smtp:     Option<smtp::SmtpSettings>,
+  pub jwt:      Option<jwt::JwtSettings>,
   #[cfg(feature = "aws")]
-  pub aws: Option<aws::AwsSettings>,
+  pub aws:      Option<aws::AwsSettings>,
 }
 
 impl SumidaSettings {

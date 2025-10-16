@@ -1,10 +1,12 @@
-#[cfg(feature = "storage-aws-s3")]
-use crate::util::s3;
-use error::SumidaError;
-use infra::settings;
 use std::path::Path;
 use std::pin::Pin;
+
+use error::SumidaError;
+use infra::settings;
 use tokio::io::AsyncRead;
+
+#[cfg(feature = "storage-aws-s3")]
+use crate::util::s3;
 
 pub enum FileStorage {
   Local(LocalStorage),
@@ -121,7 +123,9 @@ impl LocalStorage {
   pub async fn download(&self, path: &str) -> Result<Pin<Box<dyn AsyncRead + Send>>, SumidaError> {
     use tokio::fs::File;
 
-    let file = File::open(path).await.map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
+    let file = File::open(path)
+      .await
+      .map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
 
     Ok(Box::pin(file))
   }
@@ -129,8 +133,9 @@ impl LocalStorage {
   pub async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
     use tokio::fs;
 
-    let metadata =
-      fs::metadata(path).await.map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
+    let metadata = fs::metadata(path)
+      .await
+      .map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
 
     Ok(metadata.len())
   }
@@ -206,8 +211,9 @@ impl S3Storage {
   }
 
   pub async fn download(&self, path: &str) -> Result<Pin<Box<dyn AsyncRead + Send>>, SumidaError> {
-    use aws_sdk_s3::primitives::ByteStream;
     use std::io::Cursor;
+
+    use aws_sdk_s3::primitives::ByteStream;
 
     let response = self
       .client

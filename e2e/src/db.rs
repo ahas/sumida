@@ -1,6 +1,7 @@
 use anyhow::Context;
 use entity::prelude::*;
-use sea_orm::{Database, DbBackend, Set, Statement, prelude::*};
+use sea_orm::prelude::*;
+use sea_orm::{Database, DbBackend, Set, Statement};
 
 #[allow(dead_code)]
 pub struct TestDb;
@@ -67,8 +68,9 @@ impl TestDb {
 
   #[allow(dead_code)]
   async fn run_migration_up(db: &DatabaseConnection) -> anyhow::Result<()> {
-    use crate::migration::Migrator;
     use sea_orm_migration::prelude::*;
+
+    use crate::migration::Migrator;
 
     Migrator::up(db, None).await.expect("Migration up command failed");
 
@@ -82,7 +84,7 @@ impl TestDb {
   pub async fn reset_database() -> anyhow::Result<()> {
     let db = infra::db::connect().await;
     Self::run_migration_fresh(&db).await?;
-    
+
     // Re-insert admin policy
     AccessPolicies::insert(entity::access_policies::ActiveModel {
       namespace: Set("*".to_string()),
@@ -101,8 +103,9 @@ impl TestDb {
   }
 
   async fn run_migration_fresh(db: &DatabaseConnection) -> anyhow::Result<()> {
-    use crate::migration::Migrator;
     use sea_orm_migration::prelude::*;
+
+    use crate::migration::Migrator;
 
     Migrator::fresh(db).await.expect("Migration fresh command failed");
 

@@ -4,8 +4,7 @@ use std::marker::PhantomData;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::{ColumnTrait, DbErr};
-use serde::de;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de};
 
 pub fn is_serialization_failure(error: &DbErr) -> bool {
   // PostgreSQL의 직렬화 실패 오류 코드 40001을 확인합니다.

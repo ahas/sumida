@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use super::settings;
 
@@ -11,6 +12,9 @@ pub fn subscribe() {
   if logging != "off" && logging != "false" {
     let filter = tracing_subscriber::EnvFilter::from_str(&logging).unwrap();
 
-    tracing_subscriber::registry().with(filter).with(tracing_subscriber::fmt::layer()).init();
+    tracing_subscriber::registry()
+      .with(filter)
+      .with(tracing_subscriber::fmt::layer())
+      .init();
   }
 }

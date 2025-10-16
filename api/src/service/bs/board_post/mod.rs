@@ -1,10 +1,5 @@
 pub mod dto;
 
-use crate::SumidaState;
-use crate::service::ApiService;
-use crate::service::prelude::BoardFileListItem;
-use crate::util::ap::{self, ApChain, ApGuard};
-use crate::util::pagination::Pagination;
 use entity::bs::board_posts::BoardPostStatus;
 use entity::prelude::*;
 use error::SumidaError;
@@ -12,14 +7,30 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, JoinType,
-  PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait,
+  ColumnTrait,
+  ConnectionTrait,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
 };
 
 use self::dto::*;
+use crate::SumidaState;
+use crate::service::ApiService;
+use crate::service::prelude::BoardFileListItem;
+use crate::util::ap::{self, ApChain, ApGuard};
+use crate::util::pagination::Pagination;
 
 pub struct BoardPostService<S: SumidaState> {
-  state: S,
+  state:   S,
   #[allow(dead_code)]
   session: UserSession,
 }
@@ -61,7 +72,20 @@ impl<S: SumidaState> BoardPostService<S> {
     if let Some(ref mut result) = result {
       result.attached_files = BoardFiles::find()
         .filter(entity::bs::board_files::Column::PostId.eq(id))
-        .into_partial_model::<BoardFileListItem>()
+        .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
+        .select_only()
+        .column_as(entity::bs::board_files::Column::PostId, "post_id")
+        .column_as(entity::bs::board_files::Column::FileId, "file_id")
+        .column_as(entity::fs::files::Column::Path, "file_path")
+        .column_as(entity::fs::files::Column::Uri, "file_uri")
+        .column_as(entity::fs::files::Column::Size, "file_size")
+        .column_as(entity::fs::files::Column::MimeType, "file_mime_type")
+        .column_as(entity::fs::files::Column::Status, "file_status")
+        .column_as(entity::fs::files::Column::IsTemporary, "file_is_temporary")
+        .column_as(entity::fs::files::Column::ExpiresAt, "file_expires_at")
+        .column_as(entity::fs::files::Column::CreatedAt, "file_created_at")
+        .column_as(entity::fs::files::Column::UpdatedAt, "file_updated_at")
+        .into_model::<BoardFileListItem>()
         .all(&txn)
         .await?;
     }
@@ -178,16 +202,22 @@ impl<S: SumidaState> BoardPostService<S> {
     file_ids: Vec<i32>,
     db: &'db C,
   ) -> Result<(), SumidaError> {
+    use entity::bs::board_files::Column;
+
+    // First, remove all existing file associations for this post
+    entity::bs::board_files::Entity::delete_many()
+      .filter(Column::PostId.eq(post_id))
+      .exec(db)
+      .await?;
+
+    // Then, add new file associations
     for file_id in file_ids {
       let file_am = entity::bs::board_files::ActiveModel {
-        id: Set(file_id),
-        post_id: Set(Some(post_id)),
-        is_temporary: Set(false),
-        expires_at: Set(None),
-        ..Default::default()
+        post_id: Set(post_id),
+        file_id: Set(file_id),
       };
 
-      entity::bs::board_files::Entity::update(file_am).exec(db).await?;
+      entity::bs::board_files::Entity::insert(file_am).exec(db).await?;
     }
 
     Ok(())
@@ -210,17 +240,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let item = BoardPosts::update(am).exec(&txn).await?;
 
     if let Some(file_ids) = attached_file_ids {
-      for file_id in file_ids {
-        let file_am = entity::bs::board_files::ActiveModel {
-          id: Set(file_id),
-          post_id: Set(Some(id)),
-          is_temporary: Set(false),
-          expires_at: Set(None),
-          ..Default::default()
-        };
-
-        entity::bs::board_files::Entity::update(file_am).exec(&txn).await?;
-      }
+      self.update_files(id, file_ids, &txn).await?;
     }
 
     txn.commit().await?;

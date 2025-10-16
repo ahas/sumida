@@ -2,8 +2,8 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::organizations::*;
-use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
-use sea_orm::{QueryTrait, prelude::*};
+use sea_orm::prelude::*;
+use sea_orm::{DeriveIntoActiveModel, FromQueryResult, QueryTrait};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -12,7 +12,7 @@ use crate::util::db::wrap_ilike_col;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct OrganizationFilter {
-  pub name: Option<String>,
+  pub name:      Option<String>,
   pub parent_id: Option<i32>,
 }
 
@@ -36,10 +36,10 @@ impl OrganizationFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizationListItem {
-  pub id: i32,
-  pub name: String,
+  pub id:         i32,
+  pub name:       String,
   #[serde(default)]
-  pub parent_id: Nullable<i32>,
+  pub parent_id:  Nullable<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -47,9 +47,9 @@ pub struct OrganizationListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetOrganization {
-  pub id: i32,
-  pub name: String,
-  pub parent_id: Option<i32>,
+  pub id:         i32,
+  pub name:       String,
+  pub parent_id:  Option<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -63,8 +63,8 @@ impl IntoResponse for GetOrganization {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateOrganization {
-  pub id: Optional<i32>,
-  pub name: String,
+  pub id:        Optional<i32>,
+  pub name:      String,
   #[serde(default)]
   pub parent_id: Nullable<i32>,
 }
@@ -84,7 +84,7 @@ impl IntoResponse for OrganizationCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateOrganization {
-  pub name: Optional<String>,
+  pub name:      Optional<String>,
   #[serde(default)]
   pub parent_id: Nullable<i32>,
 }

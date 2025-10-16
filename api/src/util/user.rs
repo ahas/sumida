@@ -1,7 +1,6 @@
 use argon2::Argon2;
-use argon2::password_hash::PasswordHasher;
-use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
+use argon2::password_hash::{PasswordHasher, SaltString};
 
 pub fn hash_password<P>(password: P) -> argon2::password_hash::Result<String>
 where

@@ -2,7 +2,8 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bs::board_post_reactions::ActiveModel;
-use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set, prelude::*};
+use sea_orm::prelude::*;
+use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -13,7 +14,7 @@ use crate::util::db::wrap_ilike_col;
 pub struct BoardPostReactionFilter {
   pub post_id: Option<i32>,
   pub user_id: Option<i32>,
-  pub value: Option<String>,
+  pub value:   Option<String>,
 }
 
 impl BoardPostReactionFilter {
@@ -30,20 +31,20 @@ impl BoardPostReactionFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostReactionListItem {
-  pub id: i32,
-  pub post_id: i32,
-  pub user_id: Option<i32>,
-  pub value: String,
+  pub id:         i32,
+  pub post_id:    i32,
+  pub user_id:    Option<i32>,
+  pub value:      String,
   pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPostReaction {
-  pub id: i32,
-  pub post_id: i32,
-  pub user_id: Option<i32>,
-  pub value: String,
+  pub id:         i32,
+  pub post_id:    i32,
+  pub user_id:    Option<i32>,
+  pub value:      String,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -56,10 +57,10 @@ impl IntoResponse for GetBoardPostReaction {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPostReaction {
-  pub id: Optional<i32>,
+  pub id:      Optional<i32>,
   pub post_id: i32,
   pub user_id: Nullable<i32>,
-  pub value: String,
+  pub value:   String,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateBoardPostReaction {
@@ -91,7 +92,7 @@ impl IntoResponse for BoardPostReactionCreated {
 pub struct UpdateBoardPostReaction {
   pub post_id: Optional<i32>,
   pub user_id: Nullable<i32>,
-  pub value: Optional<String>,
+  pub value:   Optional<String>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateBoardPostReaction {
@@ -124,4 +125,3 @@ impl IntoResponse for BoardPostReactionDeleted {
     Json(json!({})).into_response()
   }
 }
-

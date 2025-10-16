@@ -1,10 +1,9 @@
 use axum::extract::State;
 use axum::{Json, Router, routing};
 
+use super::ApiController;
 use crate::SumidaState;
 use crate::service::prelude::*;
-
-use super::ApiController;
 
 #[derive(Clone, Debug, Default)]
 pub struct UserVerificationController<S: SumidaState> {

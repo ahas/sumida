@@ -1,16 +1,12 @@
-use axum::{
-  Json, Router,
-  extract::{Path, State},
-  http::StatusCode,
-  routing,
-};
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::{Json, Router, routing};
 use axum_extra::extract::Query;
 
-use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service::prelude::*};
-use crate::{service_ap, user_guard};
-
 use super::ApiController;
+use crate::service::prelude::*;
+use crate::util::pagination::{List, Pagination};
+use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct UserController<S: SumidaState> {

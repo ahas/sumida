@@ -1,5 +1,6 @@
 use infra::settings;
-use tower_sessions::{SessionManagerLayer, SessionStore, cookie::SameSite};
+use tower_sessions::cookie::SameSite;
+use tower_sessions::{SessionManagerLayer, SessionStore};
 
 pub async fn new<Store: SessionStore>(store: Store) -> Result<SessionManagerLayer<Store>, anyhow::Error> {
   let settings = &settings::get().session.cookie;

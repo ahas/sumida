@@ -3,22 +3,28 @@ pub mod dto;
 use chrono::{Duration, Utc};
 use entity::prelude::*;
 use error::SumidaError;
-use infra::{session::UserSession, settings};
+use infra::session::UserSession;
+use infra::settings;
 use rand::Rng;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
+  ColumnTrait,
+  ConnectionTrait,
+  EntityTrait,
+  IntoActiveModel,
+  PaginatorTrait,
+  QueryFilter,
+  Set,
   TransactionTrait,
 };
 
 use self::dto::*;
-
 use crate::SumidaState;
 use crate::service::mail_form::MailFormSendOptions;
 use crate::service::prelude::MailFormService;
 use crate::service::user::mail_form_context::*;
 
 pub struct UserVerificationService<S: SumidaState> {
-  pub state: S,
+  pub state:   S,
   pub session: UserSession,
 }
 
@@ -116,8 +122,8 @@ impl<S: SumidaState> UserVerificationService<S> {
       let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
         username: opts.username.clone(),
         password: opts.password.clone(),
-        server: opts.server.clone(),
-        auth: opts.auth.clone(),
+        server:   opts.server.clone(),
+        auth:     opts.auth.clone(),
       });
 
       MailFormService::<S>::send(

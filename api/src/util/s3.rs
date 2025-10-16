@@ -1,11 +1,13 @@
 #![cfg(feature = "aws-s3")]
 
+use std::fmt::Display;
+use std::io::Cursor;
+
 use anyhow::anyhow;
 use aws_smithy_types::byte_stream::{AggregatedBytes, ByteStream};
 #[cfg(feature = "image")]
 use image::{self, DynamicImage, ImageFormat};
 use infra::{aws, settings};
-use std::{fmt::Display, io::Cursor};
 
 pub trait IntoS3Uri {
   fn into_s3_uri(self) -> String;
@@ -29,7 +31,10 @@ pub fn static_uri(
   id: impl Display,
   path: impl Display,
 ) -> String {
-  format!("s3://{bucket}/static/{stage}/{data_type}/{id}/{path}", bucket = get_bucket().unwrap_or_default(),)
+  format!(
+    "s3://{bucket}/static/{stage}/{data_type}/{id}/{path}",
+    bucket = get_bucket().unwrap_or_default(),
+  )
 }
 
 #[allow(dead_code)]
@@ -86,7 +91,9 @@ pub async fn get_image(client: &aws_sdk_s3::Client, uri: String) -> Result<Dynam
   let bytes = get_bytes(client, uri.clone()).await?;
   let cursor = Cursor::new(bytes.into_bytes());
 
-  ImageFormat::from_path(&uri).and_then(|x| image::load(cursor, x)).map_err(anyhow::Error::from)
+  ImageFormat::from_path(&uri)
+    .and_then(|x| image::load(cursor, x))
+    .map_err(anyhow::Error::from)
 }
 
 #[allow(dead_code)]

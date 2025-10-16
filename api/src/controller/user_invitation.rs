@@ -1,15 +1,11 @@
-use axum::{
-  Json, Router,
-  extract::{Path, Query, State},
-  routing,
-};
+use axum::extract::{Path, Query, State};
+use axum::{Json, Router, routing};
 use uuid::Uuid;
 
-use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, user_guard};
-use crate::{service::prelude::*, service_ap};
-
 use super::ApiController;
+use crate::service::prelude::*;
+use crate::util::pagination::{List, Pagination};
+use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct UserInvitationController<S: SumidaState> {
@@ -52,7 +48,7 @@ impl<S: SumidaState> UserInvitationController<S> {
     let invitation = UserInvitationService::new(state, session).create(user_id).await?;
 
     Ok(UserInvitationCreated {
-      uuid: invitation.uuid,
+      uuid:       invitation.uuid,
       expires_at: invitation.expires_at,
     })
   }
@@ -66,7 +62,7 @@ impl<S: SumidaState> UserInvitationController<S> {
     let invitation = UserInvitationService::new(state, session).update(user_id).await?;
 
     Ok(UserInvitationUpdated {
-      uuid: invitation.uuid,
+      uuid:       invitation.uuid,
       expires_at: invitation.expires_at,
     })
   }

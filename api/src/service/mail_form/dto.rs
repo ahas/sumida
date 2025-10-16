@@ -2,8 +2,8 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::mail_forms::*;
-use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
-use sea_orm::{QueryTrait, prelude::*};
+use sea_orm::prelude::*;
+use sea_orm::{DeriveIntoActiveModel, FromQueryResult, QueryTrait};
 use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -12,7 +12,7 @@ use crate::util::db::wrap_ilike_col;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct MailFormFilter {
-  pub sender: Option<String>,
+  pub sender:  Option<String>,
   pub subject: Option<String>,
 }
 
@@ -27,8 +27,8 @@ impl MailFormFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct MailFormListItem {
-  pub kind: String,
-  pub sender: String,
+  pub kind:    String,
+  pub sender:  String,
   pub subject: String,
 
   pub created_at: DateTimeWithTimeZone,
@@ -38,8 +38,8 @@ pub struct MailFormListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMailForm {
-  pub kind: String,
-  pub sender: String,
+  pub kind:    String,
+  pub sender:  String,
   pub subject: String,
   pub content: String,
 
@@ -56,8 +56,8 @@ impl IntoResponse for GetMailForm {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMailForm {
-  pub kind: String,
-  pub sender: String,
+  pub kind:    String,
+  pub sender:  String,
   pub subject: String,
   pub content: Optional<String>,
 }
@@ -77,8 +77,8 @@ impl IntoResponse for MailFormCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateMailForm {
-  pub kind: Optional<String>,
-  pub sender: Optional<String>,
+  pub kind:    Optional<String>,
+  pub sender:  Optional<String>,
   pub subject: Optional<String>,
   pub content: Optional<String>,
 }

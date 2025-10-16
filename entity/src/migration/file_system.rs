@@ -1,6 +1,7 @@
-use super::helper::*;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::*;
+
+use super::helper::*;
 
 /// files
 #[derive(DeriveIden)]
@@ -8,12 +9,12 @@ enum Files {
   Table,
   Id,
   UserId,
-  OriginalFilename,
-  FilePath,
-  FileUrl,
-  FileSize,
+  Original,
+  Path,
+  Uri,
+  Size,
   MimeType,
-  FileHash,
+  Hash,
   Status,
   IsTemporary,
   ExpiresAt,
@@ -37,12 +38,12 @@ impl MigrationTrait for Migration {
           .table(Files::Table)
           .col(integer(Files::Id).auto_increment())
           .col(integer_null(Files::UserId))
-          .col(string(Files::OriginalFilename))
-          .col(string(Files::FilePath))
-          .col(string_null(Files::FileUrl))
-          .col(big_integer(Files::FileSize))
+          .col(string(Files::Original))
+          .col(string(Files::Path))
+          .col(string_null(Files::Uri))
+          .col(big_integer(Files::Size))
           .col(string(Files::MimeType))
-          .col(string_null(Files::FileHash))
+          .col(string_null(Files::Hash))
           .col(string(Files::Status).default("pending"))
           .col(boolean(Files::IsTemporary).default(false))
           .col(timestamp_with_time_zone_null(Files::ExpiresAt))

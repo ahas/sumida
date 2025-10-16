@@ -1,24 +1,32 @@
 pub mod dto;
 
+use entity::prelude::*;
+use error::SumidaError;
+use infra::session::UserSession;
+use sea_orm::ActiveValue::Set;
+use sea_orm::sea_query::{Alias, Asterisk, Expr};
+use sea_orm::{
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
+};
+
 use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
-use entity::prelude::*;
-use error::SumidaError;
-use infra::session::UserSession;
-use sea_orm::IntoSimpleExpr;
-use sea_orm::PaginatorTrait;
-use sea_orm::Select;
-use sea_orm::sea_query::{Alias, Asterisk, Expr};
-use sea_orm::{
-  ActiveValue::Set, DeleteResult, EntityTrait, InsertResult, QuerySelect, RelationTrait, TransactionTrait,
-};
-use sea_orm::{IntoActiveModel, JoinType};
 
 pub struct BoardService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -53,7 +61,13 @@ impl<S: SumidaState> BoardService<S> {
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetBoard>, SumidaError> {
-    Ok(self.select(Boards::find_by_id(id)).into_model::<GetBoard>().one(self.state.db()).await?)
+    Ok(
+      self
+        .select(Boards::find_by_id(id))
+        .into_model::<GetBoard>()
+        .one(self.state.db())
+        .await?,
+    )
   }
 
   pub async fn create(

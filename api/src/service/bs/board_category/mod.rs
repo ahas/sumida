@@ -4,10 +4,16 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
-use sea_orm::Select;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, PaginatorTrait, QuerySelect,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  IntoSimpleExpr,
+  PaginatorTrait,
+  QuerySelect,
+  Select,
   TransactionTrait,
 };
 
@@ -18,7 +24,7 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 pub struct BoardCategoryService<S: SumidaState> {
-  state: S,
+  state:   S,
   #[allow(dead_code)]
   session: UserSession,
 }

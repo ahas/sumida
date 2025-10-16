@@ -3,20 +3,25 @@ pub mod dto;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
+use sea_orm::ActiveValue::*;
 use sea_orm::{
-  ActiveValue::*, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QuerySelect,
   TransactionTrait,
 };
 
+use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard, ApUser};
 use crate::util::pagination::Pagination;
 
-use self::dto::*;
-
 pub struct RoleService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 

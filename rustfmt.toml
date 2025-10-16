@@ -2,6 +2,16 @@ edition = "2024"
 
 max_width = 108
 
+fn_call_width = 88
+attr_fn_like_width = 88
+struct_lit_width = 18
+struct_variant_width = 36
+struct_field_align_threshold = 20
+array_width = 88
+chain_width = 88
+single_line_if_else_max_width = 88
+single_line_let_else_max_width = 88
+
 newline_style = "Auto"
 tab_spaces = 2
 reorder_modules = true
@@ -10,15 +20,8 @@ reorder_imports = true
 use_field_init_shorthand = true
 use_try_shorthand = true
 
-fn_call_width = 108
-attr_fn_like_width = 108
-struct_lit_width = 18
-struct_variant_width = 36
-array_width = 108
-chain_width = 108
-single_line_if_else_max_width = 80
-single_line_let_else_max_width = 80
-
 imports_granularity = "Module"
 imports_layout = "HorizontalVertical"
 group_imports = "StdExternalCrate"
+normalize_comments = true
+remove_nested_parens = true

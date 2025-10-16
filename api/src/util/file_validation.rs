@@ -1,22 +1,23 @@
+use std::path::Path;
+
 use entity::bs::boards;
 use error::SumidaError;
 use sea_orm::{ConnectionTrait, EntityTrait};
-use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct FileValidationConfig {
-  pub can_upload_file: bool,
-  pub max_file_size: i64,
-  pub max_file_count: i32,
+  pub can_upload_file:    bool,
+  pub max_file_size:      i64,
+  pub max_file_count:     i32,
   pub allowed_file_types: Vec<String>,
 }
 
 impl From<&boards::Model> for FileValidationConfig {
   fn from(board: &boards::Model) -> Self {
     Self {
-      can_upload_file: board.can_upload_file,
-      max_file_size: board.max_file_size,
-      max_file_count: board.max_file_count,
+      can_upload_file:    board.can_upload_file,
+      max_file_size:      board.max_file_size,
+      max_file_count:     board.max_file_count,
       allowed_file_types: board.get_allowed_file_types(),
     }
   }
@@ -24,16 +25,18 @@ impl From<&boards::Model> for FileValidationConfig {
 
 #[derive(Debug, Clone)]
 pub struct FileInfo {
-  pub filename: String,
-  pub size: i64,
+  pub filename:  String,
+  pub size:      i64,
   pub mime_type: String,
   pub extension: Option<String>,
 }
 
 impl FileInfo {
   pub fn new(filename: String, size: i64, mime_type: String) -> Self {
-    let extension =
-      Path::new(&filename).extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_lowercase());
+    let extension = Path::new(&filename)
+      .extension()
+      .and_then(|ext| ext.to_str())
+      .map(|ext| ext.to_lowercase());
 
     Self {
       filename,
@@ -86,16 +89,16 @@ impl FileInfo {
 pub enum FileValidationError {
   UploadDisabled,
   FileTooLarge {
-    size: i64,
+    size:     i64,
     max_size: i64,
   },
   InvalidFileType {
-    extension: String,
+    extension:     String,
     allowed_types: Vec<String>,
   },
   TooManyFiles {
     current_count: i32,
-    max_count: i32,
+    max_count:     i32,
   },
   InvalidFilename(String),
   UnsupportedMimeType(String),
@@ -167,7 +170,7 @@ impl FileValidator {
   pub fn validate_file_size(&self, file: &FileInfo) -> Result<(), FileValidationError> {
     if self.config.max_file_size != 0 && file.size > self.config.max_file_size {
       return Err(FileValidationError::FileTooLarge {
-        size: file.size,
+        size:     file.size,
         max_size: self.config.max_file_size,
       });
     }
@@ -178,10 +181,14 @@ impl FileValidator {
   pub fn validate_file_type(&self, file: &FileInfo) -> Result<(), FileValidationError> {
     if let Some(extension) = &file.extension {
       if self.config.allowed_file_types.len() > 0
-        && !self.config.allowed_file_types.iter().any(|t| t.to_lowercase() == extension.to_lowercase())
+        && !self
+          .config
+          .allowed_file_types
+          .iter()
+          .any(|t| t.to_lowercase() == extension.to_lowercase())
       {
         return Err(FileValidationError::InvalidFileType {
-          extension: extension.clone(),
+          extension:     extension.clone(),
           allowed_types: self.config.allowed_file_types.clone(),
         });
       }
@@ -277,7 +284,11 @@ impl FileValidator {
 
 /// Detect MIME type from file extension as fallback
 fn detect_mime_type_from_extension(filename: &str) -> String {
-  let extension = Path::new(filename).extension().and_then(|ext| ext.to_str()).unwrap_or("").to_lowercase();
+  let extension = Path::new(filename)
+    .extension()
+    .and_then(|ext| ext.to_str())
+    .unwrap_or("")
+    .to_lowercase();
 
   match extension.as_str() {
     // Images

@@ -3,25 +3,34 @@ pub mod dto;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
+use sea_orm::ActiveValue::Unchanged;
+use sea_orm::prelude::Expr;
+use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{
-  ActiveValue::Unchanged,
-  DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType,
-  PaginatorTrait, QuerySelect, RelationTrait, Select, Set, SqlErr, TransactionTrait,
-  prelude::Expr,
-  sea_query::{Alias, Asterisk},
+  DbErr,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  Set,
+  SqlErr,
+  TransactionTrait,
 };
-
-use crate::util::pagination::Pagination;
-use crate::{
-  SumidaState,
-  util::ap::{self, ApCondition, ApGuard},
-};
-use crate::{service::ApiService, util::ap::ApUser};
 
 use self::dto::*;
+use crate::SumidaState;
+use crate::service::ApiService;
+use crate::util::ap::{self, ApCondition, ApGuard, ApUser};
+use crate::util::pagination::Pagination;
 
 pub struct ApiKeyService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -93,11 +102,8 @@ impl<S: SumidaState> ApiKeyService<S> {
         }
       };
 
-      let user_aps = if data.is_secured.0.unwrap_or_default() {
-        data.access_policies.clone()
-      } else {
-        None
-      };
+      let user_aps =
+        if data.is_secured.0.unwrap_or_default() { data.access_policies.clone() } else { None };
       let mut active_model = data.clone().into_active_model();
       active_model.key = Set(key);
 
@@ -134,11 +140,7 @@ impl<S: SumidaState> ApiKeyService<S> {
 
     self.try_access("update", ApiKeys::find_by_id(key), &txn).await?;
 
-    let user_aps = if data.is_secured.0.unwrap_or_default() {
-      data.access_policies.clone()
-    } else {
-      None
-    };
+    let user_aps = if data.is_secured.0.unwrap_or_default() { data.access_policies.clone() } else { None };
 
     if let Some(user_aps) = user_aps {
       ap::for_users().user(ApUser::ApiKey(key.to_string())).update(user_aps, &txn).await?;
