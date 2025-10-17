@@ -102,14 +102,15 @@ impl IntoResponse for GetFile {
 #[serde(rename_all = "camelCase")]
 pub struct CreateFile {
   pub path:         String,
-  pub uri:          Optional<String>,
-  pub size:         i64,
   pub mime_type:    String,
-  pub hash:         Optional<String>,
-  pub status:       String,
   pub is_temporary: Optional<bool>,
   #[serde(default)]
   pub expires_at:   Nullable<DateTimeWithTimeZone>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileMetadata {
+  pub original: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -127,6 +128,7 @@ impl IntoResponse for FileCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateFile {
+  pub path:         Optional<String>,
   pub mime_type:    Optional<String>,
   pub is_temporary: Optional<bool>,
   #[serde(default)]
@@ -171,8 +173,8 @@ pub struct FileDownload {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarkFileCompleted {
-  pub file_url:  Option<String>,
-  pub file_hash: Option<String>,
+  pub uri:  Option<String>,
+  pub hash: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

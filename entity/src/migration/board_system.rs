@@ -103,6 +103,13 @@ enum BoardFiles {
   FileId,
 }
 
+// files
+#[derive(DeriveIden)]
+enum Files {
+  Table,
+  Id,
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -407,7 +414,7 @@ impl MigrationTrait for Migration {
             ForeignKey::create()
               .name("fk_board_files__file_id")
               .from(BoardFiles::Table, BoardFiles::FileId)
-              .to(Boards::Table, Boards::Id)
+              .to(Files::Table, Files::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )

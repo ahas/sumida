@@ -122,7 +122,7 @@ impl<S: SumidaState> FileController<S> {
       return Err(SumidaError::BadRequest("Only multipart/form-data is supported for file uploads".into()));
     };
 
-    let create_dto = if let Some((original_filename, file_bytes, mime_type)) = file_data {
+    let (dto, metadata) = if let Some((original_filename, file_bytes, mime_type)) = file_data {
       let file_extension =
         Path::new(&original_filename).extension().and_then(|ext| ext.to_str()).unwrap_or("");
 
@@ -132,24 +132,30 @@ impl<S: SumidaState> FileController<S> {
       let file_path = storage.store(&file_bytes, &unique_filename).await?;
       let file_url = storage.get_url(&file_path);
 
-      CreateFile {
-        path: file_path,
-        uri: Optional(Some(file_url)),
-        size: file_bytes.len() as i64,
-        mime_type,
-        hash: Optional(None),
-        status: "completed".to_string(),
-        is_temporary: Optional(metadata.as_ref().and_then(|m| m.is_temporary)),
-        expires_at: match metadata.as_ref().and_then(|m| m.expires_at) {
-          Some(v) => Nullable::Value(v),
-          None => Nullable::Null,
+      (
+        CreateFile {
+          path: file_path,
+          uri: Optional(Some(file_url)),
+          size: file_bytes.len() as i64,
+          mime_type,
+          hash: Optional(None),
+          status: "completed".to_string(),
+          is_temporary: Optional(metadata.as_ref().and_then(|m| m.is_temporary)),
+          expires_at: match metadata.as_ref().and_then(|m| m.expires_at) {
+            Some(v) => Nullable::Value(v),
+            None => Nullable::Null,
+          },
         },
-      }
+        FileMetadata {
+          original: original_filename,
+        },
+      )
     } else {
       return Err(SumidaError::BadRequest("file is required".into()));
     };
 
     let result = FileService::new(state, session).create(create_dto).await?;
+
     Ok(FileCreated {
       id: result.last_insert_id,
     })

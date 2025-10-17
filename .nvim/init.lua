@@ -11,7 +11,7 @@ require("telescope").setup({
 	},
 })
 
-require("lspconfig").rust_analyzer.setup({
+vim.lsp.config("rust_analyzer", {
 	settings = {
 		["rust-analyzer"] = {
 			cargo = {
