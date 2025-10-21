@@ -5,7 +5,6 @@ use axum::response::Response;
 use axum::{Json, Router, routing};
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm_crud::{Nullable, Optional};
 use tokio_util::io::ReaderStream;
 
 use crate::controller::ApiController;
@@ -13,12 +12,6 @@ use crate::service::fs::dto::*;
 use crate::service::fs::prelude::*;
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
-
-#[derive(Debug, Default)]
-struct MultipartFormData {
-  metadata:  Option<FileUploadMeta>,
-  file_data: Option<(String, Vec<u8>, String)>,
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct FileController<S: SumidaState> {
@@ -32,8 +25,9 @@ impl<S: SumidaState> FileController<S> {
     }
   }
 
-  async fn parse_multipart_form(multipart: &mut Multipart) -> Result<MultipartFormData, SumidaError> {
-    let mut form_data = MultipartFormData::default();
+  async fn parse_multipart_form(multipart: &mut Multipart) -> Result<UploadFile, SumidaError> {
+    let mut file_data: Option<UploadFileData> = None;
+    let mut metadata: Option<CreateFile> = None;
 
     while let Some(field) = multipart
       .next_field()
@@ -48,7 +42,7 @@ impl<S: SumidaState> FileController<S> {
             .text()
             .await
             .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata: {}", e)))?;
-          form_data.metadata = Some(
+          metadata = Some(
             serde_json::from_str(&text)
               .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata JSON: {}", e)))?,
           );
@@ -61,13 +55,20 @@ impl<S: SumidaState> FileController<S> {
             .await
             .map_err(|e| SumidaError::BadRequest(format!("Failed to read file: {}", e)))?;
 
-          form_data.file_data = Some((filename, data.to_vec(), content_type));
+          file_data = Some(UploadFileData {
+            original:  filename,
+            bytes:     data.to_vec(),
+            mime_type: content_type,
+          });
         }
         _ => {}
       }
     }
 
-    Ok(form_data)
+    Ok(UploadFile {
+      file_data: file_data.unwrap(),
+      metadata:  metadata.unwrap(),
+    })
   }
 
   async fn list(
@@ -95,66 +96,22 @@ impl<S: SumidaState> FileController<S> {
     State(state): State<S>,
     request: Request,
   ) -> Result<FileCreated, SumidaError> {
-    use std::path::Path;
-
-    use uuid::Uuid;
-
-    use crate::util::storage::create_storage;
-
     let content_type = request
       .headers()
       .get(header::CONTENT_TYPE)
       .and_then(|ct| ct.to_str().ok())
       .unwrap_or("");
-
-    let (file_data, metadata) = if content_type.starts_with("multipart/form-data") {
+    let form_data = if content_type.starts_with("multipart/form-data") {
       let mut multipart = Multipart::from_request(request, &state)
         .await
         .map_err(|_| SumidaError::BadRequest("Invalid multipart data".into()))?;
 
-      let form_data = Self::parse_multipart_form(&mut multipart).await?;
-
-      let file_data =
-        form_data.file_data.ok_or_else(|| SumidaError::BadRequest("file is required".into()))?;
-
-      (Some(file_data), form_data.metadata)
+      Self::parse_multipart_form(&mut multipart).await?
     } else {
       return Err(SumidaError::BadRequest("Only multipart/form-data is supported for file uploads".into()));
     };
 
-    let (dto, metadata) = if let Some((original_filename, file_bytes, mime_type)) = file_data {
-      let file_extension =
-        Path::new(&original_filename).extension().and_then(|ext| ext.to_str()).unwrap_or("");
-
-      let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
-
-      let storage = create_storage();
-      let file_path = storage.store(&file_bytes, &unique_filename).await?;
-      let file_url = storage.get_url(&file_path);
-
-      (
-        CreateFile {
-          path: file_path,
-          uri: Optional(Some(file_url)),
-          size: file_bytes.len() as i64,
-          mime_type,
-          hash: Optional(None),
-          status: "completed".to_string(),
-          is_temporary: Optional(metadata.as_ref().and_then(|m| m.is_temporary)),
-          expires_at: match metadata.as_ref().and_then(|m| m.expires_at) {
-            Some(v) => Nullable::Value(v),
-            None => Nullable::Null,
-          },
-        },
-        FileMetadata {
-          original: original_filename,
-        },
-      )
-    } else {
-      return Err(SumidaError::BadRequest("file is required".into()));
-    };
-
-    let result = FileService::new(state, session).create(create_dto).await?;
+    let result = FileService::new(state, session).create(form_data.file_data, form_data.metadata).await?;
 
     Ok(FileCreated {
       id: result.last_insert_id,
@@ -229,9 +186,7 @@ impl<S: SumidaState> FileController<S> {
     Path(id): Path<String>,
     Json(body): Json<MarkFileCompleted>,
   ) -> Result<FileUpdated, SumidaError> {
-    FileService::new(state, session)
-      .mark_as_completed(&id, body.file_url, body.file_hash)
-      .await?;
+    FileService::new(state, session).mark_as_completed(&id, body.uri, body.hash).await?;
     Ok(FileUpdated)
   }
 

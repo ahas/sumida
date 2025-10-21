@@ -1,1 +1,1 @@
-pub use super::files::FileController;
+pub use super::file::FileController;

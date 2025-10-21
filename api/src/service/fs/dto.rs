@@ -98,19 +98,34 @@ impl IntoResponse for GetFile {
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateFile {
   pub path:         String,
+  pub original:     String,
   pub mime_type:    String,
   pub is_temporary: Optional<bool>,
   #[serde(default)]
   pub expires_at:   Nullable<DateTimeWithTimeZone>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FileMetadata {
-  pub original: String,
+#[derive(Debug, Default)]
+pub struct UploadFileData {
+  pub original:  String,
+  pub bytes:     Vec<u8>,
+  pub mime_type: String,
+}
+
+impl UploadFileData {
+  pub fn hash(&self) -> String {
+    blake3::hash(&self.bytes).to_hex().to_string()
+  }
+}
+
+#[derive(Debug, Default)]
+pub struct UploadFile {
+  pub metadata:  CreateFile,
+  pub file_data: UploadFileData,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -153,13 +168,6 @@ impl IntoResponse for FileDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
   }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileUploadMeta {
-  pub is_temporary: Option<bool>,
-  pub expires_at:   Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

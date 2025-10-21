@@ -1,24 +1,30 @@
+use std::path::Path as StdPath;
+
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
+use sea_orm::ActiveValue::NotSet;
 use sea_orm::prelude::*;
 use sea_orm::sea_query::{Alias, Asterisk, Expr, Func};
 use sea_orm::{
   DeleteResult,
   InsertResult,
   IntoActiveModel,
+  IntoActiveValue,
   IntoSimpleExpr,
   JoinType,
   QuerySelect,
   Set,
   TransactionTrait,
 };
+use uuid::Uuid;
 
 use super::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
+use crate::util::storage::create_storage;
 
 pub struct FileService<S: SumidaState> {
   state:   S,
@@ -70,9 +76,33 @@ impl<S: SumidaState> FileService<S> {
 
   pub async fn create(
     &self,
-    data: CreateFile,
+    file_data: UploadFileData,
+    metadata: CreateFile,
   ) -> Result<InsertResult<entity::fs::files::ActiveModel>, SumidaError> {
-    Ok(Files::insert(data.into_active_model()).exec(self.state.db()).await?)
+    let file_extension =
+      StdPath::new(&file_data.original).extension().and_then(|ext| ext.to_str()).unwrap_or("");
+    let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
+    let storage = create_storage();
+    let file_path = storage.store(&file_data.bytes, &unique_filename).await?;
+    let file_url = storage.get_url(&file_path);
+
+    Ok(
+      Files::insert(entity::fs::files::ActiveModel {
+        id: NotSet,
+        uri: Set(Some(file_url)),
+        path: Set(file_path),
+        size: Set(file_data.bytes.len() as i64),
+        mime_type: Set(metadata.mime_type),
+        status: Set("uploaded".to_string()),
+        user_id: Set(Some(self.session.profile.id)),
+        is_temporary: metadata.is_temporary.into_active_value(),
+        expires_at: metadata.expires_at.into_active_value(),
+        hash: Set(Some(file_data.hash())),
+        ..Default::default()
+      })
+      .exec(self.state.db())
+      .await?,
+    )
   }
 
   pub async fn update(&self, id: &str, data: UpdateFile) -> Result<entity::fs::files::Model, SumidaError> {
