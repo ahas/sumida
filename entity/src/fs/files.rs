@@ -8,6 +8,7 @@ pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:           i32,
   pub user_id:      Option<i32>,
+  pub original:     String,
   pub path:         String,
   pub uri:          Option<String>,
   pub size:         i64,

@@ -102,14 +102,13 @@ impl IntoResponse for GetFile {
 #[serde(rename_all = "camelCase")]
 pub struct CreateFile {
   pub path:         String,
-  pub original:     String,
-  pub mime_type:    String,
   pub is_temporary: Optional<bool>,
   #[serde(default)]
   pub expires_at:   Nullable<DateTimeWithTimeZone>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UploadFileData {
   pub original:  String,
   pub bytes:     Vec<u8>,
@@ -122,7 +121,8 @@ impl UploadFileData {
   }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UploadFile {
   pub metadata:  CreateFile,
   pub file_data: UploadFileData,
