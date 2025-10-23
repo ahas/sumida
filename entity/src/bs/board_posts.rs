@@ -28,19 +28,27 @@ pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:               i32,
   pub board_id:         i32,
+  #[sea_orm(nullable)]
   pub parent_id:        Option<i32>,
+  #[sea_orm(nullable)]
   pub user_id:          Option<i32>,
   pub kind:             BoardPostKind,
   pub status:           BoardPostStatus,
+  #[sea_orm(nullable)]
   pub revision:         Option<i32>,
   pub title:            String,
+  #[sea_orm(nullable)]
   pub compression_type: Option<String>,
+  #[sea_orm(nullable)]
   pub content_type:     Option<String>,
+  #[sea_orm(nullable)]
   pub content:          Option<String>,
+  #[sea_orm(nullable)]
   pub text:             Option<String>,
+  #[sea_orm(nullable)]
   pub tags:             Option<Vec<String>>,
   pub views:            i32,
-  #[sea_orm(column_type = "JsonBinary")]
+  #[sea_orm(column_type = "JsonBinary", nullable)]
   pub reactions:        Option<Json>,
   pub published_at:     Option<DateTimeWithTimeZone>,
   pub scheduled_at:     Option<DateTimeWithTimeZone>,

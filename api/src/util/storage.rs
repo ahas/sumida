@@ -1,6 +1,9 @@
-use std::path::Path;
+use std::path::PathBuf;
 use std::pin::Pin;
 
+use async_trait::async_trait;
+use axum::body::Body;
+use axum::http::Response;
 use error::SumidaError;
 use infra::settings;
 use tokio::io::AsyncRead;
@@ -8,148 +11,199 @@ use tokio::io::AsyncRead;
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
 
-pub enum FileStorage {
+pub type FileStream = Pin<Box<dyn AsyncRead + Send>>;
+
+#[derive(Clone, Debug)]
+pub struct StaticFile {
+  pub path:          String,
+  pub name:          String,
+  pub mime_type:     String,
+  pub bytes:         Vec<u8>,
+  pub original_name: String,
+}
+
+#[async_trait]
+pub trait Storage: Send + Sync {
+  async fn store(&self, file: StaticFile) -> Result<String, SumidaError>;
+  async fn delete(&self, path: &str) -> Result<(), SumidaError>;
+  async fn stream(&self, path: &str) -> Result<FileStream, SumidaError>;
+  async fn download(
+    &self,
+    name: &str,
+    path: &str,
+    content_type: &str,
+  ) -> Result<Response<Body>, SumidaError> {
+    use axum::body::Body;
+    use axum::http::{StatusCode, header};
+    use tokio_util::io::ReaderStream;
+
+    let file_stream = self.stream(path).await?;
+    let file_size = self.get_file_size(path).await?;
+
+    let stream = ReaderStream::new(file_stream);
+    let body = Body::from_stream(stream);
+
+    let response = Response::builder()
+      .status(StatusCode::OK)
+      .header(header::CONTENT_TYPE, content_type)
+      .header(header::CONTENT_LENGTH, file_size.to_string())
+      .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", name))
+      .body(body)
+      .map_err(|_| SumidaError::InternalServerError("Failed to create response".into()))?;
+
+    Ok(response)
+  }
+  async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError>;
+  fn get_uri(&self, path: &str) -> String;
+}
+
+pub struct SumidaStorage {
+  inner: StorageBackend,
+}
+
+enum StorageBackend {
   Local(LocalStorage),
   #[cfg(feature = "storage-aws-s3")]
   S3(S3Storage),
 }
 
-impl FileStorage {
-  pub async fn store(&self, data: &[u8], filename: &str) -> Result<String, SumidaError> {
-    match self {
-      FileStorage::Local(storage) => storage.store(data, filename).await,
-      #[cfg(feature = "storage-aws-s3")]
-      FileStorage::S3(storage) => storage.store(data, filename).await,
+impl SumidaStorage {
+  pub fn new() -> Self {
+    let settings = settings::get();
+
+    #[cfg(feature = "storage-aws-s3")]
+    if let Some(s3_settings) = &settings.storage.s3 {
+      return Self {
+        inner: StorageBackend::S3(S3Storage::new(s3_settings)),
+      };
     }
-  }
 
-  pub async fn delete(&self, path: &str) -> Result<(), SumidaError> {
-    match self {
-      FileStorage::Local(storage) => storage.delete(path).await,
-      #[cfg(feature = "storage-aws-s3")]
-      FileStorage::S3(storage) => storage.delete(path).await,
+    if let Some(local_settings) = &settings.storage.local {
+      return Self {
+        inner: StorageBackend::Local(LocalStorage::new(local_settings)),
+      };
     }
-  }
 
-  pub async fn download(&self, path: &str) -> Result<Pin<Box<dyn AsyncRead + Send>>, SumidaError> {
-    match self {
-      FileStorage::Local(storage) => storage.download(path).await,
-      #[cfg(feature = "storage-aws-s3")]
-      FileStorage::S3(storage) => storage.download(path).await,
-    }
-  }
-
-  pub async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
-    match self {
-      FileStorage::Local(storage) => storage.get_file_size(path).await,
-      #[cfg(feature = "storage-aws-s3")]
-      FileStorage::S3(storage) => storage.get_file_size(path).await,
-    }
-  }
-
-  pub fn get_url(&self, path: &str) -> String {
-    match self {
-      FileStorage::Local(storage) => storage.get_url(path),
-      #[cfg(feature = "storage-aws-s3")]
-      FileStorage::S3(storage) => storage.get_url(path),
-    }
-  }
-}
-
-pub fn create_storage() -> FileStorage {
-  let settings = settings::get();
-
-  #[cfg(feature = "storage-aws-s3")]
-  if let Some(s3_settings) = &settings.storage.s3 {
-    return FileStorage::S3(S3Storage::new(s3_settings));
-  }
-
-  if let Some(local_settings) = &settings.storage.local {
-    return FileStorage::Local(LocalStorage::new(local_settings));
-  }
-
-  // Fallback to default local storage
-  let default_settings = settings::storage::LocalStorageSettings::default();
-  FileStorage::Local(LocalStorage::new(&default_settings))
-}
-
-pub struct LocalStorage {
-  directory: String,
-}
-
-impl LocalStorage {
-  pub fn new(settings: &settings::storage::LocalStorageSettings) -> Self {
+    let default_settings = settings::storage::LocalStorageSettings::default();
     Self {
-      directory: settings.directory.clone(),
+      inner: StorageBackend::Local(LocalStorage::new(&default_settings)),
     }
   }
 }
 
+#[async_trait]
+impl Storage for SumidaStorage {
+  async fn store(&self, file: StaticFile) -> Result<String, SumidaError> {
+    match &self.inner {
+      StorageBackend::Local(storage) => storage.store(&file).await,
+      #[cfg(feature = "storage-aws-s3")]
+      StorageBackend::S3(storage) => storage.store(&file).await,
+    }
+  }
+
+  async fn delete(&self, path: &str) -> Result<(), SumidaError> {
+    match &self.inner {
+      StorageBackend::Local(storage) => storage.delete(path).await,
+      #[cfg(feature = "storage-aws-s3")]
+      StorageBackend::S3(storage) => storage.delete(path).await,
+    }
+  }
+
+  async fn stream(&self, path: &str) -> Result<FileStream, SumidaError> {
+    match &self.inner {
+      StorageBackend::Local(storage) => storage.stream(path).await,
+      #[cfg(feature = "storage-aws-s3")]
+      StorageBackend::S3(storage) => storage.stream(path).await,
+    }
+  }
+
+  async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
+    match &self.inner {
+      StorageBackend::Local(storage) => storage.get_file_size(path).await,
+      #[cfg(feature = "storage-aws-s3")]
+      StorageBackend::S3(storage) => storage.get_file_size(path).await,
+    }
+  }
+
+  fn get_uri(&self, path: &str) -> String {
+    match &self.inner {
+      StorageBackend::Local(storage) => storage.get_uri(path),
+      #[cfg(feature = "storage-aws-s3")]
+      StorageBackend::S3(storage) => storage.get_uri(path),
+    }
+  }
+}
+
+struct LocalStorage {
+  base_directory: PathBuf,
+}
+
 impl LocalStorage {
-  pub async fn store(&self, data: &[u8], filename: &str) -> Result<String, SumidaError> {
+  fn new(settings: &settings::storage::LocalStorageSettings) -> Self {
+    Self {
+      base_directory: PathBuf::from(&settings.directory),
+    }
+  }
+
+  fn resolve_path(&self, relative: &str) -> PathBuf {
+    self.base_directory.join(relative)
+  }
+
+  async fn store(&self, file: &StaticFile) -> Result<String, SumidaError> {
     use tokio::fs;
-    use tokio::io::AsyncWriteExt;
 
-    let file_path = format!("{}/{}", self.directory, filename);
+    let target_path = self.resolve_path(&file.path);
+    if let Some(parent) = target_path.parent() {
+      fs::create_dir_all(parent).await.map_err(|e| {
+        SumidaError::InternalServerError(format!("Failed to create upload directory: {}", e))
+      })?;
+    }
 
-    // Ensure upload directory exists
-    fs::create_dir_all(&self.directory)
-      .await
-      .map_err(|e| SumidaError::InternalServerError(format!("Failed to create upload directory: {}", e)))?;
-
-    // Write file to disk
-    let mut file = fs::File::create(&file_path)
-      .await
-      .map_err(|e| SumidaError::InternalServerError(format!("Failed to create file: {}", e)))?;
-
-    file
-      .write_all(data)
+    fs::write(&target_path, &file.bytes)
       .await
       .map_err(|e| SumidaError::InternalServerError(format!("Failed to write file: {}", e)))?;
 
-    Ok(file_path)
+    Ok(file.path.clone())
   }
 
-  pub async fn delete(&self, path: &str) -> Result<(), SumidaError> {
+  async fn delete(&self, path: &str) -> Result<(), SumidaError> {
     use tokio::fs;
 
-    fs::remove_file(path)
+    let target_path = self.resolve_path(path);
+    fs::remove_file(&target_path)
       .await
       .map_err(|e| SumidaError::InternalServerError(format!("Failed to delete file: {}", e)))?;
 
     Ok(())
   }
 
-  pub async fn download(&self, path: &str) -> Result<Pin<Box<dyn AsyncRead + Send>>, SumidaError> {
+  async fn stream(&self, path: &str) -> Result<FileStream, SumidaError> {
     use tokio::fs::File;
 
-    let file = File::open(path)
+    let file = File::open(self.resolve_path(path))
       .await
       .map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
 
     Ok(Box::pin(file))
   }
 
-  pub async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
+  async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
     use tokio::fs;
 
-    let metadata = fs::metadata(path)
+    let metadata = fs::metadata(self.resolve_path(path))
       .await
       .map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
 
     Ok(metadata.len())
   }
 
-  pub fn get_url(&self, path: &str) -> String {
-    // For local storage, return a relative API path for download
-    let filename = Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or("unknown");
-
-    format!("/api/board-files/local/{}", filename)
+  fn get_uri(&self, path: &str) -> String {
+    format!("/api/board-files/local/{}", path)
   }
 }
 
 #[cfg(feature = "storage-aws-s3")]
-pub struct S3Storage {
+struct S3Storage {
   bucket: String,
   prefix: Option<String>,
   client: aws_sdk_s3::Client,
@@ -157,7 +211,7 @@ pub struct S3Storage {
 
 #[cfg(feature = "storage-aws-s3")]
 impl S3Storage {
-  pub fn new(settings: &settings::storage::S3StorageSettings) -> Self {
+  fn new(settings: &settings::storage::S3StorageSettings) -> Self {
     let client = s3::new_client();
 
     Self {
@@ -167,42 +221,42 @@ impl S3Storage {
     }
   }
 
-  fn get_key(&self, filename: &str) -> String {
+  fn get_key(&self, path: &str) -> String {
     let stage = &settings::get().server.stage;
 
     match &self.prefix {
-      Some(prefix) => format!("static/{stage}/{}/{}", prefix, filename),
-      None => filename.to_string(),
+      Some(prefix) => format!("static/{stage}/{}/{}", prefix, path),
+      None => path.to_string(),
     }
   }
-}
 
-#[cfg(feature = "storage-aws-s3")]
-impl S3Storage {
-  pub async fn store(&self, data: &[u8], filename: &str) -> Result<String, SumidaError> {
+  async fn store(&self, file: &StaticFile) -> Result<String, SumidaError> {
     use aws_sdk_s3::primitives::ByteStream;
 
-    let key = self.get_key(filename);
+    let key = self.get_key(&file.path);
 
     self
       .client
       .put_object()
       .bucket(&self.bucket)
       .key(&key)
-      .body(ByteStream::from(data.to_vec()))
+      .content_type(file.mime_type.clone())
+      .body(ByteStream::from(file.bytes.clone()))
       .send()
       .await
       .map_err(|e| SumidaError::InternalServerError(format!("Failed to upload to S3: {}", e)))?;
 
-    Ok(key)
+    Ok(file.path.clone())
   }
 
-  pub async fn delete(&self, path: &str) -> Result<(), SumidaError> {
+  async fn delete(&self, path: &str) -> Result<(), SumidaError> {
+    let key = self.get_key(path);
+
     self
       .client
       .delete_object()
       .bucket(&self.bucket)
-      .key(path)
+      .key(key)
       .send()
       .await
       .map_err(|e| SumidaError::InternalServerError(format!("Failed to delete from S3: {}", e)))?;
@@ -210,19 +264,10 @@ impl S3Storage {
     Ok(())
   }
 
-  pub async fn download(&self, path: &str) -> Result<Pin<Box<dyn AsyncRead + Send>>, SumidaError> {
+  async fn stream(&self, path: &str) -> Result<FileStream, SumidaError> {
     use std::io::Cursor;
 
-    use aws_sdk_s3::primitives::ByteStream;
-
-    let response = self
-      .client
-      .get_object()
-      .bucket(&self.bucket)
-      .key(path)
-      .send()
-      .await
-      .map_err(|e| SumidaError::NoData("S3 Object".into(), format!("{}: {}", path, e)))?;
+    let response = self.client.get_object().bucket(&self.bucket).key(self.get_key(path)).send().await?;
 
     // Collect the entire ByteStream into memory
     let bytes = response
@@ -234,24 +279,18 @@ impl S3Storage {
 
     // Create a Cursor over the bytes, which implements AsyncRead
     let cursor = Cursor::new(bytes);
+
     Ok(Box::pin(cursor))
   }
 
-  pub async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
-    let response = self
-      .client
-      .head_object()
-      .bucket(&self.bucket)
-      .key(path)
-      .send()
-      .await
-      .map_err(|e| SumidaError::NoData("S3 Object".into(), format!("{}: {}", path, e)))?;
+  async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
+    let key = self.get_key(path);
+    let response = self.client.head_object().bucket(&self.bucket).key(key).send().await?;
 
     Ok(response.content_length().unwrap_or(0) as u64)
   }
 
-  pub fn get_url(&self, path: &str) -> String {
-    // Return S3 URL or presigned URL
-    format!("https://{}.s3.amazonaws.com/{}", self.bucket, path)
+  fn get_uri(&self, path: &str) -> String {
+    format!("https://{}.s3.amazonaws.com/{}", self.bucket, self.get_key(path))
   }
 }

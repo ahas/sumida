@@ -24,7 +24,7 @@ use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
-use crate::util::storage::create_storage;
+use crate::util::storage::{StaticFile, Storage, SumidaStorage};
 
 pub struct FileService<S: SumidaState> {
   state:   S,
@@ -63,15 +63,8 @@ impl<S: SumidaState> FileService<S> {
     Ok((items, count))
   }
 
-  pub async fn get(&self, id: &str) -> Result<Option<GetFile>, SumidaError> {
-    let id_int: i32 = id.parse().map_err(|_| SumidaError::BadRequest("Invalid file ID".to_string()))?;
-    Ok(
-      self
-        .select(Files::find_by_id(id_int))
-        .into_model::<GetFile>()
-        .one(self.state.db())
-        .await?,
-    )
+  pub async fn get(&self, id: i32) -> Result<Option<GetFile>, SumidaError> {
+    Ok(self.select(Files::find_by_id(id)).into_model::<GetFile>().one(self.state.db()).await?)
   }
 
   pub async fn create(
@@ -79,19 +72,32 @@ impl<S: SumidaState> FileService<S> {
     file_data: UploadFileData,
     metadata: CreateFile,
   ) -> Result<InsertResult<entity::fs::files::ActiveModel>, SumidaError> {
-    let file_extension =
-      StdPath::new(&file_data.original).extension().and_then(|ext| ext.to_str()).unwrap_or("");
+    let file_extension = StdPath::new(&file_data.original_name)
+      .extension()
+      .and_then(|ext| ext.to_str())
+      .unwrap_or("");
     let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
-    let storage = create_storage();
-    let file_path = storage.store(&file_data.bytes, &unique_filename).await?;
-    let file_url = storage.get_url(&file_path);
+    let path = StdPath::new(&metadata.directory)
+      .join(StdPath::new(&unique_filename))
+      .display()
+      .to_string();
+    let static_file = StaticFile {
+      path:          path.clone(),
+      name:          unique_filename,
+      mime_type:     file_data.mime_type.clone(),
+      bytes:         file_data.bytes.clone(),
+      original_name: file_data.original_name.clone(),
+    };
+    let storage = SumidaStorage::new();
+    storage.store(static_file).await?;
+    let file_url = storage.get_uri(&path);
 
     Ok(
       Files::insert(entity::fs::files::ActiveModel {
         id: NotSet,
         uri: Set(Some(file_url)),
-        path: Set(file_path),
-        original: Set(file_data.original.clone()),
+        path: Set(path),
+        original_name: Set(file_data.original_name.clone()),
         size: Set(file_data.bytes.len() as i64),
         mime_type: Set(file_data.mime_type.clone()),
         status: Set("uploaded".to_string()),
@@ -106,13 +112,12 @@ impl<S: SumidaState> FileService<S> {
     )
   }
 
-  pub async fn update(&self, id: &str, data: UpdateFile) -> Result<entity::fs::files::Model, SumidaError> {
-    let id_int: i32 = id.parse().map_err(|_| SumidaError::BadRequest("Invalid file ID".to_string()))?;
+  pub async fn update(&self, id: i32, data: UpdateFile) -> Result<entity::fs::files::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", Files::find_by_id(id_int), &txn).await?;
+    self.try_access("update", Files::find_by_id(id), &txn).await?;
 
     let mut model = data.into_active_model();
-    model.id = Set(id_int);
+    model.id = Set(id);
 
     let result = Files::update(model).exec(&txn).await?;
     txn.commit().await?;
@@ -120,39 +125,36 @@ impl<S: SumidaState> FileService<S> {
     Ok(result)
   }
 
-  pub async fn delete(&self, id: &str) -> Result<DeleteResult, SumidaError> {
-    let id_int: i32 = id.parse().map_err(|_| SumidaError::BadRequest("Invalid file ID".to_string()))?;
+  pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", Files::find_by_id(id_int), &txn).await?;
+    self.try_access("delete", Files::find_by_id(id), &txn).await?;
 
-    let result = Files::delete_by_id(id_int).exec(&txn).await?;
+    let result = Files::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
   }
 
-  pub async fn get_download_info(&self, id: &str) -> Result<Option<super::dto::FileDownload>, SumidaError> {
-    let id_int: i32 = id.parse().map_err(|_| SumidaError::BadRequest("Invalid file ID".to_string()))?;
+  pub async fn get_download_info(&self, id: i32) -> Result<Option<super::dto::FileDownload>, SumidaError> {
     let db = self.state.db();
-    let model = Files::find_by_id(id_int).one(db).await?;
+    let model = Files::find_by_id(id).one(db).await?;
 
     Ok(model.map(|m| super::dto::FileDownload {
       content_type: m.mime_type,
-      filename:     m.path.split('/').last().unwrap_or("file").to_string(),
-      file_path:    m.path,
+      name:         m.original_name,
+      path:         m.path,
     }))
   }
 
   pub async fn mark_as_completed(
     &self,
-    id: &str,
+    id: i32,
     file_url: Option<String>,
     file_hash: Option<String>,
   ) -> Result<(), SumidaError> {
-    let id_int: i32 = id.parse().map_err(|_| SumidaError::BadRequest("Invalid file ID".to_string()))?;
     let mut model = entity::fs::files::ActiveModel::new();
 
-    model.id = Set(id_int);
+    model.id = Set(id);
     model.status = Set("completed".to_string());
 
     if let Some(url) = file_url {
@@ -166,11 +168,10 @@ impl<S: SumidaState> FileService<S> {
     Ok(())
   }
 
-  pub async fn mark_as_failed(&self, id: &str) -> Result<(), SumidaError> {
-    let id_int: i32 = id.parse().map_err(|_| SumidaError::BadRequest("Invalid file ID".to_string()))?;
+  pub async fn mark_as_failed(&self, id: i32) -> Result<(), SumidaError> {
     let mut model = entity::fs::files::ActiveModel::new();
 
-    model.id = Set(id_int);
+    model.id = Set(id);
     model.status = Set("failed".to_string());
 
     Files::update(model).exec(self.state.db()).await?;

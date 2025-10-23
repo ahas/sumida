@@ -73,8 +73,8 @@ pub struct BoardPostListItem {
   pub parent_id:    Option<i32>,
   #[sea_orm(nested, alias = "board")]
   pub board:        BoardPostBoard,
-  #[sea_orm(nested, alias = "user")]
-  pub user:         BoardPostUser,
+  #[sea_orm(nested, alias = "user", nullable)]
+  pub user:         Option<BoardPostUser>,
   pub title:        String,
   pub content:      Option<String>,
   pub kind:         BoardPostKind,
@@ -93,8 +93,8 @@ pub struct GetBoardPost {
   pub parent_id:      Option<i32>,
   #[sea_orm(nested, alias = "board")]
   pub board:          BoardPostBoard,
-  #[sea_orm(nested, alias = "user")]
-  pub user:           BoardPostUser,
+  #[sea_orm(nested, alias = "user", nullable)]
+  pub user:           Option<BoardPostUser>,
   pub title:          String,
   pub content:        Option<String>,
   pub kind:           BoardPostKind,

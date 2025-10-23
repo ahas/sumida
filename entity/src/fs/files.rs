@@ -6,19 +6,20 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "files")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id:           i32,
-  pub user_id:      Option<i32>,
-  pub original:     String,
-  pub path:         String,
-  pub uri:          Option<String>,
-  pub size:         i64,
-  pub mime_type:    String,
-  pub hash:         Option<String>,
-  pub status:       String,
-  pub is_temporary: bool,
-  pub expires_at:   Option<DateTimeWithTimeZone>,
-  pub created_at:   DateTimeWithTimeZone,
-  pub updated_at:   DateTimeWithTimeZone,
+  pub id:            i32,
+  pub user_id:       Option<i32>,
+  pub original_name: String,
+  pub path:          String,
+  pub uri:           Option<String>,
+  pub size:          i64,
+  pub mime_type:     String,
+  pub hash:          Option<String>,
+  pub tags:          Option<Vec<String>>,
+  pub status:        String,
+  pub is_temporary:  bool,
+  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub created_at:    DateTimeWithTimeZone,
+  pub updated_at:    DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

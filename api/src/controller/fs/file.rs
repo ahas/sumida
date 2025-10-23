@@ -1,16 +1,16 @@
 use axum::body::Body;
 use axum::extract::{FromRequest, Multipart, Path, Query, Request, State};
-use axum::http::{StatusCode, header};
+use axum::http::header;
 use axum::response::Response;
 use axum::{Json, Router, routing};
 use error::SumidaError;
 use infra::session::UserSession;
-use tokio_util::io::ReaderStream;
 
 use crate::controller::ApiController;
 use crate::service::fs::dto::*;
 use crate::service::fs::prelude::*;
 use crate::util::pagination::{List, Pagination};
+use crate::util::storage::{Storage, SumidaStorage};
 use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
@@ -56,9 +56,9 @@ impl<S: SumidaState> FileController<S> {
             .map_err(|e| SumidaError::BadRequest(format!("Failed to read file: {}", e)))?;
 
           file_data = Some(UploadFileData {
-            original:  filename,
-            bytes:     data.to_vec(),
-            mime_type: content_type,
+            original_name: filename,
+            bytes:         data.to_vec(),
+            mime_type:     content_type,
           });
         }
         _ => {}
@@ -83,12 +83,12 @@ impl<S: SumidaState> FileController<S> {
   async fn get(
     session: UserSession,
     State(state): State<S>,
-    Path(key): Path<String>,
+    Path(id): Path<i32>,
   ) -> Result<GetFile, SumidaError> {
     FileService::new(state, session)
-      .get(&key)
+      .get(id)
       .await?
-      .ok_or_else(|| SumidaError::NoData("File".to_owned(), key.to_string()))
+      .ok_or_else(|| SumidaError::NoData("File".to_owned(), id.to_string()))
   }
 
   async fn create(
@@ -121,19 +121,20 @@ impl<S: SumidaState> FileController<S> {
   async fn update(
     session: UserSession,
     State(state): State<S>,
-    Path(key): Path<String>,
+    Path(id): Path<i32>,
     Json(body): Json<UpdateFile>,
   ) -> Result<FileUpdated, SumidaError> {
-    FileService::new(state, session).update(&key, body).await?;
+    FileService::new(state, session).update(id, body).await?;
     Ok(FileUpdated)
   }
 
   async fn delete(
     session: UserSession,
     State(state): State<S>,
-    Path(key): Path<String>,
+    Path(id): Path<i32>,
   ) -> Result<FileDeleted, SumidaError> {
-    FileService::new(state, session).delete(&key).await?;
+    FileService::new(state, session).delete(id).await?;
+
     Ok(FileDeleted)
   }
 
@@ -149,33 +150,18 @@ impl<S: SumidaState> FileController<S> {
   async fn download(
     session: UserSession,
     State(state): State<S>,
-    Path(id): Path<String>,
+    Path(id): Path<i32>,
   ) -> Result<Response<Body>, SumidaError> {
     let service = FileService::new(state.clone(), session.clone());
     let download_info = service
-      .get_download_info(&id)
+      .get_download_info(id)
       .await?
       .ok_or_else(|| SumidaError::NoData("File".into(), id.to_string()))?;
 
-    use crate::util::storage::create_storage;
-
-    let storage = create_storage();
-    let file_stream = storage.download(&download_info.file_path).await?;
-    let file_size = storage.get_file_size(&download_info.file_path).await?;
-
-    let stream = ReaderStream::new(file_stream);
-    let body = Body::from_stream(stream);
-
-    let response = Response::builder()
-      .status(StatusCode::OK)
-      .header(header::CONTENT_TYPE, download_info.content_type)
-      .header(header::CONTENT_LENGTH, file_size.to_string())
-      .header(
-        header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{}\"", download_info.filename),
-      )
-      .body(body)
-      .map_err(|_| SumidaError::InternalServerError("Failed to create response".into()))?;
+    let storage = SumidaStorage::new();
+    let response = storage
+      .download(&download_info.name, &download_info.path, &download_info.content_type)
+      .await?;
 
     Ok(response)
   }
@@ -183,19 +169,20 @@ impl<S: SumidaState> FileController<S> {
   async fn mark_completed(
     session: UserSession,
     State(state): State<S>,
-    Path(id): Path<String>,
+    Path(id): Path<i32>,
     Json(body): Json<MarkFileCompleted>,
   ) -> Result<FileUpdated, SumidaError> {
-    FileService::new(state, session).mark_as_completed(&id, body.uri, body.hash).await?;
+    FileService::new(state, session).mark_as_completed(id, body.uri, body.hash).await?;
     Ok(FileUpdated)
   }
 
   async fn mark_failed(
     session: UserSession,
     State(state): State<S>,
-    Path(id): Path<String>,
+    Path(id): Path<i32>,
   ) -> Result<FileUpdated, SumidaError> {
-    FileService::new(state, session).mark_as_failed(&id).await?;
+    FileService::new(state, session).mark_as_failed(id).await?;
+
     Ok(FileUpdated)
   }
 
@@ -204,6 +191,7 @@ impl<S: SumidaState> FileController<S> {
     State(state): State<S>,
   ) -> Result<Json<CleanupResult>, SumidaError> {
     let deleted_count = FileService::new(state, session).cleanup_expired().await?;
+
     Ok(Json(CleanupResult { deleted_count }))
   }
 
@@ -214,6 +202,7 @@ impl<S: SumidaState> FileController<S> {
   ) -> Result<Json<CleanupResult>, SumidaError> {
     let older_than_hours = params.older_than_hours.unwrap_or(24);
     let deleted_count = FileService::new(state, session).cleanup_failed(older_than_hours).await?;
+
     Ok(Json(CleanupResult { deleted_count }))
   }
 }

@@ -9,12 +9,13 @@ enum Files {
   Table,
   Id,
   UserId,
-  Original,
+  OriginalName,
   Path,
   Uri,
   Size,
   MimeType,
   Hash,
+  Tags,
   Status,
   IsTemporary,
   ExpiresAt,
@@ -38,12 +39,13 @@ impl MigrationTrait for Migration {
           .table(Files::Table)
           .col(integer(Files::Id).auto_increment())
           .col(integer_null(Files::UserId))
-          .col(string(Files::Original))
+          .col(string(Files::OriginalName))
           .col(string(Files::Path))
           .col(string_null(Files::Uri))
           .col(big_integer(Files::Size))
           .col(string(Files::MimeType))
           .col(string_null(Files::Hash))
+          .col(array_null(Files::Tags, ColumnType::String(StringLen::None)))
           .col(string(Files::Status).default("pending"))
           .col(boolean(Files::IsTemporary).default(false))
           .col(timestamp_with_time_zone_null(Files::ExpiresAt))

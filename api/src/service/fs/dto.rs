@@ -58,18 +58,20 @@ pub struct FileUser {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct FileListItem {
-  pub id:           i32,
+  pub id:            i32,
   #[sea_orm(nested, alias = "user")]
-  pub user:         FileUser,
-  pub path:         String,
-  pub uri:          Option<String>,
-  pub size:         i64,
-  pub mime_type:    String,
-  pub status:       String,
-  pub is_temporary: bool,
-  pub expires_at:   Option<DateTimeWithTimeZone>,
-  pub created_at:   DateTimeWithTimeZone,
-  pub updated_at:   DateTimeWithTimeZone,
+  pub user:          FileUser,
+  pub original_name: String,
+  pub path:          String,
+  pub uri:           Option<String>,
+  pub size:          i64,
+  pub mime_type:     String,
+  pub status:        String,
+  pub tags:          Option<Vec<String>>,
+  pub is_temporary:  bool,
+  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub created_at:    DateTimeWithTimeZone,
+  pub updated_at:    DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
@@ -78,11 +80,13 @@ pub struct GetFile {
   pub id:              i32,
   #[sea_orm(nested, alias = "user")]
   pub user:            FileUser,
+  pub original_name:   String,
   pub path:            String,
   pub uri:             Option<String>,
   pub size:            i64,
   pub mime_type:       String,
   pub hash:            Option<String>,
+  pub tags:            Option<Vec<String>>,
   pub status:          String,
   pub is_temporary:    bool,
   pub expires_at:      Option<DateTimeWithTimeZone>,
@@ -101,7 +105,8 @@ impl IntoResponse for GetFile {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateFile {
-  pub path:         String,
+  pub tags:         Option<Vec<String>>,
+  pub directory:    String,
   pub is_temporary: Optional<bool>,
   #[serde(default)]
   pub expires_at:   Nullable<DateTimeWithTimeZone>,
@@ -110,9 +115,9 @@ pub struct CreateFile {
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadFileData {
-  pub original:  String,
-  pub bytes:     Vec<u8>,
-  pub mime_type: String,
+  pub original_name: String,
+  pub bytes:         Vec<u8>,
+  pub mime_type:     String,
 }
 
 impl UploadFileData {
@@ -174,8 +179,8 @@ impl IntoResponse for FileDeleted {
 #[serde(rename_all = "camelCase")]
 pub struct FileDownload {
   pub content_type: String,
-  pub filename:     String,
-  pub file_path:    String,
+  pub name:         String,
+  pub path:         String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
