@@ -23,26 +23,26 @@ use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
-pub struct BoardCategoryService<S: SumidaState> {
+pub struct BoardTopicService<S: SumidaState> {
   state:   S,
   #[allow(dead_code)]
   session: UserSession,
 }
 
-impl<S: SumidaState> BoardCategoryService<S> {
+impl<S: SumidaState> BoardTopicService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
   }
 
   pub async fn list(
     &self,
-    filter: BoardCategoryFilter,
+    filter: BoardTopicFilter,
     pagination: Pagination,
-  ) -> Result<(Vec<BoardCategoryListItem>, u64), SumidaError> {
-    use entity::bs::board_categories::Column;
+  ) -> Result<(Vec<BoardTopicListItem>, u64), SumidaError> {
+    use entity::bs::board_topics::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(BoardCategories::find()));
+    let mut query = filter.apply(self.select(BoardTopics::find()));
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -51,16 +51,16 @@ impl<S: SumidaState> BoardCategoryService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_partial_model::<BoardCategoryListItem>().all(db).await?;
+    let items = query.into_partial_model::<BoardTopicListItem>().all(db).await?;
 
     Ok((items, count))
   }
 
-  pub async fn get(&self, id: i32) -> Result<Option<GetBoardCategory>, SumidaError> {
+  pub async fn get(&self, id: i32) -> Result<Option<GetBoardTopic>, SumidaError> {
     Ok(
       self
-        .select(BoardCategories::find_by_id(id))
-        .into_partial_model::<GetBoardCategory>()
+        .select(BoardTopics::find_by_id(id))
+        .into_partial_model::<GetBoardTopic>()
         .one(self.state.db())
         .await?,
     )
@@ -68,23 +68,23 @@ impl<S: SumidaState> BoardCategoryService<S> {
 
   pub async fn create(
     &self,
-    data: CreateBoardCategory,
-  ) -> Result<InsertResult<entity::bs::board_categories::ActiveModel>, SumidaError> {
-    Ok(BoardCategories::insert(data.into_active_model()).exec(self.state.db()).await?)
+    data: CreateBoardTopic,
+  ) -> Result<InsertResult<entity::bs::board_topics::ActiveModel>, SumidaError> {
+    Ok(BoardTopics::insert(data.into_active_model()).exec(self.state.db()).await?)
   }
 
   pub async fn update(
     &self,
     id: i32,
-    data: UpdateBoardCategory,
-  ) -> Result<entity::bs::board_categories::Model, SumidaError> {
+    data: UpdateBoardTopic,
+  ) -> Result<entity::bs::board_topics::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", BoardCategories::find_by_id(id), &txn).await?;
+    self.try_access("update", BoardTopics::find_by_id(id), &txn).await?;
 
     let mut am = data.into_active_model();
     am.id = Set(id);
 
-    let item = BoardCategories::update(am).exec(&txn).await?;
+    let item = BoardTopics::update(am).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(item)
@@ -92,20 +92,20 @@ impl<S: SumidaState> BoardCategoryService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", BoardCategories::find_by_id(id), &txn).await?;
-    let result = BoardCategories::delete_by_id(id).exec(&txn).await?;
+    self.try_access("delete", BoardTopics::find_by_id(id), &txn).await?;
+    let result = BoardTopics::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
     Ok(result)
   }
 }
 
-impl<S: SumidaState> ApiService<ApCondition, BoardCategories> for BoardCategoryService<S> {
-  fn default_query_with(query: Select<BoardCategories>) -> Select<BoardCategories> {
-    query.select_only().expr(Expr::col((BoardCategories, Asterisk)))
+impl<S: SumidaState> ApiService<ApCondition, BoardTopics> for BoardTopicService<S> {
+  fn default_query_with(query: Select<BoardTopics>) -> Select<BoardTopics> {
+    query.select_only().expr(Expr::col((BoardTopics, Asterisk)))
   }
 
   fn ap(&self) -> ApCondition {
-    use entity::bs::board_categories::Column;
-    ap::ns("board_category").who(&self.session).join(BoardCategories, Column::Id)
+    use entity::bs::board_topics::Column;
+    ap::ns("board_topic").who(&self.session).join(BoardTopics, Column::Id)
   }
 }

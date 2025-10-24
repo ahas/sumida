@@ -28,6 +28,7 @@ pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:               i32,
   pub board_id:         i32,
+  pub topic_id:         i32,
   #[sea_orm(nullable)]
   pub parent_id:        Option<i32>,
   #[sea_orm(nullable)]
@@ -67,6 +68,14 @@ pub enum Relation {
     on_delete = "Cascade"
   )]
   Board,
+  #[sea_orm(
+    belongs_to = "super::board_topics::Entity",
+    from = "Column::TopicId",
+    to = "super::board_topics::Column::Id",
+    on_update = "Cascade",
+    on_delete = "Cascade"
+  )]
+  Topic,
   #[sea_orm(has_many = "super::board_post_views::Entity")]
   Views,
   #[sea_orm(
@@ -87,6 +96,12 @@ pub enum Relation {
 impl Related<super::boards::Entity> for Entity {
   fn to() -> RelationDef {
     Relation::Board.def()
+  }
+}
+
+impl Related<super::board_topics::Entity> for Entity {
+  fn to() -> RelationDef {
+    Relation::Topic.def()
   }
 }
 

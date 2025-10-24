@@ -1,30 +1,20 @@
-use std::path::Path as StdPath;
-
+use axum::body::Body;
+use axum::http::Response;
+use entity::fs::files::FileStatus;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::ActiveValue::NotSet;
+use sea_orm::ActiveValue::{NotSet, Unchanged};
 use sea_orm::prelude::*;
-use sea_orm::sea_query::{Alias, Asterisk, Expr, Func};
-use sea_orm::{
-  DeleteResult,
-  InsertResult,
-  IntoActiveModel,
-  IntoActiveValue,
-  IntoSimpleExpr,
-  JoinType,
-  QuerySelect,
-  Set,
-  TransactionTrait,
-};
-use uuid::Uuid;
+use sea_orm::sea_query::{Asterisk, Expr, Func};
+use sea_orm::{DeleteResult, IntoActiveValue, IntoSimpleExpr, QuerySelect, Set, TransactionTrait};
 
 use super::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
-use crate::util::storage::{StaticFile, Storage, SumidaStorage};
+use crate::util::storage::{Storage, SumidaStorage};
 
 pub struct FileService<S: SumidaState> {
   state:   S,
@@ -53,129 +43,92 @@ impl<S: SumidaState> FileService<S> {
       "uri" => Column::Uri.into_simple_expr(),
       "status" => Column::Status.into_simple_expr(),
       "mimeType" => Column::MimeType.into_simple_expr(),
-      "isTemporary" => Column::IsTemporary.into_simple_expr(),
       _ => Column::Id.into_simple_expr(),
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<FileListItem>().all(db).await?;
+    let items: Vec<FileListItem> = query.into_partial_model().all(db).await?;
 
     Ok((items, count))
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetFile>, SumidaError> {
-    Ok(self.select(Files::find_by_id(id)).into_model::<GetFile>().one(self.state.db()).await?)
-  }
-
-  pub async fn create(
-    &self,
-    file_data: UploadFileData,
-    metadata: CreateFile,
-  ) -> Result<InsertResult<entity::fs::files::ActiveModel>, SumidaError> {
-    let file_extension = StdPath::new(&file_data.original_name)
-      .extension()
-      .and_then(|ext| ext.to_str())
-      .unwrap_or("");
-    let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
-    let path = StdPath::new(&metadata.directory)
-      .join(StdPath::new(&unique_filename))
-      .display()
-      .to_string();
-    let static_file = StaticFile {
-      path:          path.clone(),
-      name:          unique_filename,
-      mime_type:     file_data.mime_type.clone(),
-      bytes:         file_data.bytes.clone(),
-      original_name: file_data.original_name.clone(),
-    };
-    let storage = SumidaStorage::new();
-    storage.store(static_file).await?;
-    let file_url = storage.get_uri(&path);
-
     Ok(
-      Files::insert(entity::fs::files::ActiveModel {
-        id: NotSet,
-        uri: Set(Some(file_url)),
-        path: Set(path),
-        original_name: Set(file_data.original_name.clone()),
-        size: Set(file_data.bytes.len() as i64),
-        mime_type: Set(file_data.mime_type.clone()),
-        status: Set("uploaded".to_string()),
-        user_id: Set(Some(self.session.profile.id)),
-        is_temporary: metadata.is_temporary.into_active_value(),
-        expires_at: metadata.expires_at.into_active_value(),
-        hash: Set(Some(file_data.hash())),
-        ..Default::default()
-      })
-      .exec(self.state.db())
-      .await?,
+      self
+        .select(Files::find_by_id(id))
+        .into_partial_model::<GetFile>()
+        .one(self.state.db())
+        .await?,
     )
   }
 
-  pub async fn update(&self, id: i32, data: UpdateFile) -> Result<entity::fs::files::Model, SumidaError> {
-    let txn = self.state.db().begin().await?;
-    self.try_access("update", Files::find_by_id(id), &txn).await?;
+  pub async fn upload(&self, data: UploadFile) -> Result<FileUploaded, SumidaError> {
+    let db = self.state.db();
 
-    let mut model = data.into_active_model();
-    model.id = Set(id);
+    let file_hash = data.file.hash();
+    let file_expires_at = data.options.expires_at.clone();
+    let file_original_name = data.file.original_name.clone();
 
-    let result = Files::update(model).exec(&txn).await?;
-    txn.commit().await?;
+    let static_file = data.into_static_file();
+    let storage = SumidaStorage::new();
 
-    Ok(result)
+    let file_id = Files::insert(entity::fs::files::ActiveModel {
+      id: NotSet,
+      uri: Set(Some(storage.get_uri(&static_file.path))),
+      path: Set(static_file.path.clone()),
+      original_name: Set(file_original_name.clone()),
+      size: Set(static_file.bytes.len() as i64),
+      mime_type: Set(static_file.mime_type.clone()),
+      status: Set(FileStatus::Pending),
+      user_id: Set(Some(self.session.profile.id)),
+      expires_at: file_expires_at.into_active_value(),
+      hash: Set(Some(file_hash)),
+      ..Default::default()
+    })
+    .exec(db)
+    .await?
+    .last_insert_id;
+
+    let result = storage.store(static_file).await;
+
+    Files::update(entity::fs::files::ActiveModel {
+      id: Unchanged(file_id),
+      status: Set(if result.is_ok() { FileStatus::Temporary } else { FileStatus::Error }),
+      ..Default::default()
+    })
+    .exec(db)
+    .await?;
+
+    result?;
+
+    Ok(FileUploaded { id: file_id })
   }
 
-  pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
+  pub async fn download(&self, id: i32) -> Result<Response<Body>, SumidaError> {
+    let Some(file) = self.select(Files::find_by_id(id)).one(self.state.db()).await? else {
+      return Err(SumidaError::NoData("File".to_string(), id.to_string()));
+    };
+    let storage = SumidaStorage::new();
+    let response = storage.download(file.into(), true).await?;
+
+    Ok(response)
+  }
+
+  pub async fn delete(&self, id: i32, data: DeleteFile) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", Files::find_by_id(id), &txn).await?;
+    let Some(file) = self.select(Files::find_by_id(id)).one(&txn).await? else {
+      return Err(SumidaError::NoData("File".to_string(), id.to_string()));
+    };
+
+    if data.hard {
+      SumidaStorage::new().delete(&file.path).await?;
+    }
 
     let result = Files::delete_by_id(id).exec(&txn).await?;
+
     txn.commit().await?;
 
     Ok(result)
-  }
-
-  pub async fn get_download_info(&self, id: i32) -> Result<Option<super::dto::FileDownload>, SumidaError> {
-    let db = self.state.db();
-    let model = Files::find_by_id(id).one(db).await?;
-
-    Ok(model.map(|m| super::dto::FileDownload {
-      content_type: m.mime_type,
-      name:         m.original_name,
-      path:         m.path,
-    }))
-  }
-
-  pub async fn mark_as_completed(
-    &self,
-    id: i32,
-    file_url: Option<String>,
-    file_hash: Option<String>,
-  ) -> Result<(), SumidaError> {
-    let mut model = entity::fs::files::ActiveModel::new();
-
-    model.id = Set(id);
-    model.status = Set("completed".to_string());
-
-    if let Some(url) = file_url {
-      model.uri = Set(Some(url));
-    }
-    if let Some(hash) = file_hash {
-      model.hash = Set(Some(hash));
-    }
-
-    Files::update(model).exec(self.state.db()).await?;
-    Ok(())
-  }
-
-  pub async fn mark_as_failed(&self, id: i32) -> Result<(), SumidaError> {
-    let mut model = entity::fs::files::ActiveModel::new();
-
-    model.id = Set(id);
-    model.status = Set("failed".to_string());
-
-    Files::update(model).exec(self.state.db()).await?;
-    Ok(())
   }
 
   pub async fn get_stats(
@@ -237,52 +190,13 @@ impl<S: SumidaState> FileService<S> {
       by_status: status_stats,
     })
   }
-
-  pub async fn cleanup_expired(&self) -> Result<u64, SumidaError> {
-    use entity::fs::files::Column;
-
-    let db = self.state.db();
-    let now = chrono::Utc::now().fixed_offset();
-
-    let result = Files::delete_many()
-      .filter(Column::IsTemporary.eq(true))
-      .filter(Column::ExpiresAt.lt(now))
-      .exec(db)
-      .await?;
-
-    Ok(result.rows_affected)
-  }
-
-  pub async fn cleanup_failed(&self, older_than_hours: i64) -> Result<u64, SumidaError> {
-    use chrono::Duration;
-    use entity::fs::files::Column;
-
-    let db = self.state.db();
-    let cutoff = chrono::Utc::now() - Duration::hours(older_than_hours);
-
-    let result = Files::delete_many()
-      .filter(Column::Status.eq("failed"))
-      .filter(Column::CreatedAt.lt(cutoff.fixed_offset()))
-      .exec(db)
-      .await?;
-
-    Ok(result.rows_affected)
-  }
 }
 
 impl<S: SumidaState> ApiService<ApCondition, Files> for FileService<S> {
   fn default_query_with(query: Select<Files>) -> Select<Files> {
-    let user_alias = Alias::new("user");
-    let col_id = Expr::col((user_alias.clone(), "id"));
-    let col_username = Expr::col((user_alias.clone(), "username"));
-    let col_full_name = Expr::col((user_alias.clone(), "full_name"));
-
-    query
+    query //
       .expr(Expr::col((entity::fs::files::Entity, Asterisk)))
-      .expr_as(col_id, "user_id")
-      .expr_as(col_username.clone(), "user_username")
-      .expr_as(col_full_name.clone(), "user_full_name")
-      .join_as(JoinType::LeftJoin, entity::fs::files::Relation::User.def(), user_alias.clone())
+      .left_join(Users)
   }
 
   fn ap(&self) -> ApCondition {

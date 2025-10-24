@@ -2,10 +2,10 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bs::board_posts::*;
+use entity::prelude::*;
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::*;
-use sea_orm::sea_query::Alias;
-use sea_orm::{Condition, EntityTrait, FromQueryResult, IntoActiveValue, QueryTrait};
+use sea_orm::{Condition, EntityTrait, IntoActiveValue, QueryTrait};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -15,13 +15,13 @@ use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostFilter {
-  pub search:      Option<String>,
-  pub title:       Option<String>,
-  pub category_id: Option<i32>,
-  pub board_id:    Option<i32>,
-  pub parent_id:   Option<i32>,
-  pub kind:        Option<BoardPostKind>,
-  pub status:      Option<BoardPostStatus>,
+  pub search:    Option<String>,
+  pub title:     Option<String>,
+  pub topic_id:  Option<i32>,
+  pub board_id:  Option<i32>,
+  pub parent_id: Option<i32>,
+  pub kind:      Option<BoardPostKind>,
+  pub status:    Option<BoardPostStatus>,
 }
 
 impl BoardPostFilter {
@@ -35,7 +35,7 @@ impl BoardPostFilter {
         )
       })
       .apply_if(self.title.as_ref(), |q, v| q.filter(Column::Title.eq(v)))
-      .apply_if(self.category_id, |q, v| q.filter(Expr::col((Alias::new("board"), "category_id")).eq(v)))
+      .apply_if(self.topic_id, |q, v| q.filter(Column::TopicId.eq(v)))
       .apply_if(self.board_id, |q, v| q.filter(Column::BoardId.eq(v)))
       .apply_if(self.parent_id, |q, v| q.filter(Column::ParentId.eq(v)))
       .apply_if(self.kind.as_ref(), |q, v| q.filter(Column::Kind.eq(v.clone().into_value())))
@@ -43,37 +43,44 @@ impl BoardPostFilter {
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
-#[sea_orm(entity = "Users")]
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "Users", from_query_result)]
+#[serde(rename_all = "camelCase")]
 pub struct BoardPostUser {
-  #[sea_orm(from_alias = "user_id")]
   pub id:       i32,
-  #[sea_orm(from_alias = "user_username")]
   pub username: String,
-  #[sea_orm(from_alias = "user_full_name")]
+  #[sea_orm(from_col = "full_name")]
   pub name:     String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
-#[sea_orm(entity = "Boards")]
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "Boards", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostBoard {
-  #[sea_orm(from_alias = "board_id")]
-  pub id:          i32,
-  #[sea_orm(from_alias = "board_name")]
-  pub name:        String,
-  #[sea_orm(from_alias = "board_category_id")]
-  pub category_id: Option<i32>,
+  pub id:       i32,
+  pub name:     String,
+  pub group_id: Option<i32>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "BoardTopics", from_query_result)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardPostTopic {
+  pub id:   i32,
+  pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "BoardPosts", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostListItem {
   pub id:           i32,
   pub parent_id:    Option<i32>,
-  #[sea_orm(nested, alias = "board")]
+  #[sea_orm(nested)]
   pub board:        BoardPostBoard,
-  #[sea_orm(nested, alias = "user", nullable)]
+  #[sea_orm(nested, nullable)]
+  pub topic:        BoardPostTopic,
+  #[sea_orm(nested, nullable)]
   pub user:         Option<BoardPostUser>,
   pub title:        String,
   pub content:      Option<String>,
@@ -86,14 +93,17 @@ pub struct BoardPostListItem {
   pub updated_at:   DateTimeWithTimeZone,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "BoardPosts", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPost {
   pub id:             i32,
   pub parent_id:      Option<i32>,
-  #[sea_orm(nested, alias = "board")]
+  #[sea_orm(nested)]
   pub board:          BoardPostBoard,
-  #[sea_orm(nested, alias = "user", nullable)]
+  #[sea_orm(nested, nullable)]
+  pub topic:          BoardPostTopic,
+  #[sea_orm(nested, nullable)]
   pub user:           Option<BoardPostUser>,
   pub title:          String,
   pub content:        Option<String>,
@@ -121,6 +131,7 @@ impl IntoResponse for GetBoardPost {
 pub struct CreateBoardPost {
   pub id:                Optional<i32>,
   pub board_id:          i32,
+  pub topic_id:          i32,
   pub parent_id:         Nullable<i32>,
   pub title:             String,
   pub content:           Nullable<String>,
@@ -189,11 +200,15 @@ impl IntoResponse for BoardPostCreated {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
+  pub topic_id:          Optional<i32>,
   pub title:             Optional<String>,
+  #[serde(default)]
   pub content:           Nullable<String>,
   pub kind:              Optional<BoardPostKind>,
   pub status:            Optional<BoardPostStatus>,
+  #[serde(default)]
   pub published_at:      Nullable<DateTimeWithTimeZone>,
+  #[serde(default)]
   pub tags:              Nullable<Vec<String>>,
   pub attached_file_ids: Option<Vec<i32>>,
 }
@@ -201,6 +216,7 @@ pub struct UpdateBoardPost {
 impl UpdateBoardPost {
   pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
     entity::bs::board_posts::ActiveModel {
+      topic_id: self.topic_id.into_active_value(),
       title: self.title.into_active_value(),
       content: self.content.into_active_value(),
       kind: self.kind.into_active_value(),

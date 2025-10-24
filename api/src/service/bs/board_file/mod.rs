@@ -55,10 +55,10 @@ impl<S: SumidaState> BoardFileService<S> {
         .column_as(FileColumn::Size, "size")
         .column_as(FileColumn::MimeType, "mime_type")
         .column_as(FileColumn::Status, "status")
-        .column_as(FileColumn::IsTemporary, "is_temporary")
         .column_as(FileColumn::ExpiresAt, "expires_at")
         .column_as(FileColumn::CreatedAt, "created_at")
-        .column_as(FileColumn::UpdatedAt, "updated_at"),
+        .column_as(FileColumn::UpdatedAt, "updated_at")
+        .column_as(FileColumn::UpdatedAt, "deleted_at"),
     );
 
     let count = query.clone().count(db).await?;
@@ -97,7 +97,6 @@ impl<S: SumidaState> BoardFileService<S> {
       .column_as(FileColumn::MimeType, "mime_type")
       .column_as(FileColumn::Hash, "hash")
       .column_as(FileColumn::Status, "status")
-      .column_as(FileColumn::IsTemporary, "is_temporary")
       .column_as(FileColumn::ExpiresAt, "expires_at")
       .column_as(FileColumn::CreatedAt, "created_at")
       .column_as(FileColumn::UpdatedAt, "updated_at")
@@ -108,7 +107,7 @@ impl<S: SumidaState> BoardFileService<S> {
     Ok(result)
   }
 
-  pub async fn attach_file_to_post(&self, post_id: i32, file_id: i32) -> Result<(), SumidaError> {
+  pub async fn attach_file(&self, post_id: i32, file_id: i32) -> Result<(), SumidaError> {
     let db = self.state.db();
     let active_model = entity::bs::board_files::ActiveModel {
       post_id: Set(post_id),
@@ -119,11 +118,7 @@ impl<S: SumidaState> BoardFileService<S> {
     Ok(())
   }
 
-  pub async fn detach_file_from_post(
-    &self,
-    post_id: i32,
-    file_id: i32,
-  ) -> Result<DeleteResult, SumidaError> {
+  pub async fn detach_file(&self, post_id: i32, file_id: i32) -> Result<DeleteResult, SumidaError> {
     use entity::bs::board_files::Column;
 
     let db = self.state.db();
@@ -154,10 +149,10 @@ impl<S: SumidaState> BoardFileService<S> {
       .column_as(FileColumn::Size, "size")
       .column_as(FileColumn::MimeType, "mime_type")
       .column_as(FileColumn::Status, "status")
-      .column_as(FileColumn::IsTemporary, "is_temporary")
       .column_as(FileColumn::ExpiresAt, "expires_at")
       .column_as(FileColumn::CreatedAt, "created_at")
       .column_as(FileColumn::UpdatedAt, "updated_at")
+      .column_as(FileColumn::DeletedAt, "deleted_at")
       .into_model::<BoardFileListItem>()
       .all(db)
       .await?;

@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use entity::bs::board_categories::*;
+use entity::bs::board_groups::*;
 use sea_orm::prelude::*;
 use sea_orm::{DeriveIntoActiveModel, EntityTrait, QueryTrait};
 use sea_orm_crud::{Nullable, Optional};
@@ -11,13 +11,13 @@ use serde_json::json;
 use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub struct BoardCategoryFilter {
+pub struct BoardGroupFilter {
   pub search:    Option<String>,
   pub name:      Option<String>,
   pub parent_id: Option<i32>,
 }
 
-impl BoardCategoryFilter {
+impl BoardGroupFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
     let query = if let Some(parent_id) = self.parent_id {
       query.filter(Column::ParentId.eq(parent_id))
@@ -34,7 +34,7 @@ impl BoardCategoryFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
-pub struct BoardCategoryListItem {
+pub struct BoardGroupListItem {
   pub id:          i32,
   pub name:        String,
   pub description: Option<String>,
@@ -46,7 +46,7 @@ pub struct BoardCategoryListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
-pub struct GetBoardCategory {
+pub struct GetBoardGroup {
   pub id:          i32,
   pub parent_id:   Option<i32>,
   pub name:        String,
@@ -55,7 +55,7 @@ pub struct GetBoardCategory {
   pub updated_at:  DateTimeWithTimeZone,
 }
 
-impl IntoResponse for GetBoardCategory {
+impl IntoResponse for GetBoardGroup {
   fn into_response(self) -> axum::response::Response {
     Json(self).into_response()
   }
@@ -63,7 +63,7 @@ impl IntoResponse for GetBoardCategory {
 
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateBoardCategory {
+pub struct CreateBoardGroup {
   pub id:          Optional<i32>,
   pub name:        String,
   pub description: Optional<String>,
@@ -73,11 +73,11 @@ pub struct CreateBoardCategory {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BoardCategoryCreated {
+pub struct BoardGroupCreated {
   pub id: i32,
 }
 
-impl IntoResponse for BoardCategoryCreated {
+impl IntoResponse for BoardGroupCreated {
   fn into_response(self) -> axum::response::Response {
     (StatusCode::CREATED, Json(self)).into_response()
   }
@@ -85,7 +85,7 @@ impl IntoResponse for BoardCategoryCreated {
 
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdateBoardCategory {
+pub struct UpdateBoardGroup {
   pub name:        Optional<String>,
   pub description: Optional<String>,
   #[serde(default)]
@@ -94,9 +94,9 @@ pub struct UpdateBoardCategory {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BoardCategoryUpdated;
+pub struct BoardGroupUpdated;
 
-impl IntoResponse for BoardCategoryUpdated {
+impl IntoResponse for BoardGroupUpdated {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
   }
@@ -104,9 +104,9 @@ impl IntoResponse for BoardCategoryUpdated {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BoardCategoryDeleted;
+pub struct BoardGroupDeleted;
 
-impl IntoResponse for BoardCategoryDeleted {
+impl IntoResponse for BoardGroupDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
   }

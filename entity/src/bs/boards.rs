@@ -16,10 +16,11 @@ pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:                  i32,
   #[sea_orm(nullable)]
-  pub category_id:         Option<i32>,
+  pub group_id:            Option<i32>,
   pub name:                String,
   #[sea_orm(nullable)]
   pub description:         Option<String>,
+  pub order:               i32,
   pub can_upload_file:     bool,
   pub max_file_size:       i64,
   pub max_file_count:      i32,
@@ -38,21 +39,21 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
   #[sea_orm(
-    belongs_to = "super::board_categories::Entity",
-    from = "Column::CategoryId",
-    to = "super::board_categories::Column::Id",
+    belongs_to = "super::board_groups::Entity",
+    from = "Column::GroupId",
+    to = "super::board_groups::Column::Id",
     on_update = "Cascade",
     on_delete = "Cascade"
   )]
-  Category,
+  Group,
 
   #[sea_orm(has_many = "super::board_posts::Entity")]
   Posts,
 }
 
-impl Related<super::board_categories::Entity> for Entity {
+impl Related<super::board_groups::Entity> for Entity {
   fn to() -> RelationDef {
-    Relation::Category.def()
+    Relation::Group.def()
   }
 }
 

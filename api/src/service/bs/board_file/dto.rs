@@ -2,11 +2,14 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bs::board_files::*;
+use entity::prelude::*;
 use sea_orm::prelude::*;
-use sea_orm::{DeriveIntoActiveModel, EntityTrait, FromQueryResult, QueryTrait};
+use sea_orm::{DeriveIntoActiveModel, EntityTrait, QueryTrait};
 use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::service::fs::dto::{FileListItem, GetFile};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFileFilter {
@@ -22,41 +25,47 @@ impl BoardFileFilter {
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "BoardFiles", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardFileListItem {
-  pub id:            i32,
-  pub user_id:       Option<i32>,
-  pub post_id:       i32,
-  pub path:          String,
-  pub original_name: String,
-  pub uri:           Option<String>,
-  pub size:          i64,
-  pub mime_type:     String,
-  pub status:        String,
-  pub is_temporary:  bool,
-  pub expires_at:    Option<DateTimeWithTimeZone>,
-  pub created_at:    DateTimeWithTimeZone,
-  pub updated_at:    DateTimeWithTimeZone,
+  #[sea_orm(nested)]
+  #[serde(flatten)]
+  pub file:    FileListItem,
+  pub post_id: i32,
+  // pub path:          String,
+  // pub original_name: String,
+  // pub uri:           Option<String>,
+  // pub size:          i64,
+  // pub mime_type:     String,
+  // pub status:        String,
+  // pub is_temporary:  bool,
+  // pub expires_at:    Option<DateTimeWithTimeZone>,
+  // pub created_at:    DateTimeWithTimeZone,
+  // pub updated_at:    DateTimeWithTimeZone,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
+#[sea_orm(entity = "BoardFiles", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardFile {
-  pub id:            i32,
-  pub user_id:       Option<i32>,
-  pub post_id:       i32,
-  pub path:          String,
-  pub original_name: String,
-  pub uri:           Option<String>,
-  pub size:          i64,
-  pub mime_type:     String,
-  pub hash:          Option<String>,
-  pub status:        String,
-  pub is_temporary:  bool,
-  pub expires_at:    Option<DateTimeWithTimeZone>,
-  pub created_at:    DateTimeWithTimeZone,
-  pub updated_at:    DateTimeWithTimeZone,
+  #[sea_orm(nested)]
+  #[serde(flatten)]
+  pub file:    GetFile,
+  pub post_id: i32,
+  // pub id:            i32,
+  // pub user_id:       Option<i32>,
+  // pub path:          String,
+  // pub original_name: String,
+  // pub uri:           Option<String>,
+  // pub size:          i64,
+  // pub mime_type:     String,
+  // pub hash:          Option<String>,
+  // pub status:        String,
+  // pub is_temporary:  bool,
+  // pub expires_at:    Option<DateTimeWithTimeZone>,
+  // pub created_at:    DateTimeWithTimeZone,
+  // pub updated_at:    DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetBoardFile {

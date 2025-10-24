@@ -15,30 +15,56 @@ pub type FileStream = Pin<Box<dyn AsyncRead + Send>>;
 
 #[derive(Clone, Debug)]
 pub struct StaticFile {
-  pub path:          String,
   pub name:          String,
+  pub original_name: String,
+  pub path:          String,
   pub mime_type:     String,
   pub bytes:         Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DownloadFile {
+  pub name:          String,
   pub original_name: String,
+  pub path:          String,
+  pub mime_type:     String,
+}
+
+impl From<entity::fs::files::Model> for DownloadFile {
+  fn from(value: entity::fs::files::Model) -> Self {
+    let name = std::path::Path::new(&value.path)
+      .file_name()
+      .map(|x| x.to_string_lossy().into_owned())
+      .unwrap_or_default();
+
+    Self {
+      name,
+      original_name: value.original_name,
+      path: value.path,
+      mime_type: value.mime_type,
+    }
+  }
 }
 
 #[async_trait]
 pub trait Storage: Send + Sync {
-  async fn store(&self, file: StaticFile) -> Result<String, SumidaError>;
+  async fn store(&self, file: StaticFile) -> Result<(), SumidaError>;
   async fn delete(&self, path: &str) -> Result<(), SumidaError>;
   async fn stream(&self, path: &str) -> Result<FileStream, SumidaError>;
   async fn download(
     &self,
-    name: &str,
-    path: &str,
-    content_type: &str,
+    file_data: DownloadFile,
+    with_original_name: bool,
   ) -> Result<Response<Body>, SumidaError> {
     use axum::body::Body;
     use axum::http::{StatusCode, header};
     use tokio_util::io::ReaderStream;
 
-    let file_stream = self.stream(path).await?;
-    let file_size = self.get_file_size(path).await?;
+    let file_path = file_data.path;
+    let file_name = if with_original_name { file_data.original_name } else { file_data.name };
+    let content_type = file_data.mime_type;
+    let file_stream = self.stream(&file_path).await?;
+    let file_size = self.get_file_size(&file_path).await?;
 
     let stream = ReaderStream::new(file_stream);
     let body = Body::from_stream(stream);
@@ -47,7 +73,7 @@ pub trait Storage: Send + Sync {
       .status(StatusCode::OK)
       .header(header::CONTENT_TYPE, content_type)
       .header(header::CONTENT_LENGTH, file_size.to_string())
-      .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", name))
+      .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", file_name))
       .body(body)
       .map_err(|_| SumidaError::InternalServerError("Failed to create response".into()))?;
 
@@ -93,7 +119,7 @@ impl SumidaStorage {
 
 #[async_trait]
 impl Storage for SumidaStorage {
-  async fn store(&self, file: StaticFile) -> Result<String, SumidaError> {
+  async fn store(&self, file: StaticFile) -> Result<(), SumidaError> {
     match &self.inner {
       StorageBackend::Local(storage) => storage.store(&file).await,
       #[cfg(feature = "storage-aws-s3")]
@@ -149,10 +175,11 @@ impl LocalStorage {
     self.base_directory.join(relative)
   }
 
-  async fn store(&self, file: &StaticFile) -> Result<String, SumidaError> {
+  async fn store(&self, file: &StaticFile) -> Result<(), SumidaError> {
     use tokio::fs;
 
     let target_path = self.resolve_path(&file.path);
+
     if let Some(parent) = target_path.parent() {
       fs::create_dir_all(parent).await.map_err(|e| {
         SumidaError::InternalServerError(format!("Failed to create upload directory: {}", e))
@@ -163,7 +190,7 @@ impl LocalStorage {
       .await
       .map_err(|e| SumidaError::InternalServerError(format!("Failed to write file: {}", e)))?;
 
-    Ok(file.path.clone())
+    Ok(())
   }
 
   async fn delete(&self, path: &str) -> Result<(), SumidaError> {
@@ -198,7 +225,7 @@ impl LocalStorage {
   }
 
   fn get_uri(&self, path: &str) -> String {
-    format!("/api/board-files/local/{}", path)
+    self.resolve_path(path).to_string_lossy().into_owned()
   }
 }
 
@@ -230,7 +257,7 @@ impl S3Storage {
     }
   }
 
-  async fn store(&self, file: &StaticFile) -> Result<String, SumidaError> {
+  async fn store(&self, file: &StaticFile) -> Result<(), SumidaError> {
     use aws_sdk_s3::primitives::ByteStream;
 
     let key = self.get_key(&file.path);
@@ -246,7 +273,7 @@ impl S3Storage {
       .await
       .map_err(|e| SumidaError::InternalServerError(format!("Failed to upload to S3: {}", e)))?;
 
-    Ok(file.path.clone())
+    Ok(())
   }
 
   async fn delete(&self, path: &str) -> Result<(), SumidaError> {

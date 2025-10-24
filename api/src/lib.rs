@@ -54,8 +54,9 @@ where
     let file_controller = FileController::<StateT>::new();
 
     // Board System
-    let board_category_controller = BoardCategoryController::<StateT>::new();
+    let board_group_controller = BoardGroupController::<StateT>::new();
     let board_controller = BoardController::<StateT>::new();
+    let board_topic_controller = BoardTopicController::<StateT>::new();
     let board_post_controller = BoardPostController::<StateT>::new();
     let board_files_controller = BoardFileController::<StateT>::new();
 
@@ -74,7 +75,8 @@ where
       .nest("/mail-forms", mail_form_controller.router(state))
       // Board System
       .nest("/boards", board_controller.router(state))
-      .nest("/board-categories", board_category_controller.router(state))
+      .nest("/board-groups", board_group_controller.router(state))
+      .nest("/board-topics", board_topic_controller.router(state))
       .nest("/board-posts", board_post_controller.router(state))
       .nest("/board-files", board_files_controller.router(state))
       // File System

@@ -4,14 +4,15 @@ use sea_orm_migration::schema::*;
 
 use super::helper::*;
 
-/// board_categories
+/// board_groups
 #[derive(DeriveIden)]
-enum BoardCategories {
+enum BoardGroups {
   Table,
   Id,
   ParentId,
   Name,
   Description,
+  Order,
   CreatedAt,
   UpdatedAt,
 }
@@ -21,9 +22,10 @@ enum BoardCategories {
 enum Boards {
   Table,
   Id,
-  CategoryId,
+  GroupId,
   Name,
   Description,
+  Order,
   CanUploadFile,
   MaxFileSize,
   MaxFileCount,
@@ -37,6 +39,18 @@ enum Boards {
   DeletedAt,
 }
 
+#[derive(DeriveIden)]
+enum BoardTopics {
+  Table,
+  Id,
+  Name,
+  Description,
+  BoardId,
+  Order,
+  CreatedAt,
+  UpdatedAt,
+}
+
 /// board_posts
 #[derive(DeriveIden)]
 enum BoardPosts {
@@ -44,6 +58,7 @@ enum BoardPosts {
   Id,
   ParentId,
   BoardId,
+  TopicId,
   UserId,
   Kind,
   Status,
@@ -118,24 +133,25 @@ impl MigrationTrait for Migration {
   async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
 
-    // board_categories
+    // board_groups
     manager
       .create_table(
         Table::create()
           .if_not_exists()
-          .table(BoardCategories::Table)
-          .col(integer(BoardCategories::Id).auto_increment())
-          .col(integer_null(BoardCategories::ParentId))
-          .col(string(BoardCategories::Name))
-          .col(string_null(BoardCategories::Description))
-          .col(timestamp_with_time_zone(BoardCategories::CreatedAt).default(Expr::current_timestamp()))
-          .col(timestamp_with_time_zone(BoardCategories::UpdatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_board_categories__id").col(BoardCategories::Id))
+          .table(BoardGroups::Table)
+          .col(integer(BoardGroups::Id).auto_increment())
+          .col(integer_null(BoardGroups::ParentId))
+          .col(string(BoardGroups::Name))
+          .col(string_null(BoardGroups::Description))
+          .col(integer(BoardGroups::Order).default(0))
+          .col(timestamp_with_time_zone(BoardGroups::CreatedAt).default(Expr::current_timestamp()))
+          .col(timestamp_with_time_zone(BoardGroups::UpdatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_board_groups__id").col(BoardGroups::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_board_categories__parent_id")
-              .from(BoardCategories::Table, BoardCategories::ParentId)
-              .to(BoardCategories::Table, BoardCategories::Id)
+              .name("fk_board_groups__parent_id")
+              .from(BoardGroups::Table, BoardGroups::ParentId)
+              .to(BoardGroups::Table, BoardGroups::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -146,14 +162,14 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_board_categories__parent_id")
-          .table(BoardCategories::Table)
-          .col(BoardCategories::ParentId)
+          .name("idx_board_groups__parent_id")
+          .table(BoardGroups::Table)
+          .col(BoardGroups::ParentId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;
-    attach_timestamp_auto_update(db, "board_categories").await?;
+    attach_timestamp_auto_update(db, "board_groups").await?;
 
     // boards
     manager
@@ -162,9 +178,10 @@ impl MigrationTrait for Migration {
           .if_not_exists()
           .table(Boards::Table)
           .col(integer(Boards::Id).auto_increment())
-          .col(integer_null(Boards::CategoryId))
+          .col(integer_null(Boards::GroupId))
           .col(string(Boards::Name))
           .col(string_null(Boards::Description))
+          .col(integer(Boards::Order).default(0))
           .col(boolean(Boards::CanUploadFile).default(false))
           .col(integer(Boards::MaxFileCount).default(0))
           .col(big_integer(Boards::MaxFileSize).default(0))
@@ -179,9 +196,9 @@ impl MigrationTrait for Migration {
           .primary_key(Index::create().name("pk_boards__id").col(Boards::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_boards__category_id")
-              .from(Boards::Table, Boards::CategoryId)
-              .to(BoardCategories::Table, BoardCategories::Id)
+              .name("fk_boards__group_id")
+              .from(Boards::Table, Boards::GroupId)
+              .to(BoardGroups::Table, BoardGroups::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -192,14 +209,40 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_boards__category_id")
+          .name("idx_boards__group_id")
           .table(Boards::Table)
-          .col(Boards::CategoryId)
+          .col(Boards::GroupId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;
     attach_timestamp_auto_update(db, "boards").await?;
+
+    // board_topics
+    manager
+      .create_table(
+        Table::create()
+          .if_not_exists()
+          .table(BoardTopics::Table)
+          .col(integer(BoardTopics::Id).auto_increment())
+          .col(string(BoardTopics::Name))
+          .col(string_null(BoardTopics::Description))
+          .col(integer(BoardTopics::BoardId))
+          .col(integer(BoardTopics::Order).default(0))
+          .col(timestamp_with_time_zone(BoardTopics::CreatedAt).default(Expr::current_timestamp()))
+          .col(timestamp_with_time_zone(BoardTopics::UpdatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_board_groups__id").col(Boards::Id))
+          .foreign_key(
+            ForeignKey::create()
+              .name("fk_board_topics__board_id")
+              .from(BoardTopics::Table, BoardTopics::BoardId)
+              .to(Boards::Table, Boards::Id)
+              .on_delete(Cascade)
+              .on_update(Cascade),
+          )
+          .to_owned(),
+      )
+      .await?;
 
     // board_posts
     manager
@@ -210,6 +253,7 @@ impl MigrationTrait for Migration {
           .col(integer(BoardPosts::Id).auto_increment())
           .col(integer_null(BoardPosts::ParentId))
           .col(integer(BoardPosts::BoardId))
+          .col(integer(BoardPosts::TopicId))
           .col(integer_null(BoardPosts::UserId))
           .col(string(BoardPosts::Kind).default("article"))
           .col(string(BoardPosts::Status).default("draft"))
@@ -241,6 +285,14 @@ impl MigrationTrait for Migration {
               .name("fk_board_posts__board_id")
               .from(BoardPosts::Table, BoardPosts::BoardId)
               .to(Boards::Table, Boards::Id)
+              .on_delete(Cascade)
+              .on_update(Cascade),
+          )
+          .foreign_key(
+            ForeignKey::create()
+              .name("fk_board_posts__topic_id")
+              .from(BoardPosts::Table, BoardPosts::TopicId)
+              .to(BoardTopics::Table, BoardTopics::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -451,7 +503,7 @@ impl MigrationTrait for Migration {
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
 
-    detach_timestamp_auto_update(db, "board_categories").await?;
+    detach_timestamp_auto_update(db, "board_groups").await?;
     detach_timestamp_auto_update(db, "boards").await?;
     detach_timestamp_auto_update(db, "board_posts").await?;
     detach_timestamp_auto_update(db, "board_files").await?;
@@ -461,8 +513,9 @@ impl MigrationTrait for Migration {
     drop_table(manager, BoardPostViews::Table).await?;
     drop_table(manager, BoardPostReactions::Table).await?;
     drop_table(manager, BoardPosts::Table).await?;
+    drop_table(manager, BoardTopics::Table).await?;
     drop_table(manager, Boards::Table).await?;
-    drop_table(manager, BoardCategories::Table).await?;
+    drop_table(manager, BoardGroups::Table).await?;
 
     Ok(())
   }

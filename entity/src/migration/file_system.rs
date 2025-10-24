@@ -16,11 +16,12 @@ enum Files {
   MimeType,
   Hash,
   Tags,
+  Refs,
   Status,
-  IsTemporary,
   ExpiresAt,
   CreatedAt,
   UpdatedAt,
+  DeletedAt,
 }
 
 #[derive(DeriveMigrationName)]
@@ -46,11 +47,12 @@ impl MigrationTrait for Migration {
           .col(string(Files::MimeType))
           .col(string_null(Files::Hash))
           .col(array_null(Files::Tags, ColumnType::String(StringLen::None)))
+          .col(integer(Files::Refs).default(0))
           .col(string(Files::Status).default("pending"))
-          .col(boolean(Files::IsTemporary).default(false))
           .col(timestamp_with_time_zone_null(Files::ExpiresAt))
           .col(timestamp_with_time_zone(Files::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Files::UpdatedAt).default(Expr::current_timestamp()))
+          .col(timestamp_with_time_zone_null(Files::DeletedAt))
           .primary_key(Index::create().name("pk_files__id").col(Files::Id))
           .to_owned(),
       )

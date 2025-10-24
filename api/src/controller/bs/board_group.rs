@@ -7,11 +7,11 @@ use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
-pub struct BoardCategoryController<S: SumidaState> {
+pub struct BoardGroupController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,
 }
 
-impl<S: SumidaState> BoardCategoryController<S> {
+impl<S: SumidaState> BoardGroupController<S> {
   pub fn new() -> Self {
     Self {
       _state: std::marker::PhantomData,
@@ -21,30 +21,30 @@ impl<S: SumidaState> BoardCategoryController<S> {
   async fn list(
     session: UserSession,
     State(state): State<S>,
-    Query(filter): Query<BoardCategoryFilter>,
+    Query(filter): Query<BoardGroupFilter>,
     Query(pagination): Query<Pagination>,
-  ) -> Result<List<BoardCategoryListItem>, SumidaError> {
-    Ok(BoardCategoryService::new(state, session).list(filter, pagination).await?.into())
+  ) -> Result<List<BoardGroupListItem>, SumidaError> {
+    Ok(BoardGroupService::new(state, session).list(filter, pagination).await?.into())
   }
 
   async fn get(
     session: UserSession,
     State(state): State<S>,
     Path(id): Path<i32>,
-  ) -> Result<GetBoardCategory, SumidaError> {
-    BoardCategoryService::new(state, session)
+  ) -> Result<GetBoardGroup, SumidaError> {
+    BoardGroupService::new(state, session)
       .get(id)
       .await?
-      .ok_or_else(|| SumidaError::NoData("BoardCategory".to_owned(), id.to_string()))
+      .ok_or_else(|| SumidaError::NoData("BoardGroup".to_owned(), id.to_string()))
   }
 
   async fn create(
     session: UserSession,
     State(state): State<S>,
-    Json(body): Json<CreateBoardCategory>,
-  ) -> Result<BoardCategoryCreated, SumidaError> {
-    Ok(BoardCategoryCreated {
-      id: BoardCategoryService::new(state, session).create(body).await?.last_insert_id,
+    Json(body): Json<CreateBoardGroup>,
+  ) -> Result<BoardGroupCreated, SumidaError> {
+    Ok(BoardGroupCreated {
+      id: BoardGroupService::new(state, session).create(body).await?.last_insert_id,
     })
   }
 
@@ -52,23 +52,23 @@ impl<S: SumidaState> BoardCategoryController<S> {
     session: UserSession,
     State(state): State<S>,
     Path(id): Path<i32>,
-    Json(body): Json<UpdateBoardCategory>,
-  ) -> Result<BoardCategoryUpdated, SumidaError> {
-    BoardCategoryService::new(state, session).update(id, body).await?;
-    Ok(BoardCategoryUpdated)
+    Json(body): Json<UpdateBoardGroup>,
+  ) -> Result<BoardGroupUpdated, SumidaError> {
+    BoardGroupService::new(state, session).update(id, body).await?;
+    Ok(BoardGroupUpdated)
   }
 
   async fn delete(
     session: UserSession,
     State(state): State<S>,
     Path(id): Path<i32>,
-  ) -> Result<BoardCategoryDeleted, SumidaError> {
-    BoardCategoryService::new(state, session).delete(id).await?;
-    Ok(BoardCategoryDeleted)
+  ) -> Result<BoardGroupDeleted, SumidaError> {
+    BoardGroupService::new(state, session).delete(id).await?;
+    Ok(BoardGroupDeleted)
   }
 }
 
-impl<S> ApiController<S> for BoardCategoryController<S>
+impl<S> ApiController<S> for BoardGroupController<S>
 where
   S: SumidaState,
 {
@@ -76,19 +76,19 @@ where
     let route_read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "board_category", read));
+      .route_layer(service_ap!(state, "board_group", read));
 
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(state, "board_category", create));
+      .route_layer(service_ap!(state, "board_group", create));
 
     let route_update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(state, "board_category", update));
+      .route_layer(service_ap!(state, "board_group", update));
 
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "board_category", delete));
+      .route_layer(service_ap!(state, "board_group", delete));
 
     Router::new()
       .merge(route_read)

@@ -2,6 +2,18 @@ use chrono::Utc;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub enum FileStatus {
+  Pending,
+  Temporary,
+  Active,
+  Archived,
+  Deleted,
+  Error,
+}
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "files")]
 pub struct Model {
@@ -15,11 +27,12 @@ pub struct Model {
   pub mime_type:     String,
   pub hash:          Option<String>,
   pub tags:          Option<Vec<String>>,
-  pub status:        String,
-  pub is_temporary:  bool,
+  pub status:        FileStatus,
+  pub refs:          i32,
   pub expires_at:    Option<DateTimeWithTimeZone>,
   pub created_at:    DateTimeWithTimeZone,
   pub updated_at:    DateTimeWithTimeZone,
+  pub deleted_at:    DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -51,29 +64,6 @@ impl Related<crate::bs::board_posts::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
-#[serde(rename_all = "kebab-case")]
-pub enum UploadStatus {
-  Pending,
-  Processing,
-  Completed,
-  Failed,
-  Deleted,
-}
-
-impl From<UploadStatus> for String {
-  fn from(status: UploadStatus) -> Self {
-    match status {
-      UploadStatus::Pending => "pending".to_string(),
-      UploadStatus::Processing => "processing".to_string(),
-      UploadStatus::Completed => "completed".to_string(),
-      UploadStatus::Failed => "failed".to_string(),
-      UploadStatus::Deleted => "deleted".to_string(),
-    }
-  }
-}
 
 impl Model {
   pub fn is_image(&self) -> bool {

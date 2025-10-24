@@ -43,12 +43,10 @@ impl<S: SumidaState> BoardFileController<S> {
     Path(_post_id): Path<i32>,
     Json(body): Json<CreateBoardFile>,
   ) -> Result<BoardFileCreated, SumidaError> {
-    BoardFileService::new(state, session)
-      .attach_file_to_post(body.post_id, body.file_id)
-      .await?;
+    BoardFileService::new(state, session).attach_file(body.post_id, body.file_id).await?;
 
     Ok(BoardFileCreated {
-      id: body.file_id,
+      id:      body.file_id,
       post_id: body.post_id,
     })
   }
@@ -58,7 +56,7 @@ impl<S: SumidaState> BoardFileController<S> {
     State(state): State<S>,
     Path((post_id, file_id)): Path<(i32, i32)>,
   ) -> Result<BoardFileDeleted, SumidaError> {
-    BoardFileService::new(state, session).detach_file_from_post(post_id, file_id).await?;
+    BoardFileService::new(state, session).detach_file(post_id, file_id).await?;
     Ok(BoardFileDeleted)
   }
 

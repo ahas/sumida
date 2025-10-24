@@ -16,7 +16,7 @@ pub fn verify_password(password: &str, password_hash: &str) -> bool {
   argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok()
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
   pub sub:        String, // Subject (user_id)
   pub username:   String,
@@ -26,7 +26,7 @@ pub struct JwtClaims {
   pub token_type: String, // "access" or "refresh"
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TokenPair {
   pub access_token:  String,
   pub refresh_token: String,
