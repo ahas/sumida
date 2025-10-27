@@ -170,15 +170,6 @@ impl IntoResponse for SumidaError {
   }
 }
 
-impl<T> From<(StatusCode, T)> for SumidaError
-where
-  T: ToString,
-{
-  fn from(value: (StatusCode, T)) -> Self {
-    SumidaError::Unknown(value.0.as_u16(), value.1.to_string())
-  }
-}
-
 impl From<DbErr> for SumidaError {
   fn from(value: DbErr) -> Self {
     let (status_code, reason) = match value {

@@ -8,7 +8,7 @@ impl MigratorTrait for Migrator {
     vec![
       Box::new(sumida::entity::migration::init::Migration),
       Box::new(sumida::entity::migration::board_system::Migration),
-      Box::new(sumida::entity::migration::board_system_v2::Migration),
+      Box::new(sumida::entity::migration::file_system::Migration),
     ]
   }
 }

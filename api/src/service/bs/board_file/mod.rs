@@ -50,7 +50,8 @@ impl<S: SumidaState> BoardFileService<S> {
         .select_only()
         .column_as(Column::FileId, "id")
         .column_as(Column::PostId, "post_id")
-        .column_as(FileColumn::Path, "path")
+        .column_as(FileColumn::Dir, "dir")
+        .column_as(FileColumn::Name, "name")
         .column_as(FileColumn::Uri, "uri")
         .column_as(FileColumn::Size, "size")
         .column_as(FileColumn::MimeType, "mime_type")
@@ -64,7 +65,8 @@ impl<S: SumidaState> BoardFileService<S> {
     let count = query.clone().count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
-      "path" => FileColumn::Path.into_simple_expr(),
+      "dir" => FileColumn::Dir.into_simple_expr(),
+      "name" => FileColumn::Name.into_simple_expr(),
       "size" => FileColumn::Size.into_simple_expr(),
       "mime_type" => FileColumn::MimeType.into_simple_expr(),
       "status" => FileColumn::Status.into_simple_expr(),
@@ -91,7 +93,8 @@ impl<S: SumidaState> BoardFileService<S> {
       .select_only()
       .column_as(Column::PostId, "post_id")
       .column_as(Column::FileId, "file_id")
-      .column_as(FileColumn::Path, "path")
+      .column_as(FileColumn::Dir, "dir")
+      .column_as(FileColumn::Name, "name")
       .column_as(FileColumn::Uri, "uri")
       .column_as(FileColumn::Size, "size")
       .column_as(FileColumn::MimeType, "mime_type")
@@ -144,7 +147,8 @@ impl<S: SumidaState> BoardFileService<S> {
       .select_only()
       .column_as(Column::FileId, "id")
       .column_as(Column::PostId, "post_id")
-      .column_as(FileColumn::Path, "path")
+      .column_as(FileColumn::Dir, "dir")
+      .column_as(FileColumn::Name, "name")
       .column_as(FileColumn::Uri, "uri")
       .column_as(FileColumn::Size, "size")
       .column_as(FileColumn::MimeType, "mime_type")

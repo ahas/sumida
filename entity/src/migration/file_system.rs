@@ -10,7 +10,8 @@ enum Files {
   Id,
   UserId,
   OriginalName,
-  Path,
+  Dir,
+  Name,
   Uri,
   Size,
   MimeType,
@@ -41,7 +42,8 @@ impl MigrationTrait for Migration {
           .col(integer(Files::Id).auto_increment())
           .col(integer_null(Files::UserId))
           .col(string(Files::OriginalName))
-          .col(string(Files::Path))
+          .col(string(Files::Dir))
+          .col(string(Files::Name))
           .col(string_null(Files::Uri))
           .col(big_integer(Files::Size))
           .col(string(Files::MimeType))

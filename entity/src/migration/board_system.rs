@@ -231,7 +231,7 @@ impl MigrationTrait for Migration {
           .col(integer(BoardTopics::Order).default(0))
           .col(timestamp_with_time_zone(BoardTopics::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(BoardTopics::UpdatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_board_groups__id").col(Boards::Id))
+          .primary_key(Index::create().name("pk_board_topics__id").col(Boards::Id))
           .foreign_key(
             ForeignKey::create()
               .name("fk_board_topics__board_id")

@@ -19,20 +19,27 @@ pub enum FileStatus {
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:            i32,
+  #[sea_orm(nullable)]
   pub user_id:       Option<i32>,
   pub original_name: String,
-  pub path:          String,
+  pub dir:           String,
+  pub name:          String,
+  #[sea_orm(nullable)]
   pub uri:           Option<String>,
   pub size:          i64,
   pub mime_type:     String,
+  #[sea_orm(nullable)]
   pub hash:          Option<String>,
+  #[sea_orm(nullable)]
   pub tags:          Option<Vec<String>>,
   pub status:        FileStatus,
   pub refs:          i32,
+  #[sea_orm(nullable)]
   pub expires_at:    Option<DateTimeWithTimeZone>,
   pub created_at:    DateTimeWithTimeZone,
   pub updated_at:    DateTimeWithTimeZone,
-  pub deleted_at:    DateTimeWithTimeZone,
+  #[sea_orm(nullable)]
+  pub deleted_at:    Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -91,8 +98,15 @@ impl Model {
     )
   }
 
-  pub fn get_file_extension(&self) -> Option<String> {
-    self.path.rfind('.').map(|pos| self.path[pos + 1..].to_lowercase())
+  pub fn get_extension(&self) -> Option<String> {
+    std::path::Path::new(&self.name).extension().map(|x| x.to_string_lossy().into_owned())
+  }
+
+  pub fn get_path(&self) -> String {
+    std::path::Path::new(&self.dir)
+      .join(std::path::Path::new(&self.name))
+      .to_string_lossy()
+      .into_owned()
   }
 
   pub fn is_expired(&self) -> bool {

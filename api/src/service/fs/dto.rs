@@ -5,6 +5,7 @@ use axum::response::IntoResponse;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::Alias;
 use sea_orm::{Condition, QueryTrait};
 use sea_orm_crud::Nullable;
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,8 @@ use crate::util::storage::StaticFile;
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct FileFilter {
   pub user:      Option<String>,
-  pub path:      Option<String>,
+  pub dir:       Option<String>,
+  pub name:      Option<String>,
   pub uri:       Option<String>,
   pub status:    Option<String>,
   pub mime_type: Option<String>,
@@ -35,11 +37,12 @@ impl FileFilter {
       .apply_if(self.user.as_ref(), |q, v| {
         q.filter(
           Condition::any()
-            .add(wrap_ilike(Expr::col("user_username"), v))
-            .add(wrap_ilike(Expr::col("user_full_name"), v)),
+            .add(wrap_ilike_col(entity::users::Column::Username, v))
+            .add(wrap_ilike(Expr::col((Users, Alias::new("full_name"))), v)),
         )
       })
-      .apply_if(self.path.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Path, v)))
+      .apply_if(self.dir.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Dir, v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Name, v)))
       .apply_if(self.uri.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Uri, v)))
       .apply_if(self.status.as_ref(), |q, v| q.filter(Column::Status.eq(v)))
       .apply_if(self.mime_type.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::MimeType, v)))
@@ -63,7 +66,8 @@ pub struct FileListItem {
   #[sea_orm(nested)]
   pub user:          FileUser,
   pub original_name: String,
-  pub path:          String,
+  pub dir:           String,
+  pub name:          String,
   pub uri:           Option<String>,
   pub size:          i64,
   pub mime_type:     String,
@@ -84,7 +88,8 @@ pub struct GetFile {
   #[sea_orm(nested)]
   pub user:          FileUser,
   pub original_name: String,
-  pub path:          String,
+  pub dir:           String,
+  pub name:          String,
   pub uri:           Option<String>,
   pub size:          i64,
   pub mime_type:     String,
@@ -113,7 +118,7 @@ pub struct FileUploadOptions {
   #[serde(default)]
   pub tags:       Option<Vec<String>>,
   #[serde(default)]
-  pub location:   String,
+  pub dir:        String,
   #[serde(default)]
   pub expires_at: Nullable<DateTimeWithTimeZone>,
 }
@@ -213,17 +218,13 @@ impl UploadFile {
       .and_then(|ext| ext.to_str())
       .unwrap_or("");
     let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
-    let path = Path::new(&self.options.location)
-      .join(Path::new(&unique_filename))
-      .display()
-      .to_string();
 
     StaticFile {
-      path,
-      name: unique_filename,
+      dir:           self.options.dir,
+      name:          unique_filename,
       original_name: self.file.original_name,
-      mime_type: self.file.mime_type,
-      bytes: self.file.bytes,
+      mime_type:     self.file.mime_type,
+      bytes:         self.file.bytes,
     }
   }
 }

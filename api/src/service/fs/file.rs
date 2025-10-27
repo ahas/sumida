@@ -39,7 +39,8 @@ impl<S: SumidaState> FileService<S> {
 
     query = pagination.order_by(query, |col| match col {
       "user" => Column::UserId.into_simple_expr(),
-      "path" => Column::Path.into_simple_expr(),
+      "dir" => Column::Dir.into_simple_expr(),
+      "name" => Column::Name.into_simple_expr(),
       "uri" => Column::Uri.into_simple_expr(),
       "status" => Column::Status.into_simple_expr(),
       "mimeType" => Column::MimeType.into_simple_expr(),
@@ -65,6 +66,7 @@ impl<S: SumidaState> FileService<S> {
   pub async fn upload(&self, data: UploadFile) -> Result<FileUploaded, SumidaError> {
     let db = self.state.db();
 
+    let file_dir = data.options.dir.clone();
     let file_hash = data.file.hash();
     let file_expires_at = data.options.expires_at.clone();
     let file_original_name = data.file.original_name.clone();
@@ -74,8 +76,9 @@ impl<S: SumidaState> FileService<S> {
 
     let file_id = Files::insert(entity::fs::files::ActiveModel {
       id: NotSet,
-      uri: Set(Some(storage.get_uri(&static_file.path))),
-      path: Set(static_file.path.clone()),
+      uri: Set(Some(storage.get_uri(&static_file.get_path()))),
+      dir: Set(file_dir),
+      name: Set(static_file.name.clone()),
       original_name: Set(file_original_name.clone()),
       size: Set(static_file.bytes.len() as i64),
       mime_type: Set(static_file.mime_type.clone()),
@@ -121,7 +124,7 @@ impl<S: SumidaState> FileService<S> {
     };
 
     if data.hard {
-      SumidaStorage::new().delete(&file.path).await?;
+      SumidaStorage::new().delete(&file.get_path()).await?;
     }
 
     let result = Files::delete_by_id(id).exec(&txn).await?;

@@ -428,7 +428,9 @@ where
   type Rejection = SumidaError;
 
   async fn from_request_parts(req: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-    let inner = Session::from_request_parts(req, state).await?;
+    let inner = Session::from_request_parts(req, state)
+      .await
+      .map_err(|err| SumidaError::InternalServerError(err.1.to_string()))?;
     let profile = inner.get(Self::USER_PROFILE_KEY).await.ok().flatten().unwrap_or_default();
     let user_state = inner.get(Self::USER_STATE_KEY).await.ok().flatten().unwrap_or_default();
     let env = UserEnvironment::from_request_parts(req, state).await.unwrap_or_default();

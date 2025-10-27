@@ -12,12 +12,20 @@ path = "src/bin/app.rs"
 name = "migration"
 path = "src/bin/migration.rs"
 
+[[bin]]
+name = "create_dummy_board_posts"
+path = "src/bin/create_dummy_board_posts.rs"
+
 [dependencies]
 anyhow = { workspace = true, features = ["backtrace"] }
 axum = { workspace = true, features = ["http2", "macros", "multipart"] }
+chrono = { workspace = true }
 color-eyre = "0.6.5"
 dotenvy = "0.15.7"
+entity = { path = "../../entity" }
+sea-orm = { workspace = true }
 sea-orm-migration.workspace = true
+serde_json = { workspace = true }
 sumida = { path = "../../", features = ["full-local"] }
 tokio.workspace = true
 tower.workspace = true

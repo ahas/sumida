@@ -8,7 +8,6 @@ path = "src/lib.rs"
 
 [features]
 default = ["session-store-redis"]
-# default = ["session-store-aws-dynamodb"]
 aws = ["aws-config"]
 aws-s3 = ["aws", "aws-sdk-s3"]
 aws-dynamodb = ["aws", "aws-sdk-dynamodb"]
@@ -19,6 +18,7 @@ session-store-aws-dynamodb = [
   "aws-dynamodb",
   "tower-sessions-dynamodb-store",
 ]
+jwt = ["jsonwebtoken", "jsonwebtoken/rust_crypto"]
 
 [dependencies]
 entity = { path = "../entity" }
@@ -34,7 +34,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 lazy_static = { workspace = true }
 time = { workspace = true }
-jsonwebtoken = { workspace = true }
 sea-orm = { workspace = true }
 tokio = { workspace = true }
 tower-http = { workspace = true }
@@ -45,12 +44,13 @@ uuid = { workspace = true }
 aws-config = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true, optional = true }
 aws-sdk-dynamodb = { workspace = true, optional = true }
+jsonwebtoken = { workspace = true, optional = true }
 config = "0.15.11"
 tower-sessions-redis-store = { version = "0.16.0", optional = true }
 fred = { version = "10.1.0", optional = true }
 tower-sessions-dynamodb-store = { version = "0.3.0", optional = true }
 
-socketioxide = { version = "0.17.0", features = ["state"] }
+socketioxide = { version = "0.18.0", features = ["state"] }
 socketioxide-core = "0.17.0"
 thiserror = "2.0.12"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }

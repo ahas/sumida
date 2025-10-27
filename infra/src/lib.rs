@@ -7,3 +7,5 @@ pub mod tracing;
 
 #[cfg(feature = "aws")]
 pub mod aws;
+
+pub use socketioxide as socket;

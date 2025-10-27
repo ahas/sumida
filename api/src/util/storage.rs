@@ -17,9 +17,18 @@ pub type FileStream = Pin<Box<dyn AsyncRead + Send>>;
 pub struct StaticFile {
   pub name:          String,
   pub original_name: String,
-  pub path:          String,
+  pub dir:           String,
   pub mime_type:     String,
   pub bytes:         Vec<u8>,
+}
+
+impl StaticFile {
+  pub fn get_path(&self) -> String {
+    std::path::Path::new(&self.dir)
+      .join(std::path::Path::new(&self.name))
+      .to_string_lossy()
+      .into_owned()
+  }
 }
 
 #[derive(Clone, Debug)]
@@ -32,16 +41,11 @@ pub struct DownloadFile {
 
 impl From<entity::fs::files::Model> for DownloadFile {
   fn from(value: entity::fs::files::Model) -> Self {
-    let name = std::path::Path::new(&value.path)
-      .file_name()
-      .map(|x| x.to_string_lossy().into_owned())
-      .unwrap_or_default();
-
     Self {
-      name,
+      path:          value.get_path(),
+      name:          value.name,
       original_name: value.original_name,
-      path: value.path,
-      mime_type: value.mime_type,
+      mime_type:     value.mime_type,
     }
   }
 }
@@ -178,7 +182,7 @@ impl LocalStorage {
   async fn store(&self, file: &StaticFile) -> Result<(), SumidaError> {
     use tokio::fs;
 
-    let target_path = self.resolve_path(&file.path);
+    let target_path = self.resolve_path(&file.get_path());
 
     if let Some(parent) = target_path.parent() {
       fs::create_dir_all(parent).await.map_err(|e| {
@@ -260,7 +264,7 @@ impl S3Storage {
   async fn store(&self, file: &StaticFile) -> Result<(), SumidaError> {
     use aws_sdk_s3::primitives::ByteStream;
 
-    let key = self.get_key(&file.path);
+    let key = self.get_key(&file.get_path());
 
     self
       .client

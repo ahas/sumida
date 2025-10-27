@@ -43,7 +43,7 @@ impl<S: SumidaState> FileController<S> {
       .ok_or_else(|| SumidaError::NoData("File".to_owned(), id.to_string()))
   }
 
-  async fn create(
+  async fn upload(
     session: UserSession,
     State(state): State<S>,
     request: Request,
@@ -96,25 +96,21 @@ where
       .route_layer(service_ap!(state, "file", read));
 
     let route_create = Router::new()
-      .route("/", routing::post(Self::create))
+      .route("/", routing::post(Self::upload))
       .route_layer(service_ap!(state, "file", create));
 
-    let route_update = Router::new() //
-      .route_layer(service_ap!(state, "file", update));
+    // let route_update = Router::new() //
+    //   .route_layer(service_ap!(state, "file", update));
 
     let route_delete = Router::new()
       .route("/{id}", routing::delete(Self::delete))
       .route_layer(service_ap!(state, "file", delete));
 
-    let route_admin = Router::new() //
-      .route_layer(service_ap!(state, "file", admin));
-
     Router::new()
       .merge(route_read)
       .merge(route_create)
-      .merge(route_update)
+      // .merge(route_update)
       .merge(route_delete)
-      .merge(route_admin)
       .route_layer(user_guard!(state))
   }
 }

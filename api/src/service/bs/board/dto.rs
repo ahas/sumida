@@ -62,7 +62,7 @@ pub struct BoardListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetBoard {
   pub id:                  i32,
-  #[sea_orm(nested, alias = "bc")]
+  #[sea_orm(nested)]
   pub group:               Option<BoardBoardGroup>,
   pub name:                String,
   pub description:         Option<String>,

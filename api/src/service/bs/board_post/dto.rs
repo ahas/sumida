@@ -147,6 +147,7 @@ impl CreateBoardPost {
     entity::bs::board_posts::ActiveModel {
       id: self.id.into_active_value(),
       board_id: Set(self.board_id),
+      topic_id: Set(self.topic_id),
       parent_id: self.parent_id.into_active_value(),
       title: Set(self.title),
       content: self.content.into_active_value(),
@@ -163,6 +164,7 @@ impl CreateBoardPost {
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardDraft {
   pub board_id:          i32,
+  pub topic_id:          i32,
   pub parent_id:         Nullable<i32>,
   pub title:             String,
   pub content:           Nullable<String>,
@@ -175,6 +177,7 @@ impl CreateBoardDraft {
   pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
     entity::bs::board_posts::ActiveModel {
       board_id: Set(self.board_id),
+      topic_id: Set(self.topic_id),
       parent_id: self.parent_id.into_active_value(),
       title: Set(self.title),
       content: self.content.into_active_value(),

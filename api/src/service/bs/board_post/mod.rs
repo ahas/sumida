@@ -5,7 +5,7 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
-use sea_orm::sea_query::{Alias, Asterisk, Expr};
+use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
   ColumnTrait,
   ConnectionTrait,
@@ -57,7 +57,7 @@ impl<S: SumidaState> BoardPostService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<BoardPostListItem>().all(db).await?;
+    let items = query.into_partial_model::<BoardPostListItem>().all(db).await?;
 
     Ok((items, count))
   }
@@ -66,27 +66,33 @@ impl<S: SumidaState> BoardPostService<S> {
     let txn = self.state.db().begin().await?;
 
     // Then get the post
-    let mut result = self.select(BoardPosts::find_by_id(id)).into_model::<GetBoardPost>().one(&txn).await?;
+    let mut result = self
+      .select(BoardPosts::find_by_id(id))
+      .into_partial_model::<GetBoardPost>()
+      .one(&txn)
+      .await?;
 
     // Load attached files together
     if let Some(ref mut result) = result {
       result.attached_files = BoardFiles::find()
         .filter(entity::bs::board_files::Column::PostId.eq(id))
-        .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
-        .select_only()
-        .column_as(entity::bs::board_files::Column::FileId, "id")
-        .column_as(entity::bs::board_files::Column::PostId, "post_id")
-        .column_as(entity::fs::files::Column::UserId, "user_id")
-        .column_as(entity::fs::files::Column::Path, "path")
-        .column_as(entity::fs::files::Column::OriginalName, "original_name")
-        .column_as(entity::fs::files::Column::Uri, "uri")
-        .column_as(entity::fs::files::Column::Size, "size")
-        .column_as(entity::fs::files::Column::MimeType, "mime_type")
-        .column_as(entity::fs::files::Column::Status, "status")
-        .column_as(entity::fs::files::Column::ExpiresAt, "expires_at")
-        .column_as(entity::fs::files::Column::CreatedAt, "created_at")
-        .column_as(entity::fs::files::Column::UpdatedAt, "updated_at")
-        .into_model::<BoardFileListItem>()
+        .join(JoinType::LeftJoin, entity::bs::board_files::Relation::File.def())
+        .join(JoinType::LeftJoin, entity::fs::files::Relation::User.def())
+        // .select_only()
+        // .column_as(entity::bs::board_files::Column::FileId, "id")
+        // .column_as(entity::bs::board_files::Column::PostId, "post_id")
+        // .column_as(entity::fs::files::Column::UserId, "user_id")
+        // .column_as(entity::fs::files::Column::Dir, "dir")
+        // .column_as(entity::fs::files::Column::Name, "name")
+        // .column_as(entity::fs::files::Column::OriginalName, "original_name")
+        // .column_as(entity::fs::files::Column::Uri, "uri")
+        // .column_as(entity::fs::files::Column::Size, "size")
+        // .column_as(entity::fs::files::Column::MimeType, "mime_type")
+        // .column_as(entity::fs::files::Column::Status, "status")
+        // .column_as(entity::fs::files::Column::ExpiresAt, "expires_at")
+        // .column_as(entity::fs::files::Column::CreatedAt, "created_at")
+        // .column_as(entity::fs::files::Column::UpdatedAt, "updated_at")
+        .into_partial_model::<BoardFileListItem>()
         .all(&txn)
         .await?;
     }
@@ -98,7 +104,11 @@ impl<S: SumidaState> BoardPostService<S> {
 
   pub async fn view(&self, session: &UserSession, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let Some(post) = self.select(BoardPosts::find_by_id(id)).into_model::<GetBoardPost>().one(&txn).await?
+    let Some(post) = self
+      .select(BoardPosts::find_by_id(id))
+      .into_partial_model::<GetBoardPost>()
+      .one(&txn)
+      .await?
     else {
       return Err(SumidaError::NoData("BoardPost".into(), id.to_string()));
     };
@@ -264,20 +274,16 @@ impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
     query
       .select_only()
       .expr(Expr::col((BoardPosts, Asterisk)))
-      .expr(Expr::count(entity::bs::board_post_views::Column::Id.into_expr()))
+      // .expr(Expr::count(entity::bs::board_post_views::Column::Id.into_expr()))
       .left_join(Users)
       .left_join(Boards)
       .left_join(BoardTopics)
-      .join(JoinType::LeftJoin, entity::bs::board_posts::Relation::Views.def())
-      .group_by(entity::bs::board_posts::Column::Id)
-      .group_by(entity::bs::board_posts::Column::BoardId)
-      .group_by(entity::bs::board_posts::Column::UserId)
   }
 
   fn ap(&self) -> ApChain {
     use entity::bs::board_posts::Column;
 
-    let board_group_id = Expr::col((Alias::new("board"), "group_id")).cast_as("VARCHAR");
+    let board_group_id = entity::bs::boards::Column::GroupId.into_simple_expr().cast_as("VARCHAR");
 
     ap::chain()
       .push(ap::ns("board_group").expr(board_group_id))

@@ -38,6 +38,7 @@ pub struct BoardGroupListItem {
   pub id:          i32,
   pub name:        String,
   pub description: Option<String>,
+  pub order:       i32,
   pub parent_id:   Option<i32>,
   pub created_at:  DateTimeWithTimeZone,
   pub updated_at:  DateTimeWithTimeZone,

@@ -51,7 +51,7 @@ impl<S: SumidaState> BoardService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<BoardListItem>().all(&txn).await?;
+    let items = query.into_partial_model::<BoardListItem>().all(&txn).await?;
 
     txn.commit().await?;
 
@@ -62,7 +62,7 @@ impl<S: SumidaState> BoardService<S> {
     Ok(
       self
         .select(Boards::find_by_id(id))
-        .into_model::<GetBoard>()
+        .into_partial_model::<GetBoard>()
         .one(self.state.db())
         .await?,
     )
