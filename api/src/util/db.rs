@@ -15,19 +15,21 @@ pub fn is_serialization_failure(error: &DbErr) -> bool {
   }
 }
 
-pub fn wrap_ilike_col<C, S>(col: C, text: S) -> SimpleExpr
-where
-  C: ColumnTrait,
-  S: AsRef<str>,
-{
-  Expr::col(col).ilike(format!("%{text}%", text = text.as_ref()))
-}
-
 pub fn wrap_ilike<S>(col: Expr, text: S) -> SimpleExpr
 where
   S: AsRef<str>,
 {
   col.ilike(format!("%{text}%", text = text.as_ref()))
+}
+
+pub fn tsquery<C, S>(col: C, search: S) -> SimpleExpr
+where
+  C: ColumnTrait,
+  S: AsRef<str>,
+{
+  let col_name = format!(r#""{}""#, col.to_string());
+
+  Expr::cust_with_values(format!(r#"{} @@ plainto_tsquery('simple', $1)"#, col_name), [search.as_ref()])
 }
 
 pub fn i32_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>

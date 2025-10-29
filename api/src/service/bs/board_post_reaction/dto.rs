@@ -8,7 +8,7 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::db::wrap_ilike_col;
+use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostReactionFilter {
@@ -24,7 +24,7 @@ impl BoardPostReactionFilter {
     query
       .apply_if(self.post_id, |q, v| q.filter(Column::PostId.eq(v)))
       .apply_if(self.user_id, |q, v| q.filter(Column::UserId.eq(v)))
-      .apply_if(self.value.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Value, v)))
+      .apply_if(self.value.as_ref(), |q, v| q.filter(wrap_ilike(Column::Value.into_expr(), v)))
   }
 }
 

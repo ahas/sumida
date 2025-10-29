@@ -8,7 +8,7 @@ use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::db::wrap_ilike_col;
+use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct MailFormFilter {
@@ -19,8 +19,8 @@ pub struct MailFormFilter {
 impl MailFormFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
     query
-      .apply_if(self.sender.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Sender, v)))
-      .apply_if(self.subject.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Subject, v)))
+      .apply_if(self.sender.as_ref(), |q, v| q.filter(wrap_ilike(Column::Sender.into_expr(), v)))
+      .apply_if(self.subject.as_ref(), |q, v| q.filter(wrap_ilike(Column::Subject.into_expr(), v)))
   }
 }
 

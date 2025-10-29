@@ -68,6 +68,7 @@ enum BoardPosts {
   ContentType,
   Content,
   Text,
+  TextTsv,
   Tags,
   Views,
   Reactions,
@@ -253,16 +254,17 @@ impl MigrationTrait for Migration {
           .col(integer(BoardPosts::Id).auto_increment())
           .col(integer_null(BoardPosts::ParentId))
           .col(integer(BoardPosts::BoardId))
-          .col(integer(BoardPosts::TopicId))
+          .col(integer_null(BoardPosts::TopicId))
           .col(integer_null(BoardPosts::UserId))
           .col(string(BoardPosts::Kind).default("article"))
           .col(string(BoardPosts::Status).default("draft"))
           .col(integer_null(BoardPosts::Revision))
           .col(string(BoardPosts::Title))
           .col(string_null(BoardPosts::CompressionType))
-          .col(string_null(BoardPosts::ContentType))
+          .col(string(BoardPosts::ContentType))
           .col(text_null(BoardPosts::Content))
           .col(text_null(BoardPosts::Text))
+          .col(ColumnDef::new(BoardPosts::TextTsv).custom("tsvector").null())
           .col(timestamp_with_time_zone_null(BoardPosts::PublishedAt))
           .col(timestamp_with_time_zone_null(BoardPosts::ScheduledAt))
           .col(integer(BoardPosts::Views).default(0))
@@ -337,6 +339,28 @@ impl MigrationTrait for Migration {
           .table(BoardPosts::Table)
           .col(BoardPosts::ParentId)
           .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_posts__content_type")
+          .table(BoardPosts::Table)
+          .col(BoardPosts::ContentType)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_posts__text")
+          .table(BoardPosts::Table)
+          .col(BoardPosts::TextTsv)
+          .index_type(IndexType::FullText)
           .to_owned(),
       )
       .await?;

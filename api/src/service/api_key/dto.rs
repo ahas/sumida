@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::ap::ApForUser;
-use crate::util::db::{wrap_ilike, wrap_ilike_col};
+use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct ApiKeyFilter {
@@ -28,7 +28,7 @@ impl ApiKeyFilter {
     use entity::api_keys::Column;
 
     query
-      .apply_if(self.key.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Key, v)))
+      .apply_if(self.key.as_ref(), |q, v| q.filter(wrap_ilike(Column::Key.into_expr(), v)))
       .apply_if(self.user_id, |q, v| q.filter(Column::UserId.eq(v)))
       .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike(Expr::col("user_username"), v)))
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Expr::col("user_full_name"), v)))

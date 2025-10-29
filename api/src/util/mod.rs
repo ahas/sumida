@@ -1,4 +1,5 @@
 pub mod ap;
+pub mod board;
 pub mod db;
 pub mod file_validation;
 pub mod storage;

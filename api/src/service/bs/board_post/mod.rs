@@ -47,8 +47,33 @@ impl<S: SumidaState> BoardPostService<S> {
   ) -> Result<(Vec<BoardPostListItem>, u64), SumidaError> {
     use entity::bs::board_posts::Column;
 
+    let query = self.select(BoardPosts::find());
+    let text = filter.text.clone().unwrap_or_default();
+    let query = if text.len() > 0 && filter.with_snippet {
+      let snippet_length = filter.snippet_length.unwrap_or(250);
+      query.column_as(
+        Expr::cust_with_values(
+            &format!(
+              r#"ts_headline(
+                'simple',
+                text,
+                plainto_tsquery('simple', $1),
+                'StartSel=<mark>, StopSel=</mark>, MaxWords={len}, MinWords=5, ShortWord=3, HighlightAll=TRUE'
+              )"#,
+              len = snippet_length
+            ),
+          [text],
+        ),
+        "text",
+      )
+    } else if let Some(snippet_length) = filter.snippet_length {
+      query.expr_as(Expr::cust_with_values(r#"left(text, $1)"#, [snippet_length]), "snippet")
+    } else {
+      query.column_as(Expr::cust("NULL::tsvector"), "text")
+    };
+
     let db = self.state.db();
-    let mut query = filter.apply(self.select(BoardPosts::find()));
+    let mut query = filter.apply(query);
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -78,20 +103,6 @@ impl<S: SumidaState> BoardPostService<S> {
         .filter(entity::bs::board_files::Column::PostId.eq(id))
         .join(JoinType::LeftJoin, entity::bs::board_files::Relation::File.def())
         .join(JoinType::LeftJoin, entity::fs::files::Relation::User.def())
-        // .select_only()
-        // .column_as(entity::bs::board_files::Column::FileId, "id")
-        // .column_as(entity::bs::board_files::Column::PostId, "post_id")
-        // .column_as(entity::fs::files::Column::UserId, "user_id")
-        // .column_as(entity::fs::files::Column::Dir, "dir")
-        // .column_as(entity::fs::files::Column::Name, "name")
-        // .column_as(entity::fs::files::Column::OriginalName, "original_name")
-        // .column_as(entity::fs::files::Column::Uri, "uri")
-        // .column_as(entity::fs::files::Column::Size, "size")
-        // .column_as(entity::fs::files::Column::MimeType, "mime_type")
-        // .column_as(entity::fs::files::Column::Status, "status")
-        // .column_as(entity::fs::files::Column::ExpiresAt, "expires_at")
-        // .column_as(entity::fs::files::Column::CreatedAt, "created_at")
-        // .column_as(entity::fs::files::Column::UpdatedAt, "updated_at")
         .into_partial_model::<BoardFileListItem>()
         .all(&txn)
         .await?;
@@ -104,12 +115,8 @@ impl<S: SumidaState> BoardPostService<S> {
 
   pub async fn view(&self, session: &UserSession, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let Some(post) = self
-      .select(BoardPosts::find_by_id(id))
-      .into_partial_model::<GetBoardPost>()
-      .one(&txn)
-      .await?
-    else {
+    let board_post_query = self.select(BoardPosts::find_by_id(id));
+    let Some(post) = board_post_query.clone().one(&txn).await? else {
       return Err(SumidaError::NoData("BoardPost".into(), id.to_string()));
     };
 
@@ -130,12 +137,20 @@ impl<S: SumidaState> BoardPostService<S> {
         };
 
         BoardPostViews::insert(view_am).exec(&txn).await?;
+        BoardPosts::update(entity::bs::board_posts::ActiveModel {
+          views: Set(post.views + 1),
+          ..Default::default()
+        })
+        .exec(&txn)
+        .await?;
       }
     }
 
+    let post = board_post_query.into_partial_model::<GetBoardPost>().one(&txn).await?;
+
     txn.commit().await?;
 
-    Ok(Some(post))
+    Ok(post)
   }
 
   pub async fn create(
@@ -158,12 +173,16 @@ impl<S: SumidaState> BoardPostService<S> {
 
     // Store attached file IDs for later processing
     let attached_file_ids = data.attached_file_ids.clone();
+    let plain_text = data.parse_plain_text()?;
 
     let mut am = data.into_active_model();
     am.user_id = Set(Some(self.session.profile.id));
 
     let result = BoardPosts::insert(am).exec(&txn).await?;
     let post_id = result.last_insert_id;
+
+    // Update `text`(tsvector) column
+    BoardPosts::update_text(post_id, plain_text, &txn).await?;
 
     // Associate attached files with the created post
     self.update_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
@@ -243,12 +262,15 @@ impl<S: SumidaState> BoardPostService<S> {
 
     self.try_access("update", BoardPosts::find_by_id(id), &txn).await?;
 
+    let post = BoardPosts::find_by_id(id).one(&txn).await?.unwrap();
     let attached_file_ids = data.attached_file_ids.clone();
+    let plain_text = data.parse_plain_text(post.content_type)?;
 
     let mut am = data.into_active_model();
     am.id = Set(id);
 
     let item = BoardPosts::update(am).exec(&txn).await?;
+    BoardPosts::update_text(id, plain_text, &txn).await?;
 
     if let Some(file_ids) = attached_file_ids {
       self.update_files(id, file_ids, &txn).await?;
@@ -274,7 +296,6 @@ impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
     query
       .select_only()
       .expr(Expr::col((BoardPosts, Asterisk)))
-      // .expr(Expr::count(entity::bs::board_post_views::Column::Id.into_expr()))
       .left_join(Users)
       .left_join(Boards)
       .left_join(BoardTopics)

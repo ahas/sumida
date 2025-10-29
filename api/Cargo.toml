@@ -61,3 +61,4 @@ jsonwebtoken = { workspace = true, optional = true }
 axum-extra = { version = "0.10.1", features = ["query"] }
 serde_qs = { version = "0.15.0", features = ["axum"] }
 futures = "0.3.31"
+scraper = "0.24.0"

@@ -9,7 +9,7 @@ use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::db::wrap_ilike_col;
+use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserFilter {
@@ -27,12 +27,12 @@ impl UserFilter {
       .apply_if(self.search.as_ref(), |q, v| {
         q.filter(
           Condition::any() //
-            .add(wrap_ilike_col(Column::Username, v))
-            .add(wrap_ilike_col(Column::FullName, v)),
+            .add(wrap_ilike(Column::Username.into_expr(), v))
+            .add(wrap_ilike(Column::FullName.into_expr(), v)),
         )
       })
-      .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Username, v)))
-      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::FullName, v)))
+      .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike(Column::Username.into_expr(), v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::FullName.into_expr(), v)))
       .apply_if(self.role_id, |q, v| q.filter(Column::RoleId.eq(v)));
 
     if let Some(org_id) = &self.organization_id {

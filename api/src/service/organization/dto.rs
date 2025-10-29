@@ -8,7 +8,7 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::db::wrap_ilike_col;
+use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct OrganizationFilter {
@@ -21,7 +21,7 @@ impl OrganizationFilter {
   where
     E: EntityTrait,
   {
-    query = query.apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Name, v)));
+    query = query.apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)));
 
     query = if let Some(parent_id) = self.parent_id {
       query.filter(Column::ParentId.eq(parent_id))

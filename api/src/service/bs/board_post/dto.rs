@@ -3,6 +3,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bs::board_posts::*;
 use entity::prelude::*;
+use error::SumidaError;
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::*;
 use sea_orm::{Condition, EntityTrait, IntoActiveValue, QueryTrait};
@@ -11,17 +12,36 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 
 use crate::service::prelude::BoardFileListItem;
-use crate::util::db::wrap_ilike;
+use crate::util::board::HtmlContent;
+use crate::util::db::{tsquery, wrap_ilike};
+
+fn parse_plain_text(
+  content_type: BoardPostContentType,
+  content: Nullable<String>,
+) -> Result<String, SumidaError> {
+  let content: Option<String> = content.into();
+  let Some(content) = content else {
+    return Ok("".to_string());
+  };
+
+  Ok(match content_type {
+    BoardPostContentType::Html => HtmlContent(&content).to_plain_text(),
+  })
+}
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostFilter {
-  pub search:    Option<String>,
-  pub title:     Option<String>,
-  pub topic_id:  Option<i32>,
-  pub board_id:  Option<i32>,
-  pub parent_id: Option<i32>,
-  pub kind:      Option<BoardPostKind>,
-  pub status:    Option<BoardPostStatus>,
+  pub search:         Option<String>,
+  pub title:          Option<String>,
+  pub text:           Option<String>,
+  pub topic_id:       Option<i32>,
+  pub board_id:       Option<i32>,
+  pub parent_id:      Option<i32>,
+  pub kind:           Option<BoardPostKind>,
+  pub status:         Option<BoardPostStatus>,
+  #[serde(default)]
+  pub with_snippet:   bool,
+  pub snippet_length: Option<i32>,
 }
 
 impl BoardPostFilter {
@@ -31,10 +51,11 @@ impl BoardPostFilter {
         q.filter(
           Condition::any()
             .add(wrap_ilike(Column::Title.into_expr(), v))
-            .add(wrap_ilike(Column::Content.into_expr(), v)),
+            .add(tsquery(Column::TextTsv, v)),
         )
       })
-      .apply_if(self.title.as_ref(), |q, v| q.filter(Column::Title.eq(v)))
+      .apply_if(self.title.as_ref(), |q, v| q.filter(wrap_ilike(Column::Title.into_expr(), v)))
+      .apply_if(self.text.as_ref(), |q, v| q.filter(tsquery(Column::TextTsv, v)))
       .apply_if(self.topic_id, |q, v| q.filter(Column::TopicId.eq(v)))
       .apply_if(self.board_id, |q, v| q.filter(Column::BoardId.eq(v)))
       .apply_if(self.parent_id, |q, v| q.filter(Column::ParentId.eq(v)))
@@ -79,11 +100,11 @@ pub struct BoardPostListItem {
   #[sea_orm(nested)]
   pub board:        BoardPostBoard,
   #[sea_orm(nested, nullable)]
-  pub topic:        BoardPostTopic,
+  pub topic:        Option<BoardPostTopic>,
   #[sea_orm(nested, nullable)]
   pub user:         Option<BoardPostUser>,
   pub title:        String,
-  pub content:      Option<String>,
+  pub text:      Option<String>,
   pub kind:         BoardPostKind,
   pub status:       BoardPostStatus,
   pub tags:         Option<Vec<String>>,
@@ -131,10 +152,11 @@ impl IntoResponse for GetBoardPost {
 pub struct CreateBoardPost {
   pub id:                Optional<i32>,
   pub board_id:          i32,
-  pub topic_id:          i32,
+  pub topic_id:          Nullable<i32>,
   pub parent_id:         Nullable<i32>,
   pub title:             String,
   pub content:           Nullable<String>,
+  pub content_type:      BoardPostContentType,
   pub kind:              Optional<BoardPostKind>,
   pub status:            Optional<BoardPostStatus>,
   pub published_at:      Nullable<DateTimeWithTimeZone>,
@@ -147,10 +169,11 @@ impl CreateBoardPost {
     entity::bs::board_posts::ActiveModel {
       id: self.id.into_active_value(),
       board_id: Set(self.board_id),
-      topic_id: Set(self.topic_id),
+      topic_id: self.topic_id.into_active_value(),
       parent_id: self.parent_id.into_active_value(),
       title: Set(self.title),
       content: self.content.into_active_value(),
+      content_type: Set(self.content_type),
       kind: self.kind.into_active_value(),
       status: self.status.into_active_value(),
       published_at: self.published_at.into_active_value(),
@@ -158,13 +181,17 @@ impl CreateBoardPost {
       ..Default::default()
     }
   }
+
+  pub fn parse_plain_text(&self) -> Result<String, SumidaError> {
+    parse_plain_text(self.content_type.clone(), self.content.clone())
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardDraft {
   pub board_id:          i32,
-  pub topic_id:          i32,
+  pub topic_id:          Nullable<i32>,
   pub parent_id:         Nullable<i32>,
   pub title:             String,
   pub content:           Nullable<String>,
@@ -177,7 +204,7 @@ impl CreateBoardDraft {
   pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
     entity::bs::board_posts::ActiveModel {
       board_id: Set(self.board_id),
-      topic_id: Set(self.topic_id),
+      topic_id: self.topic_id.into_active_value(),
       parent_id: self.parent_id.into_active_value(),
       title: Set(self.title),
       content: self.content.into_active_value(),
@@ -203,7 +230,8 @@ impl IntoResponse for BoardPostCreated {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
-  pub topic_id:          Optional<i32>,
+  #[serde(default)]
+  pub topic_id:          Nullable<i32>,
   pub title:             Optional<String>,
   #[serde(default)]
   pub content:           Nullable<String>,
@@ -228,6 +256,10 @@ impl UpdateBoardPost {
       tags: self.tags.into_active_value(),
       ..Default::default()
     }
+  }
+
+  pub fn parse_plain_text(&self, content_type: BoardPostContentType) -> Result<String, SumidaError> {
+    parse_plain_text(content_type, self.content.clone())
   }
 }
 

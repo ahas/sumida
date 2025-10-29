@@ -13,7 +13,7 @@ use serde_json::json;
 
 use crate::SumidaState;
 use crate::util::ap::ApForUser;
-use crate::util::db::{wrap_ilike, wrap_ilike_col};
+use crate::util::db::wrap_ilike;
 use crate::util::storage::StaticFile;
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -37,15 +37,15 @@ impl FileFilter {
       .apply_if(self.user.as_ref(), |q, v| {
         q.filter(
           Condition::any()
-            .add(wrap_ilike_col(entity::users::Column::Username, v))
+            .add(wrap_ilike(entity::users::Column::Username.into_expr(), v))
             .add(wrap_ilike(Expr::col((Users, Alias::new("full_name"))), v)),
         )
       })
-      .apply_if(self.dir.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Dir, v)))
-      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Name, v)))
-      .apply_if(self.uri.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Uri, v)))
+      .apply_if(self.dir.as_ref(), |q, v| q.filter(wrap_ilike(Column::Dir.into_expr(), v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)))
+      .apply_if(self.uri.as_ref(), |q, v| q.filter(wrap_ilike(Column::Uri.into_expr(), v)))
       .apply_if(self.status.as_ref(), |q, v| q.filter(Column::Status.eq(v)))
-      .apply_if(self.mime_type.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::MimeType, v)))
+      .apply_if(self.mime_type.as_ref(), |q, v| q.filter(wrap_ilike(Column::MimeType.into_expr(), v)))
   }
 }
 

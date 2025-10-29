@@ -8,7 +8,7 @@ use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::db::wrap_ilike_col;
+use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct AccessPolicyFilter {
@@ -24,10 +24,10 @@ impl AccessPolicyFilter {
     use entity::access_policies::Column;
 
     query
-      .apply_if(self.namespace.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Namespace, v)))
-      .apply_if(self.effect.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Effect, v)))
-      .apply_if(self.object.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Object, v)))
-      .apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::User, v)))
+      .apply_if(self.namespace.as_ref(), |q, v| q.filter(wrap_ilike(Column::Namespace.into_expr(), v)))
+      .apply_if(self.effect.as_ref(), |q, v| q.filter(wrap_ilike(Column::Effect.into_expr(), v)))
+      .apply_if(self.object.as_ref(), |q, v| q.filter(wrap_ilike(Column::Object.into_expr(), v)))
+      .apply_if(self.user.as_ref(), |q, v| q.filter(wrap_ilike(Column::User.into_expr(), v)))
   }
 }
 

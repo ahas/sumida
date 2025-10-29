@@ -1,4 +1,5 @@
 use chrono::Utc;
+use sea_orm::UpdateResult;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -22,13 +23,21 @@ pub enum BoardPostKind {
   Reply,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub enum BoardPostContentType {
+  Html,
+}
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "board_posts")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:               i32,
   pub board_id:         i32,
-  pub topic_id:         i32,
+  #[sea_orm(nullable)]
+  pub topic_id:         Option<i32>,
   #[sea_orm(nullable)]
   pub parent_id:        Option<i32>,
   #[sea_orm(nullable)]
@@ -40,12 +49,13 @@ pub struct Model {
   pub title:            String,
   #[sea_orm(nullable)]
   pub compression_type: Option<String>,
-  #[sea_orm(nullable)]
-  pub content_type:     Option<String>,
+  pub content_type:     BoardPostContentType,
   #[sea_orm(nullable)]
   pub content:          Option<String>,
   #[sea_orm(nullable)]
   pub text:             Option<String>,
+  #[sea_orm(nullable)]
+  pub text_tsv:         Option<String>,
   #[sea_orm(nullable)]
   pub tags:             Option<Vec<String>>,
   pub views:            i32,
@@ -210,5 +220,19 @@ impl Model {
 
   pub fn set_tags(&mut self, tags: Vec<String>) {
     self.tags = if tags.is_empty() { None } else { Some(tags) };
+  }
+}
+
+impl Entity {
+  pub async fn update_text<'db, S: AsRef<str>, C: ConnectionTrait>(
+    id: i32,
+    text: S,
+    db: &'db C,
+  ) -> Result<UpdateResult, DbErr> {
+    Self::update_many()
+      .col_expr(Column::Text, Expr::cust_with_values("to_tsvector('simple', $1)", [text.as_ref()]))
+      .filter(Column::Id.eq(id))
+      .exec(db)
+      .await
   }
 }

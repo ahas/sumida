@@ -201,7 +201,7 @@ impl UserSession {
   pub const USER_ENV_KEY: &'static str = "user.env";
   pub const USER_STATE_KEY: &'static str = "user.state";
 
-  pub async fn authorize<C: TransactionTrait>(
+  pub async fn authorize<C: ConnectionTrait + TransactionTrait>(
     &mut self,
     id: i32,
     username: &str,
@@ -373,7 +373,10 @@ impl UserSession {
     }
   }
 
-  pub async fn identify<C: TransactionTrait>(&mut self, db: &C) -> Result<(), SumidaError> {
+  pub async fn identify<C: ConnectionTrait + TransactionTrait>(
+    &mut self,
+    db: &C,
+  ) -> Result<(), SumidaError> {
     if self.profile.is_authorized {
       let profile = &mut self.profile;
       let txn = db.begin().await?;

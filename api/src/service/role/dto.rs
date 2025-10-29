@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::ap::ApForUser;
-use crate::util::db::wrap_ilike_col;
+use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct RoleFilter {
@@ -22,8 +22,10 @@ impl RoleFilter {
     use entity::roles::Column;
 
     query
-      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Name, v)))
-      .apply_if(self.description.as_ref(), |q, v| q.filter(wrap_ilike_col(Column::Description, v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)))
+      .apply_if(self.description.as_ref(), |q, v| {
+        q.filter(wrap_ilike(Column::Description.into_expr(), v))
+      })
   }
 }
 
