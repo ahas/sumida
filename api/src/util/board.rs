@@ -1,3 +1,7 @@
+use sea_orm::JoinType;
+use sea_orm::prelude::*;
+use sea_orm::sea_query::{Alias, Func, Query};
+
 pub struct HtmlContent<'a>(pub &'a str);
 
 impl<'a> HtmlContent<'a> {
@@ -7,5 +11,131 @@ impl<'a> HtmlContent<'a> {
     let fragment = Html::parse_fragment(self.0);
 
     fragment.root_element().text().collect::<Vec<_>>().join(" ")
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct TsHeadlineExpr {
+  config:        String,
+  column:        String,
+  keyword:       String,
+  start_sel:     String,
+  stop_sel:      String,
+  start_offset:  usize,
+  max_fragments: usize,
+  max_length:    Option<usize>,
+  max_words:     usize,
+  min_words:     usize,
+  short_word:    usize,
+  highlight_all: bool,
+}
+
+impl TsHeadlineExpr {
+  pub fn new<C>(column: C, keyword: &str) -> Self
+  where
+    C: ColumnTrait,
+  {
+    Self {
+      config:        "simple".into(),
+      column:        column.to_string(),
+      keyword:       keyword.into(),
+      start_sel:     "<mark>".into(),
+      stop_sel:      "</mark>".into(),
+      start_offset:  0,
+      max_fragments: 1,
+      max_length:    None,
+      max_words:     20,
+      min_words:     5,
+      short_word:    3,
+      highlight_all: false,
+    }
+  }
+
+  pub fn config(mut self, config: &str) -> Self {
+    self.config = config.to_string();
+    self
+  }
+  pub fn delimiters(mut self, start: &str, stop: &str) -> Self {
+    self.start_sel = start.into();
+    self.stop_sel = stop.into();
+    self
+  }
+  pub fn start_offset(mut self, n: usize) -> Self {
+    self.start_offset = n;
+    self
+  }
+  pub fn max_fragments(mut self, n: usize) -> Self {
+    self.max_fragments = n;
+    self
+  }
+  pub fn max_length(mut self, n: Option<usize>) -> Self {
+    self.max_length = n;
+    self
+  }
+  pub fn max_words(mut self, n: usize) -> Self {
+    self.max_words = n;
+    self
+  }
+  pub fn min_words(mut self, n: usize) -> Self {
+    self.min_words = n;
+    self
+  }
+  pub fn short_word(mut self, n: usize) -> Self {
+    self.short_word = n;
+    self
+  }
+  pub fn highlight_all(mut self, b: bool) -> Self {
+    self.highlight_all = b;
+    self
+  }
+
+  pub fn apply<E: EntityTrait>(self, mut query: Select<E>) -> Select<E> {
+    let sql = format!(
+      "ts_headline(
+        '{config}',
+        {column},
+        plainto_tsquery('{config}', $1),
+        'StartSel={start}
+        , StopSel={stop}
+        , MaxWords={max_words}
+        , MinWords={min_words}
+        , ShortWord={short_word}
+        , MaxFragments={max_fragments}
+        , HighlightAll={highlight_all}'
+      )",
+      config = self.config,
+      column = self.column,
+      start = self.start_sel,
+      stop = self.stop_sel,
+      max_words = self.max_words,
+      min_words = self.min_words,
+      short_word = self.short_word,
+      max_fragments = self.max_fragments,
+      highlight_all = if self.highlight_all { "TRUE" } else { "FALSE" }
+    );
+
+    query.query().join_lateral(
+      JoinType::LeftJoin,
+      Query::select().expr_as(Expr::cust_with_values(sql, [self.keyword]), "snippet").take(),
+      Alias::new("H"),
+      Expr::cust("TRUE"),
+    );
+
+    let highlighted_snippet = Expr::col((Alias::new("H"), "snippet"));
+    let pos = Func::cust("strpos").arg(highlighted_snippet.clone()).arg(self.start_sel);
+
+    if let Some(max_length) = self.max_length {
+      query.query().expr_as(
+        Func::cust("substring")
+          .arg(highlighted_snippet)
+          .arg(Func::cust("greatest").arg(Expr::expr(pos).sub(self.start_offset as i32)).arg(0))
+          .arg(max_length as i32),
+        "snippet",
+      );
+    } else {
+      query.query().expr_as(highlighted_snippet, "snippet");
+    }
+
+    query
   }
 }

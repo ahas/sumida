@@ -5,7 +5,7 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
-use sea_orm::sea_query::{Asterisk, Expr};
+use sea_orm::sea_query::{Alias, Expr, Func};
 use sea_orm::{
   ColumnTrait,
   ConnectionTrait,
@@ -17,6 +17,7 @@ use sea_orm::{
   PaginatorTrait,
   QueryFilter,
   QuerySelect,
+  QueryTrait,
   RelationTrait,
   Select,
   TransactionTrait,
@@ -27,6 +28,7 @@ use crate::SumidaState;
 use crate::service::ApiService;
 use crate::service::prelude::BoardFileListItem;
 use crate::util::ap::{self, ApChain, ApGuard};
+use crate::util::board::TsHeadlineExpr;
 use crate::util::pagination::Pagination;
 
 pub struct BoardPostService<S: SumidaState> {
@@ -47,33 +49,36 @@ impl<S: SumidaState> BoardPostService<S> {
   ) -> Result<(Vec<BoardPostListItem>, u64), SumidaError> {
     use entity::bs::board_posts::Column;
 
+    let search_text = filter.search.clone().unwrap_or_else(|| filter.text.clone().unwrap_or_default());
+    let with_snippet = filter.with_snippet;
     let query = self.select(BoardPosts::find());
-    let text = filter.text.clone().unwrap_or_default();
-    let query = if text.len() > 0 && filter.with_snippet {
-      let snippet_length = filter.snippet_length.unwrap_or(250);
-      query.column_as(
-        Expr::cust_with_values(
-            &format!(
-              r#"ts_headline(
-                'simple',
-                text,
-                plainto_tsquery('simple', $1),
-                'StartSel=<mark>, StopSel=</mark>, MaxWords={len}, MinWords=5, ShortWord=3, HighlightAll=TRUE'
-              )"#,
-              len = snippet_length
-            ),
-          [text],
-        ),
-        "text",
-      )
-    } else if let Some(snippet_length) = filter.snippet_length {
-      query.expr_as(Expr::cust_with_values(r#"left(text, $1)"#, [snippet_length]), "snippet")
+    let query = if with_snippet {
+      if search_text.len() > 0 {
+        TsHeadlineExpr::new(Column::Text, &search_text)
+          .start_offset(filter.snippet_offset)
+          .delimiters(&filter.snippet_start_sel, &filter.snippet_stop_sel)
+          .max_words(filter.snippet_max_words)
+          .min_words(filter.snippet_min_words)
+          .max_fragments(filter.snippet_max_fragments)
+          .short_word(filter.snippet_short_word)
+          .max_length(filter.snippet_length)
+          .highlight_all(filter.snippet_highlight_all)
+          .apply(query)
+      } else if let Some(snippet_length) = filter.snippet_length {
+        query.column_as(
+          Expr::expr(Func::cust("left").arg(Expr::col(Alias::new("text"))).arg(snippet_length as i32)),
+          "snippet",
+        )
+      } else {
+        query.expr(Expr::col(Alias::new("text")))
+      }
     } else {
-      query.column_as(Expr::cust("NULL::tsvector"), "text")
+      query.column_as(Expr::cust("NULL::tsvector"), "snippet")
     };
 
     let db = self.state.db();
     let mut query = filter.apply(query);
+
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -82,7 +87,7 @@ impl<S: SumidaState> BoardPostService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_partial_model::<BoardPostListItem>().all(db).await?;
+    let items = query.into_model::<BoardPostListItem>().all(db).await?;
 
     Ok((items, count))
   }
@@ -93,7 +98,8 @@ impl<S: SumidaState> BoardPostService<S> {
     // Then get the post
     let mut result = self
       .select(BoardPosts::find_by_id(id))
-      .into_partial_model::<GetBoardPost>()
+      .column_as(entity::bs::board_posts::Column::Content, "content")
+      .into_model::<GetBoardPost>()
       .one(&txn)
       .await?;
 
@@ -115,7 +121,11 @@ impl<S: SumidaState> BoardPostService<S> {
 
   pub async fn view(&self, session: &UserSession, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let board_post_query = self.select(BoardPosts::find_by_id(id));
+    let board_post_query = self
+      .select(
+        BoardPosts::find_by_id(id), //
+      )
+      .column_as(entity::bs::board_posts::Column::Content, "content");
     let Some(post) = board_post_query.clone().one(&txn).await? else {
       return Err(SumidaError::NoData("BoardPost".into(), id.to_string()));
     };
@@ -146,7 +156,7 @@ impl<S: SumidaState> BoardPostService<S> {
       }
     }
 
-    let post = board_post_query.into_partial_model::<GetBoardPost>().one(&txn).await?;
+    let post = board_post_query.into_model::<GetBoardPost>().one(&txn).await?;
 
     txn.commit().await?;
 
@@ -181,7 +191,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let result = BoardPosts::insert(am).exec(&txn).await?;
     let post_id = result.last_insert_id;
 
-    // Update `text`(tsvector) column
+    // Update `text_tsv`(tsvector) column
     BoardPosts::update_text(post_id, plain_text, &txn).await?;
 
     // Associate attached files with the created post
@@ -211,6 +221,7 @@ impl<S: SumidaState> BoardPostService<S> {
       .await?;
 
     let attached_file_ids = data.attached_file_ids.clone();
+    let plain_text = data.parse_plain_text()?;
 
     let mut am = data.into_active_model();
     am.user_id = Set(Some(self.session.profile.id));
@@ -219,6 +230,10 @@ impl<S: SumidaState> BoardPostService<S> {
     let result = BoardPosts::insert(am).exec(&txn).await?;
     let post_id = result.last_insert_id;
 
+    // Update `text_tsv`(tsvector) column
+    BoardPosts::update_text(post_id, plain_text, &txn).await?;
+
+    // Associate attached files with the created post
     self.update_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
 
     txn.commit().await?;
@@ -293,22 +308,45 @@ impl<S: SumidaState> BoardPostService<S> {
 
 impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
   fn default_query_with(query: Select<BoardPosts>) -> Select<BoardPosts> {
+    use sea_orm::JoinType::LeftJoin;
+
     query
       .select_only()
-      .expr(Expr::col((BoardPosts, Asterisk)))
-      .left_join(Users)
-      .left_join(Boards)
-      .left_join(BoardTopics)
+      // BoardPostCommon
+      .column_as(BoardPostsColumn::Id, "id")
+      .column_as(BoardPostsColumn::ParentId, "parent_id")
+      .column_as(BoardPostsColumn::Title, "title")
+      .column_as(BoardPostsColumn::Kind, "kind")
+      .column_as(BoardPostsColumn::Status, "status")
+      .column_as(BoardPostsColumn::Tags, "tags")
+      .column_as(BoardPostsColumn::Views, "views")
+      .column_as(BoardPostsColumn::Reactions, "reactions")
+      .column_as(BoardPostsColumn::PublishedAt, "published_at")
+      .column_as(BoardPostsColumn::ScheduledAt, "scheduled_at")
+      .column_as(BoardPostsColumn::CreatedAt, "created_at")
+      .column_as(BoardPostsColumn::UpdatedAt, "updated_at")
+      // BoardPostUser
+      .column_as(UsersColumn::Id, "user_id")
+      .column_as(UsersColumn::Username, "user_username")
+      .column_as(UsersColumn::FullName, "user_full_name")
+      // BoardPostBoard
+      .column_as(BoardsColumn::Id, "board_id")
+      .column_as(BoardsColumn::Name, "board_name")
+      .column_as(BoardsColumn::GroupId, "board_group_id")
+      // BoardPostTopic
+      .column_as(BoardTopicsColumn::Id, "topic_id")
+      .column_as(BoardTopicsColumn::Name, "topic_name")
+      // Joins
+      .join(LeftJoin, BoardPostsRelation::User.def())
+      .join(LeftJoin, BoardPostsRelation::Board.def())
+      .join(LeftJoin, BoardPostsRelation::Topic.def())
+      .join(LeftJoin, BoardsRelation::Group.def())
   }
 
   fn ap(&self) -> ApChain {
-    use entity::bs::board_posts::Column;
-
-    let board_group_id = entity::bs::boards::Column::GroupId.into_simple_expr().cast_as("VARCHAR");
-
     ap::chain()
-      .push(ap::ns("board_group").expr(board_group_id))
-      .push(ap::ns("board").join(BoardPosts, Column::BoardId))
+      .push(ap::ns("board_group").column(BoardsColumn::GroupId))
+      .push(ap::ns("board").column(BoardPostsColumn::Id))
       .who(&self.session)
   }
 }

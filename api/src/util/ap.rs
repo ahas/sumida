@@ -5,18 +5,32 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::NotSet;
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::sea_query::{Alias, Expr, IntoColumnRef, IntoIden, IntoTableRef, SelectStatement, SimpleExpr};
+use sea_orm::sea_query::{
+  Alias,
+  Expr,
+  ExprTrait,
+  Func,
+  IntoColumnRef,
+  IntoIden,
+  IntoTableRef,
+  Query,
+  SelectStatement,
+  SimpleExpr,
+};
 use sea_orm::{
   ActiveModelTrait,
   ColumnTrait,
   Condition,
   ConnectionTrait,
+  DbBackend,
   DbErr,
   DeleteResult,
   DerivePartialModel,
   EntityName,
   EntityTrait,
   FromQueryResult,
+  IntoSimpleExpr,
+  JoinType,
   PaginatorTrait,
   QueryFilter,
   QuerySelect,
@@ -123,13 +137,13 @@ impl std::fmt::Display for ApUser {
 }
 pub trait ApGuard {
   fn object<O: ToString>(self, object: O) -> Self;
-  fn expr(self, expr: SimpleExpr) -> Self;
+  fn column<C: IntoSimpleExpr + Clone>(self, col: C) -> Self;
+  fn expr<E: IntoSimpleExpr + Clone>(self, expr: E) -> Self;
   fn join<S: IntoIden + Clone + 'static, T: IntoIden + Clone + 'static>(self, entity: S, column: T)
   -> Self;
   fn action<T: ApValue>(self, action: T) -> Self;
   fn user(self, user: ApUser) -> Self;
   fn who(self, session: &UserSession) -> Self;
-  fn condition(&self) -> Condition;
   fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E>;
   fn check_allowed<C: ConnectionTrait>(self, db: &C) -> impl Future<Output = bool>;
   fn try_check_allowed<C: ConnectionTrait>(self, db: &C) -> impl Future<Output = Result<(), SumidaError>>;
@@ -176,25 +190,48 @@ impl ApCondition {
     self.alias.clone().unwrap_or_else(|| Alias::new("ap"))
   }
 
-  pub fn build_statement(&self, ap_alias: Alias) -> SelectStatement {
-    SelectStatement::new()
-      .expr(Expr::val(1))
-      .from_as(ApEntity.into_table_ref(), ap_alias.clone())
-      .and_where(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)).into())
-      .and_where(
-        _build_object_condition(&self.objects, &self.exprs, (ap_alias.clone(), ApCol::Object)).into(),
-      )
-      .and_where(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)).into())
-      .and_where(_build_user_conditions(&self.users, (ap_alias.clone(), ApCol::User)).into())
-      .to_owned()
+  fn condition(&self, alias: Alias) -> Condition {
+    let arg0 = Func::coalesce([
+      Expr::col((alias.clone(), Alias::new("has_allow"))).into_simple_expr(),
+      Expr::val(false).into_simple_expr(),
+    ]);
+    let arg1 = Func::coalesce([
+      Expr::col((alias, Alias::new("has_deny"))).into_simple_expr(),
+      Expr::val(false).into_simple_expr(),
+    ]);
+
+    Condition::all() //
+      .add(Expr::expr(arg0).into_simple_expr())
+      .add(arg1.not())
   }
 
-  pub fn build_condition(&self, ap_alias: Alias) -> Condition {
-    Condition::all()
-      .add(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)))
-      .add(_build_object_condition(&self.objects, &self.exprs, (ap_alias.clone(), ApCol::Object)))
-      .add(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)))
-      .add(_build_user_conditions(&self.users, (ap_alias.clone(), ApCol::User)))
+  pub fn with_lateral_join<E: EntityTrait, A: IntoIden>(
+    &self,
+    mut query: Select<E>,
+    alias: A,
+  ) -> Select<E> {
+    let ap_alias = self.unwrap_alias();
+
+    let col_ns = (ap_alias.clone(), ApCol::Namespace);
+    let col_obj = (ap_alias.clone(), ApCol::Object);
+    let col_action = (ap_alias.clone(), ApCol::Action);
+    let col_user = (ap_alias.clone(), ApCol::User);
+    let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
+
+    let stmt = SelectStatement::new()
+      .expr_as(Expr::expr(Func::cust("bool_or").arg(col_effect.clone().eq("allow"))), "has_allow")
+      .expr_as(Expr::expr(Func::cust("bool_or").arg(col_effect.eq("deny"))), "has_deny")
+      .from_as(ApEntity.into_table_ref(), ap_alias.clone())
+      .and_where(_build_namespace_condition(&self.namespace, col_ns).into())
+      .and_where(_build_object_condition(&self.objects, &self.exprs, col_obj).into())
+      .and_where(_build_action_condition(&self.actions, col_action).into())
+      .and_where(_build_user_conditions(&self.users, col_user).into())
+      .to_owned();
+
+    QueryFilter::query(&mut query) //
+      .join_lateral(JoinType::LeftJoin, stmt, alias, Expr::cust("TRUE"));
+
+    query
   }
 }
 
@@ -204,8 +241,13 @@ impl ApGuard for ApCondition {
     self
   }
 
-  fn expr(mut self, expr: SimpleExpr) -> Self {
-    self.exprs.push(expr);
+  fn column<C: IntoSimpleExpr + Clone>(mut self, col: C) -> Self {
+    self.exprs.push(col.into_simple_expr().cast_as("varchar"));
+    self
+  }
+
+  fn expr<E: IntoSimpleExpr + Clone>(mut self, expr: E) -> Self {
+    self.exprs.push(expr.into_simple_expr());
     self
   }
 
@@ -246,25 +288,9 @@ impl ApGuard for ApCondition {
     self
   }
 
-  fn condition(&self) -> Condition {
-    let ap_alias = self.unwrap_alias();
-
-    let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
-    let stmt = self.build_statement(ap_alias.clone());
-
-    let mut stmt_allow = stmt.clone();
-    stmt_allow.and_where(col_effect.clone().eq("allow"));
-
-    let mut stmt_deny = stmt.clone();
-    stmt_deny.and_where(col_effect.eq("deny"));
-
-    Condition::all() //
-      .add(Expr::exists(stmt_allow))
-      .add(Expr::exists(stmt_deny).not())
-  }
-
   fn apply<S: EntityTrait>(self, query: Select<S>) -> Select<S> {
-    query.filter(self.condition())
+    let alias = "ap_check";
+    self.with_lateral_join(query, alias).filter(self.condition(Alias::new(alias)))
   }
 
   async fn check_allowed<C>(self, db: &C) -> bool
@@ -273,7 +299,11 @@ impl ApGuard for ApCondition {
   {
     let ap_alias = Alias::new(ApEntity.table_name());
     let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
-    let condition = self.build_condition(ap_alias.clone());
+    let condition = Condition::all()
+      .add(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)))
+      .add(_build_object_condition(&self.objects, &self.exprs, (ap_alias.clone(), ApCol::Object)))
+      .add(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)))
+      .add(_build_user_conditions(&self.users, (ap_alias.clone(), ApCol::User)));
 
     let query = ApEntity::find().filter(condition);
     let allowed_count = query.clone().filter(col_effect.clone().eq("allow")).count(db).await.unwrap_or(0);
@@ -291,7 +321,25 @@ impl ApGuard for ApCondition {
     E: EntityTrait,
     C: ConnectionTrait,
   {
-    query.filter(self.condition()).one(db).await.ok().flatten().is_some()
+    #[derive(FromQueryResult)]
+    struct CanAccess {
+      exists: bool,
+    }
+
+    let ap_check_alias = Alias::new("ap_check");
+    let subquery = self
+      .with_lateral_join(query.select_only().expr(Expr::val(1)), ap_check_alias.clone())
+      .filter(self.condition(ap_check_alias));
+    let stmt = Query::select().expr(Expr::exists(subquery.into_query())).take();
+
+    let builder = db.get_database_backend();
+    let stmt = builder.build(&stmt);
+
+    let Some(result) = CanAccess::find_by_statement(stmt).one(db).await.ok().flatten() else {
+      return false;
+    };
+
+    result.exists
   }
 
   async fn try_access<E, C>(self, query: Select<E>, db: &C) -> Result<(), SumidaError>
@@ -346,7 +394,15 @@ impl ApGuard for ApChain {
     self
   }
 
-  fn expr(mut self, expr: SimpleExpr) -> Self {
+  fn column<C: IntoSimpleExpr + Clone>(mut self, col: C) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).column(col.clone());
+    }
+
+    self
+  }
+
+  fn expr<E: IntoSimpleExpr + Clone>(mut self, expr: E) -> Self {
     for child in &mut self.children {
       *child = mem::take(child).expr(expr.clone());
     }
@@ -390,18 +446,13 @@ impl ApGuard for ApChain {
     self
   }
 
-  fn condition(&self) -> Condition {
-    let mut cond = Condition::all();
-
-    for child in &self.children {
-      cond = cond.add(child.condition());
+  fn apply<E: EntityTrait>(self, mut query: Select<E>) -> Select<E> {
+    for (i, child) in self.children.iter().enumerate() {
+      let alias = Alias::new(format!("ap_check_{i}"));
+      query = child.with_lateral_join(query, alias.clone()).filter(child.condition(alias));
     }
 
-    cond
-  }
-
-  fn apply<E: EntityTrait>(self, query: Select<E>) -> Select<E> {
-    query.filter(self.condition())
+    query
   }
 
   async fn check_allowed<C>(self, db: &C) -> bool

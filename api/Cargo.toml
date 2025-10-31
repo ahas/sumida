@@ -42,6 +42,7 @@ sea-orm = { workspace = true }
 sea-orm-crud = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 tinytemplate = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

@@ -50,11 +50,11 @@ pub struct Model {
   #[sea_orm(nullable)]
   pub compression_type: Option<String>,
   pub content_type:     BoardPostContentType,
-  #[sea_orm(nullable)]
+  #[sea_orm(nullable, column_type = "Text")]
   pub content:          Option<String>,
-  #[sea_orm(nullable)]
+  #[sea_orm(nullable, column_type = "Text")]
   pub text:             Option<String>,
-  #[sea_orm(nullable)]
+  #[sea_orm(nullable, select_as = "TEXT")]
   pub text_tsv:         Option<String>,
   #[sea_orm(nullable)]
   pub tags:             Option<Vec<String>>,
@@ -230,7 +230,8 @@ impl Entity {
     db: &'db C,
   ) -> Result<UpdateResult, DbErr> {
     Self::update_many()
-      .col_expr(Column::Text, Expr::cust_with_values("to_tsvector('simple', $1)", [text.as_ref()]))
+      .col_expr(Column::Text, Expr::val(text.as_ref()).into())
+      .col_expr(Column::TextTsv, Expr::cust_with_values("to_tsvector('simple', $1)", [text.as_ref()]))
       .filter(Column::Id.eq(id))
       .exec(db)
       .await
