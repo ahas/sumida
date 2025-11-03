@@ -94,9 +94,9 @@ where
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
-  pub user_id:  i32,
+  pub user_id: i32,
   pub username: String,
-  pub exp:      usize,
+  pub exp: usize,
 }
 
 pub async fn verify_jwt<S: SumidaState>(

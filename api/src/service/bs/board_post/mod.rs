@@ -7,20 +7,8 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Alias, Expr, Func};
 use sea_orm::{
-  ColumnTrait,
-  ConnectionTrait,
-  DeleteResult,
-  EntityTrait,
-  InsertResult,
-  IntoSimpleExpr,
-  JoinType,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  QueryTrait,
-  RelationTrait,
-  Select,
-  TransactionTrait,
+  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, JoinType,
+  PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, RelationTrait, Select, TransactionTrait,
 };
 
 use self::dto::*;
@@ -32,7 +20,7 @@ use crate::util::board::TsHeadlineExpr;
 use crate::util::pagination::Pagination;
 
 pub struct BoardPostService<S: SumidaState> {
-  state:   S,
+  state: S,
   #[allow(dead_code)]
   session: UserSession,
 }

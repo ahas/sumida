@@ -12,8 +12,8 @@ pub struct SumidaMessengerState;
 
 #[derive(Clone, Debug)]
 pub struct SumidaMessenger {
-  pub io:    SocketIo,
-  pub path:  Option<String>,
+  pub io: SocketIo,
+  pub path: Option<String>,
   pub rooms: Option<Vec<Room>>,
 }
 

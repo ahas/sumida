@@ -13,9 +13,9 @@ use crate::SumidaState;
 
 #[derive(Clone)]
 pub struct ServiceApLayer<S> {
-  state:     S,
+  state: S,
   namespace: String,
-  action:    String,
+  action: String,
 }
 
 impl<S> ServiceApLayer<S> {
@@ -46,10 +46,10 @@ where
 
 #[derive(Clone)]
 pub struct ServiceApService<S, T> {
-  state:     S,
+  state: S,
   namespace: String,
-  action:    String,
-  inner:     T,
+  action: String,
+  inner: T,
 }
 
 impl<S, T> Service<Request<Body>> for ServiceApService<S, T>

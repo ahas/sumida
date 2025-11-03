@@ -6,7 +6,7 @@ pub struct Model {
   #[sea_orm(primary_key, auto_increment = false)]
   pub user_id: i32,
   #[sea_orm(column_type = "JsonBinary")]
-  pub data:    Json,
+  pub data: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -6,14 +6,7 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
-  ColumnTrait,
-  ConnectionTrait,
-  DbErr,
-  DeleteResult,
-  EntityTrait,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
+  ColumnTrait, ConnectionTrait, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
   TransactionTrait,
 };
 use uuid::Uuid;
@@ -25,7 +18,7 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 pub struct UserInvitationService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 

@@ -8,5 +8,5 @@ use serde::Deserialize;
 pub struct AwsSettings {
   pub region: Option<String>,
   #[cfg(feature = "aws-s3")]
-  pub s3:     Option<s3::AwsS3Settings>,
+  pub s3: Option<s3::AwsS3Settings>,
 }

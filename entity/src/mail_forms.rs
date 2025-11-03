@@ -4,8 +4,8 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "mail_forms")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub kind:    String,
-  pub sender:  String,
+  pub kind: String,
+  pub sender: String,
   pub subject: String,
   pub content: String,
 

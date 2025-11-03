@@ -5,13 +5,7 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
-  DeleteResult,
-  EntityTrait,
-  InsertResult,
-  IntoActiveModel,
-  PaginatorTrait,
-  QuerySelect,
-  TransactionTrait,
+  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -22,7 +16,7 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 pub struct AccessPolicyService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 

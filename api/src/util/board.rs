@@ -16,17 +16,17 @@ impl<'a> HtmlContent<'a> {
 
 #[derive(Debug, Clone)]
 pub struct TsHeadlineExpr {
-  config:        String,
-  column:        String,
-  keyword:       String,
-  start_sel:     String,
-  stop_sel:      String,
-  start_offset:  usize,
+  config: String,
+  column: String,
+  keyword: String,
+  start_sel: String,
+  stop_sel: String,
+  start_offset: usize,
   max_fragments: usize,
-  max_length:    Option<usize>,
-  max_words:     usize,
-  min_words:     usize,
-  short_word:    usize,
+  max_length: Option<usize>,
+  max_words: usize,
+  min_words: usize,
+  short_word: usize,
   highlight_all: bool,
 }
 
@@ -36,17 +36,17 @@ impl TsHeadlineExpr {
     C: ColumnTrait,
   {
     Self {
-      config:        "simple".into(),
-      column:        column.to_string(),
-      keyword:       keyword.into(),
-      start_sel:     "<mark>".into(),
-      stop_sel:      "</mark>".into(),
-      start_offset:  0,
+      config: "simple".into(),
+      column: column.to_string(),
+      keyword: keyword.into(),
+      start_sel: "<mark>".into(),
+      stop_sel: "</mark>".into(),
+      start_offset: 0,
       max_fragments: 1,
-      max_length:    None,
-      max_words:     20,
-      min_words:     5,
-      short_word:    3,
+      max_length: None,
+      max_words: 20,
+      min_words: 5,
+      short_word: 3,
       highlight_all: false,
     }
   }

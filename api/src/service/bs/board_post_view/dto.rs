@@ -27,18 +27,18 @@ impl BoardPostViewFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostViewListItem {
-  pub id:         i32,
-  pub post_id:    i32,
-  pub user_id:    Option<i32>,
+  pub id: i32,
+  pub post_id: i32,
+  pub user_id: Option<i32>,
   pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPostView {
-  pub id:         i32,
-  pub post_id:    i32,
-  pub user_id:    Option<i32>,
+  pub id: i32,
+  pub post_id: i32,
+  pub user_id: Option<i32>,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -51,7 +51,7 @@ impl IntoResponse for GetBoardPostView {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPostView {
-  pub id:      Optional<i32>,
+  pub id: Optional<i32>,
   pub post_id: i32,
   pub user_id: Nullable<i32>,
 }

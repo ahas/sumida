@@ -48,7 +48,7 @@ impl<S: SumidaState> UserInvitationController<S> {
     let invitation = UserInvitationService::new(state, session).create(user_id).await?;
 
     Ok(UserInvitationCreated {
-      uuid:       invitation.uuid,
+      uuid: invitation.uuid,
       expires_at: invitation.expires_at,
     })
   }
@@ -62,7 +62,7 @@ impl<S: SumidaState> UserInvitationController<S> {
     let invitation = UserInvitationService::new(state, session).update(user_id).await?;
 
     Ok(UserInvitationUpdated {
-      uuid:       invitation.uuid,
+      uuid: invitation.uuid,
       expires_at: invitation.expires_at,
     })
   }

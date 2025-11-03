@@ -1,6 +1,6 @@
 use api::service::prelude::*;
 use api::util::pagination::List;
-use e2e::permission_test_utils;
+use e2e::ap_test_utils;
 use e2e::prelude::*;
 
 #[tokio::test]
@@ -37,7 +37,7 @@ async fn test_user_read_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -66,7 +66,7 @@ async fn test_user_create_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -95,7 +95,7 @@ async fn test_user_update_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -124,7 +124,7 @@ async fn test_user_delete_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -153,7 +153,7 @@ async fn test_user_list_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -182,7 +182,7 @@ async fn test_user_explicit_deny_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -213,7 +213,7 @@ async fn test_user_admin_bypass_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -230,15 +230,9 @@ async fn test_user_create_permission_debug() {
   let user = TestUser::create(&db).await.expect("Failed to create test user");
 
   // Grant create permission
-  permission_test_utils::grant_service_and_resource_access(
-    &db,
-    &user,
-    "user",
-    vec!["create".to_string()],
-    None,
-  )
-  .await
-  .expect("Failed to grant create permission");
+  ap_test_utils::grant_service_and_resource_access(&db, &user, "user", vec!["create".to_string()], None)
+    .await
+    .expect("Failed to grant create permission");
 
   let create_data = serde_json::json!({
     "username": "createtest@example.com",
@@ -285,7 +279,7 @@ async fn test_user_wildcard_action_comprehensive() {
   let target_user = TestUser::create(&db).await.expect("Failed to create target user");
 
   // Grant wildcard action permission (action: ['*'])
-  permission_test_utils::grant_wildcard_action_permission(&db, &user, "user", Some(target_user.model.id))
+  ap_test_utils::grant_wildcard_action_permission(&db, &user, "user", Some(target_user.model.id))
     .await
     .expect("Failed to grant wildcard action permission");
 
@@ -342,7 +336,7 @@ async fn test_user_wildcard_object_comprehensive() {
   let target_user2 = TestUser::create(&db).await.expect("Failed to create target user 2");
 
   // Grant wildcard object permission for read action only (object: '*')
-  permission_test_utils::grant_wildcard_object_permission(&db, &user, "user", vec!["read".to_string()])
+  ap_test_utils::grant_wildcard_object_permission(&db, &user, "user", vec!["read".to_string()])
     .await
     .expect("Failed to grant wildcard object permission");
 
@@ -399,17 +393,10 @@ async fn test_user_list_filtered_by_permission() {
   let denied_user = TestUser::create(&db).await.expect("Failed to create denied user");
 
   // Grant read permission for service and specific user only
-  permission_test_utils::create_access_policy(
-    &db,
-    &user,
-    "user",
-    "service",
-    vec!["read".to_string()],
-    "allow",
-  )
-  .await
-  .expect("Failed to create service access policy");
-  permission_test_utils::create_access_policy(
+  ap_test_utils::create_access_policy(&db, &user, "user", "service", vec!["read".to_string()], "allow")
+    .await
+    .expect("Failed to create service access policy");
+  ap_test_utils::create_access_policy(
     &db,
     &user,
     "user",
@@ -449,15 +436,9 @@ async fn test_user_read_with_permission() {
   let target_user = TestUser::create(&db).await.expect("Failed to create target user");
 
   // Grant read permission for both service and resource levels
-  permission_test_utils::grant_service_and_resource_access(
-    &db,
-    &user,
-    "user",
-    vec!["read".to_string()],
-    None,
-  )
-  .await
-  .expect("Failed to create access policy");
+  ap_test_utils::grant_service_and_resource_access(&db, &user, "user", vec!["read".to_string()], None)
+    .await
+    .expect("Failed to create access policy");
 
   // Login as the user
   user.login(&mock.client).await;
@@ -586,7 +567,7 @@ async fn test_wildcard_action_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -616,7 +597,7 @@ async fn test_wildcard_object_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url:  "/users",
+    base_url: "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);

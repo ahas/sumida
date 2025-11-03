@@ -7,20 +7,8 @@ use sea_orm::ActiveValue::Unchanged;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{
-  DbErr,
-  DeleteResult,
-  EntityTrait,
-  InsertResult,
-  IntoActiveModel,
-  IntoSimpleExpr,
-  JoinType,
-  PaginatorTrait,
-  QuerySelect,
-  RelationTrait,
-  Select,
-  Set,
-  SqlErr,
-  TransactionTrait,
+  DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType,
+  PaginatorTrait, QuerySelect, RelationTrait, Select, Set, SqlErr, TransactionTrait,
 };
 
 use self::dto::*;
@@ -30,7 +18,7 @@ use crate::util::ap::{self, ApCondition, ApGuard, ApUser};
 use crate::util::pagination::Pagination;
 
 pub struct ApiKeyService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 

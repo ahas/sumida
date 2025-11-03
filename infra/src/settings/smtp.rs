@@ -5,6 +5,6 @@ use serde::Deserialize;
 pub struct SmtpSettings {
   pub username: String,
   pub password: String,
-  pub server:   String,
-  pub auth:     String,
+  pub server: String,
+  pub auth: String,
 }

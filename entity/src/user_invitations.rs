@@ -6,7 +6,7 @@ use super::users::Entity as Users;
 #[sea_orm(table_name = "user_invitations")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub uuid:    Uuid,
+  pub uuid: Uuid,
   pub user_id: i32,
 
   pub expires_at: DateTimeWithTimeZone,

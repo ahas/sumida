@@ -13,7 +13,7 @@ use crate::service::fs::dto::{FileListItem, GetFile};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFileFilter {
-  pub id:      Option<i32>,
+  pub id: Option<i32>,
   pub post_id: Option<i32>,
 }
 
@@ -31,7 +31,7 @@ impl BoardFileFilter {
 pub struct BoardFileListItem {
   #[sea_orm(nested)]
   #[serde(flatten)]
-  pub file:    FileListItem,
+  pub file: FileListItem,
   pub post_id: i32,
   // pub path:          String,
   // pub original_name: String,
@@ -51,7 +51,7 @@ pub struct BoardFileListItem {
 pub struct GetBoardFile {
   #[sea_orm(nested)]
   #[serde(flatten)]
-  pub file:    GetFile,
+  pub file: GetFile,
   pub post_id: i32,
   // pub id:            i32,
   // pub user_id:       Option<i32>,
@@ -93,7 +93,7 @@ pub struct UpdateBoardFile {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardFileCreated {
-  pub id:      i32,
+  pub id: i32,
   pub post_id: i32,
 }
 
@@ -126,13 +126,13 @@ impl IntoResponse for BoardFileDeleted {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachFileToPost {
-  pub id:      i32,
+  pub id: i32,
   pub post_id: i32,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetachFileFromPost {
-  pub id:      i32,
+  pub id: i32,
   pub post_id: i32,
 }

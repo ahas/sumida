@@ -46,7 +46,7 @@ impl<S: SumidaState> BoardFileController<S> {
     BoardFileService::new(state, session).attach_file(body.post_id, body.file_id).await?;
 
     Ok(BoardFileCreated {
-      id:      body.file_id,
+      id: body.file_id,
       post_id: body.post_id,
     })
   }

@@ -13,13 +13,13 @@ use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserBlockFilter {
-  pub search:     Option<String>,
-  pub user_id:    Option<i32>,
-  pub username:   Option<String>,
-  pub name:       Option<String>,
+  pub search: Option<String>,
+  pub user_id: Option<i32>,
+  pub username: Option<String>,
+  pub name: Option<String>,
   pub ip_address: Option<String>,
-  pub reason:     Option<String>,
-  pub note:       Option<String>,
+  pub reason: Option<String>,
+  pub note: Option<String>,
 }
 
 impl UserBlockFilter {
@@ -49,16 +49,16 @@ impl UserBlockFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "entity::users::Entity", alias = "u", from_query_result)]
 pub struct UserBlockUser {
-  pub id:        i32,
-  pub username:  String,
+  pub id: i32,
+  pub username: String,
   pub full_name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "entity::users::Entity", alias = "b", from_query_result)]
 pub struct UserBlockBlockedBy {
-  pub id:        i32,
-  pub username:  String,
+  pub id: i32,
+  pub username: String,
   pub full_name: String,
 }
 
@@ -66,16 +66,16 @@ pub struct UserBlockBlockedBy {
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct UserBlockListItem {
-  pub id:         i32,
+  pub id: i32,
   #[sea_orm(nested, alias = "u")]
-  pub user:       Option<UserBlockUser>,
+  pub user: Option<UserBlockUser>,
   pub ip_address: Option<String>,
   pub blocked_at: DateTimeWithTimeZone,
   #[sea_orm(nested, alias = "b")]
   pub blocked_by: Option<UserBlockBlockedBy>,
   // pub reason: String,
   pub expires_at: Option<DateTimeWithTimeZone>,
-  pub lifted_at:  Option<DateTimeWithTimeZone>,
+  pub lifted_at: Option<DateTimeWithTimeZone>,
   // pub note: Option<String>,
 }
 
@@ -83,17 +83,17 @@ pub struct UserBlockListItem {
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetUserBlock {
-  pub id:         i32,
+  pub id: i32,
   #[sea_orm(nested, alias = "u")]
-  pub user:       Option<UserBlockUser>,
+  pub user: Option<UserBlockUser>,
   pub ip_address: Option<String>,
   pub blocked_at: DateTimeWithTimeZone,
   #[sea_orm(nested, alias = "b")]
   pub blocked_by: Option<UserBlockUser>,
-  pub reason:     String,
+  pub reason: String,
   pub expires_at: Option<DateTimeWithTimeZone>,
-  pub lifted_at:  Option<DateTimeWithTimeZone>,
-  pub note:       Option<String>,
+  pub lifted_at: Option<DateTimeWithTimeZone>,
+  pub note: Option<String>,
 }
 
 impl IntoResponse for GetUserBlock {
@@ -105,11 +105,11 @@ impl IntoResponse for GetUserBlock {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUserBlock {
-  pub user_id:    Nullable<i32>,
+  pub user_id: Nullable<i32>,
   pub ip_address: Nullable<String>,
-  pub reason:     Optional<String>,
+  pub reason: Optional<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
-  pub note:       Optional<String>,
+  pub note: Optional<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -127,11 +127,11 @@ impl IntoResponse for UserBlockCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserBlock {
-  pub user_id:    Nullable<i32>,
+  pub user_id: Nullable<i32>,
   pub ip_address: Nullable<String>,
-  pub reason:     Optional<String>,
+  pub reason: Optional<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
-  pub note:       Optional<String>,
+  pub note: Optional<String>,
 }
 
 impl IntoResponse for UpdateUserBlock {

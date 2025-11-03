@@ -12,7 +12,7 @@ use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct MailFormFilter {
-  pub sender:  Option<String>,
+  pub sender: Option<String>,
   pub subject: Option<String>,
 }
 
@@ -27,8 +27,8 @@ impl MailFormFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct MailFormListItem {
-  pub kind:    String,
-  pub sender:  String,
+  pub kind: String,
+  pub sender: String,
   pub subject: String,
 
   pub created_at: DateTimeWithTimeZone,
@@ -38,8 +38,8 @@ pub struct MailFormListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMailForm {
-  pub kind:    String,
-  pub sender:  String,
+  pub kind: String,
+  pub sender: String,
   pub subject: String,
   pub content: String,
 
@@ -56,8 +56,8 @@ impl IntoResponse for GetMailForm {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMailForm {
-  pub kind:    String,
-  pub sender:  String,
+  pub kind: String,
+  pub sender: String,
   pub subject: String,
   pub content: Optional<String>,
 }
@@ -77,8 +77,8 @@ impl IntoResponse for MailFormCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateMailForm {
-  pub kind:    Optional<String>,
-  pub sender:  Optional<String>,
+  pub kind: Optional<String>,
+  pub sender: Optional<String>,
   pub subject: Optional<String>,
   pub content: Optional<String>,
 }

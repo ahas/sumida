@@ -12,11 +12,11 @@ use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct AccessPolicyFilter {
-  pub uuid:      Option<Uuid>,
+  pub uuid: Option<Uuid>,
   pub namespace: Option<String>,
-  pub effect:    Option<String>,
-  pub object:    Option<String>,
-  pub user:      Option<String>,
+  pub effect: Option<String>,
+  pub object: Option<String>,
+  pub user: Option<String>,
 }
 
 impl AccessPolicyFilter {
@@ -34,24 +34,24 @@ impl AccessPolicyFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessPolicyListItem {
-  pub uuid:       Uuid,
-  pub namespace:  String,
-  pub effect:     String,
-  pub object:     String,
-  pub action:     Vec<String>,
-  pub user:       String,
+  pub uuid: Uuid,
+  pub namespace: String,
+  pub effect: String,
+  pub object: String,
+  pub action: Vec<String>,
+  pub user: String,
   pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetAccessPolicy {
-  pub uuid:       Uuid,
-  pub namespace:  String,
-  pub effect:     String,
-  pub object:     String,
-  pub action:     Vec<String>,
-  pub user:       String,
+  pub uuid: Uuid,
+  pub namespace: String,
+  pub effect: String,
+  pub object: String,
+  pub action: Vec<String>,
+  pub user: String,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -64,12 +64,12 @@ impl IntoResponse for GetAccessPolicy {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAccessPolicy {
-  pub uuid:      Optional<Uuid>,
+  pub uuid: Optional<Uuid>,
   pub namespace: String,
-  pub effect:    String,
-  pub object:    String,
-  pub action:    Vec<String>,
-  pub user:      String,
+  pub effect: String,
+  pub object: String,
+  pub action: Vec<String>,
+  pub user: String,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateAccessPolicy {
@@ -102,10 +102,10 @@ impl IntoResponse for AccessPolicyCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAccessPolicy {
   pub namespace: Optional<String>,
-  pub effect:    Optional<String>,
-  pub object:    Optional<String>,
-  pub action:    Optional<Vec<String>>,
-  pub user:      Optional<String>,
+  pub effect: Optional<String>,
+  pub object: Optional<String>,
+  pub action: Optional<Vec<String>>,
+  pub user: Optional<String>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateAccessPolicy {

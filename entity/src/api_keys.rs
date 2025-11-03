@@ -6,8 +6,8 @@ use super::users::Entity as Users;
 #[sea_orm(table_name = "api_keys")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = false)]
-  pub key:        String,
-  pub user_id:    i32,
+  pub key: String,
+  pub user_id: i32,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub is_secured: bool,
   pub created_at: DateTimeWithTimeZone,

@@ -16,8 +16,8 @@ use crate::util::ap::ApCondition;
 use crate::util::user::hash_password;
 
 pub struct MeService<S: SumidaState> {
-  state:        S,
-  session:      UserSession,
+  state: S,
+  session: UserSession,
   user_service: UserService<S>,
 }
 
@@ -88,7 +88,7 @@ impl<S: SumidaState> MeService<S> {
     let pref = UserPrefs::find_by_id(user_id).one(db).await?;
     let mut am = ActiveModel {
       user_id: Set(user_id),
-      data:    Set(data),
+      data: Set(data),
     };
 
     if pref.is_some() {

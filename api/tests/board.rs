@@ -74,7 +74,7 @@ async fn test_board_read_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -102,7 +102,7 @@ async fn test_board_create_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -130,7 +130,7 @@ async fn test_board_update_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -158,7 +158,7 @@ async fn test_board_delete_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -186,7 +186,7 @@ async fn test_board_list_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -214,7 +214,7 @@ async fn test_board_admin_bypass_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -242,7 +242,7 @@ async fn test_board_explicit_deny_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -270,7 +270,7 @@ async fn test_board_wildcard_action_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -299,7 +299,7 @@ async fn test_board_wildcard_object_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url:  "/boards",
+    base_url: "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);

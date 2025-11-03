@@ -34,38 +34,38 @@ pub enum BoardPostContentType {
 #[sea_orm(table_name = "board_posts")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id:               i32,
-  pub board_id:         i32,
+  pub id: i32,
+  pub board_id: i32,
   #[sea_orm(nullable)]
-  pub topic_id:         Option<i32>,
+  pub topic_id: Option<i32>,
   #[sea_orm(nullable)]
-  pub parent_id:        Option<i32>,
+  pub parent_id: Option<i32>,
   #[sea_orm(nullable)]
-  pub user_id:          Option<i32>,
-  pub kind:             BoardPostKind,
-  pub status:           BoardPostStatus,
+  pub user_id: Option<i32>,
+  pub kind: BoardPostKind,
+  pub status: BoardPostStatus,
   #[sea_orm(nullable)]
-  pub revision:         Option<i32>,
-  pub title:            String,
+  pub revision: Option<i32>,
+  pub title: String,
   #[sea_orm(nullable)]
   pub compression_type: Option<String>,
-  pub content_type:     BoardPostContentType,
+  pub content_type: BoardPostContentType,
   #[sea_orm(nullable, column_type = "Text")]
-  pub content:          Option<String>,
+  pub content: Option<String>,
   #[sea_orm(nullable, column_type = "Text")]
-  pub text:             Option<String>,
+  pub text: Option<String>,
   #[sea_orm(nullable, select_as = "TEXT")]
-  pub text_tsv:         Option<String>,
+  pub text_tsv: Option<String>,
   #[sea_orm(nullable)]
-  pub tags:             Option<Vec<String>>,
-  pub views:            i32,
+  pub tags: Option<Vec<String>>,
+  pub views: i32,
   #[sea_orm(column_type = "JsonBinary", nullable)]
-  pub reactions:        Option<Json>,
-  pub published_at:     Option<DateTimeWithTimeZone>,
-  pub scheduled_at:     Option<DateTimeWithTimeZone>,
-  pub created_at:       DateTimeWithTimeZone,
-  pub updated_at:       DateTimeWithTimeZone,
-  pub deleted_at:       Option<DateTimeWithTimeZone>,
+  pub reactions: Option<Json>,
+  pub published_at: Option<DateTimeWithTimeZone>,
+  pub scheduled_at: Option<DateTimeWithTimeZone>,
+  pub created_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeWithTimeZone,
+  pub deleted_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -7,19 +7,8 @@ use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait,
-  DeleteResult,
-  EntityTrait,
-  InsertResult,
-  IntoActiveModel,
-  JoinType,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  RelationTrait,
-  Select,
-  TransactionTrait,
-  Unchanged,
+  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, JoinType, PaginatorTrait,
+  QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait, Unchanged,
 };
 use sea_orm_crud::Optional;
 
@@ -34,7 +23,7 @@ use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
 
 pub struct UserService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 
@@ -137,8 +126,8 @@ impl<S: SumidaState> UserService<S> {
     let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
       username: opts.username.clone(),
       password: opts.password.clone(),
-      auth:     opts.auth.clone(),
-      server:   opts.server.clone(),
+      auth: opts.auth.clone(),
+      server: opts.server.clone(),
     });
 
     MailFormService::<S>::send(

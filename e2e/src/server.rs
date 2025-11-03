@@ -32,9 +32,9 @@ impl SumidaState for TestServerState {
 
 #[allow(dead_code)]
 pub struct TestServer {
-  pub addr:    SocketAddr,
+  pub addr: SocketAddr,
   shutdown_tx: Option<oneshot::Sender<()>>,
-  handle:      Option<JoinHandle<Result<(), anyhow::Error>>>,
+  handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
   redis_store: Arc<Mutex<RedisSessionStore>>,
 }
 

@@ -113,7 +113,7 @@ impl ApValue for Vec<String> {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApUser {
   Admin,
   Org(i32),
@@ -818,7 +818,9 @@ impl EditAp {
     ApEntity::update_many() //
       .apply_if(self.namespace, |q, v| q.filter(ApCol::Namespace.eq(v)))
       .apply_if(self.object, |q, v| q.filter(ApCol::Object.eq(v)))
-      .apply_if(self.action, |q, v| q.filter(ApCol::Action.eq(v)))
+      .apply_if(self.action, |q, v| {
+        q.filter(Expr::col(ApCol::Action).eq(Expr::val(v).cast_as("varchar[]")))
+      })
       .apply_if(if self.users.is_empty() { None } else { Some(self.users) }, |q, v| {
         q.filter(ApCol::User.is_in(v.iter().map(|x| x.to_string())))
       })

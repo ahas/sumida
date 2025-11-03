@@ -4,19 +4,19 @@ use sea_orm::prelude::*;
 #[sea_orm(table_name = "users")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id:              i32,
+  pub id: i32,
   #[sea_orm(unique)]
-  pub username:        String,
-  pub password:        String,
-  pub email:           Option<String>,
-  pub full_name:       Option<String>,
-  pub phone:           Option<String>,
-  pub is_admin:        bool,
-  pub is_enabled:      bool,
-  pub role_id:         i32,
+  pub username: String,
+  pub password: String,
+  pub email: Option<String>,
+  pub full_name: Option<String>,
+  pub phone: Option<String>,
+  pub is_admin: bool,
+  pub is_enabled: bool,
+  pub role_id: i32,
   pub organization_id: i32,
-  pub created_at:      DateTimeWithTimeZone,
-  pub updated_at:      DateTimeWithTimeZone,
+  pub created_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeWithTimeZone,
 }
 
 impl Model {

@@ -8,15 +8,8 @@ use lettre::message::header::ContentType;
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::{
-  ConnectionTrait,
-  DeleteResult,
-  EntityTrait,
-  InsertResult,
-  IntoActiveModel,
-  PaginatorTrait,
-  QuerySelect,
-  Set,
-  TransactionTrait,
+  ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
+  Set, TransactionTrait,
 };
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
@@ -30,8 +23,8 @@ use crate::util::pagination::Pagination;
 pub struct MailFormSendOptions {
   pub username: String,
   pub password: String,
-  pub auth:     String,
-  pub server:   String,
+  pub auth: String,
+  pub server: String,
 }
 
 impl MailFormSendOptions {
@@ -49,7 +42,7 @@ impl MailFormSendOptions {
 }
 
 pub struct MailFormService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 

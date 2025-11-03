@@ -10,7 +10,7 @@ use serde_json::json;
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserInvitationFilter {
   pub user_id: Option<i32>,
-  pub uuid:    Option<Uuid>,
+  pub uuid: Option<Uuid>,
 }
 
 impl UserInvitationFilter {
@@ -25,7 +25,7 @@ impl UserInvitationFilter {
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationListItem {
   pub user_id: i32,
-  pub uuid:    Uuid,
+  pub uuid: Uuid,
 
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
@@ -35,7 +35,7 @@ pub struct UserInvitationListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetUserInvitation {
   pub user_id: i32,
-  pub uuid:    Uuid,
+  pub uuid: Uuid,
 
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
@@ -54,7 +54,7 @@ pub struct CreateUserInvitation {}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationCreated {
-  pub uuid:       Uuid,
+  pub uuid: Uuid,
   pub expires_at: DateTimeWithTimeZone,
 }
 
@@ -71,7 +71,7 @@ pub struct UpdateUserInvitation {}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationUpdated {
-  pub uuid:       Uuid,
+  pub uuid: Uuid,
   pub expires_at: DateTimeWithTimeZone,
 }
 

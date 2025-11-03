@@ -6,17 +6,17 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenData {
-  pub user_id:    i32,
-  pub username:   String,
-  pub jti:        String,
+  pub user_id: i32,
+  pub username: String,
+  pub jti: String,
   pub expires_at: DateTime<Utc>,
   pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlacklistEntry {
-  pub jti:            String,
-  pub expires_at:     DateTime<Utc>,
+  pub jti: String,
+  pub expires_at: DateTime<Utc>,
   pub blacklisted_at: DateTime<Utc>,
 }
 

@@ -7,11 +7,11 @@ use crate::prelude::*;
 /// Test configuration for permission testing
 pub struct PermissionTestConfig {
   pub namespace: &'static str,
-  pub base_url:  &'static str,
+  pub base_url: &'static str,
 }
 
 /// Helper to create access policies
-pub async fn create_access_policy(
+pub async fn create_ap(
   db: &DatabaseConnection,
   user: &TestUser,
   namespace: &str,
@@ -38,11 +38,11 @@ pub async fn grant_service_and_resource_access(
   target_resource_id: Option<i32>,
 ) -> anyhow::Result<()> {
   // Grant service-level access
-  create_access_policy(db, user, namespace, "service", actions.clone(), "allow").await?;
+  create_ap(db, user, namespace, "service", actions.clone(), "allow").await?;
 
   // Grant resource-level access
   let object = target_resource_id.map(|id| id.to_string()).unwrap_or("*".to_string());
-  create_access_policy(db, user, namespace, &object, actions, "allow").await?;
+  create_ap(db, user, namespace, &object, actions, "allow").await?;
 
   Ok(())
 }
@@ -55,11 +55,11 @@ pub async fn grant_wildcard_action_permission(
   target_resource_id: Option<i32>,
 ) -> anyhow::Result<()> {
   // Grant service-level access with wildcard actions
-  create_access_policy(db, user, namespace, "service", vec!["*".to_string()], "allow").await?;
+  create_ap(db, user, namespace, "service", vec!["*".to_string()], "allow").await?;
 
   // Grant resource-level access with wildcard actions
   let object = target_resource_id.map(|id| id.to_string()).unwrap_or("*".to_string());
-  create_access_policy(db, user, namespace, &object, vec!["*".to_string()], "allow").await?;
+  create_ap(db, user, namespace, &object, vec!["*".to_string()], "allow").await?;
 
   Ok(())
 }
@@ -72,10 +72,10 @@ pub async fn grant_wildcard_object_permission(
   actions: Vec<String>,
 ) -> anyhow::Result<()> {
   // Grant service-level access
-  create_access_policy(db, user, namespace, "service", actions.clone(), "allow").await?;
+  create_ap(db, user, namespace, "service", actions.clone(), "allow").await?;
 
   // Grant wildcard object access (all resources)
-  create_access_policy(db, user, namespace, "*", actions, "allow").await?;
+  create_ap(db, user, namespace, "*", actions, "allow").await?;
 
   Ok(())
 }
@@ -88,7 +88,7 @@ pub struct CrudTestData {
 
 /// Comprehensive permission test suite for any controller
 pub struct PermissionTestSuite {
-  pub config:    PermissionTestConfig,
+  pub config: PermissionTestConfig,
   pub crud_data: CrudTestData,
 }
 
@@ -358,7 +358,7 @@ impl PermissionTestSuite {
       .expect("Failed to grant delete permission");
 
     // Then explicitly deny for specific resource
-    create_access_policy(
+    create_ap(
       &db,
       &user,
       self.config.namespace,

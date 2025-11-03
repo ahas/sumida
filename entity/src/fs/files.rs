@@ -18,28 +18,28 @@ pub enum FileStatus {
 #[sea_orm(table_name = "files")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id:            i32,
+  pub id: i32,
   #[sea_orm(nullable)]
-  pub user_id:       Option<i32>,
+  pub user_id: Option<i32>,
   pub original_name: String,
-  pub dir:           String,
-  pub name:          String,
+  pub dir: String,
+  pub name: String,
   #[sea_orm(nullable)]
-  pub uri:           Option<String>,
-  pub size:          i64,
-  pub mime_type:     String,
+  pub uri: Option<String>,
+  pub size: i64,
+  pub mime_type: String,
   #[sea_orm(nullable)]
-  pub hash:          Option<String>,
+  pub hash: Option<String>,
   #[sea_orm(nullable)]
-  pub tags:          Option<Vec<String>>,
-  pub status:        FileStatus,
-  pub refs:          i32,
+  pub tags: Option<Vec<String>>,
+  pub status: FileStatus,
+  pub refs: i32,
   #[sea_orm(nullable)]
-  pub expires_at:    Option<DateTimeWithTimeZone>,
-  pub created_at:    DateTimeWithTimeZone,
-  pub updated_at:    DateTimeWithTimeZone,
+  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub created_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeWithTimeZone,
   #[sea_orm(nullable)]
-  pub deleted_at:    Option<DateTimeWithTimeZone>,
+  pub deleted_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

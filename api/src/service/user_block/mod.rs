@@ -7,21 +7,8 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Alias, Asterisk, Expr, SimpleExpr};
 use sea_orm::{
-  ColumnTrait,
-  Condition,
-  DeleteResult,
-  EntityTrait,
-  InsertResult,
-  IntoActiveModel,
-  IntoSimpleExpr,
-  JoinType,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  QueryTrait,
-  RelationTrait,
-  Select,
-  TransactionTrait,
+  ColumnTrait, Condition, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr,
+  JoinType, PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, RelationTrait, Select, TransactionTrait,
 };
 
 use self::dto::*;
@@ -31,7 +18,7 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 pub struct UserBlockService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 

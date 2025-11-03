@@ -7,19 +7,19 @@ use tower_sessions::Expiry;
 #[allow(dead_code)]
 pub struct SessionSettings {
   #[cfg(feature = "session-store-redis")]
-  pub redis:    Option<SessionRedisSettings>,
+  pub redis: Option<SessionRedisSettings>,
   #[cfg(feature = "session-store-aws-dynamodb")]
   pub dynamodb: Option<SessionDynamodbSettings>,
 
   pub ip_source: ClientIpSource,
-  pub cookie:    SessionCookieSettings,
+  pub cookie: SessionCookieSettings,
 }
 
 #[cfg(feature = "session-store-redis")]
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct SessionRedisSettings {
-  pub url:  Option<String>,
+  pub url: Option<String>,
   pub size: Option<usize>,
 }
 
@@ -33,19 +33,19 @@ pub struct SessionDynamodbSettings {
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct SessionCookieSettings {
-  pub name:      Option<String>,
-  pub domain:    Option<String>,
-  pub path:      Option<String>,
+  pub name: Option<String>,
+  pub domain: Option<String>,
+  pub path: Option<String>,
   pub same_site: Option<String>,
-  pub secure:    Option<bool>,
+  pub secure: Option<bool>,
   #[serde(default)]
-  pub expiry:    SessionExpirySettings,
+  pub expiry: SessionExpirySettings,
 }
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct SessionExpirySettings {
-  default:     String,
+  default: String,
   remember_me: String,
 }
 
@@ -64,7 +64,7 @@ impl SessionExpirySettings {
 impl Default for SessionExpirySettings {
   fn default() -> Self {
     Self {
-      default:     "24hours".to_owned(),
+      default: "24hours".to_owned(),
       remember_me: "1month".to_owned(),
     }
   }
