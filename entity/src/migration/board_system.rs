@@ -32,6 +32,7 @@ enum Boards {
   AllowedFileTypes,
   ReactionVisibility,
   ViewerVisibility,
+  ContentVisibility,
   IsLogged,
   IsEnabled,
   CreatedAt,
@@ -64,9 +65,11 @@ enum BoardPosts {
   Status,
   Revision,
   Title,
+  Password,
   CompressionType,
   ContentType,
   Content,
+  ContentVisibility,
   Text,
   TextTsv,
   Tags,
@@ -189,6 +192,7 @@ impl MigrationTrait for Migration {
           .col(json_binary_null(Boards::AllowedFileTypes))
           .col(string(Boards::ReactionVisibility).default("private"))
           .col(string(Boards::ViewerVisibility).default("private"))
+          .col(string(Boards::ContentVisibility).default("private"))
           .col(boolean(Boards::IsLogged).default(false))
           .col(boolean(Boards::IsEnabled).default(false))
           .col(timestamp_with_time_zone(Boards::CreatedAt).default(Expr::current_timestamp()))
@@ -260,9 +264,11 @@ impl MigrationTrait for Migration {
           .col(string(BoardPosts::Status).default("draft"))
           .col(integer_null(BoardPosts::Revision))
           .col(string(BoardPosts::Title))
+          .col(string_null(BoardPosts::Password))
           .col(string_null(BoardPosts::CompressionType))
           .col(string(BoardPosts::ContentType))
           .col(text_null(BoardPosts::Content))
+          .col(string(BoardPosts::ContentVisibility).default("private"))
           .col(text_null(BoardPosts::Text))
           .col(ColumnDef::new(BoardPosts::TextTsv).custom("tsvector").null())
           .col(timestamp_with_time_zone_null(BoardPosts::PublishedAt))

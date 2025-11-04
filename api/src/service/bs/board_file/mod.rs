@@ -1,17 +1,19 @@
 pub mod dto;
+pub mod util;
 
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::ActiveValue::Set;
 use sea_orm::{
   ColumnTrait, DeleteResult, EntityTrait, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
-  QuerySelect, RelationTrait, Select,
+  QuerySelect, RelationTrait, Select, TransactionTrait,
 };
 
 use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
+use crate::service::fs::dto::{DeleteFile, FileUploaded};
+use crate::service::fs::file::FileService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
@@ -36,23 +38,13 @@ impl<S: SumidaState> BoardFileService<S> {
 
     let db = self.state.db();
 
-    let mut query = filter.apply(
+    let mut query = filter.apply(util::with_file_columns(
       BoardFiles::find()
         .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
         .select_only()
         .column_as(Column::FileId, "id")
-        .column_as(Column::PostId, "post_id")
-        .column_as(FileColumn::Dir, "dir")
-        .column_as(FileColumn::Name, "name")
-        .column_as(FileColumn::Uri, "uri")
-        .column_as(FileColumn::Size, "size")
-        .column_as(FileColumn::MimeType, "mime_type")
-        .column_as(FileColumn::Status, "status")
-        .column_as(FileColumn::ExpiresAt, "expires_at")
-        .column_as(FileColumn::CreatedAt, "created_at")
-        .column_as(FileColumn::UpdatedAt, "updated_at")
-        .column_as(FileColumn::UpdatedAt, "deleted_at"),
-    );
+        .column_as(Column::PostId, "post_id"),
+    ));
 
     let count = query.clone().count(db).await?;
 
@@ -78,50 +70,56 @@ impl<S: SumidaState> BoardFileService<S> {
 
     let db = self.state.db();
 
-    let result = BoardFiles::find()
-      .filter(Column::PostId.eq(post_id))
-      .filter(Column::FileId.eq(file_id))
-      .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
-      .select_only()
-      .column_as(Column::PostId, "post_id")
-      .column_as(Column::FileId, "file_id")
-      .column_as(FileColumn::Dir, "dir")
-      .column_as(FileColumn::Name, "name")
-      .column_as(FileColumn::Uri, "uri")
-      .column_as(FileColumn::Size, "size")
-      .column_as(FileColumn::MimeType, "mime_type")
-      .column_as(FileColumn::Hash, "hash")
-      .column_as(FileColumn::Status, "status")
-      .column_as(FileColumn::ExpiresAt, "expires_at")
-      .column_as(FileColumn::CreatedAt, "created_at")
-      .column_as(FileColumn::UpdatedAt, "updated_at")
-      .into_model::<GetBoardFile>()
-      .one(db)
-      .await?;
+    let result = util::with_file_columns(
+      BoardFiles::find()
+        .filter(Column::PostId.eq(post_id))
+        .filter(Column::FileId.eq(file_id))
+        .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
+        .select_only()
+        .column_as(Column::PostId, "post_id")
+        .column_as(Column::FileId, "file_id")
+        .column_as(FileColumn::Hash, "hash"),
+    )
+    .into_model::<GetBoardFile>()
+    .one(db)
+    .await?;
 
     Ok(result)
   }
 
-  pub async fn attach_file(&self, post_id: i32, file_id: i32) -> Result<(), SumidaError> {
-    let db = self.state.db();
-    let active_model = entity::bs::board_files::ActiveModel {
-      post_id: Set(post_id),
-      file_id: Set(file_id),
+  pub async fn upload(&self, data: UploadBoardFile) -> Result<FileUploaded, SumidaError> {
+    let txn = self.state.db().begin().await?;
+
+    let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
+      return Err(SumidaError::NoData("Board".to_string(), data.board_id.to_string()));
     };
 
-    BoardFiles::insert(active_model).exec(db).await?;
-    Ok(())
+    if !board.can_upload_file {
+      return Err(SumidaError::FileUploadNotAllowed);
+    }
+
+    if (board.max_file_size as usize) < data.file.bytes.len() {
+      return Err(SumidaError::FileTooLarge);
+    }
+
+    let result = FileService::new(self.state.clone(), self.session.clone()).upload(data.into()).await?;
+
+    txn.commit().await?;
+
+    Ok(result)
   }
 
-  pub async fn detach_file(&self, post_id: i32, file_id: i32) -> Result<DeleteResult, SumidaError> {
-    use entity::bs::board_files::Column;
-
+  pub async fn delete(&self, data: DeleteBoardFile) -> Result<DeleteResult, SumidaError> {
     let db = self.state.db();
 
     let result = BoardFiles::delete_many()
-      .filter(Column::PostId.eq(post_id))
-      .filter(Column::FileId.eq(file_id))
+      .filter(BoardFilesColumn::PostId.eq(data.post_id))
+      .filter(BoardFilesColumn::FileId.eq(data.file_id))
       .exec(db)
+      .await?;
+
+    FileService::new(self.state.clone(), self.session.clone())
+      .delete(data.file_id, DeleteFile { hard: data.hard })
       .await?;
 
     Ok(result)
@@ -129,29 +127,20 @@ impl<S: SumidaState> BoardFileService<S> {
 
   pub async fn get_files_for_post(&self, post_id: i32) -> Result<Vec<BoardFileListItem>, SumidaError> {
     use entity::bs::board_files::Column;
-    use entity::fs::files::Column as FileColumn;
 
     let db = self.state.db();
 
-    let items = BoardFiles::find()
-      .filter(Column::PostId.eq(post_id))
-      .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
-      .select_only()
-      .column_as(Column::FileId, "id")
-      .column_as(Column::PostId, "post_id")
-      .column_as(FileColumn::Dir, "dir")
-      .column_as(FileColumn::Name, "name")
-      .column_as(FileColumn::Uri, "uri")
-      .column_as(FileColumn::Size, "size")
-      .column_as(FileColumn::MimeType, "mime_type")
-      .column_as(FileColumn::Status, "status")
-      .column_as(FileColumn::ExpiresAt, "expires_at")
-      .column_as(FileColumn::CreatedAt, "created_at")
-      .column_as(FileColumn::UpdatedAt, "updated_at")
-      .column_as(FileColumn::DeletedAt, "deleted_at")
-      .into_model::<BoardFileListItem>()
-      .all(db)
-      .await?;
+    let items = util::with_file_columns(
+      BoardFiles::find()
+        .filter(Column::PostId.eq(post_id))
+        .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
+        .select_only()
+        .column_as(Column::FileId, "id")
+        .column_as(Column::PostId, "post_id"),
+    )
+    .into_model::<BoardFileListItem>()
+    .all(db)
+    .await?;
 
     Ok(items)
   }

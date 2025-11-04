@@ -2,6 +2,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bs::board_posts::*;
+use entity::bs::boards::BoardPostContentVisibility;
 use error::SumidaError;
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::*;
@@ -10,6 +11,7 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 
+use crate::service::auth::helper::verify_password;
 use crate::service::prelude::BoardFileListItem;
 use crate::util::board::HtmlContent;
 use crate::util::db::{tsquery, wrap_ilike};
@@ -99,6 +101,24 @@ impl BoardPostFilter {
       .apply_if(self.parent_id, |q, v| q.filter(Column::ParentId.eq(v)))
       .apply_if(self.kind.as_ref(), |q, v| q.filter(Column::Kind.eq(v.clone().into_value())))
       .apply_if(self.status.as_ref(), |q, v| q.filter(Column::Status.eq(v.clone().into_value())))
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewBoardPost {
+  pub id: i32,
+  #[serde(default)]
+  pub password: Option<String>,
+}
+
+impl ViewBoardPost {
+  pub fn verify_password(&self, post_password: &str) -> bool {
+    if let Some(ref view_password) = self.password {
+      verify_password(view_password, post_password)
+    } else {
+      true
+    }
   }
 }
 
@@ -192,14 +212,22 @@ impl IntoResponse for GetBoardPost {
 pub struct CreateBoardPost {
   pub id: Optional<i32>,
   pub board_id: i32,
+  #[serde(default)]
   pub topic_id: Nullable<i32>,
+  #[serde(default)]
   pub parent_id: Nullable<i32>,
   pub title: String,
+  #[serde(default)]
+  pub password: Nullable<String>,
+  #[serde(default)]
   pub content: Nullable<String>,
   pub content_type: BoardPostContentType,
+  pub content_visibility: Optional<BoardPostContentVisibility>,
   pub kind: Optional<BoardPostKind>,
   pub status: Optional<BoardPostStatus>,
+  #[serde(default)]
   pub published_at: Nullable<DateTimeWithTimeZone>,
+  #[serde(default)]
   pub tags: Nullable<Vec<String>>,
   pub attached_file_ids: Option<Vec<i32>>,
 }
@@ -231,12 +259,16 @@ impl CreateBoardPost {
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardDraft {
   pub board_id: i32,
+  #[serde(default)]
   pub topic_id: Nullable<i32>,
+  #[serde(default)]
   pub parent_id: Nullable<i32>,
   pub title: String,
+  #[serde(default)]
   pub content: Nullable<String>,
   pub content_type: BoardPostContentType,
   pub kind: Optional<BoardPostKind>,
+  #[serde(default)]
   pub tags: Nullable<Vec<String>>,
   pub attached_file_ids: Option<Vec<i32>>,
 }
@@ -280,6 +312,9 @@ pub struct UpdateBoardPost {
   pub title: Optional<String>,
   #[serde(default)]
   pub content: Nullable<String>,
+  pub content_visibility: Optional<BoardPostContentVisibility>,
+  #[serde(default)]
+  pub password: Nullable<String>,
   pub kind: Optional<BoardPostKind>,
   pub status: Optional<BoardPostStatus>,
   #[serde(default)]

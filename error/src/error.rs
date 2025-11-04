@@ -74,6 +74,17 @@ pub enum SumidaError {
   #[error("invalid verification code")]
   VerificationFailed,
 
+  #[error("file upload is not allowed")]
+  FileUploadNotAllowed,
+  #[error("too many files uploaded")]
+  TooManyFiles,
+  #[error("file size exceeds the allowed limit")]
+  FileTooLarge,
+  #[error("file does not exist")]
+  FileNotFound,
+  #[error("reusing uploaded files is not permitted")]
+  FileReuseNotAllowed,
+
   // runtime errors
   #[error("reason: {0}")]
   Unsupported(String),
@@ -96,6 +107,17 @@ pub enum SumidaError {
   #[cfg(feature = "aws-s3")]
   #[error("status: {0}, reason: {1}")]
   AwsS3SdkError(u16, String),
+}
+
+impl SumidaError {
+  fn code(&self) -> String {
+    let n: i32 = match self {
+      Self::NoContent => 0,
+      _ => -1,
+    };
+
+    format!("E{:04}", n)
+  }
 }
 
 // impl Into<StatusCode> for SumidaError {
@@ -149,6 +171,7 @@ impl From<SumidaError> for StatusCode {
 
 impl IntoResponse for SumidaError {
   fn into_response(self) -> axum::response::Response {
+    let code = self.code();
     let status_code: StatusCode = self.clone().into();
     let reason = self.to_string();
     tracing::error!("SumidaError: {}, {}", status_code, reason);
@@ -157,11 +180,13 @@ impl IntoResponse for SumidaError {
       status_code,
       if cfg!(debug_assertions) {
         Json(json!({
+          "code": code,
           "statusCode": status_code.as_u16(),
           "reason": reason,
         }))
       } else {
         Json(json!({
+          "code": code,
           "statusCode": status_code.as_u16(),
         }))
       },

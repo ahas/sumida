@@ -1,15 +1,20 @@
+use async_trait::async_trait;
 use axum::Json;
+use axum::extract::Multipart;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bs::board_files::*;
 use entity::prelude::*;
+use error::SumidaError;
 use sea_orm::prelude::*;
 use sea_orm::{DeriveIntoActiveModel, EntityTrait, QueryTrait};
 use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::service::fs::dto::{FileListItem, GetFile};
+use crate::service::fs::dto::{
+  FileListItem, FileUploadData, FileUploadOptions, FileUploadTrait, GetFile, UploadFile,
+};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFileFilter {
@@ -74,6 +79,81 @@ impl IntoResponse for GetBoardFile {
   }
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadBoardFile {
+  pub board_id: i32,
+  pub file: FileUploadData,
+  pub options: FileUploadOptions,
+}
+
+#[async_trait]
+impl FileUploadTrait for UploadBoardFile {
+  fn into_parts(self) -> (FileUploadData, FileUploadOptions) {
+    (self.file, self.options)
+  }
+
+  async fn from_multipart(multipart: &mut Multipart) -> Result<Self, SumidaError> {
+    let mut board_id: Option<i32> = None;
+    let mut file_data: Option<FileUploadData> = None;
+    let mut options: Option<FileUploadOptions> = None;
+
+    while let Some(field) = multipart
+      .next_field()
+      .await
+      .map_err(|e| SumidaError::BadRequest(format!("Multipart error: {}", e)))?
+    {
+      let name = field.name().unwrap_or("").to_string();
+
+      match name.as_str() {
+        "board_id" => {
+          board_id = Some(field.text().await.unwrap().parse::<i32>().unwrap());
+        }
+        "metadata" => {
+          let text = field
+            .text()
+            .await
+            .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata: {}", e)))?;
+          options = Some(
+            serde_json::from_str(&text)
+              .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata JSON: {}", e)))?,
+          );
+        }
+        "file" => {
+          let filename = field.file_name().unwrap_or("unknown").to_string();
+          let content_type = field.content_type().unwrap_or("application/octet-stream").to_string();
+          let data = field
+            .bytes()
+            .await
+            .map_err(|e| SumidaError::BadRequest(format!("Failed to read file: {}", e)))?;
+
+          file_data = Some(FileUploadData {
+            original_name: filename,
+            bytes: data.to_vec(),
+            mime_type: content_type,
+          });
+        }
+        _ => {}
+      }
+    }
+
+    Ok(Self {
+      board_id: board_id.unwrap(),
+      file: file_data.unwrap(),
+      options: options.unwrap(),
+    })
+  }
+}
+
+impl Into<UploadFile> for UploadBoardFile {
+  fn into(self) -> UploadFile {
+    UploadFile {
+      file: self.file,
+      options: self.options,
+    }
+  }
+}
+
 #[derive(Debug, Deserialize, DeriveIntoActiveModel)]
 #[sea_orm(entity = "Entity")]
 #[serde(rename_all = "camelCase")]
@@ -111,6 +191,15 @@ impl IntoResponse for BoardFileUpdated {
   fn into_response(self) -> axum::response::Response {
     (StatusCode::OK, Json(json!(self))).into_response()
   }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteBoardFile {
+  #[serde(default)]
+  pub hard: bool,
+  pub post_id: i32,
+  pub file_id: i32,
 }
 
 #[derive(Serialize)]

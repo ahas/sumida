@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use axum::Json;
 use axum::extract::{FromRequest, Multipart, Request};
 use axum::http::StatusCode;
@@ -18,11 +19,11 @@ use crate::util::storage::StaticFile;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct FileFilter {
-  pub user: Option<String>,
-  pub dir: Option<String>,
-  pub name: Option<String>,
-  pub uri: Option<String>,
-  pub status: Option<String>,
+  pub user:      Option<String>,
+  pub dir:       Option<String>,
+  pub name:      Option<String>,
+  pub uri:       Option<String>,
+  pub status:    Option<String>,
   pub mime_type: Option<String>,
 }
 
@@ -52,55 +53,55 @@ impl FileFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Users", from_query_result)]
 pub struct FileUser {
-  pub id: i32,
+  pub id:       i32,
   pub username: String,
   #[sea_orm(from_col = "full_name")]
-  pub name: String,
+  pub name:     String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Files", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct FileListItem {
-  pub id: i32,
+  pub id:            i32,
   #[sea_orm(nested)]
-  pub user: FileUser,
+  pub user:          FileUser,
   pub original_name: String,
-  pub dir: String,
-  pub name: String,
-  pub uri: Option<String>,
-  pub size: i64,
-  pub mime_type: String,
-  pub status: String,
-  pub tags: Option<Vec<String>>,
-  pub refs: i32,
-  pub expires_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
-  pub deleted_at: Option<DateTimeWithTimeZone>,
+  pub dir:           String,
+  pub name:          String,
+  pub uri:           Option<String>,
+  pub size:          i64,
+  pub mime_type:     String,
+  pub status:        String,
+  pub tags:          Option<Vec<String>>,
+  pub refs:          i32,
+  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub created_at:    DateTimeWithTimeZone,
+  pub updated_at:    DateTimeWithTimeZone,
+  pub deleted_at:    Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Files", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetFile {
-  pub id: i32,
+  pub id:            i32,
   #[sea_orm(nested)]
-  pub user: FileUser,
+  pub user:          FileUser,
   pub original_name: String,
-  pub dir: String,
-  pub name: String,
-  pub uri: Option<String>,
-  pub size: i64,
-  pub mime_type: String,
-  pub hash: Option<String>,
-  pub tags: Option<Vec<String>>,
-  pub status: String,
-  pub refs: i32,
-  pub expires_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
-  pub deleted_at: Option<DateTimeWithTimeZone>,
+  pub dir:           String,
+  pub name:          String,
+  pub uri:           Option<String>,
+  pub size:          i64,
+  pub mime_type:     String,
+  pub hash:          Option<String>,
+  pub tags:          Option<Vec<String>>,
+  pub status:        String,
+  pub refs:          i32,
+  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub created_at:    DateTimeWithTimeZone,
+  pub updated_at:    DateTimeWithTimeZone,
+  pub deleted_at:    Option<DateTimeWithTimeZone>,
 
   #[sea_orm(skip)]
   pub access_policies: Option<Vec<ApForUser>>,
@@ -116,9 +117,9 @@ impl IntoResponse for GetFile {
 #[serde(rename_all = "camelCase")]
 pub struct FileUploadOptions {
   #[serde(default)]
-  pub tags: Option<Vec<String>>,
+  pub tags:       Option<Vec<String>>,
   #[serde(default)]
-  pub dir: String,
+  pub dir:        String,
   #[serde(default)]
   pub expires_at: Nullable<DateTimeWithTimeZone>,
 }
@@ -127,8 +128,8 @@ pub struct FileUploadOptions {
 #[serde(rename_all = "camelCase")]
 pub struct FileUploadData {
   pub original_name: String,
-  pub bytes: Vec<u8>,
-  pub mime_type: String,
+  pub bytes:         Vec<u8>,
+  pub mime_type:     String,
 }
 
 impl FileUploadData {
@@ -137,15 +138,11 @@ impl FileUploadData {
   }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UploadFile {
-  pub file: FileUploadData,
-  pub options: FileUploadOptions,
-}
+#[async_trait]
+pub trait FileUploadTrait: Sized {
+  fn into_parts(self) -> (FileUploadData, FileUploadOptions);
 
-impl UploadFile {
-  pub async fn from_request<S: SumidaState>(state: S, request: Request) -> Result<Self, SumidaError> {
+  async fn from_request<S: SumidaState>(state: S, request: Request) -> Result<Self, SumidaError> {
     use axum::http::header;
 
     let content_type = request
@@ -164,7 +161,40 @@ impl UploadFile {
     }
   }
 
-  pub async fn from_multipart(multipart: &mut Multipart) -> Result<Self, SumidaError> {
+  async fn from_multipart(multipart: &mut Multipart) -> Result<Self, SumidaError>;
+
+  fn into_static_file(self) -> StaticFile {
+    use std::path::Path;
+
+    let (file, options) = self.into_parts();
+    let file_extension =
+      Path::new(&file.original_name).extension().and_then(|ext| ext.to_str()).unwrap_or("");
+    let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
+
+    StaticFile {
+      name:          unique_filename,
+      dir:           options.dir,
+      original_name: file.original_name,
+      mime_type:     file.mime_type,
+      bytes:         file.bytes,
+    }
+  }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadFile {
+  pub file:    FileUploadData,
+  pub options: FileUploadOptions,
+}
+
+#[async_trait]
+impl FileUploadTrait for UploadFile {
+  fn into_parts(self) -> (FileUploadData, FileUploadOptions) {
+    (self.file, self.options)
+  }
+
+  async fn from_multipart(multipart: &mut Multipart) -> Result<Self, SumidaError> {
     let mut file_data: Option<FileUploadData> = None;
     let mut options: Option<FileUploadOptions> = None;
 
@@ -196,8 +226,8 @@ impl UploadFile {
 
           file_data = Some(FileUploadData {
             original_name: filename,
-            bytes: data.to_vec(),
-            mime_type: content_type,
+            bytes:         data.to_vec(),
+            mime_type:     content_type,
           });
         }
         _ => {}
@@ -205,27 +235,9 @@ impl UploadFile {
     }
 
     Ok(Self {
-      file: file_data.unwrap(),
+      file:    file_data.unwrap(),
       options: options.unwrap(),
     })
-  }
-
-  pub fn into_static_file(self) -> StaticFile {
-    use std::path::Path;
-
-    let file_extension = Path::new(&self.file.original_name)
-      .extension()
-      .and_then(|ext| ext.to_str())
-      .unwrap_or("");
-    let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
-
-    StaticFile {
-      dir: self.options.dir,
-      name: unique_filename,
-      original_name: self.file.original_name,
-      mime_type: self.file.mime_type,
-      bytes: self.file.bytes,
-    }
   }
 }
 
@@ -261,17 +273,17 @@ impl IntoResponse for FileDeleted {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStats {
-  pub total_files: i64,
-  pub total_size: i64,
+  pub total_files:  i64,
+  pub total_size:   i64,
   pub by_mime_type: Vec<FileMimeTypeStats>,
-  pub by_status: Vec<FileStatusStats>,
+  pub by_status:    Vec<FileStatusStats>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMimeTypeStats {
-  pub mime_type: String,
-  pub count: i64,
+  pub mime_type:  String,
+  pub count:      i64,
   pub total_size: i64,
 }
 
@@ -279,5 +291,5 @@ pub struct FileMimeTypeStats {
 #[serde(rename_all = "camelCase")]
 pub struct FileStatusStats {
   pub status: String,
-  pub count: i64,
+  pub count:  i64,
 }

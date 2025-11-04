@@ -73,6 +73,7 @@ pub struct GetBoard {
   pub allowed_file_types: Option<JsonValue>,
   pub reaction_visibility: BoardPostRecordVisibility,
   pub viewer_visibility: BoardPostRecordVisibility,
+  pub content_visibility: BoardPostRecordVisibility,
   pub is_logged: bool,
   pub is_enabled: bool,
   pub created_at: DateTimeWithTimeZone,

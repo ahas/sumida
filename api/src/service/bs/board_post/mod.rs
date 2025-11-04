@@ -1,23 +1,24 @@
 pub mod dto;
+pub mod util;
 
 use entity::bs::board_posts::BoardPostStatus;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::ActiveValue::Set;
-use sea_orm::sea_query::{Alias, Expr, Func};
+use sea_orm::ActiveValue::{NotSet, Set};
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, JoinType,
-  PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, RelationTrait, Select, TransactionTrait,
+  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, PaginatorTrait,
+  QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait,
 };
+use sea_orm_crud::Nullable;
 
 use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
-use crate::service::prelude::BoardFileListItem;
 use crate::util::ap::{self, ApChain, ApGuard};
-use crate::util::board::TsHeadlineExpr;
 use crate::util::pagination::Pagination;
+use crate::util::user::hash_password;
 
 pub struct BoardPostService<S: SumidaState> {
   state: S,
@@ -39,27 +40,13 @@ impl<S: SumidaState> BoardPostService<S> {
 
     let search_text = filter.search.clone().unwrap_or_else(|| filter.text.clone().unwrap_or_default());
     let with_snippet = filter.with_snippet;
-    let query = self.select(BoardPosts::find());
+    let query = util::with_conditional_post_columns(
+      self.session.profile.get_id(),
+      self.session.profile.is_admin,
+      self.select(BoardPosts::find()),
+    );
     let query = if with_snippet {
-      if search_text.len() > 0 {
-        TsHeadlineExpr::new(Column::Text, &search_text)
-          .start_offset(filter.snippet_offset)
-          .delimiters(&filter.snippet_start_sel, &filter.snippet_stop_sel)
-          .max_words(filter.snippet_max_words)
-          .min_words(filter.snippet_min_words)
-          .max_fragments(filter.snippet_max_fragments)
-          .short_word(filter.snippet_short_word)
-          .max_length(filter.snippet_length)
-          .highlight_all(filter.snippet_highlight_all)
-          .apply(query)
-      } else if let Some(snippet_length) = filter.snippet_length {
-        query.column_as(
-          Expr::expr(Func::cust("left").arg(Expr::col(Alias::new("text"))).arg(snippet_length as i32)),
-          "snippet",
-        )
-      } else {
-        query.expr(Expr::col(Alias::new("text")))
-      }
+      util::with_fts(query, search_text, &filter)
     } else {
       query.column_as(Expr::cust("NULL::tsvector"), "snippet")
     };
@@ -84,67 +71,78 @@ impl<S: SumidaState> BoardPostService<S> {
     let txn = self.state.db().begin().await?;
 
     // Then get the post
-    let mut result = self
-      .select(BoardPosts::find_by_id(id))
-      .column_as(entity::bs::board_posts::Column::Content, "content")
-      .into_model::<GetBoardPost>()
-      .one(&txn)
-      .await?;
+    let mut post = util::with_conditional_post_columns(
+      self.session.profile.get_id(),
+      self.session.profile.is_admin,
+      self
+        .select(BoardPosts::find())
+        .column_as(entity::bs::board_posts::Column::Content, "content"),
+    )
+    .into_model::<GetBoardPost>()
+    .one(&txn)
+    .await?;
 
     // Load attached files together
-    if let Some(ref mut result) = result {
-      result.attached_files = BoardFiles::find()
-        .filter(entity::bs::board_files::Column::PostId.eq(id))
-        .join(JoinType::LeftJoin, entity::bs::board_files::Relation::File.def())
-        .join(JoinType::LeftJoin, entity::fs::files::Relation::User.def())
-        .into_partial_model::<BoardFileListItem>()
-        .all(&txn)
-        .await?;
-    }
+    post = util::load_attached_files(post, id, &txn).await?;
 
     txn.commit().await?;
 
-    Ok(result)
+    Ok(post)
   }
 
-  pub async fn view(&self, session: &UserSession, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
+  pub async fn view(
+    &self,
+    session: &UserSession,
+    dto: ViewBoardPost,
+  ) -> Result<Option<GetBoardPost>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let board_post_query = self
-      .select(
-        BoardPosts::find_by_id(id), //
-      )
-      .column_as(entity::bs::board_posts::Column::Content, "content");
+
+    let board_post_query = util::with_conditional_post_columns(
+      self.session.profile.get_id(),
+      self.session.profile.is_admin,
+      self
+        .select(BoardPosts::find())
+        .column_as(entity::bs::board_posts::Column::Content, "content"),
+    );
+
+    // Find post record
     let Some(post) = board_post_query.clone().one(&txn).await? else {
-      return Err(SumidaError::NoData("BoardPost".into(), id.to_string()));
+      return Err(SumidaError::NoData("BoardPost".to_string(), dto.id.to_string()));
     };
 
-    if session.profile.is_authorized {
-      let user_id = session.profile.id;
-      let not_viewed = BoardPostViews::find()
-        .filter(entity::bs::board_post_views::Column::PostId.eq(post.id))
-        .filter(entity::bs::board_post_views::Column::UserId.eq(user_id))
-        .one(&txn)
-        .await?
-        .is_none();
-
-      if not_viewed {
-        let view_am = entity::bs::board_post_views::ActiveModel {
-          post_id: Set(id),
-          user_id: Set(Some(user_id)),
-          ..Default::default()
-        };
-
-        BoardPostViews::insert(view_am).exec(&txn).await?;
-        BoardPosts::update(entity::bs::board_posts::ActiveModel {
-          views: Set(post.views + 1),
-          ..Default::default()
-        })
-        .exec(&txn)
-        .await?;
+    // Verify post password if it exists
+    if let Some(ref post_password) = post.password {
+      if !dto.verify_password(post_password) {
+        return Err(SumidaError::NoAccessPermission);
       }
     }
 
-    let post = board_post_query.into_model::<GetBoardPost>().one(&txn).await?;
+    // Find board to get global visibility configs
+    let Some(board) = Boards::find_by_id(post.board_id).one(&txn).await? else {
+      return Err(SumidaError::NoData("Board".to_string(), post.board_id.to_string()));
+    };
+    let user_id = if session.profile.is_authorized { Some(session.profile.id) } else { None };
+
+    // Check board record/content visibility limitations
+    // Board configs override post configs when the permission level is lower
+    if !util::check_post_visible(
+      user_id,
+      post.user_id,
+      session.profile.is_admin,
+      board.content_visibility,
+      post.content_visibility,
+    )? {
+      return Err(SumidaError::NoAccessPermission);
+    }
+
+    // Increase `views` column value
+    if session.profile.is_authorized {
+      util::increase_view_count_if_not_viewed(post.id, post.views, session.profile.id, &txn).await?;
+    }
+
+    // Get a board post item with files
+    let mut post = board_post_query.into_model::<GetBoardPost>().one(&txn).await?;
+    post = util::load_attached_files(post, dto.id, &txn).await?;
 
     txn.commit().await?;
 
@@ -155,26 +153,32 @@ impl<S: SumidaState> BoardPostService<S> {
     &self,
     data: CreateBoardPost,
   ) -> Result<InsertResult<entity::bs::board_posts::ActiveModel>, SumidaError> {
-    // Check write permission for the board
     let txn = self.state.db().begin().await?;
 
     let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
       return Err(SumidaError::NoData("Board".into(), data.board_id.to_string()));
     };
+
     ap::chain()
       .push_if(board.group_id, |x| ap::ns("board_group").action("create").object(x))
       .push(ap::ns("board").action("create").object(board.id))
       .who(&self.session)
-      .action("write")
+      .action("create")
       .try_check_allowed(&txn)
       .await?;
 
     // Store attached file IDs for later processing
     let attached_file_ids = data.attached_file_ids.clone();
     let plain_text = data.parse_plain_text()?;
+    let password = data.password.clone();
 
     let mut am = data.into_active_model();
     am.user_id = Set(Some(self.session.profile.id));
+    am.password = if let Nullable::Value(password) = password {
+      Set(Some(hash_password(password).map_err(|err| SumidaError::Unknown(500, err.to_string()))?))
+    } else {
+      NotSet
+    };
 
     let result = BoardPosts::insert(am).exec(&txn).await?;
     let post_id = result.last_insert_id;
@@ -183,7 +187,7 @@ impl<S: SumidaState> BoardPostService<S> {
     BoardPosts::update_text(post_id, plain_text, &txn).await?;
 
     // Associate attached files with the created post
-    self.update_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
+    self.link_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
 
     txn.commit().await?;
 
@@ -194,17 +198,16 @@ impl<S: SumidaState> BoardPostService<S> {
     &self,
     data: CreateBoardDraft,
   ) -> Result<InsertResult<entity::bs::board_posts::ActiveModel>, SumidaError> {
-    // Check write permission for the board
     let txn = self.state.db().begin().await?;
 
     let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
       return Err(SumidaError::NoData("Board".into(), data.board_id.to_string()));
     };
     ap::chain()
-      .push_if(board.group_id, |x| ap::ns("board_group").action("create").object(x))
-      .push(ap::ns("board").action("create").object(board.id))
+      .push_if(board.group_id, |x| ap::ns("board_group").action("update").object(x))
+      .push(ap::ns("board").action("update").object(board.id))
       .who(&self.session)
-      .action("write")
+      .action("update")
       .try_check_allowed(&txn)
       .await?;
 
@@ -222,35 +225,40 @@ impl<S: SumidaState> BoardPostService<S> {
     BoardPosts::update_text(post_id, plain_text, &txn).await?;
 
     // Associate attached files with the created post
-    self.update_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
+    self.link_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
 
     txn.commit().await?;
 
     Ok(result)
   }
 
-  async fn update_files<'db, C: ConnectionTrait>(
+  async fn link_files<'db, C: ConnectionTrait>(
     &self,
     post_id: i32,
     file_ids: Vec<i32>,
     db: &'db C,
   ) -> Result<(), SumidaError> {
-    use entity::bs::board_files::Column;
-
     // First, remove all existing file associations for this post
-    entity::bs::board_files::Entity::delete_many()
-      .filter(Column::PostId.eq(post_id))
-      .exec(db)
-      .await?;
+    BoardFiles::delete_many().filter(BoardFilesColumn::PostId.eq(post_id)).exec(db).await?;
 
     // Then, add new file associations
     for file_id in file_ids {
-      let file_am = entity::bs::board_files::ActiveModel {
+      let file_conflict_count: u64 = BoardFiles::find()
+        .filter(BoardFilesColumn::FileId.eq(file_id))
+        .filter(BoardFilesColumn::PostId.eq(post_id))
+        .count(db)
+        .await?;
+
+      if file_conflict_count > 0 {
+        return Err(SumidaError::FileReuseNotAllowed);
+      }
+
+      let file_am = BoardFilesActiveModel {
         post_id: Set(post_id),
         file_id: Set(file_id),
       };
 
-      entity::bs::board_files::Entity::insert(file_am).exec(db).await?;
+      BoardFiles::insert(file_am).exec(db).await?;
     }
 
     Ok(())
@@ -268,15 +276,21 @@ impl<S: SumidaState> BoardPostService<S> {
     let post = BoardPosts::find_by_id(id).one(&txn).await?.unwrap();
     let attached_file_ids = data.attached_file_ids.clone();
     let plain_text = data.parse_plain_text(post.content_type)?;
+    let password = data.password.clone();
 
     let mut am = data.into_active_model();
     am.id = Set(id);
+    am.password = if let Nullable::Value(password) = password {
+      Set(Some(hash_password(password).map_err(|err| SumidaError::Unknown(500, err.to_string()))?))
+    } else {
+      NotSet
+    };
 
     let item = BoardPosts::update(am).exec(&txn).await?;
     BoardPosts::update_text(id, plain_text, &txn).await?;
 
     if let Some(file_ids) = attached_file_ids {
-      self.update_files(id, file_ids, &txn).await?;
+      self.link_files(id, file_ids, &txn).await?;
     }
 
     txn.commit().await?;
@@ -307,8 +321,6 @@ impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
       .column_as(BoardPostsColumn::Kind, "kind")
       .column_as(BoardPostsColumn::Status, "status")
       .column_as(BoardPostsColumn::Tags, "tags")
-      .column_as(BoardPostsColumn::Views, "views")
-      .column_as(BoardPostsColumn::Reactions, "reactions")
       .column_as(BoardPostsColumn::PublishedAt, "published_at")
       .column_as(BoardPostsColumn::ScheduledAt, "scheduled_at")
       .column_as(BoardPostsColumn::CreatedAt, "created_at")

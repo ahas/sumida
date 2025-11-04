@@ -7,13 +7,13 @@ use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode}
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub fn verify_password(password: &str, password_hash: &str) -> bool {
+pub fn verify_password(plain_password: &str, hashed_password: &str) -> bool {
   let argon2 = Argon2::default();
-  let Ok(parsed_hash) = PasswordHash::new(password_hash) else {
+  let Ok(parsed_hash) = PasswordHash::new(hashed_password) else {
     return false;
   };
 
-  argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok()
+  argon2.verify_password(plain_password.as_bytes(), &parsed_hash).is_ok()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

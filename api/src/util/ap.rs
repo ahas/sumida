@@ -6,38 +6,12 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::NotSet;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{
-  Alias,
-  Expr,
-  ExprTrait,
-  Func,
-  IntoColumnRef,
-  IntoIden,
-  IntoTableRef,
-  Query,
-  SelectStatement,
-  SimpleExpr,
+  Alias, Expr, ExprTrait, Func, IntoColumnRef, IntoIden, IntoTableRef, Query, SelectStatement, SimpleExpr,
 };
 use sea_orm::{
-  ActiveModelTrait,
-  ColumnTrait,
-  Condition,
-  ConnectionTrait,
-  DbBackend,
-  DbErr,
-  DeleteResult,
-  DerivePartialModel,
-  EntityName,
-  EntityTrait,
-  FromQueryResult,
-  IntoSimpleExpr,
-  JoinType,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  QueryTrait,
-  Select,
-  Set,
-  Statement,
+  ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbErr, DeleteResult, DerivePartialModel,
+  EntityName, EntityTrait, FromQueryResult, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
+  QuerySelect, QueryTrait, Select, Set, Statement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -162,22 +136,22 @@ pub trait ApGuard {
 #[derive(Clone, Debug, Default)]
 pub struct ApCondition {
   namespace: String,
-  actions:   Vec<String>,
-  objects:   Vec<String>,
-  exprs:     Vec<SimpleExpr>,
-  users:     Vec<ApUser>,
-  alias:     Option<Alias>,
+  actions: Vec<String>,
+  objects: Vec<String>,
+  exprs: Vec<SimpleExpr>,
+  users: Vec<ApUser>,
+  alias: Option<Alias>,
 }
 
 impl ApCondition {
   pub fn new<S: ToString>(namespace: S) -> Self {
     Self {
       namespace: namespace.to_string(),
-      actions:   Vec::new(),
-      objects:   Vec::new(),
-      exprs:     Vec::new(),
-      users:     Vec::new(),
-      alias:     None,
+      actions: Vec::new(),
+      objects: Vec::new(),
+      exprs: Vec::new(),
+      users: Vec::new(),
+      alias: None,
     }
   }
 
@@ -506,9 +480,9 @@ impl ApGuard for ApChain {
 #[serde(rename_all = "camelCase")]
 pub struct ApForUser {
   pub namespace: String,
-  pub object:    Vec<String>,
-  pub action:    Vec<String>,
-  pub effect:    String,
+  pub object: Vec<String>,
+  pub action: Vec<String>,
+  pub effect: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -620,18 +594,18 @@ impl FindApForUsers {
 
 pub struct FindUsersOfAp {
   namespace: String,
-  actions:   Vec<String>,
-  objects:   Vec<String>,
-  exprs:     Vec<SimpleExpr>,
+  actions: Vec<String>,
+  objects: Vec<String>,
+  exprs: Vec<SimpleExpr>,
 }
 
 impl FindUsersOfAp {
   pub fn new<S: ToString>(namespace: S) -> Self {
     Self {
       namespace: namespace.to_string(),
-      actions:   Vec::new(),
-      objects:   Vec::new(),
-      exprs:     Vec::new(),
+      actions: Vec::new(),
+      objects: Vec::new(),
+      exprs: Vec::new(),
     }
   }
 
@@ -723,18 +697,18 @@ impl FindUsersOfAp {
 #[derive(Clone, Debug, Default)]
 pub struct EditAp {
   namespace: Option<String>,
-  object:    Option<String>,
-  action:    Option<Vec<String>>,
-  users:     Vec<ApUser>,
+  object: Option<String>,
+  action: Option<Vec<String>>,
+  users: Vec<ApUser>,
 }
 
 impl EditAp {
   pub fn new() -> Self {
     Self {
       namespace: None,
-      action:    None,
-      object:    None,
-      users:     Vec::new(),
+      action: None,
+      object: None,
+      users: Vec::new(),
     }
   }
 

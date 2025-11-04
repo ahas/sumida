@@ -67,6 +67,10 @@ impl UserProfile {
 
     Ok(())
   }
+
+  pub fn get_id(&self) -> Option<i32> {
+    if self.is_authorized { Some(self.id) } else { None }
+  }
 }
 
 impl Default for UserProfile {

@@ -1,13 +1,32 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
+#[derive(
+  Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, EnumIter, DeriveActiveEnum,
+)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
 pub enum BoardPostRecordVisibility {
-  Public,
-  Private,
+  #[serde(rename = "public")]
+  Public = 0,
+  #[serde(rename = "author-only")]
   AuthorOnly,
+  #[serde(rename = "private")]
+  Private,
+}
+
+#[derive(
+  Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, EnumIter, DeriveActiveEnum,
+)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub enum BoardPostContentVisibility {
+  #[serde(rename = "public")]
+  Public = 0,
+  #[serde(rename = "user-only")]
+  UserOnly,
+  #[serde(rename = "private")]
+  Private,
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -28,6 +47,7 @@ pub struct Model {
   pub allowed_file_types: Option<Json>,
   pub reaction_visibility: BoardPostRecordVisibility,
   pub viewer_visibility: BoardPostRecordVisibility,
+  pub content_visibility: BoardPostContentVisibility,
   pub is_logged: bool,
   pub is_enabled: bool,
   pub created_at: DateTimeWithTimeZone,

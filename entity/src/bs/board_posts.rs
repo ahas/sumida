@@ -3,6 +3,8 @@ use sea_orm::UpdateResult;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::bs::boards::BoardPostContentVisibility;
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -48,10 +50,13 @@ pub struct Model {
   pub revision: Option<i32>,
   pub title: String,
   #[sea_orm(nullable)]
+  pub password: Option<String>,
+  #[sea_orm(nullable)]
   pub compression_type: Option<String>,
   pub content_type: BoardPostContentType,
   #[sea_orm(nullable, column_type = "Text")]
   pub content: Option<String>,
+  pub content_visibility: BoardPostContentVisibility,
   #[sea_orm(nullable, column_type = "Text")]
   pub text: Option<String>,
   #[sea_orm(nullable, select_as = "TEXT")]
