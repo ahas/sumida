@@ -15,7 +15,7 @@ pub async fn attach_timestamp_auto_update<C: ConnectionTrait>(
   db: &C,
   table_name: &str,
 ) -> Result<(), DbErr> {
-  db.execute_unprepared(&format!("SELECT manage_updated_at('{}');", table_name).to_owned())
+  db.execute_unprepared(&format!("SELECT manage_updated_at('{table_name}');").to_owned())
     .await?;
   Ok(())
 }
@@ -24,7 +24,7 @@ pub async fn detach_timestamp_auto_update<C: ConnectionTrait>(
   db: &C,
   table_name: &str,
 ) -> Result<(), DbErr> {
-  db.execute_unprepared(&format!("DROP TRIGGER IF EXISTS set_updated_at ON {};", table_name).to_owned())
+  db.execute_unprepared(&format!("DROP TRIGGER IF EXISTS set_updated_at ON {table_name};").to_owned())
     .await?;
   Ok(())
 }

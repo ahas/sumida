@@ -55,11 +55,26 @@ enum Users {
 }
 
 #[derive(DeriveIden)]
-enum UserBlocks {
+enum Bans {
   Table,
   Id,
+
   UserId,
+
   IpAddress,
+
+  UserAgent,
+
+  OsFamily,
+  OsMajor,
+  OsMinor,
+  OsPatch,
+  OsPatchMinor,
+
+  DeviceFamily,
+  DeviceBrand,
+  DeviceModel,
+
   BlockedAt,
   BlockedBy,
   Reason,
@@ -78,12 +93,13 @@ enum UserInvitations {
 }
 
 #[derive(DeriveIden)]
-enum UserLogs {
+enum AccessLogs {
   Table,
   Id,
   UserId,
   Method,
   Code,
+  Count,
   IpAddress,
   UserAgent,
   OsFamily,
@@ -414,33 +430,42 @@ impl MigrationTrait for Migration {
       .await?;
     // END api_keys table
 
-    // BEGIN user_blocks table
+    // BEGIN bans table
     manager
       .create_table(
         Table::create()
-          .table(UserBlocks::Table)
-          .col(integer(UserBlocks::Id).auto_increment())
-          .col(integer_null(UserBlocks::UserId))
-          .col(string_null(UserBlocks::IpAddress))
-          .col(timestamp_with_time_zone(UserBlocks::BlockedAt))
-          .col(integer_null(UserBlocks::BlockedBy))
-          .col(string_null(UserBlocks::Reason))
-          .col(timestamp_with_time_zone_null(UserBlocks::ExpiresAt))
-          .col(timestamp_with_time_zone_null(UserBlocks::LiftedAt))
-          .col(string_null(UserBlocks::Note))
-          .primary_key(Index::create().name("pk_user_blocks__id").col(UserBlocks::Id))
+          .table(Bans::Table)
+          .col(integer(Bans::Id).auto_increment())
+          .col(integer_null(Bans::UserId))
+          .col(string_null(Bans::IpAddress).default("*"))
+          .col(string_null(Bans::UserAgent).default("*"))
+          .col(string_null(Bans::OsFamily).default("*"))
+          .col(string_null(Bans::OsMajor).default("*"))
+          .col(string_null(Bans::OsMinor).default("*"))
+          .col(string_null(Bans::OsPatch).default("*"))
+          .col(string_null(Bans::OsPatchMinor).default("*"))
+          .col(string_null(Bans::DeviceFamily).default("*"))
+          .col(string_null(Bans::DeviceBrand).default("*"))
+          .col(string_null(Bans::DeviceModel).default("*"))
+          .col(timestamp_with_time_zone(Bans::BlockedAt))
+          .col(integer_null(Bans::BlockedBy))
+          .col(string_null(Bans::Reason))
+          .col(timestamp_with_time_zone_null(Bans::ExpiresAt))
+          .col(timestamp_with_time_zone_null(Bans::LiftedAt))
+          .col(string_null(Bans::Note))
+          .primary_key(Index::create().name("pk_bans__id").col(Bans::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_user_blocks__user_id")
-              .from(UserBlocks::Table, UserBlocks::UserId)
+              .name("fk_bans__user_id")
+              .from(Bans::Table, Bans::UserId)
               .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
           .foreign_key(
             ForeignKey::create()
-              .name("fk_user_blocks__blocked_by")
-              .from(UserBlocks::Table, UserBlocks::BlockedBy)
+              .name("fk_bans__blocked_by")
+              .from(Bans::Table, Bans::BlockedBy)
               .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
@@ -448,7 +473,128 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    // END user_blocks table
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__user_id")
+          .table(Bans::Table)
+          .col(Bans::UserId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__ip_address")
+          .table(Bans::Table)
+          .col(Bans::IpAddress)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__user_agent")
+          .table(Bans::Table)
+          .col(Bans::UserAgent)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__os_family")
+          .table(Bans::Table)
+          .col(Bans::OsFamily)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__os_major")
+          .table(Bans::Table)
+          .col(Bans::OsMajor)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__os_minor")
+          .table(Bans::Table)
+          .col(Bans::OsMinor)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__os_patch")
+          .table(Bans::Table)
+          .col(Bans::OsPatch)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__os_patch_minor")
+          .table(Bans::Table)
+          .col(Bans::OsPatchMinor)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__device_brand")
+          .table(Bans::Table)
+          .col(Bans::DeviceBrand)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__device_family")
+          .table(Bans::Table)
+          .col(Bans::DeviceFamily)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_bans__device_model")
+          .table(Bans::Table)
+          .col(Bans::DeviceModel)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    // END bans table
 
     // BEGIN user_invitations table
     manager
@@ -473,31 +619,32 @@ impl MigrationTrait for Migration {
       .await?;
     // END user_invitations table
 
-    // BEGIN user_logs
+    // BEGIN access_logs
     manager
       .create_table(
         Table::create()
-          .table(UserLogs::Table)
-          .col(integer(UserLogs::Id).auto_increment())
-          .col(integer(UserLogs::UserId))
-          .col(string(UserLogs::Method))
-          .col(integer(UserLogs::Code))
-          .col(string(UserLogs::IpAddress))
-          .col(string(UserLogs::UserAgent))
-          .col(string(UserLogs::OsFamily))
-          .col(string_null(UserLogs::OsMajor))
-          .col(string_null(UserLogs::OsMinor))
-          .col(string_null(UserLogs::OsPatch))
-          .col(string_null(UserLogs::OsPatchMinor))
-          .col(string(UserLogs::DeviceFamily))
-          .col(string_null(UserLogs::DeviceBrand))
-          .col(string_null(UserLogs::DeviceModel))
-          .col(timestamp_with_time_zone(UserLogs::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_user_logs__id").col(UserLogs::Id))
+          .table(AccessLogs::Table)
+          .col(integer(AccessLogs::Id).auto_increment())
+          .col(integer(AccessLogs::UserId))
+          .col(string(AccessLogs::Method))
+          .col(integer(AccessLogs::Code))
+          .col(integer_null(AccessLogs::Count))
+          .col(string(AccessLogs::IpAddress))
+          .col(string(AccessLogs::UserAgent))
+          .col(string(AccessLogs::OsFamily))
+          .col(string_null(AccessLogs::OsMajor))
+          .col(string_null(AccessLogs::OsMinor))
+          .col(string_null(AccessLogs::OsPatch))
+          .col(string_null(AccessLogs::OsPatchMinor))
+          .col(string(AccessLogs::DeviceFamily))
+          .col(string_null(AccessLogs::DeviceBrand))
+          .col(string_null(AccessLogs::DeviceModel))
+          .col(timestamp_with_time_zone(AccessLogs::CreatedAt).default(Expr::current_timestamp()))
+          .primary_key(Index::create().name("pk_access_logs__id").col(AccessLogs::Id))
           .foreign_key(
             ForeignKey::create()
-              .name("fk_user_logs__user_id")
-              .from(UserLogs::Table, UserLogs::UserId)
+              .name("fk_access_logs__user_id")
+              .from(AccessLogs::Table, AccessLogs::UserId)
               .to(Users::Table, Users::Id)
               .on_delete(SetNull)
               .on_update(Cascade),
@@ -505,7 +652,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    // END user_logs
+    // END access_logs
 
     // BEGIN user_verifications table
     manager
@@ -567,9 +714,9 @@ impl MigrationTrait for Migration {
 
     drop_table(manager, MailForms::Table).await?;
     drop_table(manager, UserVerifications::Table).await?;
-    drop_table(manager, UserLogs::Table).await?;
+    drop_table(manager, AccessLogs::Table).await?;
     drop_table(manager, UserInvitations::Table).await?;
-    drop_table(manager, UserBlocks::Table).await?;
+    drop_table(manager, Bans::Table).await?;
     drop_table(manager, ApiKeys::Table).await?;
     drop_table(manager, UserPrefs::Table).await?;
     drop_table(manager, Users::Table).await?;

@@ -1,19 +1,18 @@
 use chrono::Utc;
-use entity::{
-  prelude::*,
-  user_logs::{LoginCode, LoginMethod},
-};
+use entity::access_logs::{LoginCode, LoginMethod};
+use entity::prelude::*;
 use error::SumidaError;
 use infra::jwt::{JwtTokenStore, RefreshTokenData};
 use infra::session::UserSession;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use super::helper::{self, TokenPair};
-use crate::{SumidaState, service::auth::dto::LoginSession};
+use crate::SumidaState;
+use crate::service::auth::dto::LoginSession;
 
 pub struct AuthTokenService<S: SumidaState, J: JwtTokenStore> {
-  pub state: S,
-  pub session: UserSession,
+  pub state:     S,
+  pub session:   UserSession,
   pub jwt_store: J,
 }
 
@@ -36,25 +35,37 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
       .one(db)
       .await?
     else {
-      self.session.write_log(None, LoginMethod::Password, LoginCode::AccountNotFound, db).await?;
+      self
+        .session
+        .write_log(None, LoginMethod::Password, LoginCode::AccountNotFound, db)
+        .await?;
       return Err(SumidaError::InvalidAccount);
     };
 
     // 2) Check the user is blocked
     if self.session.check_blocked(Some(user.id), db).await? {
-      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBlocked, db).await?;
+      self
+        .session
+        .write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBlocked, db)
+        .await?;
       return Err(SumidaError::AccountBlocked);
     }
 
     // 3) Return error if the user is inactive
     if !user.is_enabled {
-      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountInactive, db).await?;
+      self
+        .session
+        .write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountInactive, db)
+        .await?;
       return Err(SumidaError::InactiveAccount);
     }
 
     // 4) Check the user password
     let result = if helper::verify_password(&data.password, &user.password) {
-      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::Success, db).await?;
+      self
+        .session
+        .write_log(Some(user.id), LoginMethod::Password, LoginCode::Success, db)
+        .await?;
 
       // Generate JWT token pair
       let remember_me = data.remember_me.unwrap_or(false);
@@ -63,9 +74,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
       // Store refresh token
       let refresh_claims = helper::verify_jwt_token(&token_pair.refresh_token).await?;
       let refresh_data = RefreshTokenData {
-        user_id: user.id,
-        username: user.username.clone(),
-        jti: refresh_claims.jti.clone(),
+        user_id:    user.id,
+        username:   user.username.clone(),
+        jti:        refresh_claims.jti.clone(),
         expires_at: chrono::DateTime::from_timestamp(refresh_claims.exp, 0).unwrap_or_default(),
         created_at: Utc::now(),
       };
@@ -74,7 +85,10 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
 
       Ok(token_pair)
     } else {
-      self.session.write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch, db).await?;
+      self
+        .session
+        .write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch, db)
+        .await?;
       let blocked = self.session.block_if_exceeded_limit(Some(user.id), db).await?;
 
       Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
@@ -125,7 +139,10 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
 
     // Verify user still exists and is active
     let db = self.state.db();
-    let user = Users::find_by_id(refresh_data.user_id).one(db).await?.ok_or(SumidaError::InvalidAccount)?;
+    let user = Users::find_by_id(refresh_data.user_id)
+      .one(db)
+      .await?
+      .ok_or(SumidaError::InvalidAccount)?;
 
     if !user.is_enabled {
       return Err(SumidaError::InactiveAccount);
@@ -142,9 +159,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     // Store new refresh token and invalidate old one
     let new_refresh_claims = helper::verify_jwt_token(&new_token_pair.refresh_token).await?;
     let new_refresh_data = RefreshTokenData {
-      user_id: user.id,
-      username: user.username.clone(),
-      jti: new_refresh_claims.jti.clone(),
+      user_id:    user.id,
+      username:   user.username.clone(),
+      jti:        new_refresh_claims.jti.clone(),
       expires_at: chrono::DateTime::from_timestamp(new_refresh_claims.exp, 0).unwrap_or_default(),
       created_at: Utc::now(),
     };

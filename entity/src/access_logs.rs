@@ -5,7 +5,7 @@ use super::users::Entity as Users;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
-pub enum LoginMethod {
+pub enum AccessMethod {
   #[serde(rename = "password")]
   #[sea_orm(string_value = "password")]
   Password,
@@ -19,7 +19,7 @@ pub enum LoginMethod {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "i32", db_type = "Integer")]
-pub enum LoginCode {
+pub enum AccessResultCode {
   #[serde(rename = "success")]
   #[sea_orm(num_value = 0)]
   Success,
@@ -32,32 +32,34 @@ pub enum LoginCode {
   #[serde(rename = "account-inactive")]
   #[sea_orm(num_value = 3)]
   AccountInactive,
-  #[serde(rename = "account-blocked")]
+  #[serde(rename = "account-banned")]
   #[sea_orm(num_value = 4)]
-  AccountBlocked,
+  AccountBanned,
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "user_logs")]
+#[sea_orm(table_name = "access_logs")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
+  pub id:      i32,
   pub user_id: i32,
-  pub method: LoginMethod,
-  pub code: LoginCode,
+  pub method:  AccessMethod,
+  pub code:    AccessResultCode,
+  #[sea_orm(nullable)]
+  pub count:   Option<i32>,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family: String,
-  pub os_major: Option<String>,
-  pub os_minor: Option<String>,
-  pub os_patch: Option<String>,
+  pub os_family:      String,
+  pub os_major:       Option<String>,
+  pub os_minor:       Option<String>,
+  pub os_patch:       Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand: Option<String>,
-  pub device_model: Option<String>,
+  pub device_brand:  Option<String>,
+  pub device_model:  Option<String>,
 
   pub created_at: DateTimeWithTimeZone,
 }

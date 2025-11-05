@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::response::IntoResponse;
-use entity::user_logs::{LoginCode, LoginMethod};
+use entity::access_logs::{AccessMethod, AccessResultCode};
 use sea_orm::prelude::*;
 use sea_orm::{Condition, FromQueryResult, IntoSimpleExpr, QueryTrait};
 use serde::{Deserialize, Serialize};
@@ -9,14 +9,14 @@ use serde_json::json;
 use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub struct UserLogFilter {
-  pub search: Option<String>,
-  pub user_id: Option<i32>,
+pub struct AccessLogFilter {
+  pub search:   Option<String>,
+  pub user_id:  Option<i32>,
   pub username: Option<String>,
-  pub name: Option<String>,
+  pub name:     Option<String>,
 }
 
-impl UserLogFilter {
+impl AccessLogFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
     let col_user_id = Expr::col("user_id");
     let col_username = Expr::col("user_username");
@@ -39,66 +39,66 @@ impl UserLogFilter {
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
-pub struct UserLogUser {
+pub struct AccessLogUser {
   #[sea_orm(from_alias = "user_id")]
-  pub id: i32,
+  pub id:        i32,
   #[sea_orm(from_alias = "user_username")]
-  pub username: String,
+  pub username:  String,
   #[sea_orm(from_alias = "user_full_name")]
   pub full_name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
-pub struct UserLogListItem {
-  pub id: i32,
+pub struct AccessLogListItem {
+  pub id:     i32,
   #[sea_orm(nested, alias = "user")]
-  pub user: UserLogUser,
-  pub method: LoginMethod,
-  pub code: LoginCode,
+  pub user:   AccessLogUser,
+  pub method: AccessMethod,
+  pub code:   AccessResultCode,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family: String,
-  pub os_major: Option<String>,
-  pub os_minor: Option<String>,
-  pub os_patch: Option<String>,
+  pub os_family:      String,
+  pub os_major:       Option<String>,
+  pub os_minor:       Option<String>,
+  pub os_patch:       Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand: Option<String>,
-  pub device_model: Option<String>,
+  pub device_brand:  Option<String>,
+  pub device_model:  Option<String>,
 
   pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
-pub struct GetUserLog {
-  pub id: i32,
+pub struct GetAccessLog {
+  pub id:     i32,
   #[sea_orm(nested, alias = "user")]
-  pub user: UserLogUser,
-  pub method: LoginMethod,
-  pub code: LoginCode,
+  pub user:   AccessLogUser,
+  pub method: AccessMethod,
+  pub code:   AccessResultCode,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family: String,
-  pub os_major: Option<String>,
-  pub os_minor: Option<String>,
-  pub os_patch: Option<String>,
+  pub os_family:      String,
+  pub os_major:       Option<String>,
+  pub os_minor:       Option<String>,
+  pub os_patch:       Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand: Option<String>,
-  pub device_model: Option<String>,
+  pub device_brand:  Option<String>,
+  pub device_model:  Option<String>,
 
   pub created_at: DateTimeWithTimeZone,
 }
 
-impl IntoResponse for GetUserLog {
+impl IntoResponse for GetAccessLog {
   fn into_response(self) -> axum::response::Response {
     Json(self).into_response()
   }
@@ -106,9 +106,9 @@ impl IntoResponse for GetUserLog {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UserLogDeleted;
+pub struct AccessLogDeleted;
 
-impl IntoResponse for UserLogDeleted {
+impl IntoResponse for AccessLogDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
   }

@@ -7,8 +7,19 @@ use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, JoinType, PaginatorTrait,
-  QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait, Unchanged,
+  ColumnTrait,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
+  Unchanged,
 };
 use sea_orm_crud::Optional;
 
@@ -23,7 +34,7 @@ use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
 
 pub struct UserService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -126,8 +137,8 @@ impl<S: SumidaState> UserService<S> {
     let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
       username: opts.username.clone(),
       password: opts.password.clone(),
-      auth: opts.auth.clone(),
-      server: opts.server.clone(),
+      auth:     opts.auth.clone(),
+      server:   opts.server.clone(),
     });
 
     MailFormService::<S>::send(
@@ -256,7 +267,7 @@ impl<S: SumidaState> ApiService<ApCondition, Users> for UserService<S> {
     query
       .select_only()
       .expr(Expr::col((entity::users::Entity, Asterisk)))
-      .expr_as(UserBlockService::<S>::exists_expr(), "is_blocked")
+      .expr_as(BanService::<S>::exists_expr(), "is_blocked")
       .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
       .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
       .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")

@@ -136,6 +136,13 @@ impl FileUploadData {
   pub fn hash(&self) -> String {
     blake3::hash(&self.bytes).to_hex().to_string()
   }
+
+  pub fn get_extension(&self) -> Option<String> {
+    std::path::Path::new(&self.original_name)
+      .extension()
+      .and_then(|ext| ext.to_str())
+      .map(|x| x.to_owned())
+  }
 }
 
 #[async_trait]
@@ -164,12 +171,14 @@ pub trait FileUploadTrait: Sized {
   async fn from_multipart(multipart: &mut Multipart) -> Result<Self, SumidaError>;
 
   fn into_static_file(self) -> StaticFile {
-    use std::path::Path;
-
     let (file, options) = self.into_parts();
-    let file_extension =
-      Path::new(&file.original_name).extension().and_then(|ext| ext.to_str()).unwrap_or("");
-    let unique_filename = format!("{}.{}", Uuid::new_v4(), file_extension);
+    let file_extension = file.get_extension();
+    let file_uuid = Uuid::new_v4();
+    let unique_filename = if let Some(ref ext) = file_extension {
+      format!("{}.{}", file_uuid, ext)
+    } else {
+      file_uuid.to_string()
+    };
 
     StaticFile {
       name:          unique_filename,
@@ -177,6 +186,7 @@ pub trait FileUploadTrait: Sized {
       original_name: file.original_name,
       mime_type:     file.mime_type,
       bytes:         file.bytes,
+      extension:     file_extension,
     }
   }
 }
@@ -201,7 +211,7 @@ impl FileUploadTrait for UploadFile {
     while let Some(field) = multipart
       .next_field()
       .await
-      .map_err(|e| SumidaError::BadRequest(format!("Multipart error: {}", e)))?
+      .map_err(|err| SumidaError::BadRequest(format!("Multipart error: {err}")))?
     {
       let name = field.name().unwrap_or("").to_string();
 
@@ -210,10 +220,10 @@ impl FileUploadTrait for UploadFile {
           let text = field
             .text()
             .await
-            .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata: {}", e)))?;
+            .map_err(|err| SumidaError::BadRequest(format!("Invalid metadata: {err}")))?;
           options = Some(
             serde_json::from_str(&text)
-              .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata JSON: {}", e)))?,
+              .map_err(|err| SumidaError::BadRequest(format!("Invalid metadata JSON: {err}")))?,
           );
         }
         "file" => {
@@ -222,7 +232,7 @@ impl FileUploadTrait for UploadFile {
           let data = field
             .bytes()
             .await
-            .map_err(|e| SumidaError::BadRequest(format!("Failed to read file: {}", e)))?;
+            .map_err(|err| SumidaError::BadRequest(format!("Failed to read file: {err}")))?;
 
           file_data = Some(FileUploadData {
             original_name: filename,

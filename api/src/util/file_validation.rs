@@ -6,18 +6,18 @@ use sea_orm::{ConnectionTrait, EntityTrait};
 
 #[derive(Debug, Clone)]
 pub struct FileValidationConfig {
-  pub can_upload_file: bool,
-  pub max_file_size: i64,
-  pub max_file_count: i32,
+  pub can_upload_file:    bool,
+  pub max_file_size:      usize,
+  pub max_file_count:     usize,
   pub allowed_file_types: Vec<String>,
 }
 
 impl From<&boards::Model> for FileValidationConfig {
   fn from(board: &boards::Model) -> Self {
     Self {
-      can_upload_file: board.can_upload_file,
-      max_file_size: board.max_file_size,
-      max_file_count: board.max_file_count,
+      can_upload_file:    board.can_upload_file,
+      max_file_size:      board.max_file_size as usize,
+      max_file_count:     board.max_file_count as usize,
       allowed_file_types: board.get_allowed_file_types(),
     }
   }
@@ -25,28 +25,26 @@ impl From<&boards::Model> for FileValidationConfig {
 
 #[derive(Debug, Clone)]
 pub struct FileInfo {
-  pub filename: String,
-  pub size: i64,
+  pub size:      usize,
   pub mime_type: String,
   pub extension: Option<String>,
 }
 
 impl FileInfo {
-  pub fn new(filename: String, size: i64, mime_type: String) -> Self {
+  pub fn new(filename: String, size: usize, mime_type: String) -> Self {
     let extension = Path::new(&filename)
       .extension()
       .and_then(|ext| ext.to_str())
       .map(|ext| ext.to_lowercase());
 
     Self {
-      filename,
       size,
       mime_type,
       extension,
     }
   }
 
-  pub fn from_multipart_field(filename: String, size: i64, content_type: Option<String>) -> Self {
+  pub fn from_multipart_field(filename: String, size: usize, content_type: Option<String>) -> Self {
     let mime_type = content_type.unwrap_or_else(|| {
       // Fallback MIME type detection based on file extension
       detect_mime_type_from_extension(&filename)
@@ -85,58 +83,8 @@ impl FileInfo {
   }
 }
 
-#[derive(Debug)]
-pub enum FileValidationError {
-  UploadDisabled,
-  FileTooLarge {
-    size: i64,
-    max_size: i64,
-  },
-  InvalidFileType {
-    extension: String,
-    allowed_types: Vec<String>,
-  },
-  TooManyFiles {
-    current_count: i32,
-    max_count: i32,
-  },
-  InvalidFilename(String),
-  UnsupportedMimeType(String),
-}
-
-impl From<FileValidationError> for SumidaError {
-  fn from(err: FileValidationError) -> Self {
-    match err {
-      FileValidationError::UploadDisabled => {
-        SumidaError::BadRequest("File upload is disabled for this board".into())
-      }
-      FileValidationError::FileTooLarge { size, max_size } => SumidaError::BadRequest(format!(
-        "File size {} bytes exceeds maximum allowed size {} bytes",
-        size, max_size
-      )),
-      FileValidationError::InvalidFileType {
-        extension,
-        allowed_types,
-      } => SumidaError::BadRequest(format!(
-        "File type '{}' is not allowed. Allowed types: {}",
-        extension,
-        allowed_types.join(", ")
-      )),
-      FileValidationError::TooManyFiles {
-        current_count,
-        max_count,
-      } => SumidaError::BadRequest(format!(
-        "Cannot upload more files. Current: {}, Maximum: {}",
-        current_count, max_count
-      )),
-      FileValidationError::InvalidFilename(filename) => {
-        SumidaError::BadRequest(format!("Invalid filename: {}", filename))
-      }
-      FileValidationError::UnsupportedMimeType(mime_type) => {
-        SumidaError::BadRequest(format!("Unsupported MIME type: {}", mime_type))
-      }
-    }
-  }
+pub trait IntoFileInfo {
+  fn into_file_info(&self) -> FileInfo;
 }
 
 pub struct FileValidator {
@@ -160,86 +108,59 @@ impl FileValidator {
     Ok(Self::new(FileValidationConfig::from(&board)))
   }
 
-  pub fn validate_upload_enabled(&self) -> Result<(), FileValidationError> {
+  pub fn validate_upload_enabled(self) -> Result<Self, SumidaError> {
     if !self.config.can_upload_file {
-      return Err(FileValidationError::UploadDisabled);
+      return Err(SumidaError::FileUploadNotAllowed);
     }
-    Ok(())
+
+    Ok(self)
   }
 
-  pub fn validate_file_size(&self, file: &FileInfo) -> Result<(), FileValidationError> {
-    if self.config.max_file_size != 0 && file.size > self.config.max_file_size {
-      return Err(FileValidationError::FileTooLarge {
-        size: file.size,
+  pub fn validate_size(self, size: usize) -> Result<Self, SumidaError> {
+    if self.config.max_file_size != 0 && size > self.config.max_file_size {
+      return Err(SumidaError::FileTooLarge {
+        size,
         max_size: self.config.max_file_size,
       });
     }
 
-    Ok(())
+    Ok(self)
   }
 
-  pub fn validate_file_type(&self, file: &FileInfo) -> Result<(), FileValidationError> {
-    if let Some(extension) = &file.extension {
-      if self.config.allowed_file_types.len() > 0
+  pub fn validate_extension(self, extension: Option<&str>) -> Result<Self, SumidaError> {
+    if let Some(extension) = extension {
+      if !self.config.allowed_file_types.is_empty()
         && !self
           .config
           .allowed_file_types
           .iter()
           .any(|t| t.to_lowercase() == extension.to_lowercase())
       {
-        return Err(FileValidationError::InvalidFileType {
-          extension: extension.clone(),
+        return Err(SumidaError::InvalidFileType {
+          extension:     extension.to_string(),
           allowed_types: self.config.allowed_file_types.clone(),
         });
       }
-    } else {
-      return Err(FileValidationError::InvalidFilename(file.filename.clone()));
     }
 
-    Ok(())
+    Ok(self)
   }
 
-  pub fn validate_file_count(&self, current_count: i32) -> Result<(), FileValidationError> {
+  pub fn validate_count(self, current_count: usize) -> Result<Self, SumidaError> {
     if self.config.max_file_count != 0 && current_count >= self.config.max_file_count {
-      return Err(FileValidationError::TooManyFiles {
+      return Err(SumidaError::TooManyFiles {
         current_count,
         max_count: self.config.max_file_count,
       });
     }
 
-    Ok(())
+    Ok(self)
   }
 
-  pub fn validate_filename(&self, filename: &str) -> Result<(), FileValidationError> {
-    // Basic filename validation
-    if filename.is_empty() || filename.len() > 255 {
-      return Err(FileValidationError::InvalidFilename(filename.to_string()));
-    }
-
-    // Check for dangerous characters
-    if filename.contains("..") || filename.contains("/") || filename.contains("\\") {
-      return Err(FileValidationError::InvalidFilename(filename.to_string()));
-    }
-
-    // Check for reserved names (Windows)
-    let name_upper = filename.to_uppercase();
-    if [
-      "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-      "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-    ]
-    .iter()
-    .any(|&reserved| name_upper.starts_with(reserved))
-    {
-      return Err(FileValidationError::InvalidFilename(filename.to_string()));
-    }
-
-    Ok(())
-  }
-
-  pub fn validate_mime_type(&self, file: &FileInfo) -> Result<(), FileValidationError> {
+  pub fn validate_mime_type(self, mime_type: &str) -> Result<Self, SumidaError> {
     // Basic MIME type validation - ensure it's not empty and follows basic format
-    if file.mime_type.is_empty() || !file.mime_type.contains("/") {
-      return Err(FileValidationError::UnsupportedMimeType(file.mime_type.clone()));
+    if mime_type.is_empty() || !mime_type.contains("/") {
+      return Err(SumidaError::UnsupportedMimeType(mime_type.to_string()));
     }
 
     // Additional security checks for dangerous MIME types
@@ -251,30 +172,27 @@ impl FileValidator {
       "text/x-script",
     ];
 
-    if dangerous_types.iter().any(|&dangerous| file.mime_type == dangerous) {
-      return Err(FileValidationError::UnsupportedMimeType(file.mime_type.clone()));
+    if dangerous_types.iter().any(|&dangerous| mime_type == dangerous) {
+      return Err(SumidaError::UnsupportedMimeType(mime_type.to_string()));
     }
 
-    Ok(())
+    Ok(self)
   }
 
-  pub fn validate_file(&self, file: &FileInfo) -> Result<(), FileValidationError> {
-    self.validate_upload_enabled()?;
-    self.validate_filename(&file.filename)?;
-    self.validate_file_size(file)?;
-    self.validate_file_type(file)?;
-    self.validate_mime_type(file)?;
-    Ok(())
+  pub fn validate_file(self, file: &FileInfo) -> Result<Self, SumidaError> {
+    self
+      .validate_upload_enabled()?
+      .validate_size(file.size)?
+      .validate_extension(file.get_extension())?
+      .validate_mime_type(&file.mime_type)
   }
 
   pub fn validate_file_with_count(
-    &self,
+    self,
     file: &FileInfo,
-    current_count: i32,
-  ) -> Result<(), FileValidationError> {
-    self.validate_file_count(current_count)?;
-    self.validate_file(file)?;
-    Ok(())
+    current_count: usize,
+  ) -> Result<Self, SumidaError> {
+    self.validate_count(current_count)?.validate_file(file)
   }
 
   pub fn get_config(&self) -> &FileValidationConfig {

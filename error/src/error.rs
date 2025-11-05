@@ -76,10 +76,22 @@ pub enum SumidaError {
 
   #[error("file upload is not allowed")]
   FileUploadNotAllowed,
-  #[error("too many files uploaded")]
-  TooManyFiles,
-  #[error("file size exceeds the allowed limit")]
-  FileTooLarge,
+  #[error("cannot upload more files. current: {current_count}, maximum: {max_count}")]
+  TooManyFiles {
+    current_count: usize,
+    max_count:     usize,
+  },
+  #[error("file type '{extension}' is not allowed. allowed types: {}", allowed_types.join(", "))]
+  InvalidFileType {
+    extension:     String,
+    allowed_types: Vec<String>,
+  },
+  #[error("invalid filename: {0}")]
+  InvalidFilename(String),
+  #[error("unsupported Mime type: {0}")]
+  UnsupportedMimeType(String),
+  #[error("file size {size} bytes exceeds maximum allowed size {max_size} bytes")]
+  FileTooLarge { size: usize, max_size: usize },
   #[error("file does not exist")]
   FileNotFound,
   #[error("reusing uploaded files is not permitted")]
@@ -116,7 +128,7 @@ impl SumidaError {
       _ => -1,
     };
 
-    format!("E{:04}", n)
+    format!("E{n:04}")
   }
 }
 

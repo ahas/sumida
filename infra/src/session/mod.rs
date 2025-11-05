@@ -9,13 +9,13 @@ use axum::http::request::Parts;
 use axum::response::IntoResponse;
 use axum_client_ip::ClientIp;
 use chrono::{Duration, Utc};
+use entity::access_logs::{AccessMethod, AccessResultCode};
 use entity::prelude::*;
-use entity::user_logs::{LoginCode, LoginMethod};
 use error::SumidaError;
 use lazy_static::lazy_static;
 use sea_orm::ActiveValue::{Set, Unchanged};
 use sea_orm::prelude::*;
-use sea_orm::{Condition, InsertResult, TransactionTrait};
+use sea_orm::{Condition, FromQueryResult, InsertResult, QueryOrder, QuerySelect, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use tower_sessions::{Expiry, Session};
 use uaparser::{Parser, UserAgentParser};
@@ -25,17 +25,17 @@ use crate::settings;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfile {
-  pub id: i32,
-  pub username: String,
-  pub full_name: String,
-  pub organization: UserOrganization,
-  pub role: UserRole,
-  pub is_admin: bool,
+  pub id:            i32,
+  pub username:      String,
+  pub full_name:     String,
+  pub organization:  UserOrganization,
+  pub role:          UserRole,
+  pub is_admin:      bool,
   pub is_authorized: bool,
-  pub api_key: Option<String>,
+  pub api_key:       Option<String>,
   pub first_seen_at: DateTimeWithTimeZone,
-  pub last_seen_at: DateTimeWithTimeZone,
-  pub expiry: Option<Expiry>,
+  pub last_seen_at:  DateTimeWithTimeZone,
+  pub expiry:        Option<Expiry>,
 }
 
 impl UserProfile {
@@ -56,11 +56,11 @@ impl UserProfile {
     self.username = user.username.clone();
     self.full_name = user.full_name.unwrap_or_default().clone();
     self.organization = UserOrganization {
-      id: organization.id,
+      id:   organization.id,
       name: organization.name.clone(),
     };
     self.role = UserRole {
-      id: role.id,
+      id:   role.id,
       name: role.name.clone(),
     };
     self.is_admin = user.is_admin;
@@ -76,17 +76,17 @@ impl UserProfile {
 impl Default for UserProfile {
   fn default() -> Self {
     Self {
-      id: 0,
-      username: "".to_owned(),
-      full_name: "".to_owned(),
-      organization: UserOrganization::default(),
-      role: UserRole::default(),
-      is_admin: false,
+      id:            0,
+      username:      "".to_owned(),
+      full_name:     "".to_owned(),
+      organization:  UserOrganization::default(),
+      role:          UserRole::default(),
+      is_admin:      false,
       is_authorized: false,
-      api_key: None,
+      api_key:       None,
       first_seen_at: Utc::now().into(),
-      last_seen_at: Utc::now().into(),
-      expiry: None,
+      last_seen_at:  Utc::now().into(),
+      expiry:        None,
     }
   }
 }
@@ -99,14 +99,14 @@ impl IntoResponse for UserProfile {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserOrganization {
-  pub id: i32,
+  pub id:   i32,
   pub name: String,
 }
 
 impl Default for UserOrganization {
   fn default() -> Self {
     Self {
-      id: 0,
+      id:   0,
       name: "".to_owned(),
     }
   }
@@ -114,14 +114,14 @@ impl Default for UserOrganization {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserRole {
-  pub id: i32,
+  pub id:   i32,
   pub name: String,
 }
 
 impl Default for UserRole {
   fn default() -> Self {
     Self {
-      id: 0,
+      id:   0,
       name: "".to_owned(),
     }
   }
@@ -133,15 +133,15 @@ pub struct UserEnvironment {
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family: String,
-  pub os_major: Option<String>,
-  pub os_minor: Option<String>,
-  pub os_patch: Option<String>,
+  pub os_family:      String,
+  pub os_major:       Option<String>,
+  pub os_minor:       Option<String>,
+  pub os_patch:       Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand: Option<String>,
-  pub device_model: Option<String>,
+  pub device_brand:  Option<String>,
+  pub device_model:  Option<String>,
 }
 
 lazy_static! {
@@ -172,32 +172,30 @@ where
     let ClientIp(ip) = ClientIp::from_request_parts(req, state).await.map_err(anyhow::Error::from)?;
 
     Ok(Self {
-      ip_address: ip.to_string(),
-      user_agent: user_agent.clone(),
-      os_family: ua_os.family.to_string(),
-      os_major: ua_os.major.map(|x| x.to_string()),
-      os_minor: ua_os.minor.map(|x| x.to_string()),
-      os_patch: ua_os.patch.map(|x| x.to_string()),
+      ip_address:     ip.to_string(),
+      user_agent:     user_agent.clone(),
+      os_family:      ua_os.family.to_string(),
+      os_major:       ua_os.major.map(|x| x.to_string()),
+      os_minor:       ua_os.minor.map(|x| x.to_string()),
+      os_patch:       ua_os.patch.map(|x| x.to_string()),
       os_patch_minor: ua_os.patch_minor.map(|x| x.to_string()),
-      device_family: ua_device.family.to_string(),
-      device_brand: ua_device.brand.map(|x| x.to_string()),
-      device_model: ua_device.model.map(|x| x.to_string()),
+      device_family:  ua_device.family.to_string(),
+      device_brand:   ua_device.brand.map(|x| x.to_string()),
+      device_model:   ua_device.model.map(|x| x.to_string()),
     })
   }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UserState {
-  pub failed_login_attempts: u32,
-}
+pub struct UserState {}
 
 #[derive(Clone, Debug)]
 pub struct UserSession {
-  pub inner: Session,
+  pub inner:   Session,
   pub profile: UserProfile,
-  pub env: UserEnvironment,
-  pub state: UserState,
+  pub env:     UserEnvironment,
+  pub state:   UserState,
 }
 
 impl UserSession {
@@ -217,7 +215,6 @@ impl UserSession {
     self.profile.is_authorized = true;
     self.profile.expiry = expiry;
     self.profile.first_seen_at = Utc::now().fixed_offset();
-    self.state.failed_login_attempts = 0;
 
     self.inner.set_expiry(expiry);
     self.identify(db).await?;
@@ -228,14 +225,39 @@ impl UserSession {
   pub async fn write_log(
     &self,
     user_id: Option<i32>,
-    method: LoginMethod,
-    code: LoginCode,
+    method: AccessMethod,
+    code: AccessResultCode,
     db: &DatabaseConnection,
-  ) -> Result<InsertResult<entity::user_logs::ActiveModel>, DbErr> {
-    UserLogs::insert(entity::user_logs::ActiveModel {
+  ) -> Result<InsertResult<entity::access_logs::ActiveModel>, DbErr> {
+    let count: Option<i32> = if matches!(code, AccessResultCode::PasswordMismatch) {
+      #[derive(FromQueryResult)]
+      struct LastAccessLog {
+        count: Option<i32>,
+      }
+
+      if let Some(last_access_log) = AccessLogs::find()
+        .select_only()
+        .column(AccessLogsColumn::Count)
+        .filter(AccessLogsColumn::UserId.eq(user_id))
+        .filter(AccessLogsColumn::Method.eq(method.clone()))
+        .filter(AccessLogsColumn::Code.eq(code.clone()))
+        .into_model::<LastAccessLog>()
+        .one(db)
+        .await?
+      {
+        Some(last_access_log.count.unwrap_or(0) + 1)
+      } else {
+        Some(0)
+      }
+    } else {
+      None
+    };
+
+    AccessLogs::insert(entity::access_logs::ActiveModel {
       user_id: Set(user_id.unwrap_or(self.profile.id)),
       method: Set(method),
       code: Set(code),
+      count: Set(count),
       ip_address: Set(self.env.ip_address.clone()),
       user_agent: Set(self.env.user_agent.clone()),
       device_family: Set(self.env.device_family.clone()),
@@ -256,40 +278,122 @@ impl UserSession {
     explicit.unwrap_or(self.profile.id)
   }
 
-  pub async fn block_if_exceeded_limit<C: ConnectionTrait>(
-    &mut self,
+  pub async fn check_banned<C: ConnectionTrait>(
+    &self,
     user_id: Option<i32>,
     db: &C,
   ) -> Result<bool, SumidaError> {
-    let settings = &settings::get().security.block;
-    let user_id = self.resolve_user_id(user_id);
+    let lhs = {
+      let env = &self.env;
+      let mut cond = Condition::any();
 
-    self.state.failed_login_attempts += 1;
-    self
-      .inner
-      .insert(Self::USER_STATE_KEY, self.state.clone())
-      .await
-      .map_err(anyhow::Error::from)?;
+      // pub os_family:      String,
+      // pub os_major:       Option<String>,
+      // pub os_minor:       Option<String>,
+      // pub os_patch:       Option<String>,
+      // pub os_patch_minor: Option<String>,
+      //
+      // pub device_family: String,
+      // pub device_brand:  Option<String>,
+      // pub device_model:  Option<String>,
 
-    if self.state.failed_login_attempts > settings.max_failed_attempts {
-      let duration = humantime::parse_duration(&settings.failure_reset_after)
-        .ok()
-        .and_then(|x| Duration::from_std(x).ok());
-      let reason = Some("system blocked");
+      cond = cond
+        .add(
+          Condition::any()
+            .add(BansColumn::IpAddress.eq("*"))
+            .add(BansColumn::IpAddress.eq(&env.ip_address)),
+        )
+        .add(
+          Condition::any()
+            .add(BansColumn::UserAgent.eq("*"))
+            .add(BansColumn::UserAgent.eq(&env.user_agent)),
+        )
+        .add(
+          Condition::any()
+            .add(BansColumn::OsFamily.eq("*"))
+            .add(BansColumn::OsFamily.eq(&env.os_family)),
+        )
+        .add(
+          Condition::any()
+            .add(BansColumn::DeviceFamily.eq("*"))
+            .add(BansColumn::DeviceFamily.eq(&env.device_family)),
+        );
 
-      match settings.target.as_str() {
-        "ip" => self.block_ip(duration, "", reason, db).await?,
-        "account" => self.block_account(Some(user_id), duration, "", reason, db).await?,
-        _ => {}
-      };
+      if let Some(user_id) = user_id {
+        cond = cond.add(
+          Condition::any() //
+            .add(BansColumn::UserId.eq("*"))
+            .add(BansColumn::UserId.eq(user_id)),
+        );
+      }
 
-      return Ok(true);
-    }
+      if let Some(ref os_major) = env.os_major {
+        cond = cond.add(
+          Condition::any() //
+            .add(BansColumn::OsMajor.eq("*"))
+            .add(BansColumn::OsMajor.eq(os_major)),
+        );
+      }
 
-    Ok(false)
+      if let Some(ref os_minor) = env.os_minor {
+        cond = cond.add(
+          Condition::any() //
+            .add(BansColumn::OsMinor.eq("*"))
+            .add(BansColumn::OsMinor.eq(os_minor)),
+        );
+      }
+
+      if let Some(ref os_patch) = env.os_patch {
+        cond = cond.add(
+          Condition::any() //
+            .add(BansColumn::OsPatch.eq("*"))
+            .add(BansColumn::OsPatch.eq(os_patch)),
+        );
+      }
+
+      if let Some(ref os_patch_minor) = env.os_patch_minor {
+        cond = cond.add(
+          Condition::any() //
+            .add(BansColumn::OsPatchMinor.eq("*"))
+            .add(BansColumn::OsPatchMinor.eq(os_patch_minor)),
+        );
+      }
+
+      if let Some(ref device_brand) = env.device_brand {
+        cond = cond.add(
+          Condition::any() //
+            .add(BansColumn::DeviceBrand.eq("*"))
+            .add(BansColumn::DeviceBrand.eq(device_brand)),
+        );
+      }
+
+      if let Some(ref device_model) = env.device_model {
+        cond = cond.add(
+          Condition::any() //
+            .add(BansColumn::DeviceModel.eq("*"))
+            .add(BansColumn::DeviceModel.eq(device_model)),
+        );
+      }
+
+      cond
+    };
+    let rhs = {
+      let now = Utc::now().fixed_offset();
+
+      Condition::all() //
+        .add(BansColumn::LiftedAt.is_null())
+        .add(
+          Condition::any() //
+            .add(BansColumn::ExpiresAt.is_null())
+            .add(BansColumn::ExpiresAt.gt(now)),
+        )
+    };
+    let cond = Condition::all().add(lhs).add(rhs);
+
+    Ok(Bans::find().filter(cond).count(db).await? > 0)
   }
 
-  pub async fn block_ip<C: ConnectionTrait>(
+  pub async fn ban_ip<C: ConnectionTrait>(
     &self,
     duration: Option<Duration>,
     reason: &str,
@@ -298,7 +402,7 @@ impl UserSession {
   ) -> Result<(), SumidaError> {
     let expires_at = duration.map(|x| (Utc::now() + x).fixed_offset());
 
-    UserBlocks::insert(entity::user_blocks::ActiveModel {
+    Bans::insert(entity::bans::ActiveModel {
       ip_address: Set(Some(self.env.ip_address.clone())),
       blocked_at: Set(Utc::now().fixed_offset()),
       reason: Set(reason.to_string()),
@@ -312,7 +416,7 @@ impl UserSession {
     Ok(())
   }
 
-  pub async fn block_account<C: ConnectionTrait>(
+  pub async fn ban_account<C: ConnectionTrait>(
     &self,
     user_id: Option<i32>,
     duration: Option<Duration>,
@@ -323,7 +427,7 @@ impl UserSession {
     let user_id = self.resolve_user_id(user_id);
     let expires_at = duration.map(|x| (Utc::now() + x).fixed_offset());
 
-    UserBlocks::insert(entity::user_blocks::ActiveModel {
+    Bans::insert(entity::bans::ActiveModel {
       user_id: Set(Some(user_id)),
       blocked_at: Set(Utc::now().fixed_offset()),
       reason: Set(reason.to_string()),
@@ -337,32 +441,54 @@ impl UserSession {
     Ok(())
   }
 
-  pub async fn check_blocked<C: ConnectionTrait>(
-    &self,
+  pub async fn ban_if_exceeded_limit<C: ConnectionTrait>(
+    &mut self,
     user_id: Option<i32>,
     db: &C,
   ) -> Result<bool, SumidaError> {
-    let lhs = {
-      let mut cond = Condition::any();
+    let settings = &settings::get().security.block;
+    let user_id = self.resolve_user_id(user_id);
 
-      if let Some(user_id) = user_id {
-        cond = cond.add(entity::user_blocks::Column::UserId.eq(user_id));
-      }
-
-      cond.add(entity::user_blocks::Column::IpAddress.eq(&self.env.ip_address))
+    let Some(last_fail_log) = AccessLogs::find()
+      .filter(AccessLogsColumn::UserId.eq(user_id))
+      .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
+      .filter(AccessLogsColumn::Code.eq(AccessResultCode::PasswordMismatch))
+      .order_by_desc(AccessLogsColumn::CreatedAt)
+      .one(db)
+      .await?
+    else {
+      return Ok(false);
     };
-    let rhs = {
-      let now = Utc::now().fixed_offset();
 
-      Condition::all().add(entity::user_blocks::Column::LiftedAt.is_null()).add(
-        Condition::any()
-          .add(entity::user_blocks::Column::ExpiresAt.is_null())
-          .add(entity::user_blocks::Column::ExpiresAt.gt(now)),
-      )
-    };
-    let cond = Condition::all().add(lhs).add(rhs);
+    if AccessLogs::find()
+      .filter(AccessLogsColumn::UserId.eq(user_id))
+      .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
+      .filter(AccessLogsColumn::Code.eq(AccessResultCode::Success))
+      .filter(AccessLogsColumn::CreatedAt.gte(last_fail_log.created_at))
+      .order_by_desc(AccessLogsColumn::CreatedAt)
+      .one(db)
+      .await?
+      .is_some()
+    {
+      return Ok(false);
+    }
 
-    Ok(UserBlocks::find().filter(cond).count(db).await? > 0)
+    if (last_fail_log.count.unwrap_or(0) as u32) > settings.max_failed_attempts {
+      let duration = humantime::parse_duration(&settings.failure_reset_after)
+        .ok()
+        .and_then(|x| Duration::from_std(x).ok());
+      let reason = Some("system blocked");
+
+      match settings.target.as_str() {
+        "ip" => self.ban_ip(duration, "", reason, db).await?,
+        "account" => self.ban_account(Some(user_id), duration, "", reason, db).await?,
+        _ => {}
+      };
+
+      return Ok(true);
+    }
+
+    Ok(false)
   }
 
   pub fn verify(&self) -> Result<(), SumidaError> {

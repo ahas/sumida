@@ -8,8 +8,16 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoSimpleExpr, PaginatorTrait,
-  QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  IntoSimpleExpr,
+  PaginatorTrait,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
 };
 use sea_orm_crud::Nullable;
 
@@ -21,7 +29,7 @@ use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
 
 pub struct BoardPostService<S: SumidaState> {
-  state: S,
+  state:   S,
   #[allow(dead_code)]
   session: UserSession,
 }
@@ -187,82 +195,59 @@ impl<S: SumidaState> BoardPostService<S> {
     BoardPosts::update_text(post_id, plain_text, &txn).await?;
 
     // Associate attached files with the created post
-    self.link_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
+    util::link_files(board.id, post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
 
-    txn.commit().await?;
-
-    Ok(result)
-  }
-
-  pub async fn create_draft(
-    &self,
-    data: CreateBoardDraft,
-  ) -> Result<InsertResult<entity::bs::board_posts::ActiveModel>, SumidaError> {
-    let txn = self.state.db().begin().await?;
-
-    let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
-      return Err(SumidaError::NoData("Board".into(), data.board_id.to_string()));
-    };
-    ap::chain()
-      .push_if(board.group_id, |x| ap::ns("board_group").action("update").object(x))
-      .push(ap::ns("board").action("update").object(board.id))
+    ap::edit()
+      .namespace("board_post")
+      .object(post_id)
       .who(&self.session)
-      .action("update")
-      .try_check_allowed(&txn)
+      .effect("update")
+      .effect("delete")
+      .create(&txn)
       .await?;
 
-    let attached_file_ids = data.attached_file_ids.clone();
-    let plain_text = data.parse_plain_text()?;
-
-    let mut am = data.into_active_model();
-    am.user_id = Set(Some(self.session.profile.id));
-    am.status = Set(BoardPostStatus::Draft);
-
-    let result = BoardPosts::insert(am).exec(&txn).await?;
-    let post_id = result.last_insert_id;
-
-    // Update `text_tsv`(tsvector) column
-    BoardPosts::update_text(post_id, plain_text, &txn).await?;
-
-    // Associate attached files with the created post
-    self.link_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
-
     txn.commit().await?;
 
     Ok(result)
   }
 
-  async fn link_files<'db, C: ConnectionTrait>(
-    &self,
-    post_id: i32,
-    file_ids: Vec<i32>,
-    db: &'db C,
-  ) -> Result<(), SumidaError> {
-    // First, remove all existing file associations for this post
-    BoardFiles::delete_many().filter(BoardFilesColumn::PostId.eq(post_id)).exec(db).await?;
-
-    // Then, add new file associations
-    for file_id in file_ids {
-      let file_conflict_count: u64 = BoardFiles::find()
-        .filter(BoardFilesColumn::FileId.eq(file_id))
-        .filter(BoardFilesColumn::PostId.eq(post_id))
-        .count(db)
-        .await?;
-
-      if file_conflict_count > 0 {
-        return Err(SumidaError::FileReuseNotAllowed);
-      }
-
-      let file_am = BoardFilesActiveModel {
-        post_id: Set(post_id),
-        file_id: Set(file_id),
-      };
-
-      BoardFiles::insert(file_am).exec(db).await?;
-    }
-
-    Ok(())
-  }
+  // pub async fn create_draft(
+  //   &self,
+  //   data: CreateBoardDraft,
+  // ) -> Result<InsertResult<entity::bs::board_posts::ActiveModel>, SumidaError> {
+  //   let txn = self.state.db().begin().await?;
+  //
+  //   let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
+  //     return Err(SumidaError::NoData("Board".into(), data.board_id.to_string()));
+  //   };
+  //   ap::chain()
+  //     .push_if(board.group_id, |x| ap::ns("board_group").action("update").object(x))
+  //     .push(ap::ns("board").action("update").object(board.id))
+  //     .who(&self.session)
+  //     .action("update")
+  //     .try_check_allowed(&txn)
+  //     .await?;
+  //
+  //   let attached_file_ids = data.attached_file_ids.clone();
+  //   let plain_text = data.parse_plain_text()?;
+  //
+  //   let mut am = data.into_active_model();
+  //   am.user_id = Set(Some(self.session.profile.id));
+  //   am.status = Set(BoardPostStatus::Draft);
+  //
+  //   let result = BoardPosts::insert(am).exec(&txn).await?;
+  //   let post_id = result.last_insert_id;
+  //
+  //   // Update `text_tsv`(tsvector) column
+  //   BoardPosts::update_text(post_id, plain_text, &txn).await?;
+  //
+  //   // Associate attached files with the created post
+  //   util::link_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
+  //
+  //   txn.commit().await?;
+  //
+  //   Ok(result)
+  // }
 
   pub async fn update(
     &self,
@@ -274,7 +259,22 @@ impl<S: SumidaState> BoardPostService<S> {
     self.try_access("update", BoardPosts::find_by_id(id), &txn).await?;
 
     let post = BoardPosts::find_by_id(id).one(&txn).await?.unwrap();
+    let board = Boards::find_by_id(post.board_id).one(&txn).await?.unwrap();
+
+    if board.is_versioned {
+      let mut am = post.clone().into_active_model();
+      am.id = NotSet;
+      am.parent_id = Set(Some(id));
+      am.created_at = NotSet;
+      am.updated_at = NotSet;
+      am.scheduled_at = NotSet;
+      am.deleted_at = NotSet;
+      am.status = Set(BoardPostStatus::Archived);
+      BoardPosts::insert(am).exec(&txn).await?;
+    }
+
     let attached_file_ids = data.attached_file_ids.clone();
+    let detached_file_ids = data.detached_file_ids.clone();
     let plain_text = data.parse_plain_text(post.content_type)?;
     let password = data.password.clone();
 
@@ -290,7 +290,11 @@ impl<S: SumidaState> BoardPostService<S> {
     BoardPosts::update_text(id, plain_text, &txn).await?;
 
     if let Some(file_ids) = attached_file_ids {
-      self.link_files(id, file_ids, &txn).await?;
+      util::link_files(board.id, id, file_ids, &txn).await?;
+    }
+
+    if let Some(file_ids) = detached_file_ids {
+      util::unlink_files(id, file_ids, &txn).await?;
     }
 
     txn.commit().await?;
@@ -302,6 +306,9 @@ impl<S: SumidaState> BoardPostService<S> {
     let txn = self.state.db().begin().await?;
     self.try_access("delete", BoardPosts::find_by_id(id), &txn).await?;
     let result = BoardPosts::delete_by_id(id).exec(&txn).await?;
+
+    ap::edit().namespace("board_post").object(id).delete(&txn).await?;
+
     txn.commit().await?;
 
     Ok(result)

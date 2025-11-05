@@ -6,7 +6,14 @@ use infra::session::UserSession;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{
-  DeleteResult, EntityTrait, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect, RelationTrait, Select,
+  DeleteResult,
+  EntityTrait,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QuerySelect,
+  RelationTrait,
+  Select,
   TransactionTrait,
 };
 
@@ -16,29 +23,29 @@ use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
-pub struct UserLogService<S: SumidaState> {
-  state: S,
+pub struct AccessLogService<S: SumidaState> {
+  state:   S,
   session: UserSession,
 }
 
-impl<S: SumidaState> UserLogService<S> {
+impl<S: SumidaState> AccessLogService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
   }
 
   pub async fn list(
     &self,
-    filter: UserLogFilter,
+    filter: AccessLogFilter,
     pagination: Pagination,
-  ) -> Result<(Vec<UserLogListItem>, u64), SumidaError> {
-    use entity::user_logs::Column;
+  ) -> Result<(Vec<AccessLogListItem>, u64), SumidaError> {
+    use entity::access_logs::Column;
 
     let db = self.state.db();
     let col_user_id = Expr::col("user_id");
     let col_username = Expr::col("user_username");
     let col_full_name = Expr::col("user_full_name");
 
-    let mut query = filter.apply(self.select(UserLogs::find()));
+    let mut query = filter.apply(self.select(AccessLogs::find()));
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -49,16 +56,16 @@ impl<S: SumidaState> UserLogService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<UserLogListItem>().all(db).await?;
+    let items = query.into_model::<AccessLogListItem>().all(db).await?;
 
     Ok((items, count))
   }
 
-  pub async fn get(&self, id: i32) -> Result<Option<GetUserLog>, SumidaError> {
+  pub async fn get(&self, id: i32) -> Result<Option<GetAccessLog>, SumidaError> {
     Ok(
       self
-        .select(UserLogs::find_by_id(id))
-        .into_model::<GetUserLog>()
+        .select(AccessLogs::find_by_id(id))
+        .into_model::<GetAccessLog>()
         .one(self.state.db())
         .await?,
     )
@@ -66,17 +73,17 @@ impl<S: SumidaState> UserLogService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", UserLogs::find_by_id(id), &txn).await?;
+    self.try_access("delete", AccessLogs::find_by_id(id), &txn).await?;
 
-    let result = UserLogs::delete_by_id(id).exec(&txn).await?;
+    let result = AccessLogs::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
   }
 }
 
-impl<S: SumidaState> ApiService<ApCondition, UserLogs> for UserLogService<S> {
-  fn default_query_with(query: Select<UserLogs>) -> Select<UserLogs> {
+impl<S: SumidaState> ApiService<ApCondition, AccessLogs> for AccessLogService<S> {
+  fn default_query_with(query: Select<AccessLogs>) -> Select<AccessLogs> {
     let user_alias = Alias::new("user");
     let col_user_id = Expr::col((user_alias.clone(), "id"));
     let col_username = Expr::col((user_alias.clone(), "username"));
@@ -84,19 +91,19 @@ impl<S: SumidaState> ApiService<ApCondition, UserLogs> for UserLogService<S> {
 
     query
       .select_only()
-      .expr(Expr::col((entity::user_logs::Entity, Asterisk)))
+      .expr(Expr::col((entity::access_logs::Entity, Asterisk)))
       .expr_as(col_user_id, "user_id")
       .expr_as(col_username, "user_username")
       .expr_as(col_full_name, "user_full_name")
-      .join_as(JoinType::LeftJoin, entity::user_logs::Relation::User.def(), user_alias.clone())
+      .join_as(JoinType::LeftJoin, entity::access_logs::Relation::User.def(), user_alias.clone())
   }
 
   fn ap(&self) -> ApCondition {
-    use entity::user_logs::Column;
-    ap::ns("user_log").who(&self.session).join(UserLogs, Column::Id)
+    use entity::access_logs::Column;
+    ap::ns("access_log").who(&self.session).join(AccessLogs, Column::Id)
   }
 
-  fn select(&self, query: sea_orm::Select<UserLogs>) -> sea_orm::Select<UserLogs> {
+  fn select(&self, query: sea_orm::Select<AccessLogs>) -> sea_orm::Select<AccessLogs> {
     self.ap().action("read").apply(Self::default_query_with(query))
   }
 }

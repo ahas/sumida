@@ -29,7 +29,7 @@ where
 {
   let col_name = format!(r#""{}""#, col.to_string());
 
-  Expr::cust_with_values(format!(r#"{} @@ plainto_tsquery('simple', $1)"#, col_name), [search.as_ref()])
+  Expr::cust_with_values(format!(r#"{col_name} @@ plainto_tsquery('simple', $1)"#), [search.as_ref()])
 }
 
 pub fn i32_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>

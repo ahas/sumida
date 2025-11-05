@@ -123,7 +123,7 @@ where
       .route("/{user_id}", routing::delete(Self::delete))
       .route_layer(service_ap!(state, "user", delete));
 
-    let router = Router::new()
+    Router::new()
       .merge(route_read)
       .merge(route_create)
       .merge(route_update)
@@ -131,8 +131,6 @@ where
       .route_layer(user_guard!(state))
       .route("/change-password", routing::post(Self::change_password))
       .route("/activate", routing::post(Self::activate))
-      .route("/{user_id}/impersonate", routing::post(Self::impersonate));
-
-    router
+      .route("/{user_id}/impersonate", routing::post(Self::impersonate))
   }
 }

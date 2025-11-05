@@ -37,6 +37,7 @@ where
   pub fn router(self) -> Router<StateT> {
     let state = self.state.expect("[SumidaRouter]: state must be set");
 
+    let access_log_controller = AccessLogController::<StateT>::new();
     let access_policy_controller = AccessPolicyController::<StateT>::new();
     let api_key_controller = ApiKeyController::<StateT>::new();
     let org_controller = OrganizationController::<StateT>::new();
@@ -44,8 +45,7 @@ where
     let auth_session_controller = AuthSessionController::<StateT>::new();
     let me_controller = MeController::<StateT>::new();
     let user_controller = UserController::<StateT>::new();
-    let user_block_controller = UserBlockController::<StateT>::new();
-    let user_log_controller = UserLogController::<StateT>::new();
+    let ban_controller = BanController::<StateT>::new();
     let user_invitation_controller = UserInvitationController::<StateT>::new();
     let user_verification_controller = UserVerificationController::<StateT>::new();
     let mail_form_controller = MailFormController::<StateT>::new();
@@ -61,15 +61,15 @@ where
     let board_files_controller = BoardFileController::<StateT>::new();
 
     Router::new()
+      .nest("/access-logs", access_log_controller.router(state))
       .nest("/access-policies", access_policy_controller.router(state))
       .nest("/api-keys", api_key_controller.router(state))
+      .nest("/bans", ban_controller.router(state))
       .nest("/organizations", org_controller.router(state))
       .nest("/roles", role_controller.router(state))
       .nest("/auth/session", auth_session_controller.router(state))
       .nest("/me", me_controller.router(state))
       .nest("/users", user_controller.router(state))
-      .nest("/user-logs", user_log_controller.router(state))
-      .nest("/user-blocks", user_block_controller.router(state))
       .nest("/user-invitations", user_invitation_controller.router(state))
       .nest("/user-verifications", user_verification_controller.router(state))
       .nest("/mail-forms", mail_form_controller.router(state))

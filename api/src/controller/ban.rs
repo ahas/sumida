@@ -7,11 +7,11 @@ use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
-pub struct UserBlockController<S: SumidaState> {
+pub struct BanController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,
 }
 
-impl<S: SumidaState> UserBlockController<S> {
+impl<S: SumidaState> BanController<S> {
   pub fn new() -> Self {
     Self {
       _state: std::marker::PhantomData,
@@ -21,30 +21,30 @@ impl<S: SumidaState> UserBlockController<S> {
   async fn list(
     session: UserSession,
     State(state): State<S>,
-    Query(filter): Query<UserBlockFilter>,
+    Query(filter): Query<BanFilter>,
     Query(pagination): Query<Pagination>,
-  ) -> Result<List<UserBlockListItem>, SumidaError> {
-    Ok(UserBlockService::new(state, session).list(filter, pagination).await?.into())
+  ) -> Result<List<BanListItem>, SumidaError> {
+    Ok(BanService::new(state, session).list(filter, pagination).await?.into())
   }
 
   async fn get(
     session: UserSession,
     State(state): State<S>,
     Path(id): Path<i32>,
-  ) -> Result<GetUserBlock, SumidaError> {
-    UserBlockService::new(state, session)
+  ) -> Result<GetBan, SumidaError> {
+    BanService::new(state, session)
       .get(id)
       .await?
-      .ok_or_else(|| SumidaError::NoData("UserBlock".to_owned(), id.to_string()))
+      .ok_or_else(|| SumidaError::NoData("Ban".to_owned(), id.to_string()))
   }
 
   async fn create(
     session: UserSession,
     State(state): State<S>,
-    Json(body): Json<CreateUserBlock>,
-  ) -> Result<UserBlockCreated, SumidaError> {
-    Ok(UserBlockCreated {
-      id: UserBlockService::new(state, session).create(body).await?.last_insert_id,
+    Json(body): Json<CreateBan>,
+  ) -> Result<BanCreated, SumidaError> {
+    Ok(BanCreated {
+      id: BanService::new(state, session).create(body).await?.last_insert_id,
     })
   }
 
@@ -52,23 +52,23 @@ impl<S: SumidaState> UserBlockController<S> {
     session: UserSession,
     State(state): State<S>,
     Path(id): Path<i32>,
-    Json(body): Json<UpdateUserBlock>,
-  ) -> Result<UserBlockUpdated, SumidaError> {
-    UserBlockService::new(state, session).update(id, body).await?;
-    Ok(UserBlockUpdated)
+    Json(body): Json<UpdateBan>,
+  ) -> Result<BanUpdated, SumidaError> {
+    BanService::new(state, session).update(id, body).await?;
+    Ok(BanUpdated)
   }
 
   async fn delete(
     session: UserSession,
     State(state): State<S>,
     Path(id): Path<i32>,
-  ) -> Result<UserBlockDeleted, SumidaError> {
-    UserBlockService::new(state, session).delete(id).await?;
-    Ok(UserBlockDeleted)
+  ) -> Result<BanDeleted, SumidaError> {
+    BanService::new(state, session).delete(id).await?;
+    Ok(BanDeleted)
   }
 }
 
-impl<S> ApiController<S> for UserBlockController<S>
+impl<S> ApiController<S> for BanController<S>
 where
   S: SumidaState,
 {
@@ -76,16 +76,16 @@ where
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "user_block", read));
+      .route_layer(service_ap!(state, "ban", read));
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(state, "user_block", create));
+      .route_layer(service_ap!(state, "ban", create));
     let route_update = Router::new() //
       .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(state, "user_block", update));
+      .route_layer(service_ap!(state, "ban", update));
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "user_block", delete));
+      .route_layer(service_ap!(state, "ban", delete));
 
     Router::new()
       .merge(route_read)

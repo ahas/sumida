@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use api::SumidaState;
@@ -8,7 +8,7 @@ use infra::session::redis_store::RedisSessionStore;
 use infra::settings;
 use reqwest::{Client, StatusCode};
 use sea_orm::DatabaseConnection;
-use tokio::sync::{OnceCell, oneshot};
+use tokio::sync::{Mutex, OnceCell, oneshot};
 use tokio::task::JoinHandle;
 
 static SERVER: OnceCell<TestServer> = OnceCell::const_new();
@@ -32,9 +32,9 @@ impl SumidaState for TestServerState {
 
 #[allow(dead_code)]
 pub struct TestServer {
-  pub addr: SocketAddr,
+  pub addr:    SocketAddr,
   shutdown_tx: Option<oneshot::Sender<()>>,
-  handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
+  handle:      Option<JoinHandle<Result<(), anyhow::Error>>>,
   redis_store: Arc<Mutex<RedisSessionStore>>,
 }
 
@@ -57,7 +57,14 @@ impl TestServer {
           .router(),
       )
       .layer(messenger_layer)
-      .layer(api::layer::session::new(redis_store.clone().lock().unwrap().store()).await?)
+      .layer(
+        api::layer::session::new({
+          let store = redis_store.clone();
+          let store_guard = store.lock().await;
+          store_guard.store()
+        })
+        .await?,
+      )
       .layer(api::layer::cors::new())
       .layer(Extension(messenger))
       .layer(Extension(settings))
@@ -100,7 +107,7 @@ impl TestServer {
     //   let _ = handle.await;
     // }
 
-    let redis_store = self.redis_store.lock().unwrap();
+    let redis_store = self.redis_store.lock().await;
     let redis_conn = redis_store.handle.lock().unwrap();
     redis_conn.abort_handle().abort();
   }

@@ -5,8 +5,17 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
-  QuerySelect, RelationTrait, Select, TransactionTrait,
+  ColumnTrait,
+  DeleteResult,
+  EntityTrait,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -15,10 +24,11 @@ use crate::service::ApiService;
 use crate::service::fs::dto::{DeleteFile, FileUploaded};
 use crate::service::fs::file::FileService;
 use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::util::file_validation::FileValidator;
 use crate::util::pagination::Pagination;
 
 pub struct BoardFileService<S: SumidaState> {
-  state: S,
+  state:   S,
   #[allow(dead_code)]
   session: UserSession,
 }
@@ -94,13 +104,12 @@ impl<S: SumidaState> BoardFileService<S> {
       return Err(SumidaError::NoData("Board".to_string(), data.board_id.to_string()));
     };
 
-    if !board.can_upload_file {
-      return Err(SumidaError::FileUploadNotAllowed);
-    }
-
-    if (board.max_file_size as usize) < data.file.bytes.len() {
-      return Err(SumidaError::FileTooLarge);
-    }
+    FileValidator::from_board_id(board.id, &txn)
+      .await?
+      .validate_upload_enabled()?
+      .validate_extension(data.file.get_extension().as_deref())?
+      .validate_size(data.file.bytes.len())?
+      .validate_mime_type(&data.file.mime_type)?;
 
     let result = FileService::new(self.state.clone(), self.session.clone()).upload(data.into()).await?;
 

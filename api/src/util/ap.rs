@@ -1,17 +1,42 @@
 use std::mem;
 
-use entity::access_policies::{Column as ApCol, Entity as ApEntity};
+use entity::access_policies::{ActiveModel as ApAm, Column as ApCol, Entity as ApEntity, Model as ApModel};
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::NotSet;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{
-  Alias, Expr, ExprTrait, Func, IntoColumnRef, IntoIden, IntoTableRef, Query, SelectStatement, SimpleExpr,
+  Alias,
+  Expr,
+  ExprTrait,
+  Func,
+  IntoColumnRef,
+  IntoIden,
+  IntoTableRef,
+  Query,
+  SelectStatement,
+  SimpleExpr,
 };
 use sea_orm::{
-  ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbErr, DeleteResult, DerivePartialModel,
-  EntityName, EntityTrait, FromQueryResult, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
-  QuerySelect, QueryTrait, Select, Set, Statement,
+  ActiveModelTrait,
+  ColumnTrait,
+  Condition,
+  ConnectionTrait,
+  DbErr,
+  DeleteResult,
+  DerivePartialModel,
+  EntityName,
+  EntityTrait,
+  FromQueryResult,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  QueryTrait,
+  Select,
+  Set,
+  Statement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -136,22 +161,22 @@ pub trait ApGuard {
 #[derive(Clone, Debug, Default)]
 pub struct ApCondition {
   namespace: String,
-  actions: Vec<String>,
-  objects: Vec<String>,
-  exprs: Vec<SimpleExpr>,
-  users: Vec<ApUser>,
-  alias: Option<Alias>,
+  actions:   Vec<String>,
+  objects:   Vec<String>,
+  exprs:     Vec<SimpleExpr>,
+  users:     Vec<ApUser>,
+  alias:     Option<Alias>,
 }
 
 impl ApCondition {
   pub fn new<S: ToString>(namespace: S) -> Self {
     Self {
       namespace: namespace.to_string(),
-      actions: Vec::new(),
-      objects: Vec::new(),
-      exprs: Vec::new(),
-      users: Vec::new(),
-      alias: None,
+      actions:   Vec::new(),
+      objects:   Vec::new(),
+      exprs:     Vec::new(),
+      users:     Vec::new(),
+      alias:     None,
     }
   }
 
@@ -476,13 +501,13 @@ impl ApGuard for ApChain {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
-#[sea_orm(entity = "entity::access_policies::Entity", alias = "ap_allow", from_query_result)]
+#[sea_orm(entity = "ApEntity", alias = "ap_allow", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct ApForUser {
   pub namespace: String,
-  pub object: Vec<String>,
-  pub action: Vec<String>,
-  pub effect: String,
+  pub object:    Vec<String>,
+  pub action:    Vec<String>,
+  pub effect:    String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -557,7 +582,7 @@ impl FindApForUsers {
     for user in users {
       for user_ap in &user_aps {
         for object in &user_ap.object {
-          let am = entity::access_policies::ActiveModel {
+          let am = ApAm {
             uuid: NotSet,
             namespace: Set(user_ap.namespace.clone()),
             object: Set(object.clone()),
@@ -594,18 +619,18 @@ impl FindApForUsers {
 
 pub struct FindUsersOfAp {
   namespace: String,
-  actions: Vec<String>,
-  objects: Vec<String>,
-  exprs: Vec<SimpleExpr>,
+  actions:   Vec<String>,
+  objects:   Vec<String>,
+  exprs:     Vec<SimpleExpr>,
 }
 
 impl FindUsersOfAp {
   pub fn new<S: ToString>(namespace: S) -> Self {
     Self {
       namespace: namespace.to_string(),
-      actions: Vec::new(),
-      objects: Vec::new(),
-      exprs: Vec::new(),
+      actions:   Vec::new(),
+      objects:   Vec::new(),
+      exprs:     Vec::new(),
     }
   }
 
@@ -697,18 +722,20 @@ impl FindUsersOfAp {
 #[derive(Clone, Debug, Default)]
 pub struct EditAp {
   namespace: Option<String>,
-  object: Option<String>,
-  action: Option<Vec<String>>,
-  users: Vec<ApUser>,
+  object:    Option<String>,
+  action:    Option<Vec<String>>,
+  users:     Vec<ApUser>,
+  effects:   Vec<String>,
 }
 
 impl EditAp {
   pub fn new() -> Self {
     Self {
       namespace: None,
-      action: None,
-      object: None,
-      users: Vec::new(),
+      action:    None,
+      object:    None,
+      users:     Vec::new(),
+      effects:   Vec::new(),
     }
   }
 
@@ -750,11 +777,12 @@ impl EditAp {
     self
   }
 
-  pub async fn create<T: ToString, C: ConnectionTrait>(
-    self,
-    effect: T,
-    db: &C,
-  ) -> anyhow::Result<Vec<entity::access_policies::Model>> {
+  pub fn effect<E: AsRef<str>>(mut self, effect: E) -> Self {
+    self.effects.push(effect.as_ref().to_string());
+    self
+  }
+
+  pub async fn create<C: ConnectionTrait>(self, db: &C) -> anyhow::Result<Vec<ApModel>> {
     let mut result = Vec::new();
 
     let Some(namespace) = self.namespace else {
@@ -767,28 +795,30 @@ impl EditAp {
       anyhow::bail!("action must be set");
     };
 
-    for user in self.users {
-      let id = ApEntity::insert(entity::access_policies::ActiveModel {
-        user: Set(user.to_string()),
-        effect: Set(effect.to_string()),
-        namespace: Set(namespace.clone()),
-        object: Set(object.clone()),
-        action: Set(action.clone()),
-        ..Default::default()
-      })
-      .exec(db)
-      .await?
-      .last_insert_id;
+    for effect in self.effects {
+      for user in &self.users {
+        let id = ApEntity::insert(ApAm {
+          user: Set(user.to_string()),
+          effect: Set(effect.clone()),
+          namespace: Set(namespace.clone()),
+          object: Set(object.clone()),
+          action: Set(action.clone()),
+          ..Default::default()
+        })
+        .exec(db)
+        .await?
+        .last_insert_id;
 
-      if let Some(model) = ApEntity::find_by_id(id).one(db).await? {
-        result.push(model);
+        if let Some(model) = ApEntity::find_by_id(id).one(db).await? {
+          result.push(model);
+        }
       }
     }
 
     Ok(result)
   }
 
-  pub async fn set_effect<T: ToString, C: ConnectionTrait>(self, effect: T, db: &C) -> anyhow::Result<()> {
+  pub async fn update<T: ToString, C: ConnectionTrait>(self, effect: T, db: &C) -> anyhow::Result<()> {
     ApEntity::update_many() //
       .apply_if(self.namespace, |q, v| q.filter(ApCol::Namespace.eq(v)))
       .apply_if(self.object, |q, v| q.filter(ApCol::Object.eq(v)))
@@ -798,9 +828,25 @@ impl EditAp {
       .apply_if(if self.users.is_empty() { None } else { Some(self.users) }, |q, v| {
         q.filter(ApCol::User.is_in(v.iter().map(|x| x.to_string())))
       })
-      .set(entity::access_policies::ActiveModel {
+      .set(ApAm {
         effect: Set(effect.to_string()),
         ..Default::default()
+      })
+      .exec(db)
+      .await?;
+
+    Ok(())
+  }
+
+  pub async fn delete<C: ConnectionTrait>(self, db: &C) -> anyhow::Result<()> {
+    ApEntity::delete_many() //
+      .apply_if(self.namespace, |q, v| q.filter(ApCol::Namespace.eq(v)))
+      .apply_if(self.object, |q, v| q.filter(ApCol::Object.eq(v)))
+      .apply_if(self.action, |q, v| {
+        q.filter(Expr::col(ApCol::Action).eq(Expr::val(v).cast_as("varchar[]")))
+      })
+      .apply_if(if self.users.is_empty() { None } else { Some(self.users) }, |q, v| {
+        q.filter(ApCol::User.is_in(v.iter().map(|x| x.to_string())))
       })
       .exec(db)
       .await?;

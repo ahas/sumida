@@ -36,7 +36,8 @@ async fn insert_policy(
     .object(object)
     .action(actions)
     .user(user)
-    .create(effect, db)
+    .effect(effect)
+    .create(db)
     .await
     .expect("failed to insert policy");
 }
@@ -57,11 +58,11 @@ fn build_session(
     username: user.username.clone(),
     full_name: user.full_name.clone().unwrap_or_default(),
     organization: infra::session::UserOrganization {
-      id: org.id,
+      id:   org.id,
       name: org.name.clone(),
     },
     role: infra::session::UserRole {
-      id: role.id,
+      id:   role.id,
       name: role.name.clone(),
     },
     is_admin,
@@ -237,7 +238,7 @@ async fn ap_chain_requires_each_condition() {
     .object("b")
     .action(vec!["update".into()])
     .user(ApUser::User(500))
-    .set_effect("deny", &db)
+    .update("deny", &db)
     .await
     .expect("set effect");
 
@@ -256,9 +257,9 @@ async fn find_ap_for_users_handles_save_update_clear() {
     .save(
       vec![ApForUser {
         namespace: "ap.tests.for_users".into(),
-        object: vec!["doc-a".into(), "doc-b".into()],
-        action: vec!["read".into(), "write".into()],
-        effect: "allow".into(),
+        object:    vec!["doc-a".into(), "doc-b".into()],
+        action:    vec!["read".into(), "write".into()],
+        effect:    "allow".into(),
       }],
       &db,
     )
@@ -273,9 +274,9 @@ async fn find_ap_for_users_handles_save_update_clear() {
     .update(
       vec![ApForUser {
         namespace: "ap.tests.for_users".into(),
-        object: vec!["doc-a".into()],
-        action: vec!["read".into()],
-        effect: "deny".into(),
+        object:    vec!["doc-a".into()],
+        action:    vec!["read".into()],
+        effect:    "deny".into(),
       }],
       &db,
     )
@@ -339,7 +340,7 @@ async fn edit_ap_set_effect_updates_existing_records() {
     .object("shared")
     .action(vec!["edit".into()])
     .user(ApUser::User(700))
-    .set_effect("deny", &db)
+    .update("deny", &db)
     .await
     .expect("update effect");
 

@@ -1,13 +1,41 @@
+use entity::bs::board_posts::BoardPostContentType;
 use entity::bs::boards::BoardPostContentVisibility;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::sea_query::{Alias, Expr, Func};
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DbErr, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
-  Select, Set,
+  ColumnTrait,
+  ConnectionTrait,
+  DbErr,
+  EntityTrait,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  Set,
 };
+use sea_orm_crud::Nullable;
 
 use crate::service::prelude::{BoardFileListItem, BoardPostFilter, GetBoardPost};
+use crate::util::board::{HtmlContent, MarkdownContent};
+use crate::util::file_validation::FileValidator;
+
+pub fn parse_plain_text(
+  content_type: BoardPostContentType,
+  content: Nullable<String>,
+) -> Result<String, SumidaError> {
+  let content: Option<String> = content.into();
+  let Some(content) = content else {
+    return Ok("".to_string());
+  };
+
+  Ok(match content_type {
+    BoardPostContentType::Html => HtmlContent(&content).to_plain_text(),
+    BoardPostContentType::Markdown => MarkdownContent(&content).to_plain_text(),
+  })
+}
 
 pub fn with_conditional_post_columns(
   user_id: Option<i32>,
@@ -57,7 +85,7 @@ pub fn with_fts(
 ) -> Select<BoardPosts> {
   use crate::util::board::TsHeadlineExpr;
 
-  if search_text.len() > 0 {
+  if !search_text.is_empty() {
     TsHeadlineExpr::new(BoardPostsColumn::Text, &search_text)
       .start_offset(filter.snippet_offset)
       .delimiters(&filter.snippet_start_sel, &filter.snippet_stop_sel)
@@ -91,7 +119,7 @@ pub fn check_post_visible(
     post_content_visibility
   };
 
-  return match content_visibility {
+  match content_visibility {
     BoardPostContentVisibility::Public => Ok(true),
     BoardPostContentVisibility::UserOnly => Ok(user_id.is_some()),
     BoardPostContentVisibility::Private => {
@@ -104,13 +132,13 @@ pub fn check_post_visible(
         Ok(user_id == post_user_id)
       }
     }
-  };
+  }
 }
 
-pub async fn load_attached_files<'db, C: ConnectionTrait>(
+pub async fn load_attached_files<C: ConnectionTrait>(
   mut post: Option<GetBoardPost>,
   id: i32,
-  db: &'db C,
+  db: &C,
 ) -> Result<Option<GetBoardPost>, DbErr> {
   if let Some(ref mut post) = post {
     post.attached_files = BoardFiles::find()
@@ -125,11 +153,59 @@ pub async fn load_attached_files<'db, C: ConnectionTrait>(
   Ok(post)
 }
 
-pub async fn increase_view_count_if_not_viewed<'db, C: ConnectionTrait>(
+pub async fn link_files<C: ConnectionTrait>(
+  board_id: i32,
+  post_id: i32,
+  file_ids: Vec<i32>,
+  db: &C,
+) -> Result<(), SumidaError> {
+  FileValidator::from_board_id(board_id, db).await?.validate_count(file_ids.len())?;
+
+  // First, remove all existing file associations for this post
+  BoardFiles::delete_many().filter(BoardFilesColumn::PostId.eq(post_id)).exec(db).await?;
+
+  // Then, add new file associations
+  for file_id in file_ids {
+    let file_conflict_count: u64 = BoardFiles::find()
+      .filter(BoardFilesColumn::FileId.eq(file_id))
+      .filter(BoardFilesColumn::PostId.ne(post_id))
+      .count(db)
+      .await?;
+
+    if file_conflict_count > 0 {
+      return Err(SumidaError::FileReuseNotAllowed);
+    }
+
+    let file_am = BoardFilesActiveModel {
+      post_id: Set(post_id),
+      file_id: Set(file_id),
+    };
+
+    BoardFiles::insert(file_am).exec(db).await?;
+  }
+
+  Ok(())
+}
+
+pub async fn unlink_files<C: ConnectionTrait>(
+  post_id: i32,
+  file_ids: Vec<i32>,
+  db: &C,
+) -> Result<(), SumidaError> {
+  BoardFiles::delete_many()
+    .filter(BoardFilesColumn::PostId.eq(post_id))
+    .filter(BoardFilesColumn::FileId.is_in(file_ids))
+    .exec(db)
+    .await?;
+
+  Ok(())
+}
+
+pub async fn increase_view_count_if_not_viewed<C: ConnectionTrait>(
   post_id: i32,
   last_views: i32,
   user_id: i32,
-  db: &'db C,
+  db: &C,
 ) -> Result<i32, DbErr> {
   let not_viewed = BoardPostViews::find()
     .filter(BoardPostViewsColumn::PostId.eq(post_id))

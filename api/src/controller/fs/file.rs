@@ -79,7 +79,7 @@ impl<S: SumidaState> FileController<S> {
     State(state): State<S>,
     Path(id): Path<i32>,
   ) -> Result<Response<Body>, SumidaError> {
-    Ok(FileService::new(state.clone(), session.clone()).download(id).await?)
+    FileService::new(state.clone(), session.clone()).download(id).await
   }
 }
 

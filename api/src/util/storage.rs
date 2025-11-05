@@ -8,6 +8,7 @@ use error::SumidaError;
 use infra::settings;
 use tokio::io::AsyncRead;
 
+use crate::util::file_validation::{FileInfo, IntoFileInfo};
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
 
@@ -15,11 +16,12 @@ pub type FileStream = Pin<Box<dyn AsyncRead + Send>>;
 
 #[derive(Clone, Debug)]
 pub struct StaticFile {
-  pub name: String,
+  pub name:          String,
   pub original_name: String,
-  pub dir: String,
-  pub mime_type: String,
-  pub bytes: Vec<u8>,
+  pub dir:           String,
+  pub mime_type:     String,
+  pub bytes:         Vec<u8>,
+  pub extension:     Option<String>,
 }
 
 impl StaticFile {
@@ -31,21 +33,27 @@ impl StaticFile {
   }
 }
 
+impl IntoFileInfo for StaticFile {
+  fn into_file_info(&self) -> FileInfo {
+    FileInfo::new(self.name.clone(), self.bytes.len(), self.mime_type.clone())
+  }
+}
+
 #[derive(Clone, Debug)]
 pub struct DownloadFile {
-  pub name: String,
+  pub name:          String,
   pub original_name: String,
-  pub path: String,
-  pub mime_type: String,
+  pub path:          String,
+  pub mime_type:     String,
 }
 
 impl From<entity::fs::files::Model> for DownloadFile {
   fn from(value: entity::fs::files::Model) -> Self {
     Self {
-      path: value.get_path(),
-      name: value.name,
+      path:          value.get_path(),
+      name:          value.name,
       original_name: value.original_name,
-      mime_type: value.mime_type,
+      mime_type:     value.mime_type,
     }
   }
 }
@@ -77,7 +85,7 @@ pub trait Storage: Send + Sync {
       .status(StatusCode::OK)
       .header(header::CONTENT_TYPE, content_type)
       .header(header::CONTENT_LENGTH, file_size.to_string())
-      .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", file_name))
+      .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{file_name}\""))
       .body(body)
       .map_err(|_| SumidaError::InternalServerError("Failed to create response".into()))?;
 
@@ -118,6 +126,12 @@ impl SumidaStorage {
     Self {
       inner: StorageBackend::Local(LocalStorage::new(&default_settings)),
     }
+  }
+}
+
+impl Default for SumidaStorage {
+  fn default() -> Self {
+    Self::new()
   }
 }
 
@@ -185,14 +199,14 @@ impl LocalStorage {
     let target_path = self.resolve_path(&file.get_path());
 
     if let Some(parent) = target_path.parent() {
-      fs::create_dir_all(parent).await.map_err(|e| {
-        SumidaError::InternalServerError(format!("Failed to create upload directory: {}", e))
+      fs::create_dir_all(parent).await.map_err(|err| {
+        SumidaError::InternalServerError(format!("Failed to create upload directory: {err}"))
       })?;
     }
 
     fs::write(&target_path, &file.bytes)
       .await
-      .map_err(|e| SumidaError::InternalServerError(format!("Failed to write file: {}", e)))?;
+      .map_err(|err| SumidaError::InternalServerError(format!("Failed to write file: {err}")))?;
 
     Ok(())
   }
@@ -203,7 +217,7 @@ impl LocalStorage {
     let target_path = self.resolve_path(path);
     fs::remove_file(&target_path)
       .await
-      .map_err(|e| SumidaError::InternalServerError(format!("Failed to delete file: {}", e)))?;
+      .map_err(|err| SumidaError::InternalServerError(format!("Failed to delete file: {err}")))?;
 
     Ok(())
   }
@@ -256,7 +270,7 @@ impl S3Storage {
     let stage = &settings::get().server.stage;
 
     match &self.prefix {
-      Some(prefix) => format!("static/{stage}/{}/{}", prefix, path),
+      Some(prefix) => format!("static/{stage}/{prefix}/{path}"),
       None => path.to_string(),
     }
   }
@@ -275,7 +289,7 @@ impl S3Storage {
       .body(ByteStream::from(file.bytes.clone()))
       .send()
       .await
-      .map_err(|e| SumidaError::InternalServerError(format!("Failed to upload to S3: {}", e)))?;
+      .map_err(|err| SumidaError::InternalServerError(format!("Failed to upload to S3: {err}")))?;
 
     Ok(())
   }
@@ -290,7 +304,7 @@ impl S3Storage {
       .key(key)
       .send()
       .await
-      .map_err(|e| SumidaError::InternalServerError(format!("Failed to delete from S3: {}", e)))?;
+      .map_err(|err| SumidaError::InternalServerError(format!("Failed to delete from S3: {err}")))?;
 
     Ok(())
   }
@@ -305,7 +319,7 @@ impl S3Storage {
       .body
       .collect()
       .await
-      .map_err(|e| SumidaError::InternalServerError(format!("Failed to read S3 object: {}", e)))?
+      .map_err(|err| SumidaError::InternalServerError(format!("Failed to read S3 object: {err}")))?
       .into_bytes();
 
     // Create a Cursor over the bytes, which implements AsyncRead

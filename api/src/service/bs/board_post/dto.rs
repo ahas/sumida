@@ -11,75 +11,61 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 
+use super::util;
 use crate::service::auth::helper::verify_password;
 use crate::service::prelude::BoardFileListItem;
-use crate::util::board::HtmlContent;
 use crate::util::db::{tsquery, wrap_ilike};
-
-fn parse_plain_text(
-  content_type: BoardPostContentType,
-  content: Nullable<String>,
-) -> Result<String, SumidaError> {
-  let content: Option<String> = content.into();
-  let Some(content) = content else {
-    return Ok("".to_string());
-  };
-
-  Ok(match content_type {
-    BoardPostContentType::Html => HtmlContent(&content).to_plain_text(),
-  })
-}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
 pub struct BoardPostFilter {
   pub search: Option<String>,
-  pub title: Option<String>,
-  pub text: Option<String>,
-  pub kind: Option<BoardPostKind>,
+  pub title:  Option<String>,
+  pub text:   Option<String>,
+  pub kind:   Option<BoardPostKind>,
   pub status: Option<BoardPostStatus>,
 
   // FTS
-  pub with_snippet: bool,
-  pub snippet_start_sel: String,
-  pub snippet_stop_sel: String,
-  pub snippet_max_words: usize,
-  pub snippet_min_words: usize,
+  pub with_snippet:          bool,
+  pub snippet_start_sel:     String,
+  pub snippet_stop_sel:      String,
+  pub snippet_max_words:     usize,
+  pub snippet_min_words:     usize,
   pub snippet_max_fragments: usize,
-  pub snippet_short_word: usize,
-  pub snippet_offset: usize,
-  pub snippet_length: Option<usize>,
+  pub snippet_short_word:    usize,
+  pub snippet_offset:        usize,
+  pub snippet_length:        Option<usize>,
   pub snippet_highlight_all: bool,
 
   // Foreign Keys
-  pub topic_id: Option<i32>,
-  pub board_id: Option<i32>,
+  pub topic_id:  Option<i32>,
+  pub board_id:  Option<i32>,
   pub parent_id: Option<i32>,
 }
 
 impl Default for BoardPostFilter {
   fn default() -> Self {
     Self {
-      search: None,
-      title: None,
-      text: None,
-      kind: None,
-      status: None,
+      search:                None,
+      title:                 None,
+      text:                  None,
+      kind:                  None,
+      status:                None,
       // FTS
-      with_snippet: false,
-      snippet_offset: 0,
-      snippet_length: None,
-      snippet_start_sel: "<mark>".into(),
-      snippet_stop_sel: "</mark>".into(),
+      with_snippet:          false,
+      snippet_offset:        0,
+      snippet_length:        None,
+      snippet_start_sel:     "<mark>".into(),
+      snippet_stop_sel:      "</mark>".into(),
       snippet_max_fragments: 1,
-      snippet_max_words: 20,
-      snippet_min_words: 5,
-      snippet_short_word: 3,
+      snippet_max_words:     20,
+      snippet_min_words:     5,
+      snippet_short_word:    3,
       snippet_highlight_all: false,
       // Foreign Keys
-      topic_id: None,
-      board_id: None,
-      parent_id: None,
+      topic_id:              None,
+      board_id:              None,
+      parent_id:             None,
     }
   }
 }
@@ -107,7 +93,7 @@ impl BoardPostFilter {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewBoardPost {
-  pub id: i32,
+  pub id:       i32,
   #[serde(default)]
   pub password: Option<String>,
 }
@@ -126,20 +112,20 @@ impl ViewBoardPost {
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostUser {
   #[sea_orm(from_alias = "user_id")]
-  pub id: i32,
+  pub id:       i32,
   #[sea_orm(from_alias = "user_username")]
   pub username: String,
   #[sea_orm(from_alias = "user_full_name")]
-  pub name: String,
+  pub name:     String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostBoard {
   #[sea_orm(from_alias = "board_id")]
-  pub id: i32,
+  pub id:       i32,
   #[sea_orm(from_alias = "board_name")]
-  pub name: String,
+  pub name:     String,
   #[sea_orm(from_alias = "board_group_id")]
   pub group_id: Option<i32>,
 }
@@ -148,7 +134,7 @@ pub struct BoardPostBoard {
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostTopic {
   #[sea_orm(from_alias = "topic_id")]
-  pub id: i32,
+  pub id:   i32,
   #[sea_orm(from_alias = "topic_name")]
   pub name: String,
 }
@@ -156,18 +142,18 @@ pub struct BoardPostTopic {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostCommon {
-  pub id: i32,
-  pub parent_id: Option<i32>,
-  pub title: String,
-  pub kind: BoardPostKind,
-  pub status: BoardPostStatus,
-  pub tags: Option<Vec<String>>,
-  pub views: i32,
-  pub reactions: Option<JsonValue>,
+  pub id:           i32,
+  pub parent_id:    Option<i32>,
+  pub title:        String,
+  pub kind:         BoardPostKind,
+  pub status:       BoardPostStatus,
+  pub tags:         Option<Vec<String>>,
+  pub views:        i32,
+  pub reactions:    Option<JsonValue>,
   pub published_at: Option<DateTimeWithTimeZone>,
   pub scheduled_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at:   DateTimeWithTimeZone,
+  pub updated_at:   DateTimeWithTimeZone,
 
   // Nested Data
   #[sea_orm(nested)]
@@ -175,7 +161,7 @@ pub struct BoardPostCommon {
   #[sea_orm(nested, nullable)]
   pub topic: Option<BoardPostTopic>,
   #[sea_orm(nested, nullable)]
-  pub user: Option<BoardPostUser>,
+  pub user:  Option<BoardPostUser>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
@@ -210,26 +196,26 @@ impl IntoResponse for GetBoardPost {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPost {
-  pub id: Optional<i32>,
-  pub board_id: i32,
+  pub id:                 Optional<i32>,
+  pub board_id:           i32,
   #[serde(default)]
-  pub topic_id: Nullable<i32>,
+  pub topic_id:           Nullable<i32>,
   #[serde(default)]
-  pub parent_id: Nullable<i32>,
-  pub title: String,
+  pub parent_id:          Nullable<i32>,
+  pub title:              String,
   #[serde(default)]
-  pub password: Nullable<String>,
+  pub password:           Nullable<String>,
   #[serde(default)]
-  pub content: Nullable<String>,
-  pub content_type: BoardPostContentType,
+  pub content:            Nullable<String>,
+  pub content_type:       BoardPostContentType,
   pub content_visibility: Optional<BoardPostContentVisibility>,
-  pub kind: Optional<BoardPostKind>,
-  pub status: Optional<BoardPostStatus>,
+  pub kind:               Optional<BoardPostKind>,
+  pub status:             Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at: Nullable<DateTimeWithTimeZone>,
+  pub published_at:       Nullable<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub tags: Nullable<Vec<String>>,
-  pub attached_file_ids: Option<Vec<i32>>,
+  pub tags:               Nullable<Vec<String>>,
+  pub attached_file_ids:  Option<Vec<i32>>,
 }
 
 impl CreateBoardPost {
@@ -251,46 +237,46 @@ impl CreateBoardPost {
   }
 
   pub fn parse_plain_text(&self) -> Result<String, SumidaError> {
-    parse_plain_text(self.content_type.clone(), self.content.clone())
+    util::parse_plain_text(self.content_type.clone(), self.content.clone())
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateBoardDraft {
-  pub board_id: i32,
-  #[serde(default)]
-  pub topic_id: Nullable<i32>,
-  #[serde(default)]
-  pub parent_id: Nullable<i32>,
-  pub title: String,
-  #[serde(default)]
-  pub content: Nullable<String>,
-  pub content_type: BoardPostContentType,
-  pub kind: Optional<BoardPostKind>,
-  #[serde(default)]
-  pub tags: Nullable<Vec<String>>,
-  pub attached_file_ids: Option<Vec<i32>>,
-}
-
-impl CreateBoardDraft {
-  pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
-    entity::bs::board_posts::ActiveModel {
-      board_id: Set(self.board_id),
-      topic_id: self.topic_id.into_active_value(),
-      parent_id: self.parent_id.into_active_value(),
-      title: Set(self.title),
-      content: self.content.into_active_value(),
-      kind: self.kind.into_active_value(),
-      tags: self.tags.into_active_value(),
-      ..Default::default()
-    }
-  }
-
-  pub fn parse_plain_text(&self) -> Result<String, SumidaError> {
-    parse_plain_text(self.content_type.clone(), self.content.clone())
-  }
-}
+// #[derive(Clone, Debug, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct CreateBoardDraft {
+//   pub board_id:          i32,
+//   #[serde(default)]
+//   pub topic_id:          Nullable<i32>,
+//   #[serde(default)]
+//   pub parent_id:         Nullable<i32>,
+//   pub title:             String,
+//   #[serde(default)]
+//   pub content:           Nullable<String>,
+//   pub content_type:      BoardPostContentType,
+//   pub kind:              Optional<BoardPostKind>,
+//   #[serde(default)]
+//   pub tags:              Nullable<Vec<String>>,
+//   pub attached_file_ids: Option<Vec<i32>>,
+// }
+//
+// impl CreateBoardDraft {
+//   pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
+//     entity::bs::board_posts::ActiveModel {
+//       board_id: Set(self.board_id),
+//       topic_id: self.topic_id.into_active_value(),
+//       parent_id: self.parent_id.into_active_value(),
+//       title: Set(self.title),
+//       content: self.content.into_active_value(),
+//       kind: self.kind.into_active_value(),
+//       tags: self.tags.into_active_value(),
+//       ..Default::default()
+//     }
+//   }
+//
+//   pub fn parse_plain_text(&self) -> Result<String, SumidaError> {
+//     parse_plain_text(self.content_type.clone(), self.content.clone())
+//   }
+// }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -308,20 +294,21 @@ impl IntoResponse for BoardPostCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
   #[serde(default)]
-  pub topic_id: Nullable<i32>,
-  pub title: Optional<String>,
+  pub topic_id:           Nullable<i32>,
+  pub title:              Optional<String>,
   #[serde(default)]
-  pub content: Nullable<String>,
+  pub content:            Nullable<String>,
   pub content_visibility: Optional<BoardPostContentVisibility>,
   #[serde(default)]
-  pub password: Nullable<String>,
-  pub kind: Optional<BoardPostKind>,
-  pub status: Optional<BoardPostStatus>,
+  pub password:           Nullable<String>,
+  pub kind:               Optional<BoardPostKind>,
+  pub status:             Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at: Nullable<DateTimeWithTimeZone>,
+  pub published_at:       Nullable<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub tags: Nullable<Vec<String>>,
-  pub attached_file_ids: Option<Vec<i32>>,
+  pub tags:               Nullable<Vec<String>>,
+  pub attached_file_ids:  Option<Vec<i32>>,
+  pub detached_file_ids:  Option<Vec<i32>>,
 }
 
 impl UpdateBoardPost {
@@ -339,7 +326,7 @@ impl UpdateBoardPost {
   }
 
   pub fn parse_plain_text(&self, content_type: BoardPostContentType) -> Result<String, SumidaError> {
-    parse_plain_text(content_type, self.content.clone())
+    util::parse_plain_text(content_type, self.content.clone())
   }
 }
 

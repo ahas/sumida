@@ -35,7 +35,7 @@ impl<S: SumidaState> BoardFileController<S> {
     BoardFileService::new(state, session)
       .get(post_id, file_id)
       .await?
-      .ok_or_else(|| SumidaError::NoData("BoardFile".into(), format!("{}-{}", post_id, file_id)))
+      .ok_or_else(|| SumidaError::NoData("BoardFile".into(), format!("{post_id}-{file_id}")))
   }
 
   async fn upload(
@@ -85,7 +85,7 @@ where
   fn router(self, state: &S) -> Router<S> {
     let read = Router::new() //
       .route("/", routing::get(Self::list))
-      .route("/", routing::get(Self::get))
+      .route("/file", routing::get(Self::get))
       .route_layer(service_ap!(state, "board_file", read));
 
     let create = Router::new() //

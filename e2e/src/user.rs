@@ -49,7 +49,7 @@ impl TestRole {
 }
 
 pub struct TestUser {
-  pub model: entity::users::Model,
+  pub model:    entity::users::Model,
   pub password: String,
 }
 
@@ -74,10 +74,10 @@ impl TestUser {
     let random_suffix = generate_url_safe_string(12).unwrap();
 
     let id = Users::insert(entity::users::ActiveModel {
-      username: Set(format!("test-{}-{}", timestamp, random_suffix)),
+      username: Set(format!("test-{timestamp}-{random_suffix}")),
       password: Set(hashed_password),
-      email: Set(Some(format!("test-{}@example.com", random_suffix))),
-      full_name: Set(Some(format!("Test User {}", random_suffix))),
+      email: Set(Some(format!("test-{random_suffix}@example.com"))),
+      full_name: Set(Some(format!("Test User {random_suffix}"))),
       phone: Set(Some(format!("+1555{}", generate_url_safe_string(7).unwrap()))),
       role_id: Set(role.model.id),
       organization_id: Set(org.model.id),
@@ -100,12 +100,12 @@ impl TestUser {
     client
       .post(path)
       .json(&LoginSession {
-        username: self.model.username.clone(),
-        password: self.password.clone(),
+        username:    self.model.username.clone(),
+        password:    self.password.clone(),
         remember_me: Some(false),
       })
       .send()
       .await
-      .expect(&format!("Failed to send a POST request to {path}"))
+      .unwrap_or_else(|_| panic!("Failed to send a POST request to {path}"))
   }
 }

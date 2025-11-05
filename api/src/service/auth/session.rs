@@ -1,5 +1,5 @@
+use entity::access_logs::{AccessMethod, AccessResultCode};
 use entity::prelude::*;
-use entity::user_logs::{LoginCode, LoginMethod};
 use error::SumidaError;
 use infra::session::UserSession;
 use infra::settings;
@@ -9,7 +9,7 @@ use crate::SumidaState;
 use crate::service::auth::dto::LoginSession;
 
 pub struct AuthSessionService<S: SumidaState> {
-  pub state: S,
+  pub state:   S,
   pub session: UserSession,
 }
 
@@ -30,16 +30,16 @@ impl<S: SumidaState> AuthSessionService<S> {
     else {
       self
         .session
-        .write_log(None, LoginMethod::Password, LoginCode::AccountNotFound, db)
+        .write_log(None, AccessMethod::Password, AccessResultCode::AccountNotFound, db)
         .await?;
       return Err(SumidaError::InvalidAccount);
     };
 
     // 2) Check the user is blocked
-    if self.session.check_blocked(Some(user.id), db).await? {
+    if self.session.check_banned(Some(user.id), db).await? {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBlocked, db)
+        .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::AccountBanned, db)
         .await?;
       return Err(SumidaError::AccountBlocked);
     }
@@ -48,16 +48,16 @@ impl<S: SumidaState> AuthSessionService<S> {
     if !user.is_enabled {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountInactive, db)
+        .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::AccountInactive, db)
         .await?;
       return Err(SumidaError::InactiveAccount);
     }
 
     // 4) Check the user password
-    let result = if super::helper::verify_password(&data.password, &user.password) {
+    if super::helper::verify_password(&data.password, &user.password) {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::Success, db)
+        .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::Success, db)
         .await?;
 
       let expiry = if let Some(remember_me) = data.remember_me {
@@ -78,14 +78,12 @@ impl<S: SumidaState> AuthSessionService<S> {
     } else {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch, db)
+        .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::PasswordMismatch, db)
         .await?;
-      let blocked = self.session.block_if_exceeded_limit(Some(user.id), db).await?;
+      let blocked = self.session.ban_if_exceeded_limit(Some(user.id), db).await?;
 
       Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
-    };
-
-    result
+    }
   }
 
   pub async fn logout(&mut self) -> Result<(), SumidaError> {

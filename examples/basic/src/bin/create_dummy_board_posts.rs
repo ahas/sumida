@@ -1,10 +1,7 @@
 use chrono::Utc;
-use entity::bs::{
-  board_groups, board_posts,
-  board_posts::{BoardPostKind, BoardPostStatus},
-  board_topics, boards,
-  boards::BoardPostRecordVisibility,
-};
+use entity::bs::board_posts::{BoardPostKind, BoardPostStatus};
+use entity::bs::boards::BoardPostRecordVisibility;
+use entity::bs::{board_groups, board_posts, board_topics, boards};
 use entity::{organizations, roles, users};
 use sea_orm::prelude::*;
 use sea_orm::{ActiveModelTrait, Set};
@@ -124,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       allowed_file_types: Set(Some(json!(["jpg", "jpeg", "png", "gif", "pdf", "txt"]))),
       reaction_visibility: Set(BoardPostRecordVisibility::Public),
       viewer_visibility: Set(BoardPostRecordVisibility::Public),
-      is_logged: Set(true),
+      is_versioned: Set(true),
       is_enabled: Set(true),
       created_at: Set(now),
       updated_at: Set(now),

@@ -59,7 +59,8 @@ aws-smithy-types = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 jsonwebtoken = { workspace = true, optional = true }
 
-axum-extra = { version = "0.10.1", features = ["query"] }
-serde_qs = { version = "0.15.0", features = ["axum"] }
+axum-extra = { version = "0.12.1", features = ["query"] }
 futures = "0.3.31"
+markdown = { version = "1.0.0" }
 scraper = "0.24.0"
+serde_qs = { version = "0.15.0", features = ["axum"] }

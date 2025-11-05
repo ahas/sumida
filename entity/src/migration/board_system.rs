@@ -33,7 +33,7 @@ enum Boards {
   ReactionVisibility,
   ViewerVisibility,
   ContentVisibility,
-  IsLogged,
+  IsVersioned,
   IsEnabled,
   CreatedAt,
   UpdatedAt,
@@ -193,7 +193,7 @@ impl MigrationTrait for Migration {
           .col(string(Boards::ReactionVisibility).default("private"))
           .col(string(Boards::ViewerVisibility).default("private"))
           .col(string(Boards::ContentVisibility).default("private"))
-          .col(boolean(Boards::IsLogged).default(false))
+          .col(boolean(Boards::IsVersioned).default(false))
           .col(boolean(Boards::IsEnabled).default(false))
           .col(timestamp_with_time_zone(Boards::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Boards::UpdatedAt).default(Expr::current_timestamp()))

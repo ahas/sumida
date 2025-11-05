@@ -7,7 +7,7 @@ use crate::prelude::*;
 /// Test configuration for permission testing
 pub struct PermissionTestConfig {
   pub namespace: &'static str,
-  pub base_url: &'static str,
+  pub base_url:  &'static str,
 }
 
 /// Helper to create access policies
@@ -24,7 +24,8 @@ pub async fn create_ap(
     .object(object)
     .action(actions)
     .user(ApUser::User(user.model.id))
-    .create(effect, db)
+    .effect(effect)
+    .create(db)
     .await?;
   Ok(())
 }
@@ -88,7 +89,7 @@ pub struct CrudTestData {
 
 /// Comprehensive permission test suite for any controller
 pub struct PermissionTestSuite {
-  pub config: PermissionTestConfig,
+  pub config:    PermissionTestConfig,
   pub crud_data: CrudTestData,
 }
 

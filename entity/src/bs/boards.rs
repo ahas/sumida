@@ -33,27 +33,27 @@ pub enum BoardPostContentVisibility {
 #[sea_orm(table_name = "boards")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id: i32,
+  pub id:                  i32,
   #[sea_orm(nullable)]
-  pub group_id: Option<i32>,
-  pub name: String,
+  pub group_id:            Option<i32>,
+  pub name:                String,
   #[sea_orm(nullable)]
-  pub description: Option<String>,
-  pub order: i32,
-  pub can_upload_file: bool,
-  pub max_file_size: i64,
-  pub max_file_count: i32,
+  pub description:         Option<String>,
+  pub order:               i32,
+  pub can_upload_file:     bool,
+  pub max_file_size:       i64,
+  pub max_file_count:      i32,
   #[sea_orm(nullable)]
-  pub allowed_file_types: Option<Json>,
+  pub allowed_file_types:  Option<Json>,
   pub reaction_visibility: BoardPostRecordVisibility,
-  pub viewer_visibility: BoardPostRecordVisibility,
-  pub content_visibility: BoardPostContentVisibility,
-  pub is_logged: bool,
-  pub is_enabled: bool,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub viewer_visibility:   BoardPostRecordVisibility,
+  pub content_visibility:  BoardPostContentVisibility,
+  pub is_versioned:        bool,
+  pub is_enabled:          bool,
+  pub created_at:          DateTimeWithTimeZone,
+  pub updated_at:          DateTimeWithTimeZone,
   #[sea_orm(nullable)]
-  pub deleted_at: Option<DateTimeWithTimeZone>,
+  pub deleted_at:          Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -1,5 +1,3 @@
-#![cfg(feature = "aws-s3")]
-
 use std::fmt::Display;
 use std::io::Cursor;
 
@@ -39,15 +37,12 @@ pub fn static_uri(
 
 #[allow(dead_code)]
 pub fn get_bucket() -> Result<String, anyhow::Error> {
-  let settings = settings::get();
-  let ret = settings
+  settings::get()
     .aws
     .as_ref()
     .and_then(|x| x.s3.as_ref())
     .map(|x| x.bucket.clone())
-    .ok_or_else(|| anyhow!("aws s3 bucket is not set"));
-
-  ret
+    .ok_or_else(|| anyhow!("aws s3 bucket is not set"))
 }
 
 #[allow(dead_code)]

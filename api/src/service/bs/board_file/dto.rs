@@ -7,18 +7,22 @@ use entity::bs::board_files::*;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::prelude::*;
-use sea_orm::{DeriveIntoActiveModel, EntityTrait, QueryTrait};
-use sea_orm_crud::Optional;
+use sea_orm::{EntityTrait, QueryTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::service::fs::dto::{
-  FileListItem, FileUploadData, FileUploadOptions, FileUploadTrait, GetFile, UploadFile,
+  FileListItem,
+  FileUploadData,
+  FileUploadOptions,
+  FileUploadTrait,
+  GetFile,
+  UploadFile,
 };
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFileFilter {
-  pub id: Option<i32>,
+  pub id:      Option<i32>,
   pub post_id: Option<i32>,
 }
 
@@ -36,7 +40,7 @@ impl BoardFileFilter {
 pub struct BoardFileListItem {
   #[sea_orm(nested)]
   #[serde(flatten)]
-  pub file: FileListItem,
+  pub file:    FileListItem,
   pub post_id: i32,
   // pub path:          String,
   // pub original_name: String,
@@ -56,7 +60,7 @@ pub struct BoardFileListItem {
 pub struct GetBoardFile {
   #[sea_orm(nested)]
   #[serde(flatten)]
-  pub file: GetFile,
+  pub file:    GetFile,
   pub post_id: i32,
   // pub id:            i32,
   // pub user_id:       Option<i32>,
@@ -83,8 +87,8 @@ impl IntoResponse for GetBoardFile {
 #[serde(rename_all = "camelCase")]
 pub struct UploadBoardFile {
   pub board_id: i32,
-  pub file: FileUploadData,
-  pub options: FileUploadOptions,
+  pub file:     FileUploadData,
+  pub options:  FileUploadOptions,
 }
 
 #[async_trait]
@@ -101,7 +105,7 @@ impl FileUploadTrait for UploadBoardFile {
     while let Some(field) = multipart
       .next_field()
       .await
-      .map_err(|e| SumidaError::BadRequest(format!("Multipart error: {}", e)))?
+      .map_err(|err| SumidaError::BadRequest(format!("Multipart error: {err}")))?
     {
       let name = field.name().unwrap_or("").to_string();
 
@@ -113,10 +117,10 @@ impl FileUploadTrait for UploadBoardFile {
           let text = field
             .text()
             .await
-            .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata: {}", e)))?;
+            .map_err(|err| SumidaError::BadRequest(format!("Invalid metadata: {err}")))?;
           options = Some(
             serde_json::from_str(&text)
-              .map_err(|e| SumidaError::BadRequest(format!("Invalid metadata JSON: {}", e)))?,
+              .map_err(|err| SumidaError::BadRequest(format!("Invalid metadata JSON: {err}")))?,
           );
         }
         "file" => {
@@ -125,12 +129,12 @@ impl FileUploadTrait for UploadBoardFile {
           let data = field
             .bytes()
             .await
-            .map_err(|e| SumidaError::BadRequest(format!("Failed to read file: {}", e)))?;
+            .map_err(|err| SumidaError::BadRequest(format!("Failed to read file: {err}")))?;
 
           file_data = Some(FileUploadData {
             original_name: filename,
-            bytes: data.to_vec(),
-            mime_type: content_type,
+            bytes:         data.to_vec(),
+            mime_type:     content_type,
           });
         }
         _ => {}
@@ -139,41 +143,41 @@ impl FileUploadTrait for UploadBoardFile {
 
     Ok(Self {
       board_id: board_id.unwrap(),
-      file: file_data.unwrap(),
-      options: options.unwrap(),
+      file:     file_data.unwrap(),
+      options:  options.unwrap(),
     })
   }
 }
 
-impl Into<UploadFile> for UploadBoardFile {
-  fn into(self) -> UploadFile {
+impl From<UploadBoardFile> for UploadFile {
+  fn from(value: UploadBoardFile) -> Self {
     UploadFile {
-      file: self.file,
-      options: self.options,
+      file:    value.file,
+      options: value.options,
     }
   }
 }
 
-#[derive(Debug, Deserialize, DeriveIntoActiveModel)]
-#[sea_orm(entity = "Entity")]
-#[serde(rename_all = "camelCase")]
-pub struct CreateBoardFile {
-  pub post_id: i32,
-  pub file_id: i32,
-}
+// #[derive(Debug, Deserialize, DeriveIntoActiveModel)]
+// #[sea_orm(entity = "Entity")]
+// #[serde(rename_all = "camelCase")]
+// pub struct CreateBoardFile {
+//   pub post_id: i32,
+//   pub file_id: i32,
+// }
 
-#[derive(Deserialize, DeriveIntoActiveModel)]
-#[sea_orm(entity = "Entity")]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateBoardFile {
-  pub post_id: Optional<i32>,
-  pub file_id: Optional<i32>,
-}
+// #[derive(Deserialize, DeriveIntoActiveModel)]
+// #[sea_orm(entity = "Entity")]
+// #[serde(rename_all = "camelCase")]
+// pub struct UpdateBoardFile {
+//   pub post_id: Optional<i32>,
+//   pub file_id: Optional<i32>,
+// }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardFileCreated {
-  pub id: i32,
+  pub id:      i32,
   pub post_id: i32,
 }
 
@@ -197,7 +201,7 @@ impl IntoResponse for BoardFileUpdated {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteBoardFile {
   #[serde(default)]
-  pub hard: bool,
+  pub hard:    bool,
   pub post_id: i32,
   pub file_id: i32,
 }
@@ -215,13 +219,13 @@ impl IntoResponse for BoardFileDeleted {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachFileToPost {
-  pub id: i32,
+  pub id:      i32,
   pub post_id: i32,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetachFileFromPost {
-  pub id: i32,
+  pub id:      i32,
   pub post_id: i32,
 }
