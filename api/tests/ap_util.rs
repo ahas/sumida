@@ -184,7 +184,7 @@ async fn ap_condition_who_expands_session_roles() {
 async fn ap_condition_column_and_join_filter_results() {
   let (_mock, db) = setup("ap.tests.columns").await;
   let allowed_user = TestUser::create(&db).await.expect("user");
-  let blocked_user = TestUser::create(&db).await.expect("user");
+  let banned_user = TestUser::create(&db).await.expect("user");
 
   insert_policy(
     &db,
@@ -211,7 +211,7 @@ async fn ap_condition_column_and_join_filter_results() {
   assert_eq!(allowed.len(), 1);
 
   let blocked = guard
-    .apply(Users::find().filter(entity::users::Column::Id.eq(blocked_user.model.id)))
+    .apply(Users::find().filter(entity::users::Column::Id.eq(banned_user.model.id)))
     .all(&db)
     .await
     .expect("query");

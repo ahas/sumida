@@ -6,10 +6,14 @@ use super::users::Entity as Users;
 #[sea_orm(table_name = "api_keys")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = false)]
-  pub key: String,
-  pub user_id: i32,
+  pub key:        String,
+  #[sea_orm(indexed)]
+  pub user_id:    i32,
+  #[sea_orm(nullable, default_value = "CURRENT_TIMESTAMP")]
   pub expires_at: Option<DateTimeWithTimeZone>,
+  #[sea_orm(default_value = false)]
   pub is_secured: bool,
+  #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,
 }
 

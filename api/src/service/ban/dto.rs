@@ -55,8 +55,8 @@ pub struct BanUser {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
-#[sea_orm(entity = "entity::users::Entity", alias = "b", from_query_result)]
-pub struct BanBlockedBy {
+#[sea_orm(entity = "entity::users::Entity", alias = "c", from_query_result)]
+pub struct BanCreatedBy {
   pub id:        i32,
   pub username:  String,
   pub full_name: String,
@@ -70,9 +70,9 @@ pub struct BanListItem {
   #[sea_orm(nested, alias = "u")]
   pub user:       Option<BanUser>,
   pub ip_address: Option<String>,
-  pub blocked_at: DateTimeWithTimeZone,
-  #[sea_orm(nested, alias = "b")]
-  pub blocked_by: Option<BanBlockedBy>,
+  pub created_at: DateTimeWithTimeZone,
+  #[sea_orm(nested, alias = "c")]
+  pub created_by: Option<BanCreatedBy>,
   // pub reason: String,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub lifted_at:  Option<DateTimeWithTimeZone>,
@@ -87,10 +87,10 @@ pub struct GetBan {
   #[sea_orm(nested, alias = "u")]
   pub user:       Option<BanUser>,
   pub ip_address: Option<String>,
-  pub blocked_at: DateTimeWithTimeZone,
-  #[sea_orm(nested, alias = "b")]
-  pub blocked_by: Option<BanUser>,
-  pub reason:     String,
+  pub created_at: DateTimeWithTimeZone,
+  #[sea_orm(nested, alias = "c")]
+  pub created_by: Option<BanUser>,
+  pub reason:     Option<String>,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub lifted_at:  Option<DateTimeWithTimeZone>,
   pub note:       Option<String>,
@@ -107,7 +107,8 @@ impl IntoResponse for GetBan {
 pub struct CreateBan {
   pub user_id:    Nullable<i32>,
   pub ip_address: Nullable<String>,
-  pub reason:     Optional<String>,
+  #[serde(default)]
+  pub reason:     Nullable<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
   pub note:       Optional<String>,
 }
@@ -129,7 +130,8 @@ impl IntoResponse for BanCreated {
 pub struct UpdateBan {
   pub user_id:    Nullable<i32>,
   pub ip_address: Nullable<String>,
-  pub reason:     Optional<String>,
+  #[serde(default)]
+  pub reason:     Nullable<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
   pub note:       Optional<String>,
 }

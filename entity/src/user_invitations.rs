@@ -5,11 +5,12 @@ use super::users::Entity as Users;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "user_invitations")]
 pub struct Model {
-  #[sea_orm(primary_key)]
-  pub uuid: Uuid,
-  pub user_id: i32,
-
+  #[sea_orm(primary_key, default_value = "uuid_generate_v4()")]
+  pub uuid:       Uuid,
+  #[sea_orm(indexed)]
+  pub user_id:    i32,
   pub expires_at: DateTimeWithTimeZone,
+  #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,
 }
 

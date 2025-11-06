@@ -42,13 +42,13 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
       return Err(SumidaError::InvalidAccount);
     };
 
-    // 2) Check the user is blocked
-    if self.session.check_blocked(Some(user.id), db).await? {
+    // 2) Check the user is banned
+    if self.session.check_banned(Some(user.id), db).await? {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBlocked, db)
+        .write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBanned, db)
         .await?;
-      return Err(SumidaError::AccountBlocked);
+      return Err(SumidaError::AccountBanned);
     }
 
     // 3) Return error if the user is inactive
@@ -89,9 +89,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
         .session
         .write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch, db)
         .await?;
-      let blocked = self.session.block_if_exceeded_limit(Some(user.id), db).await?;
+      let banned = self.session.ban_if_exceeded_limit(Some(user.id), db).await?;
 
-      Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
+      Err(if banned { SumidaError::AccountBanned } else { SumidaError::InvalidAccount })
     };
 
     result
@@ -148,9 +148,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
       return Err(SumidaError::InactiveAccount);
     }
 
-    // Check if user is blocked
-    if self.session.check_blocked(Some(user.id), db).await? {
-      return Err(SumidaError::AccountBlocked);
+    // Check if user is banned
+    if self.session.check_banned(Some(user.id), db).await? {
+      return Err(SumidaError::AccountBanned);
     }
 
     // Generate new token pair

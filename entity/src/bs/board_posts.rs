@@ -38,14 +38,17 @@ pub enum BoardPostContentType {
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:                 i32,
+  #[sea_orm(indexed)]
   pub board_id:           i32,
-  #[sea_orm(nullable)]
+  #[sea_orm(indexed, nullable)]
   pub topic_id:           Option<i32>,
-  #[sea_orm(nullable)]
+  #[sea_orm(indexed, nullable)]
   pub parent_id:          Option<i32>,
-  #[sea_orm(nullable)]
+  #[sea_orm(indexed, nullable)]
   pub user_id:            Option<i32>,
+  #[sea_orm(indexed)]
   pub kind:               BoardPostKind,
+  #[sea_orm(indexed)]
   pub status:             BoardPostStatus,
   #[sea_orm(nullable)]
   pub revision:           Option<i32>,
@@ -57,6 +60,7 @@ pub struct Model {
   pub content_type:       BoardPostContentType,
   #[sea_orm(nullable, column_type = "Text")]
   pub content:            Option<String>,
+  #[sea_orm(nullable, default_value = "'private'")]
   pub content_visibility: BoardPostContentVisibility,
   #[sea_orm(nullable, column_type = "Text")]
   pub text:               Option<String>,
@@ -64,13 +68,19 @@ pub struct Model {
   pub text_tsv:           Option<String>,
   #[sea_orm(nullable)]
   pub tags:               Option<Vec<String>>,
+  #[sea_orm(default_value = 0)]
   pub views:              i32,
   #[sea_orm(column_type = "JsonBinary", nullable)]
   pub reactions:          Option<Json>,
+  #[sea_orm(nullable)]
   pub published_at:       Option<DateTimeWithTimeZone>,
+  #[sea_orm(nullable)]
   pub scheduled_at:       Option<DateTimeWithTimeZone>,
+  #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at:         DateTimeWithTimeZone,
+  #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub updated_at:         DateTimeWithTimeZone,
+  #[sea_orm(nullable)]
   pub deleted_at:         Option<DateTimeWithTimeZone>,
 }
 

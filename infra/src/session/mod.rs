@@ -320,11 +320,7 @@ impl UserSession {
         );
 
       if let Some(user_id) = user_id {
-        cond = cond.add(
-          Condition::any() //
-            .add(BansColumn::UserId.eq("*"))
-            .add(BansColumn::UserId.eq(user_id)),
-        );
+        cond = cond.add(BansColumn::UserId.eq(user_id));
       }
 
       if let Some(ref os_major) = env.os_major {
@@ -404,8 +400,8 @@ impl UserSession {
 
     Bans::insert(entity::bans::ActiveModel {
       ip_address: Set(Some(self.env.ip_address.clone())),
-      blocked_at: Set(Utc::now().fixed_offset()),
-      reason: Set(reason.to_string()),
+      created_at: Set(Utc::now().fixed_offset()),
+      reason: Set(Some(reason.to_string())),
       expires_at: Set(expires_at),
       note: Set(note.map(String::from)),
       ..Default::default()
@@ -429,8 +425,8 @@ impl UserSession {
 
     Bans::insert(entity::bans::ActiveModel {
       user_id: Set(Some(user_id)),
-      blocked_at: Set(Utc::now().fixed_offset()),
-      reason: Set(reason.to_string()),
+      created_at: Set(Utc::now().fixed_offset()),
+      reason: Set(Some(reason.to_string())),
       expires_at: Set(expires_at),
       note: Set(note.map(String::from)),
       ..Default::default()
@@ -446,7 +442,7 @@ impl UserSession {
     user_id: Option<i32>,
     db: &C,
   ) -> Result<bool, SumidaError> {
-    let settings = &settings::get().security.block;
+    let settings = &settings::get().security.ban;
     let user_id = self.resolve_user_id(user_id);
 
     let Some(last_fail_log) = AccessLogs::find()
@@ -477,7 +473,7 @@ impl UserSession {
       let duration = humantime::parse_duration(&settings.failure_reset_after)
         .ok()
         .and_then(|x| Duration::from_std(x).ok());
-      let reason = Some("system blocked");
+      let reason = Some("system banned");
 
       match settings.target.as_str() {
         "ip" => self.ban_ip(duration, "", reason, db).await?,

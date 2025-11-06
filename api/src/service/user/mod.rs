@@ -267,7 +267,7 @@ impl<S: SumidaState> ApiService<ApCondition, Users> for UserService<S> {
     query
       .select_only()
       .expr(Expr::col((entity::users::Entity, Asterisk)))
-      .expr_as(BanService::<S>::exists_expr(), "is_blocked")
+      .expr_as(BanService::<S>::exists_expr(), "is_banned")
       .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
       .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
       .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")

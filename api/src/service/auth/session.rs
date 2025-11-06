@@ -35,13 +35,13 @@ impl<S: SumidaState> AuthSessionService<S> {
       return Err(SumidaError::InvalidAccount);
     };
 
-    // 2) Check the user is blocked
+    // 2) Check the user is banned
     if self.session.check_banned(Some(user.id), db).await? {
       self
         .session
         .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::AccountBanned, db)
         .await?;
-      return Err(SumidaError::AccountBlocked);
+      return Err(SumidaError::AccountBanned);
     }
 
     // 3) Return error if the user is inactive
@@ -80,9 +80,9 @@ impl<S: SumidaState> AuthSessionService<S> {
         .session
         .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::PasswordMismatch, db)
         .await?;
-      let blocked = self.session.ban_if_exceeded_limit(Some(user.id), db).await?;
+      let banned = self.session.ban_if_exceeded_limit(Some(user.id), db).await?;
 
-      Err(if blocked { SumidaError::AccountBlocked } else { SumidaError::InvalidAccount })
+      Err(if banned { SumidaError::AccountBanned } else { SumidaError::InvalidAccount })
     }
   }
 

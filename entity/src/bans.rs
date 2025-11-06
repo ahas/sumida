@@ -5,9 +5,10 @@ use super::users::Entity as Users;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "bans")]
 pub struct Model {
-  #[sea_orm(primary_key)]
+  #[sea_orm(primary_key, auto_increment = true)]
   pub id: i32,
 
+  #[sea_orm(indexed, nullable)]
   pub user_id:    Option<i32>,
   #[sea_orm(default_value = "*", indexed, nullable)]
   pub ip_address: Option<String>,
@@ -32,11 +33,17 @@ pub struct Model {
   #[sea_orm(default_value = "*", indexed, nullable)]
   pub device_model:  Option<String>,
 
-  pub blocked_at: DateTimeWithTimeZone,
-  pub blocked_by: Option<i32>,
-  pub reason:     String,
+  #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
+  pub created_at: DateTimeWithTimeZone,
+  #[sea_orm(nullable)]
+  pub created_by: Option<i32>,
+  #[sea_orm(nullable)]
+  pub reason:     Option<String>,
+  #[sea_orm(nullable)]
   pub expires_at: Option<DateTimeWithTimeZone>,
+  #[sea_orm(nullable)]
   pub lifted_at:  Option<DateTimeWithTimeZone>,
+  #[sea_orm(nullable)]
   pub note:       Option<String>,
 }
 
@@ -53,12 +60,12 @@ pub enum Relation {
 
   #[sea_orm(
     belongs_to = "Users",
-    from = "Column::BlockedBy",
+    from = "Column::CreatedBy",
     to = "super::users::Column::Id",
     on_update = "Cascade",
     on_delete = "SetNull"
   )]
-  BlockedByUser,
+  CreatedUser,
 }
 
 impl Related<Users> for Entity {
@@ -67,14 +74,14 @@ impl Related<Users> for Entity {
   }
 }
 
-pub struct BlockedByLink;
+pub struct CreatedUserLink;
 
-impl Linked for BlockedByLink {
+impl Linked for CreatedUserLink {
   type FromEntity = Entity;
   type ToEntity = Users;
 
   fn link(&self) -> Vec<RelationDef> {
-    vec![Relation::BlockedByUser.def()]
+    vec![Relation::CreatedUser.def()]
   }
 }
 

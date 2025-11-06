@@ -24,8 +24,8 @@ pub enum SumidaError {
   InvalidAccount,
   #[error("inactive account")]
   InactiveAccount,
-  #[error("account blocked")]
-  AccountBlocked,
+  #[error("account is banned")]
+  AccountBanned,
   #[error("user organization id '{0}' not found")]
   NoUserOrganization(i32),
   #[error("user role id `{0}` not found")]
@@ -145,7 +145,7 @@ impl From<SumidaError> for StatusCode {
       // authorization errors
       SumidaError::InvalidAccount
       | SumidaError::InactiveAccount
-      | SumidaError::AccountBlocked
+      | SumidaError::AccountBanned
       | SumidaError::NotAuthorized(_)
       | SumidaError::NoCredentials
       | SumidaError::NoUserOrganization(_)

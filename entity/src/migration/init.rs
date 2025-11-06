@@ -75,8 +75,8 @@ enum Bans {
   DeviceBrand,
   DeviceModel,
 
-  BlockedAt,
-  BlockedBy,
+  CreatedAt,
+  CreatedBy,
   Reason,
   ExpiresAt,
   LiftedAt,
@@ -290,7 +290,7 @@ impl MigrationTrait for Migration {
           .table(Roles::Table)
           .col(integer(Roles::Id).auto_increment())
           .col(string(Roles::Name))
-          .col(string(Roles::Description).default(""))
+          .col(string_null(Roles::Description))
           .col(timestamp_with_time_zone(Roles::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Roles::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_roles__id").col(Roles::Id))
@@ -428,6 +428,17 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_api_keys__user_id")
+          .table(ApiKeys::Table)
+          .col(ApiKeys::UserId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
     // END api_keys table
 
     // BEGIN bans table
@@ -447,8 +458,8 @@ impl MigrationTrait for Migration {
           .col(string_null(Bans::DeviceFamily).default("*"))
           .col(string_null(Bans::DeviceBrand).default("*"))
           .col(string_null(Bans::DeviceModel).default("*"))
-          .col(timestamp_with_time_zone(Bans::BlockedAt))
-          .col(integer_null(Bans::BlockedBy))
+          .col(timestamp_with_time_zone(Bans::CreatedAt).default(Expr::current_timestamp()))
+          .col(integer_null(Bans::CreatedBy))
           .col(string_null(Bans::Reason))
           .col(timestamp_with_time_zone_null(Bans::ExpiresAt))
           .col(timestamp_with_time_zone_null(Bans::LiftedAt))
@@ -464,8 +475,8 @@ impl MigrationTrait for Migration {
           )
           .foreign_key(
             ForeignKey::create()
-              .name("fk_bans__blocked_by")
-              .from(Bans::Table, Bans::BlockedBy)
+              .name("fk_bans__created_by")
+              .from(Bans::Table, Bans::CreatedBy)
               .to(Users::Table, Users::Id)
               .on_delete(Cascade)
               .on_update(Cascade),
@@ -614,6 +625,17 @@ impl MigrationTrait for Migration {
               .on_delete(Cascade)
               .on_update(Cascade),
           )
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .table(UserInvitations::Table)
+          .name("idx_user_invitations__user_id")
+          .col(UserInvitations::UserId)
+          .index_type(IndexType::BTree)
           .to_owned(),
       )
       .await?;

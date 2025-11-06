@@ -248,6 +248,17 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .table(BoardTopics::Table)
+          .name("idx_board_topics__board_id")
+          .col(BoardTopics::BoardId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
 
     // board_posts
     manager
@@ -363,6 +374,28 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
+          .name("idx_board_posts__topic_id")
+          .table(BoardPosts::Table)
+          .col(BoardPosts::TopicId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_posts__status")
+          .table(BoardPosts::Table)
+          .col(BoardPosts::Status)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
           .name("idx_board_posts__text")
           .table(BoardPosts::Table)
           .col(BoardPosts::TextTsv)
@@ -406,6 +439,17 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_post_reactions__user_id")
+          .table(BoardPostReactions::Table)
+          .col(BoardPostReactions::UserId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
 
     // board_post_views
     manager
@@ -436,6 +480,17 @@ impl MigrationTrait for Migration {
           .name("idx_board_post_views__post_id")
           .table(BoardPostViews::Table)
           .col(BoardPostViews::PostId)
+          .index_type(IndexType::BTree)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .name("idx_board_post_views__user_id")
+          .table(BoardPostViews::Table)
+          .col(BoardPostViews::UserId)
           .index_type(IndexType::BTree)
           .to_owned(),
       )

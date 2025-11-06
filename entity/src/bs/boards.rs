@@ -34,23 +34,34 @@ pub enum BoardPostContentVisibility {
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:                  i32,
-  #[sea_orm(nullable)]
+  #[sea_orm(indexed, nullable)]
   pub group_id:            Option<i32>,
   pub name:                String,
   #[sea_orm(nullable)]
   pub description:         Option<String>,
+  #[sea_orm(default_value = "0")]
   pub order:               i32,
+  #[sea_orm(default_value = "false")]
   pub can_upload_file:     bool,
+  #[sea_orm(default_value = "0")]
   pub max_file_size:       i64,
+  #[sea_orm(default_value = "0")]
   pub max_file_count:      i32,
   #[sea_orm(nullable)]
   pub allowed_file_types:  Option<Json>,
+  #[sea_orm(default_value = "'private'")]
   pub reaction_visibility: BoardPostRecordVisibility,
+  #[sea_orm(default_value = "'private'")]
   pub viewer_visibility:   BoardPostRecordVisibility,
+  #[sea_orm(default_value = "'private'")]
   pub content_visibility:  BoardPostContentVisibility,
+  #[sea_orm(defaultvalue = "false")]
   pub is_versioned:        bool,
+  #[sea_orm(defaultvalue = "false")]
   pub is_enabled:          bool,
+  #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at:          DateTimeWithTimeZone,
+  #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub updated_at:          DateTimeWithTimeZone,
   #[sea_orm(nullable)]
   pub deleted_at:          Option<DateTimeWithTimeZone>,

@@ -74,7 +74,7 @@ impl<S: SumidaState> BanService<S> {
     query = pagination.order_by(query, |col| match col {
       "user_id" => Column::UserId.into_simple_expr(),
       "fullName" => Expr::col((Alias::new("u"), entity::users::Column::FullName)).into_simple_expr(),
-      _ => Column::BlockedAt.into_simple_expr(),
+      _ => Column::CreatedAt.into_simple_expr(),
     });
     query = pagination.paginate(query);
 
@@ -91,7 +91,7 @@ impl<S: SumidaState> BanService<S> {
       .select_only()
       .expr(Expr::col((Bans, Asterisk)))
       .join_as(JoinType::LeftJoin, entity::bans::Relation::User.def(), Alias::new("u"))
-      .join_as(JoinType::LeftJoin, entity::bans::Relation::BlockedByUser.def(), Alias::new("b"))
+      .join_as(JoinType::LeftJoin, entity::bans::Relation::CreatedUser.def(), Alias::new("b"))
       .into_partial_model::<GetBan>()
       .one(&txn)
       .await?;
@@ -137,7 +137,7 @@ impl<S: SumidaState> BanService<S> {
 impl<S: SumidaState> ApiService<ApCondition, Bans> for BanService<S> {
   fn default_query_with(query: Select<Bans>) -> Select<Bans> {
     let user_alias = Alias::new("u");
-    let blocked_by_alias = Alias::new("b");
+    let created_by_alias = Alias::new("c");
 
     query
       .select_only()
@@ -145,8 +145,8 @@ impl<S: SumidaState> ApiService<ApCondition, Bans> for BanService<S> {
       .join_as(JoinType::LeftJoin, entity::bans::Relation::User.def(), user_alias.clone())
       .join_as(
         JoinType::LeftJoin,
-        entity::bans::Relation::BlockedByUser.def(),
-        blocked_by_alias.clone(),
+        entity::bans::Relation::CreatedUser.def(),
+        created_by_alias.clone(),
       )
   }
 
