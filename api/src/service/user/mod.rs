@@ -55,6 +55,7 @@ impl<S: SumidaState> UserService<S> {
     let count = query.clone().select_only().column(Column::Username).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
+      "username" => Column::Username,
       "name" => Column::FullName,
       "email" => Column::Email,
       "createdAt" => Column::CreatedAt,
