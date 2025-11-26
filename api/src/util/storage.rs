@@ -16,12 +16,12 @@ pub type FileStream = Pin<Box<dyn AsyncRead + Send>>;
 
 #[derive(Clone, Debug)]
 pub struct StaticFile {
-  pub name:          String,
+  pub name: String,
   pub original_name: String,
-  pub dir:           String,
-  pub mime_type:     String,
-  pub bytes:         Vec<u8>,
-  pub extension:     Option<String>,
+  pub dir: String,
+  pub mime_type: String,
+  pub bytes: Vec<u8>,
+  pub extension: Option<String>,
 }
 
 impl StaticFile {
@@ -41,19 +41,19 @@ impl IntoFileInfo for StaticFile {
 
 #[derive(Clone, Debug)]
 pub struct DownloadFile {
-  pub name:          String,
+  pub name: String,
   pub original_name: String,
-  pub path:          String,
-  pub mime_type:     String,
+  pub path: String,
+  pub mime_type: String,
 }
 
 impl From<entity::fs::files::Model> for DownloadFile {
   fn from(value: entity::fs::files::Model) -> Self {
     Self {
-      path:          value.get_path(),
-      name:          value.name,
+      path: value.get_path(),
+      name: value.name,
       original_name: value.original_name,
-      mime_type:     value.mime_type,
+      mime_type: value.mime_type,
     }
   }
 }

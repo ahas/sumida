@@ -9,7 +9,7 @@ use crate::SumidaState;
 use crate::service::auth::dto::LoginSession;
 
 pub struct AuthSessionService<S: SumidaState> {
-  pub state:   S,
+  pub state: S,
   pub session: UserSession,
 }
 

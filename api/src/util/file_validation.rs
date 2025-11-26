@@ -6,18 +6,18 @@ use sea_orm::{ConnectionTrait, EntityTrait};
 
 #[derive(Debug, Clone)]
 pub struct FileValidationConfig {
-  pub can_upload_file:    bool,
-  pub max_file_size:      usize,
-  pub max_file_count:     usize,
+  pub can_upload_file: bool,
+  pub max_file_size: usize,
+  pub max_file_count: usize,
   pub allowed_file_types: Vec<String>,
 }
 
 impl From<&boards::Model> for FileValidationConfig {
   fn from(board: &boards::Model) -> Self {
     Self {
-      can_upload_file:    board.can_upload_file,
-      max_file_size:      board.max_file_size as usize,
-      max_file_count:     board.max_file_count as usize,
+      can_upload_file: board.can_upload_file,
+      max_file_size: board.max_file_size as usize,
+      max_file_count: board.max_file_count as usize,
       allowed_file_types: board.get_allowed_file_types(),
     }
   }
@@ -25,7 +25,7 @@ impl From<&boards::Model> for FileValidationConfig {
 
 #[derive(Debug, Clone)]
 pub struct FileInfo {
-  pub size:      usize,
+  pub size: usize,
   pub mime_type: String,
   pub extension: Option<String>,
 }
@@ -137,7 +137,7 @@ impl FileValidator {
           .any(|t| t.to_lowercase() == extension.to_lowercase())
       {
         return Err(SumidaError::InvalidFileType {
-          extension:     extension.to_string(),
+          extension: extension.to_string(),
           allowed_types: self.config.allowed_file_types.clone(),
         });
       }

@@ -5,17 +5,8 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  ColumnTrait,
-  DeleteResult,
-  EntityTrait,
-  IntoSimpleExpr,
-  JoinType,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  RelationTrait,
-  Select,
-  TransactionTrait,
+  ColumnTrait, DeleteResult, EntityTrait, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
+  QuerySelect, RelationTrait, Select, TransactionTrait,
 };
 
 use self::dto::*;
@@ -28,7 +19,7 @@ use crate::util::file_validation::FileValidator;
 use crate::util::pagination::Pagination;
 
 pub struct BoardFileService<S: SumidaState> {
-  state:   S,
+  state: S,
   #[allow(dead_code)]
   session: UserSession,
 }

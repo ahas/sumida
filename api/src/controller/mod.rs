@@ -4,6 +4,7 @@ pub mod api_key;
 pub mod auth;
 pub mod ban;
 pub mod bs;
+pub mod dashboard;
 pub mod fs;
 pub mod mail_form;
 pub mod me;

@@ -7,7 +7,7 @@ use crate::prelude::*;
 /// Test configuration for permission testing
 pub struct PermissionTestConfig {
   pub namespace: &'static str,
-  pub base_url:  &'static str,
+  pub base_url: &'static str,
 }
 
 /// Helper to create access policies
@@ -89,7 +89,7 @@ pub struct CrudTestData {
 
 /// Comprehensive permission test suite for any controller
 pub struct PermissionTestSuite {
-  pub config:    PermissionTestConfig,
+  pub config: PermissionTestConfig,
   pub crud_data: CrudTestData,
 }
 

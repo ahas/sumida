@@ -76,6 +76,7 @@ tinytemplate = "1.2.1"
 time = "0.3.41"
 tokio = { version = "1.47.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
+tokio-stream = "0.1.17"
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["full"] }
 tower-sessions = "0.14.0"
@@ -83,6 +84,7 @@ tower-sessions-core = "0.14.0"
 tracing = "0.1.41"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+sysinfo = "0.31.4"
 
 [dependencies]
 api = { path = "./api", default-features = false }

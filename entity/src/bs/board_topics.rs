@@ -4,18 +4,18 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "board_topics")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id:          i32,
+  pub id: i32,
   #[sea_orm(indexed)]
-  pub board_id:    i32,
-  pub name:        String,
+  pub board_id: i32,
+  pub name: String,
   #[sea_orm(nullable)]
   pub description: Option<String>,
   #[sea_orm(default_value = "0")]
-  pub order:       i32,
+  pub order: i32,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:  DateTimeWithTimeZone,
+  pub created_at: DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at:  DateTimeWithTimeZone,
+  pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

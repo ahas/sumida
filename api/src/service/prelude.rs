@@ -33,6 +33,9 @@ pub use super::mail_form::dto::*;
 pub use super::me::MeService;
 pub use super::me::dto::*;
 //
+pub use super::monitoring::MonitoringService;
+pub use super::monitoring::dto::*;
+//
 pub use super::organization::OrganizationService;
 pub use super::organization::dto::*;
 //

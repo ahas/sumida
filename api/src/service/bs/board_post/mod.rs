@@ -8,16 +8,8 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-  DeleteResult,
-  EntityTrait,
-  InsertResult,
-  IntoActiveModel,
-  IntoSimpleExpr,
-  PaginatorTrait,
-  QuerySelect,
-  RelationTrait,
-  Select,
-  TransactionTrait,
+  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, PaginatorTrait, QuerySelect,
+  RelationTrait, Select, TransactionTrait,
 };
 use sea_orm_crud::Nullable;
 
@@ -29,7 +21,7 @@ use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
 
 pub struct BoardPostService<S: SumidaState> {
-  state:   S,
+  state: S,
   #[allow(dead_code)]
   session: UserSession,
 }

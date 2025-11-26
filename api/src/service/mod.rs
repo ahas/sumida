@@ -13,6 +13,7 @@ pub mod bs;
 pub mod fs;
 pub mod mail_form;
 pub mod me;
+pub mod monitoring;
 pub mod organization;
 pub mod role;
 pub mod user;

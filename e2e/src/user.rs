@@ -49,7 +49,7 @@ impl TestRole {
 }
 
 pub struct TestUser {
-  pub model:    entity::users::Model,
+  pub model: entity::users::Model,
   pub password: String,
 }
 
@@ -100,8 +100,8 @@ impl TestUser {
     client
       .post(path)
       .json(&LoginSession {
-        username:    self.model.username.clone(),
-        password:    self.password.clone(),
+        username: self.model.username.clone(),
+        password: self.password.clone(),
         remember_me: Some(false),
       })
       .send()

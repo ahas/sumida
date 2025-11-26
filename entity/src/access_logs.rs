@@ -41,33 +41,33 @@ pub enum AccessResultCode {
 #[sea_orm(table_name = "access_logs")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id:      i32,
+  pub id: i32,
   pub user_id: i32,
-  pub method:  AccessMethod,
-  pub code:    AccessResultCode,
+  pub method: AccessMethod,
+  pub code: AccessResultCode,
   #[sea_orm(nullable)]
-  pub count:   Option<i32>,
+  pub count: Option<i32>,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family:      String,
+  pub os_family: String,
   #[sea_orm(nullable)]
-  pub os_major:       Option<String>,
+  pub os_major: Option<String>,
   #[sea_orm(nullable)]
-  pub os_minor:       Option<String>,
+  pub os_minor: Option<String>,
   #[sea_orm(nullable)]
-  pub os_patch:       Option<String>,
+  pub os_patch: Option<String>,
   #[sea_orm(nullable)]
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
   #[sea_orm(nullable)]
-  pub device_brand:  Option<String>,
+  pub device_brand: Option<String>,
   #[sea_orm(nullable)]
-  pub device_model:  Option<String>,
+  pub device_model: Option<String>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:    DateTimeWithTimeZone,
+  pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -10,10 +10,10 @@ use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct AccessLogFilter {
-  pub search:   Option<String>,
-  pub user_id:  Option<i32>,
+  pub search: Option<String>,
+  pub user_id: Option<i32>,
   pub username: Option<String>,
-  pub name:     Option<String>,
+  pub name: Option<String>,
 }
 
 impl AccessLogFilter {
@@ -41,9 +41,9 @@ impl AccessLogFilter {
 #[serde(rename_all = "camelCase")]
 pub struct AccessLogUser {
   #[sea_orm(from_alias = "user_id")]
-  pub id:        i32,
+  pub id: i32,
   #[sea_orm(from_alias = "user_username")]
-  pub username:  String,
+  pub username: String,
   #[sea_orm(from_alias = "user_full_name")]
   pub full_name: String,
 }
@@ -51,24 +51,24 @@ pub struct AccessLogUser {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessLogListItem {
-  pub id:     i32,
+  pub id: i32,
   #[sea_orm(nested, alias = "user")]
-  pub user:   AccessLogUser,
+  pub user: AccessLogUser,
   pub method: AccessMethod,
-  pub code:   AccessResultCode,
+  pub code: AccessResultCode,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family:      String,
-  pub os_major:       Option<String>,
-  pub os_minor:       Option<String>,
-  pub os_patch:       Option<String>,
+  pub os_family: String,
+  pub os_major: Option<String>,
+  pub os_minor: Option<String>,
+  pub os_patch: Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand:  Option<String>,
-  pub device_model:  Option<String>,
+  pub device_brand: Option<String>,
+  pub device_model: Option<String>,
 
   pub created_at: DateTimeWithTimeZone,
 }
@@ -76,24 +76,24 @@ pub struct AccessLogListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetAccessLog {
-  pub id:     i32,
+  pub id: i32,
   #[sea_orm(nested, alias = "user")]
-  pub user:   AccessLogUser,
+  pub user: AccessLogUser,
   pub method: AccessMethod,
-  pub code:   AccessResultCode,
+  pub code: AccessResultCode,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family:      String,
-  pub os_major:       Option<String>,
-  pub os_minor:       Option<String>,
-  pub os_patch:       Option<String>,
+  pub os_family: String,
+  pub os_major: Option<String>,
+  pub os_minor: Option<String>,
+  pub os_patch: Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand:  Option<String>,
-  pub device_model:  Option<String>,
+  pub device_brand: Option<String>,
+  pub device_model: Option<String>,
 
   pub created_at: DateTimeWithTimeZone,
 }

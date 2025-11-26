@@ -6,14 +6,7 @@ use infra::session::UserSession;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{
-  DeleteResult,
-  EntityTrait,
-  IntoSimpleExpr,
-  JoinType,
-  PaginatorTrait,
-  QuerySelect,
-  RelationTrait,
-  Select,
+  DeleteResult, EntityTrait, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect, RelationTrait, Select,
   TransactionTrait,
 };
 
@@ -24,7 +17,7 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 pub struct AccessLogService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 

@@ -9,42 +9,42 @@ pub struct Model {
   pub id: i32,
 
   #[sea_orm(indexed, nullable)]
-  pub user_id:    Option<i32>,
+  pub user_id: Option<i32>,
   #[sea_orm(default_value = "*", indexed, nullable)]
   pub ip_address: Option<String>,
   #[sea_orm(default_value = "*", indexed, nullable)]
   pub user_agent: Option<String>,
 
   #[sea_orm(default_value = "*", indexed, nullable)]
-  pub os_family:      Option<String>,
+  pub os_family: Option<String>,
   #[sea_orm(default_value = "*", indexed, nullable)]
-  pub os_major:       Option<String>,
+  pub os_major: Option<String>,
   #[sea_orm(default_value = "*", indexed, nullable)]
-  pub os_minor:       Option<String>,
+  pub os_minor: Option<String>,
   #[sea_orm(default_value = "*", indexed, nullable)]
-  pub os_patch:       Option<String>,
+  pub os_patch: Option<String>,
   #[sea_orm(default_value = "*", indexed, nullable)]
   pub os_patch_minor: Option<String>,
 
   #[sea_orm(default_value = "*", indexed, nullable)]
   pub device_family: Option<String>,
   #[sea_orm(default_value = "*", indexed, nullable)]
-  pub device_brand:  Option<String>,
+  pub device_brand: Option<String>,
   #[sea_orm(default_value = "*", indexed, nullable)]
-  pub device_model:  Option<String>,
+  pub device_model: Option<String>,
 
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,
   #[sea_orm(nullable)]
   pub created_by: Option<i32>,
   #[sea_orm(nullable)]
-  pub reason:     Option<String>,
+  pub reason: Option<String>,
   #[sea_orm(nullable)]
   pub expires_at: Option<DateTimeWithTimeZone>,
   #[sea_orm(nullable)]
-  pub lifted_at:  Option<DateTimeWithTimeZone>,
+  pub lifted_at: Option<DateTimeWithTimeZone>,
   #[sea_orm(nullable)]
-  pub note:       Option<String>,
+  pub note: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

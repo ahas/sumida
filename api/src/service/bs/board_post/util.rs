@@ -4,17 +4,8 @@ use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::sea_query::{Alias, Expr, Func};
 use sea_orm::{
-  ColumnTrait,
-  ConnectionTrait,
-  DbErr,
-  EntityTrait,
-  JoinType,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  RelationTrait,
-  Select,
-  Set,
+  ColumnTrait, ConnectionTrait, DbErr, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
+  RelationTrait, Select, Set,
 };
 use sea_orm_crud::Nullable;
 

@@ -46,12 +46,14 @@ serde_with = { workspace = true }
 tinytemplate = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+tokio-stream = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 tower-sessions = { workspace = true }
 tower-sessions-core = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
+sysinfo = { workspace = true }
 
 aws-sdk-s3 = { workspace = true, optional = true }
 aws-sdk-ssm = { workspace = true, optional = true }

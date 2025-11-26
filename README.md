@@ -1,6 +1,6 @@
 # SUMIDA
 
-**S**caleable **U**tility **M**odules **I**ntegration for **D**ynamic **A**pplication
+**S**calable **U**tility **M**odules **I**ntegration for **D**ynamic **A**pplication
 
 A comprehensive Rust web application framework built with Axum, designed for scalable, multi-tenant applications with robust authentication, authorization, and modern web API capabilities.
 
@@ -35,6 +35,8 @@ A comprehensive Rust web application framework built with Axum, designed for sca
 - **Image Processing**: Built-in image handling and optimization
 - **Email Integration**: SMTP-based notifications and user verification
 - **Configuration Management**: Environment-based settings with AWS SSM support
+- **Monitoring**: Admin-only dashboard monitoring API with snapshots and SSE streaming at
+  `/dashboard/monitoring` for live server status
 
 ## 🚀 Quick Start
 
