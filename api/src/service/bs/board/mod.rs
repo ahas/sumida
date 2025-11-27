@@ -3,11 +3,21 @@ pub mod dto;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::ActiveValue::Set;
+use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, PaginatorTrait, QuerySelect,
-  Select, TransactionTrait,
+  ColumnTrait,
+  ConnectionTrait,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  IntoSimpleExpr,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  Select,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -17,7 +27,7 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 pub struct BoardService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -61,16 +71,55 @@ impl<S: SumidaState> BoardService<S> {
     )
   }
 
+  async fn update_topics<'db, C: ConnectionTrait>(
+    board_id: i32,
+    topics: Option<Vec<String>>,
+    db: &'db C,
+  ) -> Result<(), SumidaError> {
+    BoardTopics::delete_many()
+      .filter(BoardTopicsColumn::BoardId.eq(board_id))
+      .exec(db)
+      .await?;
+
+    if let Some(topics) = topics {
+      for (order, name) in topics.iter().enumerate() {
+        BoardTopics::insert(BoardTopicsActiveModel {
+          order: Set(order as i32),
+          name: Set(name.to_owned()),
+          description: NotSet,
+          board_id: Set(board_id),
+          ..Default::default()
+        })
+        .exec(db)
+        .await?;
+      }
+    }
+
+    Ok(())
+  }
+
   pub async fn create(
     &self,
     data: CreateBoard,
   ) -> Result<InsertResult<entity::bs::boards::ActiveModel>, SumidaError> {
-    Ok(Boards::insert(data.into_active_model()).exec(self.state.db()).await?)
+    let db = self.state.db();
+    let txn = db.begin().await?;
+    let topics = data.topics.clone();
+
+    let result = Boards::insert(data.into_active_model()).exec(&txn).await?;
+    Self::update_topics(result.last_insert_id, topics.into(), &txn).await?;
+
+    txn.commit().await?;
+
+    Ok(result)
   }
 
   pub async fn update(&self, id: i32, data: UpdateBoard) -> Result<entity::bs::boards::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
     self.try_access("update", Boards::find_by_id(id), &txn).await?;
+
+    let topics = data.topics.clone();
+    Self::update_topics(id, topics.into(), &txn).await?;
 
     let mut am = data.into_active_model();
     am.id = Set(id);

@@ -1,9 +1,10 @@
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::State;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::{Json, Router, routing};
+use axum::{Router, routing};
 use tokio_stream::wrappers::IntervalStream;
 use tokio_stream::{StreamExt, iter};
 
@@ -23,27 +24,45 @@ impl<S: SumidaState> DashboardMonitoringController<S> {
     }
   }
 
-  async fn components(State(state): State<S>) -> Result<Json<DashboardComponents>, SumidaError> {
-    let components = MonitoringService::new(state).components();
-    Ok(Json(components))
+  async fn components(State(state): State<S>) -> Result<DashboardComponents, SumidaError> {
+    Ok(MonitoringService::new(state).components())
   }
 
-  async fn snapshot(State(state): State<S>) -> Result<Json<MonitoringResponse>, SumidaError> {
-    let response = MonitoringService::new(state).snapshot().await?;
-    Ok(Json(response))
+  async fn system_info(State(state): State<S>) -> Result<SystemInfo, SumidaError> {
+    Ok(MonitoringService::new(state).system_info())
+  }
+
+  async fn snapshot(State(state): State<S>) -> Result<MonitoringResponse, SumidaError> {
+    MonitoringService::new(state).snapshot().await
   }
 
   async fn stream(
     State(state): State<S>,
   ) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>, SumidaError> {
-    let service = MonitoringService::new(state);
+    let service = Arc::new(MonitoringService::new(state));
+
+    // Components Stream
     let components = service.components();
+    let components_event = Event::default()
+      .event("dashboard.components")
+      .json_data(&components)
+      .ok()
+      .map(|event| Ok::<_, Infallible>(event));
+
+    // System Info Stream
+    let system_info = service.system_info();
+    let system_info_event = Event::default()
+      .event("dashboard.system_info")
+      .json_data(&system_info)
+      .ok()
+      .map(|event| Ok::<_, Infallible>(event));
+
+    // Snapshot Stream
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-
     let snapshot_stream = IntervalStream::new(interval)
       .then(move |_| {
-        let service = service.clone();
+        let service = Arc::clone(&service);
 
         async move { service.snapshot_only().await }
       })
@@ -59,16 +78,18 @@ impl<S: SumidaState> DashboardMonitoringController<S> {
         }
       });
 
-    let components_event = Event::default()
-      .event("dashboard.components")
-      .json_data(&components)
-      .ok()
-      .map(|event| Ok::<_, Infallible>(event));
+    // Merge Initial Events
+    let mut initial_events = Vec::new();
 
-    let stream = match components_event {
-      Some(event) => iter(vec![event]).chain(snapshot_stream),
-      None => iter(Vec::new()).chain(snapshot_stream),
-    };
+    if let Some(event) = components_event {
+      initial_events.push(event);
+    }
+
+    if let Some(event) = system_info_event {
+      initial_events.push(event);
+    }
+
+    let stream = iter(initial_events).chain(snapshot_stream);
 
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keep-alive")))
   }
@@ -82,6 +103,8 @@ where
     Router::new()
       .route("/", routing::get(Self::snapshot))
       .route("/components", routing::get(Self::components))
+      .route("/system-info", routing::get(Self::system_info))
+      .route("/snapshot", routing::get(Self::snapshot))
       .route("/stream", routing::get(Self::stream))
       .route_layer(admin_guard!(state))
   }

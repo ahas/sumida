@@ -17,7 +17,7 @@ use crate::util::pagination::Pagination;
 use crate::util::storage::{Storage, SumidaStorage};
 
 pub struct FileService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -68,6 +68,7 @@ impl<S: SumidaState> FileService<S> {
 
     let file_dir = data.options.dir.clone();
     let file_hash = data.file.hash();
+    let file_tags = data.options.tags.clone();
     let file_expires_at = data.options.expires_at.clone();
     let file_original_name = data.file.original_name.clone();
 
@@ -86,6 +87,7 @@ impl<S: SumidaState> FileService<S> {
       user_id: Set(Some(self.session.profile.id)),
       expires_at: file_expires_at.into_active_value(),
       hash: Set(Some(file_hash)),
+      tags: Set(file_tags),
       ..Default::default()
     })
     .exec(db)

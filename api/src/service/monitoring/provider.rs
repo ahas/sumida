@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 use tokio::sync::Mutex;
-use tokio::time::{Duration, sleep};
 
 use crate::service::monitoring::dto::LoadAverage;
 use crate::service::prelude::*;
@@ -17,11 +16,11 @@ pub trait MetricsProvider: Send + Sync {
 
 #[derive(Clone, Debug)]
 pub struct SystemMetrics {
-  pub uptime_seconds: u64,
-  pub cpu_usage_percent: f32,
-  pub memory_used_bytes: u64,
+  pub uptime_seconds:     u64,
+  pub cpu_usage_percent:  f32,
+  pub memory_used_bytes:  u64,
   pub memory_total_bytes: u64,
-  pub load_average: LoadAverage,
+  pub load_average:       LoadAverage,
 }
 
 #[derive(Clone)]
@@ -51,7 +50,6 @@ impl MetricsProvider for SysinfoMetricsProvider {
     let mut system = self.system.lock().await;
 
     system.refresh_memory();
-    // Uses delta since the previous refresh call (previous sample) for a wider window.
     system.refresh_cpu_usage();
 
     let cpu_usage_percent = system.global_cpu_usage();
@@ -65,8 +63,8 @@ impl MetricsProvider for SysinfoMetricsProvider {
       memory_used_bytes,
       memory_total_bytes,
       load_average: LoadAverage {
-        one: load_average.one,
-        five: load_average.five,
+        one:     load_average.one,
+        five:    load_average.five,
         fifteen: load_average.fifteen,
       },
     })

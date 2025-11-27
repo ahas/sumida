@@ -79,11 +79,11 @@ pub enum SumidaError {
   #[error("cannot upload more files. current: {current_count}, maximum: {max_count}")]
   TooManyFiles {
     current_count: usize,
-    max_count: usize,
+    max_count:     usize,
   },
   #[error("file type '{extension}' is not allowed. allowed types: {}", allowed_types.join(", "))]
   InvalidFileType {
-    extension: String,
+    extension:     String,
     allowed_types: Vec<String>,
   },
   #[error("invalid filename: {0}")]
@@ -96,6 +96,8 @@ pub enum SumidaError {
   FileNotFound,
   #[error("reusing uploaded files is not permitted")]
   FileReuseNotAllowed,
+  #[error("\"{0}\" field not provided")]
+  FieldNotProvided(String),
 
   // runtime errors
   #[error("reason: {0}")]

@@ -1,29 +1,29 @@
+pub mod dto;
+pub mod provider;
+
 use std::sync::Arc;
 
-use chrono::Utc;
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+use dto::*;
+use sysinfo::System;
 
 use super::prelude::*;
 use crate::SumidaState;
 use crate::service::monitoring::provider::{DynMetricsProvider, SysinfoMetricsProvider};
 
-pub mod dto;
-pub mod provider;
-
-const DASHBOARD_COMPONENTS: &[dto::DashboardComponent] = &[
-  dto::DashboardComponent {
-    key: "system_overview",
-    title: "System Overview",
+const DASHBOARD_COMPONENTS: &[DashboardComponent] = &[
+  DashboardComponent {
+    key:         "system_overview",
+    title:       "System Overview",
     description: "Uptime, CPU, memory, and load averages.",
   },
-  dto::DashboardComponent {
-    key: "service_health",
-    title: "Service Health",
+  DashboardComponent {
+    key:         "service_health",
+    title:       "Service Health",
     description: "Core service reachability checks (DB, app).",
   },
-  dto::DashboardComponent {
-    key: "realtime_feed",
-    title: "Real-time Feed",
+  DashboardComponent {
+    key:         "realtime_feed",
+    title:       "Real-time Feed",
     description: "Admin-only live metrics stream for dashboards.",
   },
 ];
@@ -33,9 +33,8 @@ pub struct MonitoringService<S>
 where
   S: SumidaState,
 {
-  state: S,
+  state:   S,
   metrics: DynMetricsProvider,
-  check_database: bool,
 }
 
 impl<S> MonitoringService<S>
@@ -46,76 +45,42 @@ where
     Self {
       state,
       metrics: Arc::new(SysinfoMetricsProvider::new()),
-      check_database: true,
     }
   }
 
   #[cfg(test)]
   pub fn with_metrics_provider(state: S, metrics: DynMetricsProvider) -> Self {
-    Self {
-      state,
-      metrics,
-      check_database: false,
-    }
+    Self { state, metrics }
   }
 
-  pub fn components(&self) -> dto::DashboardComponents {
-    dto::DashboardComponents {
+  pub fn components(&self) -> DashboardComponents {
+    DashboardComponents {
       items: DASHBOARD_COMPONENTS.to_vec(),
     }
   }
 
-  pub async fn snapshot(&self) -> Result<dto::MonitoringResponse, SumidaError> {
-    let system = self.metrics.sample().await?;
-    let mut services = vec![dto::ServiceHealth {
-      service: "application".to_string(),
-      status: dto::HealthStatus::Healthy,
-      message: None,
-    }];
-    if self.check_database {
-      services.push(self.database_health().await);
-    }
+  pub fn system_info(&self) -> SystemInfo {
+    SystemInfo::new(System::new_all())
+  }
 
-    Ok(dto::MonitoringResponse {
-      components: self.components(),
-      snapshot: dto::MonitoringSnapshot {
-        timestamp: Utc::now(),
-        uptime_seconds: system.uptime_seconds,
-        resources: dto::ResourceUsage {
-          cpu_usage_percent: system.cpu_usage_percent,
-          memory_used_bytes: system.memory_used_bytes,
-          memory_total_bytes: system.memory_total_bytes,
-          load_average: dto::LoadAverage {
-            one: system.load_average.one,
-            five: system.load_average.five,
-            fifteen: system.load_average.fifteen,
-          },
-        },
-        services,
-      },
+  pub async fn snapshot(&self) -> Result<MonitoringResponse, SumidaError> {
+    let system = self.metrics.sample().await?;
+    let db = self.state.db();
+    let services = vec![ServiceHealth::new_for_app(), ServiceHealth::new_for_db(db).await];
+
+    Ok(MonitoringResponse {
+      components:  self.components(),
+      system_info: self.system_info(),
+      snapshot:    MonitoringSnapshot::new(system, services),
     })
   }
 
-  pub async fn snapshot_only(&self) -> Result<dto::MonitoringSnapshot, SumidaError> {
-    Ok(self.snapshot().await?.snapshot)
-  }
-
-  async fn database_health(&self) -> dto::ServiceHealth {
+  pub async fn snapshot_only(&self) -> Result<MonitoringSnapshot, SumidaError> {
+    let system = self.metrics.sample().await?;
     let db = self.state.db();
-    let (status, message) =
-      match db.execute(Statement::from_string(DatabaseBackend::Postgres, "SELECT 1")).await {
-        Ok(_) => (dto::HealthStatus::Healthy, None),
-        Err(err) => {
-          tracing::error!("database health check failed: {}", err);
-          (dto::HealthStatus::Unhealthy, Some(err.to_string()))
-        }
-      };
+    let services = vec![ServiceHealth::new_for_app(), ServiceHealth::new_for_db(db).await];
 
-    dto::ServiceHealth {
-      service: "database".to_string(),
-      status,
-      message,
-    }
+    Ok(MonitoringSnapshot::new(system, services))
   }
 }
 
@@ -136,13 +101,13 @@ mod tests {
   #[tokio::test]
   async fn snapshot_includes_components_and_metrics() {
     let provider = Arc::new(FakeMetricsProvider::new(SystemMetrics {
-      uptime_seconds: 42,
-      cpu_usage_percent: 12.5,
-      memory_used_bytes: 512,
+      uptime_seconds:     42,
+      cpu_usage_percent:  12.5,
+      memory_used_bytes:  512,
       memory_total_bytes: 1024,
-      load_average: dto::LoadAverage {
-        one: 0.1,
-        five: 0.2,
+      load_average:       LoadAverage {
+        one:     0.1,
+        five:    0.2,
         fifteen: 0.3,
       },
     }));
