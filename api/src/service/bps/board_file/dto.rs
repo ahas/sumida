@@ -3,7 +3,7 @@ use axum::Json;
 use axum::extract::Multipart;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use entity::bs::board_files::*;
+use entity::bps::board_files::*;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::prelude::*;

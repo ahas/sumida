@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use entity::bs::board_groups::*;
+use entity::bps::board_groups::*;
 use sea_orm::prelude::*;
 use sea_orm::{DeriveIntoActiveModel, EntityTrait, QueryTrait};
 use sea_orm_crud::{Nullable, Optional};

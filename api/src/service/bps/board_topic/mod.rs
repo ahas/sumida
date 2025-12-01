@@ -32,7 +32,7 @@ impl<S: SumidaState> BoardTopicService<S> {
     filter: BoardTopicFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardTopicListItem>, u64), SumidaError> {
-    use entity::bs::board_topics::Column;
+    use entity::bps::board_topics::Column;
 
     let db = self.state.db();
     let mut query = filter.apply(self.select(BoardTopics::find()));
@@ -62,7 +62,7 @@ impl<S: SumidaState> BoardTopicService<S> {
   pub async fn create(
     &self,
     data: CreateBoardTopic,
-  ) -> Result<InsertResult<entity::bs::board_topics::ActiveModel>, SumidaError> {
+  ) -> Result<InsertResult<entity::bps::board_topics::ActiveModel>, SumidaError> {
     Ok(BoardTopics::insert(data.into_active_model()).exec(self.state.db()).await?)
   }
 
@@ -70,7 +70,7 @@ impl<S: SumidaState> BoardTopicService<S> {
     &self,
     id: i32,
     data: UpdateBoardTopic,
-  ) -> Result<entity::bs::board_topics::Model, SumidaError> {
+  ) -> Result<entity::bps::board_topics::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
     self.try_access("update", BoardTopics::find_by_id(id), &txn).await?;
 
@@ -98,7 +98,7 @@ impl<S: SumidaState> ApiService<ApCondition, BoardTopics> for BoardTopicService<
   }
 
   fn ap(&self) -> ApCondition {
-    use entity::bs::board_topics::Column;
+    use entity::bps::board_topics::Column;
     ap::ns("board_topic").who(&self.session).join(BoardTopics, Column::Id)
   }
 }

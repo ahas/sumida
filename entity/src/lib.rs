@@ -2,7 +2,7 @@ pub mod access_logs;
 pub mod access_policies;
 pub mod api_keys;
 pub mod bans;
-pub mod bs;
+pub mod bps;
 pub mod fs;
 pub mod mail_forms;
 pub mod organizations;

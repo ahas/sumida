@@ -1,7 +1,7 @@
 use chrono::Utc;
-use entity::bs::board_posts::{BoardPostKind, BoardPostStatus};
-use entity::bs::boards::BoardPostRecordVisibility;
-use entity::bs::{board_groups, board_posts, board_topics, boards};
+use entity::bps::board_posts::{BoardPostKind, BoardPostStatus};
+use entity::bps::boards::BoardPostRecordVisibility;
+use entity::bps::{board_groups, board_posts, board_topics, boards};
 use entity::{organizations, roles, users};
 use sea_orm::prelude::*;
 use sea_orm::{ActiveModelTrait, Set};

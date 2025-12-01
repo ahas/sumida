@@ -4,7 +4,7 @@ use error::SumidaError;
 use infra::session::UserSession;
 
 use crate::controller::ApiController;
-use crate::service::bs::prelude::*;
+use crate::service::bps::prelude::*;
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 

@@ -4,12 +4,12 @@ use sea_orm::{ConnectionTrait, EntityTrait, Set};
 
 // Board-specific test helpers
 struct TestBoardGroup {
-  pub model: entity::bs::board_groups::Model,
+  pub model: entity::bps::board_groups::Model,
 }
 
 impl TestBoardGroup {
   pub async fn create<C: ConnectionTrait>(db: &C) -> anyhow::Result<Self> {
-    use entity::bs::board_groups::{ActiveModel, Entity as BoardGroups};
+    use entity::bps::board_groups::{ActiveModel, Entity as BoardGroups};
 
     let id = BoardGroups::insert(ActiveModel {
       name: Set(format!("TestGroup-{}", generate_url_safe_string(6).unwrap())),
@@ -27,12 +27,12 @@ impl TestBoardGroup {
 }
 
 struct TestBoard {
-  pub model: entity::bs::boards::Model,
+  pub model: entity::bps::boards::Model,
 }
 
 impl TestBoard {
   pub async fn create<C: ConnectionTrait>(db: &C) -> anyhow::Result<Self> {
-    use entity::bs::boards::{ActiveModel, Entity as Boards};
+    use entity::bps::boards::{ActiveModel, Entity as Boards};
 
     // Create a group first if needed
     let group = TestBoardGroup::create(db).await?;

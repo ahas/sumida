@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use entity::bs::boards;
+use entity::bps::boards;
 use error::SumidaError;
 use sea_orm::{ConnectionTrait, EntityTrait};
 

@@ -1,7 +1,7 @@
 pub mod dto;
 pub mod util;
 
-use entity::bs::board_posts::BoardPostStatus;
+use entity::bps::board_posts::BoardPostStatus;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
@@ -36,7 +36,7 @@ impl<S: SumidaState> BoardPostService<S> {
     filter: BoardPostFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardPostListItem>, u64), SumidaError> {
-    use entity::bs::board_posts::Column;
+    use entity::bps::board_posts::Column;
 
     let search_text = filter.search.clone().unwrap_or_else(|| filter.text.clone().unwrap_or_default());
     let with_snippet = filter.with_snippet;
@@ -76,7 +76,7 @@ impl<S: SumidaState> BoardPostService<S> {
       self.session.profile.is_admin,
       self
         .select(BoardPosts::find())
-        .column_as(entity::bs::board_posts::Column::Content, "content"),
+        .column_as(entity::bps::board_posts::Column::Content, "content"),
     )
     .into_model::<GetBoardPost>()
     .one(&txn)
@@ -102,7 +102,7 @@ impl<S: SumidaState> BoardPostService<S> {
       self.session.profile.is_admin,
       self
         .select(BoardPosts::find())
-        .column_as(entity::bs::board_posts::Column::Content, "content"),
+        .column_as(entity::bps::board_posts::Column::Content, "content"),
     );
 
     // Find post record
@@ -152,7 +152,7 @@ impl<S: SumidaState> BoardPostService<S> {
   pub async fn create(
     &self,
     data: CreateBoardPost,
-  ) -> Result<InsertResult<entity::bs::board_posts::ActiveModel>, SumidaError> {
+  ) -> Result<InsertResult<entity::bps::board_posts::ActiveModel>, SumidaError> {
     let txn = self.state.db().begin().await?;
 
     let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
@@ -206,7 +206,7 @@ impl<S: SumidaState> BoardPostService<S> {
   // pub async fn create_draft(
   //   &self,
   //   data: CreateBoardDraft,
-  // ) -> Result<InsertResult<entity::bs::board_posts::ActiveModel>, SumidaError> {
+  // ) -> Result<InsertResult<entity::bps::board_posts::ActiveModel>, SumidaError> {
   //   let txn = self.state.db().begin().await?;
   //
   //   let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
@@ -245,7 +245,7 @@ impl<S: SumidaState> BoardPostService<S> {
     &self,
     id: i32,
     data: UpdateBoardPost,
-  ) -> Result<entity::bs::board_posts::Model, SumidaError> {
+  ) -> Result<entity::bps::board_posts::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
 
     self.try_access("update", BoardPosts::find_by_id(id), &txn).await?;

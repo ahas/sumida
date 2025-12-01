@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use entity::bs::boards::*;
+use entity::bps::boards::*;
 use entity::prelude::*;
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::*;

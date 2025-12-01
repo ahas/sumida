@@ -1,5 +1,5 @@
-use entity::bs::board_posts::BoardPostContentType;
-use entity::bs::boards::BoardPostContentVisibility;
+use entity::bps::board_posts::BoardPostContentType;
+use entity::bps::boards::BoardPostContentVisibility;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::sea_query::{Alias, Expr, Func};

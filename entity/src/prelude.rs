@@ -16,31 +16,31 @@ pub use super::bans::{
   Relation as BansRelation,
 };
 // Board System
-pub use super::bs::board_files::{
+pub use super::bps::board_files::{
   ActiveModel as BoardFilesActiveModel, Column as BoardFilesColumn, Entity as BoardFiles,
   Model as BoardFilesModel, Relation as BoardFilesRelation,
 };
-pub use super::bs::board_groups::{
+pub use super::bps::board_groups::{
   ActiveModel as BoardGroupsActiveModel, Column as BoardGroupsColumn, Entity as BoardGroups,
   Model as BoardGroupsModel, Relation as BoardGroupsRelation,
 };
-pub use super::bs::board_post_reactions::{
+pub use super::bps::board_post_reactions::{
   ActiveModel as BoardPostReactionsActiveModel, Column as BoardPostReactionsColumn,
   Entity as BoardPostReactions, Model as BoardPostReactionsModel, Relation as BoardPostReactionsRelation,
 };
-pub use super::bs::board_post_views::{
+pub use super::bps::board_post_views::{
   ActiveModel as BoardPostViewsActiveModel, Column as BoardPostViewsColumn, Entity as BoardPostViews,
   Model as BoardPostViewsModel, Relation as BoardPostViewsRelation,
 };
-pub use super::bs::board_posts::{
+pub use super::bps::board_posts::{
   ActiveModel as BoardPostsActiveModel, Column as BoardPostsColumn, Entity as BoardPosts,
   Model as BoardPostsModel, Relation as BoardPostsRelation,
 };
-pub use super::bs::board_topics::{
+pub use super::bps::board_topics::{
   ActiveModel as BoardTopicsActiveModel, Column as BoardTopicsColumn, Entity as BoardTopics,
   Model as BoardTopicsModel, Relation as BoardTopicsRelation,
 };
-pub use super::bs::boards::{
+pub use super::bps::boards::{
   ActiveModel as BoardsActiveModel, Column as BoardsColumn, Entity as Boards, Model as BoardsModel,
   Relation as BoardsRelation,
 };

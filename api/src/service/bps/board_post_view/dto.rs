@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use entity::bs::board_post_views::ActiveModel;
+use entity::bps::board_post_views::ActiveModel;
 use sea_orm::prelude::*;
 use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set};
 use sea_orm_crud::{Nullable, Optional};
@@ -16,7 +16,7 @@ pub struct BoardPostViewFilter {
 
 impl BoardPostViewFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
-    use entity::bs::board_post_views::Column;
+    use entity::bps::board_post_views::Column;
 
     query
       .apply_if(self.post_id, |q, v| q.filter(Column::PostId.eq(v)))

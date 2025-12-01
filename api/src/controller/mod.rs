@@ -3,7 +3,7 @@ pub mod access_policy;
 pub mod api_key;
 pub mod auth;
 pub mod ban;
-pub mod bs;
+pub mod bps;
 pub mod dashboard;
 pub mod fs;
 pub mod mail_form;

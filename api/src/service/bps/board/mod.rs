@@ -41,7 +41,7 @@ impl<S: SumidaState> BoardService<S> {
     filter: BoardFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardListItem>, u64), SumidaError> {
-    use entity::bs::boards::Column;
+    use entity::bps::boards::Column;
 
     let txn = self.state.db().begin().await?;
 
@@ -101,7 +101,7 @@ impl<S: SumidaState> BoardService<S> {
   pub async fn create(
     &self,
     data: CreateBoard,
-  ) -> Result<InsertResult<entity::bs::boards::ActiveModel>, SumidaError> {
+  ) -> Result<InsertResult<entity::bps::boards::ActiveModel>, SumidaError> {
     let db = self.state.db();
     let txn = db.begin().await?;
     let topics = data.topics.clone();
@@ -114,7 +114,7 @@ impl<S: SumidaState> BoardService<S> {
     Ok(result)
   }
 
-  pub async fn update(&self, id: i32, data: UpdateBoard) -> Result<entity::bs::boards::Model, SumidaError> {
+  pub async fn update(&self, id: i32, data: UpdateBoard) -> Result<entity::bps::boards::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
     self.try_access("update", Boards::find_by_id(id), &txn).await?;
 
@@ -149,6 +149,6 @@ impl<S: SumidaState> ApiService<ApCondition, Boards> for BoardService<S> {
   }
 
   fn ap(&self) -> ApCondition {
-    ap::ns("board").who(&self.session).join(Boards, entity::bs::boards::Column::Id)
+    ap::ns("board").who(&self.session).join(Boards, entity::bps::boards::Column::Id)
   }
 }

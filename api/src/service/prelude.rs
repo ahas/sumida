@@ -25,7 +25,7 @@ pub use super::auth::session::AuthSessionService;
 pub use super::ban::BanService;
 pub use super::ban::dto::*;
 //
-pub use super::bs::prelude::*;
+pub use super::bps::prelude::*;
 //
 pub use super::mail_form::MailFormService;
 pub use super::mail_form::dto::*;

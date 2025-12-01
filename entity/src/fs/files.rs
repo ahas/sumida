@@ -64,13 +64,13 @@ impl Related<crate::users::Entity> for Entity {
   }
 }
 
-impl Related<crate::bs::board_posts::Entity> for Entity {
+impl Related<crate::bps::board_posts::Entity> for Entity {
   fn to() -> RelationDef {
-    crate::bs::board_files::Relation::Post.def()
+    crate::bps::board_files::Relation::Post.def()
   }
 
   fn via() -> Option<RelationDef> {
-    Some(crate::bs::board_files::Relation::File.def().rev())
+    Some(crate::bps::board_files::Relation::File.def().rev())
   }
 }
 

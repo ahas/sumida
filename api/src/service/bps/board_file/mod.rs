@@ -34,14 +34,14 @@ impl<S: SumidaState> BoardFileService<S> {
     filter: BoardFileFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardFileListItem>, u64), SumidaError> {
-    use entity::bs::board_files::Column;
+    use entity::bps::board_files::Column;
     use entity::fs::files::Column as FileColumn;
 
     let db = self.state.db();
 
     let mut query = filter.apply(util::with_file_columns(
       BoardFiles::find()
-        .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
+        .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
         .column_as(Column::FileId, "id")
         .column_as(Column::PostId, "post_id"),
@@ -66,7 +66,7 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   pub async fn get(&self, post_id: i32, file_id: i32) -> Result<Option<GetBoardFile>, SumidaError> {
-    use entity::bs::board_files::Column;
+    use entity::bps::board_files::Column;
     use entity::fs::files::Column as FileColumn;
 
     let db = self.state.db();
@@ -75,7 +75,7 @@ impl<S: SumidaState> BoardFileService<S> {
       BoardFiles::find()
         .filter(Column::PostId.eq(post_id))
         .filter(Column::FileId.eq(file_id))
-        .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
+        .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
         .column_as(Column::PostId, "post_id")
         .column_as(Column::FileId, "file_id")
@@ -126,14 +126,14 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   pub async fn get_files_for_post(&self, post_id: i32) -> Result<Vec<BoardFileListItem>, SumidaError> {
-    use entity::bs::board_files::Column;
+    use entity::bps::board_files::Column;
 
     let db = self.state.db();
 
     let items = util::with_file_columns(
       BoardFiles::find()
         .filter(Column::PostId.eq(post_id))
-        .join(JoinType::InnerJoin, entity::bs::board_files::Relation::File.def())
+        .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
         .column_as(Column::FileId, "id")
         .column_as(Column::PostId, "post_id"),
@@ -146,7 +146,7 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   pub async fn get_posts_for_file(&self, file_id: i32) -> Result<Vec<i32>, SumidaError> {
-    use entity::bs::board_files::Column;
+    use entity::bps::board_files::Column;
 
     let db = self.state.db();
 
@@ -168,7 +168,7 @@ impl<S: SumidaState> ApiService<ApCondition, BoardFiles> for BoardFileService<S>
   }
 
   fn ap(&self) -> ApCondition {
-    use entity::bs::board_files::Column;
+    use entity::bps::board_files::Column;
 
     ap::ns("board_file").who(&self.session).join(BoardFiles, Column::PostId)
   }

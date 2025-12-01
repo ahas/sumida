@@ -21,7 +21,7 @@ pub mod helpers {
   where
     C: ConnectionTrait,
   {
-    use entity::bs::board_files::Column;
+    use entity::bps::board_files::Column;
 
     let board_file = BoardFiles::find().filter(Column::FileId.eq(file_id)).one(db).await?;
 

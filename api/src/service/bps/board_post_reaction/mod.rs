@@ -29,10 +29,10 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     filter: BoardPostReactionFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardPostReactionListItem>, u64), SumidaError> {
-    use entity::bs::board_post_reactions::Column;
+    use entity::bps::board_post_reactions::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(entity::bs::board_post_reactions::Entity::find()));
+    let mut query = filter.apply(self.select(entity::bps::board_post_reactions::Entity::find()));
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -50,10 +50,10 @@ impl<S: SumidaState> BoardPostReactionService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetBoardPostReaction>, SumidaError> {
     let txn = self.state.db().begin().await?;
     self
-      .try_access("read", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn)
+      .try_access("read", entity::bps::board_post_reactions::Entity::find_by_id(id), &txn)
       .await?;
 
-    let reaction = entity::bs::board_post_reactions::Entity::find_by_id(id)
+    let reaction = entity::bps::board_post_reactions::Entity::find_by_id(id)
       .into_model::<GetBoardPostReaction>()
       .one(&txn)
       .await?;
@@ -65,9 +65,9 @@ impl<S: SumidaState> BoardPostReactionService<S> {
   pub async fn create(
     &self,
     data: CreateBoardPostReaction,
-  ) -> Result<InsertResult<entity::bs::board_post_reactions::ActiveModel>, SumidaError> {
+  ) -> Result<InsertResult<entity::bps::board_post_reactions::ActiveModel>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let result = entity::bs::board_post_reactions::Entity::insert(data.into_active_model())
+    let result = entity::bps::board_post_reactions::Entity::insert(data.into_active_model())
       .exec(&txn)
       .await?;
     txn.commit().await?;
@@ -79,16 +79,16 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     &self,
     id: i32,
     data: UpdateBoardPostReaction,
-  ) -> Result<entity::bs::board_post_reactions::Model, SumidaError> {
+  ) -> Result<entity::bps::board_post_reactions::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
     self
-      .try_access("update", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn)
+      .try_access("update", entity::bps::board_post_reactions::Entity::find_by_id(id), &txn)
       .await?;
 
     let mut model = data.into_active_model();
     model.id = Set(id);
 
-    let result = entity::bs::board_post_reactions::Entity::update(model).exec(&txn).await?;
+    let result = entity::bps::board_post_reactions::Entity::update(model).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
@@ -97,17 +97,17 @@ impl<S: SumidaState> BoardPostReactionService<S> {
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
     self
-      .try_access("delete", entity::bs::board_post_reactions::Entity::find_by_id(id), &txn)
+      .try_access("delete", entity::bps::board_post_reactions::Entity::find_by_id(id), &txn)
       .await?;
 
-    let result = entity::bs::board_post_reactions::Entity::delete_by_id(id).exec(&txn).await?;
+    let result = entity::bps::board_post_reactions::Entity::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
   }
 }
 
-impl<S: SumidaState> ApiService<ApChain, entity::bs::board_post_reactions::Entity>
+impl<S: SumidaState> ApiService<ApChain, entity::bps::board_post_reactions::Entity>
   for BoardPostReactionService<S>
 {
   fn ap(&self) -> ApChain {
@@ -116,8 +116,8 @@ impl<S: SumidaState> ApiService<ApChain, entity::bs::board_post_reactions::Entit
 
   fn select(
     &self,
-    query: sea_orm::Select<entity::bs::board_post_reactions::Entity>,
-  ) -> sea_orm::Select<entity::bs::board_post_reactions::Entity> {
+    query: sea_orm::Select<entity::bps::board_post_reactions::Entity>,
+  ) -> sea_orm::Select<entity::bps::board_post_reactions::Entity> {
     self.ap().action("read").apply(query)
   }
 }

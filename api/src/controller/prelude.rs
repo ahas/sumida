@@ -6,7 +6,7 @@ pub use super::access_log::AccessLogController;
 pub use super::api_key::ApiKeyController;
 pub use super::auth::prelude::*;
 pub use super::ban::BanController;
-pub use super::bs::prelude::*;
+pub use super::bps::prelude::*;
 pub use super::dashboard::DashboardMonitoringController;
 pub use super::fs::prelude::*;
 pub use super::mail_form::MailFormController;

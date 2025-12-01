@@ -1,8 +1,8 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use entity::bs::board_posts::*;
-use entity::bs::boards::BoardPostContentVisibility;
+use entity::bps::board_posts::*;
+use entity::bps::boards::BoardPostContentVisibility;
 use error::SumidaError;
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::*;
@@ -219,8 +219,8 @@ pub struct CreateBoardPost {
 }
 
 impl CreateBoardPost {
-  pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
-    entity::bs::board_posts::ActiveModel {
+  pub fn into_active_model(self) -> entity::bps::board_posts::ActiveModel {
+    entity::bps::board_posts::ActiveModel {
       id: self.id.into_active_value(),
       board_id: Set(self.board_id),
       topic_id: self.topic_id.into_active_value(),
@@ -260,8 +260,8 @@ impl CreateBoardPost {
 // }
 //
 // impl CreateBoardDraft {
-//   pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
-//     entity::bs::board_posts::ActiveModel {
+//   pub fn into_active_model(self) -> entity::bps::board_posts::ActiveModel {
+//     entity::bps::board_posts::ActiveModel {
 //       board_id: Set(self.board_id),
 //       topic_id: self.topic_id.into_active_value(),
 //       parent_id: self.parent_id.into_active_value(),
@@ -312,8 +312,8 @@ pub struct UpdateBoardPost {
 }
 
 impl UpdateBoardPost {
-  pub fn into_active_model(self) -> entity::bs::board_posts::ActiveModel {
-    entity::bs::board_posts::ActiveModel {
+  pub fn into_active_model(self) -> entity::bps::board_posts::ActiveModel {
+    entity::bps::board_posts::ActiveModel {
       topic_id: self.topic_id.into_active_value(),
       title: self.title.into_active_value(),
       content: self.content.into_active_value(),

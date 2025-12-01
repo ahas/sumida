@@ -4,8 +4,8 @@ use error::SumidaError;
 use infra::session::UserSession;
 
 use crate::controller::ApiController;
-use crate::service::bs::board_file::BoardFileService;
-use crate::service::bs::board_file::dto::*;
+use crate::service::bps::board_file::BoardFileService;
+use crate::service::bps::board_file::dto::*;
 use crate::service::fs::dto::{FileUploadTrait, FileUploaded};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};

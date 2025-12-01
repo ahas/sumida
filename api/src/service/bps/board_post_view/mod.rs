@@ -29,10 +29,10 @@ impl<S: SumidaState> BoardPostViewService<S> {
     filter: BoardPostViewFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardPostViewListItem>, u64), SumidaError> {
-    use entity::bs::board_post_views::Column;
+    use entity::bps::board_post_views::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(entity::bs::board_post_views::Entity::find()));
+    let mut query = filter.apply(self.select(entity::bps::board_post_views::Entity::find()));
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -49,10 +49,10 @@ impl<S: SumidaState> BoardPostViewService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetBoardPostView>, SumidaError> {
     let txn = self.state.db().begin().await?;
     self
-      .try_access("read", entity::bs::board_post_views::Entity::find_by_id(id), &txn)
+      .try_access("read", entity::bps::board_post_views::Entity::find_by_id(id), &txn)
       .await?;
 
-    let view = entity::bs::board_post_views::Entity::find_by_id(id)
+    let view = entity::bps::board_post_views::Entity::find_by_id(id)
       .into_model::<GetBoardPostView>()
       .one(&txn)
       .await?;
@@ -64,9 +64,9 @@ impl<S: SumidaState> BoardPostViewService<S> {
   pub async fn create(
     &self,
     data: CreateBoardPostView,
-  ) -> Result<InsertResult<entity::bs::board_post_views::ActiveModel>, SumidaError> {
+  ) -> Result<InsertResult<entity::bps::board_post_views::ActiveModel>, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let result = entity::bs::board_post_views::Entity::insert(data.into_active_model())
+    let result = entity::bps::board_post_views::Entity::insert(data.into_active_model())
       .exec(&txn)
       .await?;
     txn.commit().await?;
@@ -78,16 +78,16 @@ impl<S: SumidaState> BoardPostViewService<S> {
     &self,
     id: i32,
     data: UpdateBoardPostView,
-  ) -> Result<entity::bs::board_post_views::Model, SumidaError> {
+  ) -> Result<entity::bps::board_post_views::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
     self
-      .try_access("update", entity::bs::board_post_views::Entity::find_by_id(id), &txn)
+      .try_access("update", entity::bps::board_post_views::Entity::find_by_id(id), &txn)
       .await?;
 
     let mut model = data.into_active_model();
     model.id = Set(id);
 
-    let result = entity::bs::board_post_views::Entity::update(model).exec(&txn).await?;
+    let result = entity::bps::board_post_views::Entity::update(model).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
@@ -96,25 +96,25 @@ impl<S: SumidaState> BoardPostViewService<S> {
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
     self
-      .try_access("delete", entity::bs::board_post_views::Entity::find_by_id(id), &txn)
+      .try_access("delete", entity::bps::board_post_views::Entity::find_by_id(id), &txn)
       .await?;
 
-    let result = entity::bs::board_post_views::Entity::delete_by_id(id).exec(&txn).await?;
+    let result = entity::bps::board_post_views::Entity::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
   }
 }
 
-impl<S: SumidaState> ApiService<ApChain, entity::bs::board_post_views::Entity> for BoardPostViewService<S> {
+impl<S: SumidaState> ApiService<ApChain, entity::bps::board_post_views::Entity> for BoardPostViewService<S> {
   fn ap(&self) -> ApChain {
     BoardPostService::new(self.state.clone(), self.session.clone()).ap()
   }
 
   fn select(
     &self,
-    query: sea_orm::Select<entity::bs::board_post_views::Entity>,
-  ) -> sea_orm::Select<entity::bs::board_post_views::Entity> {
+    query: sea_orm::Select<entity::bps::board_post_views::Entity>,
+  ) -> sea_orm::Select<entity::bps::board_post_views::Entity> {
     self.ap().action("read").apply(query)
   }
 }

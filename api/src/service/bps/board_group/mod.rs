@@ -32,7 +32,7 @@ impl<S: SumidaState> BoardGroupService<S> {
     filter: BoardGroupFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BoardGroupListItem>, u64), SumidaError> {
-    use entity::bs::board_groups::Column;
+    use entity::bps::board_groups::Column;
 
     let db = self.state.db();
     let mut query = filter.apply(self.select(BoardGroups::find()));
@@ -62,7 +62,7 @@ impl<S: SumidaState> BoardGroupService<S> {
   pub async fn create(
     &self,
     data: CreateBoardGroup,
-  ) -> Result<InsertResult<entity::bs::board_groups::ActiveModel>, SumidaError> {
+  ) -> Result<InsertResult<entity::bps::board_groups::ActiveModel>, SumidaError> {
     Ok(BoardGroups::insert(data.into_active_model()).exec(self.state.db()).await?)
   }
 
@@ -70,7 +70,7 @@ impl<S: SumidaState> BoardGroupService<S> {
     &self,
     id: i32,
     data: UpdateBoardGroup,
-  ) -> Result<entity::bs::board_groups::Model, SumidaError> {
+  ) -> Result<entity::bps::board_groups::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
     self.try_access("update", BoardGroups::find_by_id(id), &txn).await?;
 
@@ -98,7 +98,7 @@ impl<S: SumidaState> ApiService<ApCondition, BoardGroups> for BoardGroupService<
   }
 
   fn ap(&self) -> ApCondition {
-    use entity::bs::board_groups::Column;
+    use entity::bps::board_groups::Column;
     ap::ns("board_group").who(&self.session).join(BoardGroups, Column::Id)
   }
 }
