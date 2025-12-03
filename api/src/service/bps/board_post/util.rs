@@ -25,6 +25,7 @@ pub fn parse_plain_text(
   Ok(match content_type {
     BoardPostContentType::Html => HtmlContent(&content).to_plain_text(),
     BoardPostContentType::Markdown => MarkdownContent(&content).to_plain_text(),
+    BoardPostContentType::Plain => content.clone(),
   })
 }
 

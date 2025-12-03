@@ -12,18 +12,18 @@ use crate::service::monitoring::provider::{DynMetricsProvider, SysinfoMetricsPro
 
 const DASHBOARD_COMPONENTS: &[DashboardComponent] = &[
   DashboardComponent {
-    key:         "system_overview",
-    title:       "System Overview",
+    key: "system_overview",
+    title: "System Overview",
     description: "Uptime, CPU, memory, and load averages.",
   },
   DashboardComponent {
-    key:         "service_health",
-    title:       "Service Health",
+    key: "service_health",
+    title: "Service Health",
     description: "Core service reachability checks (DB, app).",
   },
   DashboardComponent {
-    key:         "realtime_feed",
-    title:       "Real-time Feed",
+    key: "realtime_feed",
+    title: "Real-time Feed",
     description: "Admin-only live metrics stream for dashboards.",
   },
 ];
@@ -33,7 +33,7 @@ pub struct MonitoringService<S>
 where
   S: SumidaState,
 {
-  state:   S,
+  state: S,
   metrics: DynMetricsProvider,
 }
 
@@ -69,9 +69,9 @@ where
     let services = vec![ServiceHealth::new_for_app(), ServiceHealth::new_for_db(db).await];
 
     Ok(MonitoringResponse {
-      components:  self.components(),
+      components: self.components(),
       system_info: self.system_info(),
-      snapshot:    MonitoringSnapshot::new(system, services),
+      snapshot: MonitoringSnapshot::new(system, services),
     })
   }
 
@@ -101,13 +101,13 @@ mod tests {
   #[tokio::test]
   async fn snapshot_includes_components_and_metrics() {
     let provider = Arc::new(FakeMetricsProvider::new(SystemMetrics {
-      uptime_seconds:     42,
-      cpu_usage_percent:  12.5,
-      memory_used_bytes:  512,
+      uptime_seconds: 42,
+      cpu_usage_percent: 12.5,
+      memory_used_bytes: 512,
       memory_total_bytes: 1024,
-      load_average:       LoadAverage {
-        one:     0.1,
-        five:    0.2,
+      load_average: LoadAverage {
+        one: 0.1,
+        five: 0.2,
         fifteen: 0.3,
       },
     }));

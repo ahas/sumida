@@ -26,11 +26,18 @@ pub enum BoardPostKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
 #[serde(rename_all = "kebab-case")]
 pub enum BoardPostContentType {
+  #[serde(rename = "text/html")]
+  #[sea_orm(string_value = "text/html")]
   Html,
+  #[serde(rename = "text/markdown")]
+  #[sea_orm(string_value = "text/markdown")]
   Markdown,
+  #[serde(rename = "text/plain")]
+  #[sea_orm(string_value = "text/plain")]
+  Plain,
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -60,7 +67,7 @@ pub struct Model {
   pub content_type: BoardPostContentType,
   #[sea_orm(nullable, column_type = "Text")]
   pub content: Option<String>,
-  #[sea_orm(nullable, default_value = "'private'")]
+  #[sea_orm(default_value = "'private'")]
   pub content_visibility: BoardPostContentVisibility,
   #[sea_orm(nullable, column_type = "Text")]
   pub text: Option<String>,

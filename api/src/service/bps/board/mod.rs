@@ -6,18 +6,8 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait,
-  ConnectionTrait,
-  DeleteResult,
-  EntityTrait,
-  InsertResult,
-  IntoActiveModel,
-  IntoSimpleExpr,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  Select,
-  TransactionTrait,
+  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr,
+  PaginatorTrait, QueryFilter, QuerySelect, Select, TransactionTrait,
 };
 
 use self::dto::*;
@@ -27,7 +17,7 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 pub struct BoardService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 
@@ -114,7 +104,11 @@ impl<S: SumidaState> BoardService<S> {
     Ok(result)
   }
 
-  pub async fn update(&self, id: i32, data: UpdateBoard) -> Result<entity::bps::boards::Model, SumidaError> {
+  pub async fn update(
+    &self,
+    id: i32,
+    data: UpdateBoard,
+  ) -> Result<entity::bps::boards::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
     self.try_access("update", Boards::find_by_id(id), &txn).await?;
 

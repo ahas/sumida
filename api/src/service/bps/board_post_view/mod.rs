@@ -106,7 +106,9 @@ impl<S: SumidaState> BoardPostViewService<S> {
   }
 }
 
-impl<S: SumidaState> ApiService<ApChain, entity::bps::board_post_views::Entity> for BoardPostViewService<S> {
+impl<S: SumidaState> ApiService<ApChain, entity::bps::board_post_views::Entity>
+  for BoardPostViewService<S>
+{
   fn ap(&self) -> ApChain {
     BoardPostService::new(self.state.clone(), self.session.clone()).ap()
   }

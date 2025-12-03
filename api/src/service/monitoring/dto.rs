@@ -10,8 +10,8 @@ use crate::service::monitoring::provider::SystemMetrics;
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardComponent {
-  pub key:         &'static str,
-  pub title:       &'static str,
+  pub key: &'static str,
+  pub title: &'static str,
   pub description: &'static str,
 }
 
@@ -30,25 +30,25 @@ impl IntoResponse for DashboardComponents {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
-  pub swap_total:     u64,
-  pub swap_used:      u64,
-  pub num_cpus:       usize,
-  pub name:           Option<String>,
+  pub swap_total: u64,
+  pub swap_used: u64,
+  pub num_cpus: usize,
+  pub name: Option<String>,
   pub kernel_version: Option<String>,
-  pub os_version:     Option<String>,
-  pub host_name:      Option<String>,
+  pub os_version: Option<String>,
+  pub host_name: Option<String>,
 }
 
 impl SystemInfo {
   pub fn new(system: System) -> Self {
     Self {
-      swap_total:     system.total_swap(),
-      swap_used:      system.used_swap(),
-      num_cpus:       system.cpus().len(),
-      name:           System::name(),
+      swap_total: system.total_swap(),
+      swap_used: system.used_swap(),
+      num_cpus: system.cpus().len(),
+      name: System::name(),
       kernel_version: System::kernel_version(),
-      os_version:     System::long_os_version(),
-      host_name:      System::host_name(),
+      os_version: System::long_os_version(),
+      host_name: System::host_name(),
     }
   }
 }
@@ -62,16 +62,16 @@ impl IntoResponse for SystemInfo {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadAverage {
-  pub one:     f64,
-  pub five:    f64,
+  pub one: f64,
+  pub five: f64,
   pub fifteen: f64,
 }
 
 impl LoadAverage {
   pub fn new(system: SystemMetrics) -> Self {
     Self {
-      one:     system.load_average.one,
-      five:    system.load_average.five,
+      one: system.load_average.one,
+      five: system.load_average.five,
       fifteen: system.load_average.fifteen,
     }
   }
@@ -80,19 +80,19 @@ impl LoadAverage {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceUsage {
-  pub cpu_usage_percent:  f32,
-  pub memory_used_bytes:  u64,
+  pub cpu_usage_percent: f32,
+  pub memory_used_bytes: u64,
   pub memory_total_bytes: u64,
-  pub load_average:       LoadAverage,
+  pub load_average: LoadAverage,
 }
 
 impl ResourceUsage {
   pub fn new(system: SystemMetrics) -> Self {
     Self {
-      cpu_usage_percent:  system.cpu_usage_percent,
-      memory_used_bytes:  system.memory_used_bytes,
+      cpu_usage_percent: system.cpu_usage_percent,
+      memory_used_bytes: system.memory_used_bytes,
       memory_total_bytes: system.memory_total_bytes,
-      load_average:       LoadAverage::new(system),
+      load_average: LoadAverage::new(system),
     }
   }
 }
@@ -109,7 +109,7 @@ pub enum HealthStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ServiceHealth {
   pub service: String,
-  pub status:  HealthStatus,
+  pub status: HealthStatus,
   pub message: Option<String>,
 }
 
@@ -117,7 +117,7 @@ impl ServiceHealth {
   pub fn new_for_app() -> Self {
     Self {
       service: "application".to_string(),
-      status:  HealthStatus::Healthy,
+      status: HealthStatus::Healthy,
       message: None,
     }
   }
@@ -145,10 +145,10 @@ impl ServiceHealth {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringSnapshot {
-  pub timestamp:      DateTime<Utc>,
+  pub timestamp: DateTime<Utc>,
   pub uptime_seconds: u64,
-  pub resources:      ResourceUsage,
-  pub services:       Vec<ServiceHealth>,
+  pub resources: ResourceUsage,
+  pub services: Vec<ServiceHealth>,
 }
 
 impl MonitoringSnapshot {
@@ -165,9 +165,9 @@ impl MonitoringSnapshot {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringResponse {
-  pub components:  DashboardComponents,
+  pub components: DashboardComponents,
   pub system_info: SystemInfo,
-  pub snapshot:    MonitoringSnapshot,
+  pub snapshot: MonitoringSnapshot,
 }
 
 impl IntoResponse for MonitoringResponse {

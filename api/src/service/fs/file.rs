@@ -17,7 +17,7 @@ use crate::util::pagination::Pagination;
 use crate::util::storage::{Storage, SumidaStorage};
 
 pub struct FileService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 
