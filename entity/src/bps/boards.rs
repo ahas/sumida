@@ -11,6 +11,8 @@ pub enum BoardPostRecordVisibility {
   Public = 0,
   #[serde(rename = "author-only")]
   AuthorOnly,
+  #[serde(rename = "members-only")]
+  MembersOnly,
   #[serde(rename = "private")]
   Private,
 }
@@ -23,8 +25,8 @@ pub enum BoardPostRecordVisibility {
 pub enum BoardPostContentVisibility {
   #[serde(rename = "public")]
   Public = 0,
-  #[serde(rename = "user-only")]
-  UserOnly,
+  #[serde(rename = "members-only")]
+  MembersOnly,
   #[serde(rename = "private")]
   Private,
 }

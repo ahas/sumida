@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
+use entity::bps::board_posts::BoardPostKind;
 use error::SumidaError;
 use infra::session::UserSession;
 
@@ -25,6 +26,24 @@ impl<S: SumidaState> BoardController<S> {
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardListItem>, SumidaError> {
     Ok(BoardService::new(state, session).list(filter, pagination).await?.into())
+  }
+
+  async fn get_posts(
+    session: UserSession,
+    State(state): State<S>,
+    Query(filter): Query<BoardPostFilter>,
+    Query(pagination): Query<Pagination>,
+  ) -> Result<List<BoardPostListItem>, SumidaError> {
+    let service = BoardPostService::new(state, session);
+
+    let post_list = match filter.kind.as_ref().unwrap_or(&BoardPostKind::Article) {
+      BoardPostKind::Comment => service.get_comments(filter, pagination).await?,
+      BoardPostKind::Reply => service.get_replies(filter, pagination).await?,
+      BoardPostKind::Notice => service.get_notices(filter, pagination).await?,
+      _ => service.get_articles(filter, pagination).await?,
+    };
+
+    Ok(post_list)
   }
 
   async fn get(
@@ -76,6 +95,7 @@ where
     let read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
+      .route("/{id}/posts", routing::get(Self::get_posts))
       .route_layer(service_ap!(state, "board", read));
 
     let create = Router::new() //

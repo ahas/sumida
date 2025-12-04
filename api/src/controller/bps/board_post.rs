@@ -36,6 +36,18 @@ impl<S: SumidaState> BoardPostController<S> {
       .ok_or_else(|| SumidaError::NoData("BoardPost".into(), id.to_string()))
   }
 
+  async fn view(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+    Json(body): Json<ViewBoardPost>,
+  ) -> Result<GetBoardPost, SumidaError> {
+    BoardPostService::new(state, session)
+      .view(id, body)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("BoardPost".into(), id.to_string()))
+  }
+
   async fn create(
     session: UserSession,
     State(state): State<S>,
@@ -87,6 +99,7 @@ where
     let read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
+      .route("/{id}/view", routing::post(Self::view))
       .route_layer(service_ap!(state, "board_post", read));
 
     // Write operations - board-level permissions checked in handlers

@@ -16,15 +16,19 @@ use crate::service::auth::helper::verify_password;
 use crate::service::prelude::BoardFileListItem;
 use crate::util::db::{tsquery, wrap_ilike};
 
+pub trait Reply {
+  fn get_id(&self) -> i32;
+  fn get_parent_id(&self) -> Option<i32>;
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
 pub struct BoardPostFilter {
-  pub search:       Option<String>,
-  pub title:        Option<String>,
-  pub text:         Option<String>,
-  pub kind:         Option<BoardPostKind>,
-  pub status:       Option<BoardPostStatus>,
-  pub with_replies: Option<bool>,
+  pub search: Option<String>,
+  pub title:  Option<String>,
+  pub text:   Option<String>,
+  pub kind:   Option<BoardPostKind>,
+  pub status: Option<BoardPostStatus>,
 
   // FTS
   pub with_snippet:          bool,
@@ -52,7 +56,6 @@ impl Default for BoardPostFilter {
       text:                  None,
       kind:                  None,
       status:                None,
-      with_replies:          None,
       // FTS
       with_snippet:          false,
       snippet_offset:        0,
@@ -95,7 +98,6 @@ impl BoardPostFilter {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewBoardPost {
-  pub id:       i32,
   #[serde(default)]
   pub password: Option<String>,
 }
@@ -176,15 +178,24 @@ pub struct BoardPostListItem {
   #[serde(flatten)]
   pub common: BoardPostCommon,
 
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub content: Option<String>,
+
   #[sea_orm(skip)]
   #[serde(skip_serializing_if = "Option::is_none")]
   pub replies: Option<Vec<BoardPostListItem>>,
 
-  #[sea_orm(skip)]
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub content: Option<String>,
-
   pub snippet: Option<String>,
+}
+
+impl Reply for BoardPostListItem {
+  fn get_id(&self) -> i32 {
+    self.common.id
+  }
+
+  fn get_parent_id(&self) -> Option<i32> {
+    self.common.parent_id
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
@@ -201,8 +212,22 @@ pub struct GetBoardPost {
   pub attached_files: Vec<BoardFileListItem>,
 
   #[sea_orm(skip)]
-  #[serde(default)]
-  pub replies: Vec<BoardPostListItem>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub comments: Option<Vec<GetBoardPost>>,
+
+  #[sea_orm(skip)]
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub replies: Option<Vec<GetBoardPost>>,
+}
+
+impl Reply for GetBoardPost {
+  fn get_id(&self) -> i32 {
+    self.common.id
+  }
+
+  fn get_parent_id(&self) -> Option<i32> {
+    self.common.parent_id
+  }
 }
 
 impl IntoResponse for GetBoardPost {
@@ -214,26 +239,26 @@ impl IntoResponse for GetBoardPost {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPost {
-  pub id:                 Optional<i32>,
-  pub board_id:           i32,
+  pub id:                  Optional<i32>,
+  pub board_id:            i32,
   #[serde(default)]
-  pub topic_id:           Nullable<i32>,
+  pub topic_id:            Nullable<i32>,
   #[serde(default)]
-  pub parent_id:          Nullable<i32>,
-  pub title:              String,
+  pub parent_id:           Nullable<i32>,
+  pub title:               String,
   #[serde(default)]
-  pub password:           Nullable<String>,
+  pub password:            Nullable<String>,
   #[serde(default)]
-  pub content:            Nullable<String>,
-  pub content_type:       BoardPostContentType,
-  pub content_visibility: Optional<BoardPostContentVisibility>,
-  pub kind:               Optional<BoardPostKind>,
-  pub status:             Optional<BoardPostStatus>,
+  pub content:             Nullable<String>,
+  pub content_type:        BoardPostContentType,
+  pub content_visibility:  Optional<BoardPostContentVisibility>,
+  pub kind:                Optional<BoardPostKind>,
+  pub status:              Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at:       Nullable<DateTimeWithTimeZone>,
+  pub published_at:        Nullable<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub tags:               Nullable<Vec<String>>,
-  pub attached_file_ids:  Option<Vec<i32>>,
+  pub tags:                Nullable<Vec<String>>,
+  pub attached_file_uuids: Option<Vec<Uuid>>,
 }
 
 impl CreateBoardPost {
@@ -259,43 +284,6 @@ impl CreateBoardPost {
   }
 }
 
-// #[derive(Clone, Debug, Serialize, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct CreateBoardDraft {
-//   pub board_id:          i32,
-//   #[serde(default)]
-//   pub topic_id:          Nullable<i32>,
-//   #[serde(default)]
-//   pub parent_id:         Nullable<i32>,
-//   pub title:             String,
-//   #[serde(default)]
-//   pub content:           Nullable<String>,
-//   pub content_type:      BoardPostContentType,
-//   pub kind:              Optional<BoardPostKind>,
-//   #[serde(default)]
-//   pub tags:              Nullable<Vec<String>>,
-//   pub attached_file_ids: Option<Vec<i32>>,
-// }
-//
-// impl CreateBoardDraft {
-//   pub fn into_active_model(self) -> entity::bps::board_posts::ActiveModel {
-//     entity::bps::board_posts::ActiveModel {
-//       board_id: Set(self.board_id),
-//       topic_id: self.topic_id.into_active_value(),
-//       parent_id: self.parent_id.into_active_value(),
-//       title: Set(self.title),
-//       content: self.content.into_active_value(),
-//       kind: self.kind.into_active_value(),
-//       tags: self.tags.into_active_value(),
-//       ..Default::default()
-//     }
-//   }
-//
-//   pub fn parse_plain_text(&self) -> Result<String, SumidaError> {
-//     parse_plain_text(self.content_type.clone(), self.content.clone())
-//   }
-// }
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostCreated {
@@ -312,21 +300,21 @@ impl IntoResponse for BoardPostCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
   #[serde(default)]
-  pub topic_id:           Nullable<i32>,
-  pub title:              Optional<String>,
+  pub topic_id:            Nullable<i32>,
+  pub title:               Optional<String>,
   #[serde(default)]
-  pub content:            Nullable<String>,
-  pub content_visibility: Optional<BoardPostContentVisibility>,
+  pub content:             Nullable<String>,
+  pub content_visibility:  Optional<BoardPostContentVisibility>,
   #[serde(default)]
-  pub password:           Nullable<String>,
-  pub kind:               Optional<BoardPostKind>,
-  pub status:             Optional<BoardPostStatus>,
+  pub password:            Nullable<String>,
+  pub kind:                Optional<BoardPostKind>,
+  pub status:              Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at:       Nullable<DateTimeWithTimeZone>,
+  pub published_at:        Nullable<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub tags:               Nullable<Vec<String>>,
-  pub attached_file_ids:  Option<Vec<i32>>,
-  pub detached_file_ids:  Option<Vec<i32>>,
+  pub tags:                Nullable<Vec<String>>,
+  pub attached_file_uuids: Option<Vec<Uuid>>,
+  pub detached_file_uuids: Option<Vec<Uuid>>,
 }
 
 impl UpdateBoardPost {

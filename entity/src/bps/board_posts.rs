@@ -20,6 +20,7 @@ pub enum BoardPostStatus {
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
 pub enum BoardPostKind {
+  Notice,
   Article,
   Comment,
   Reply,

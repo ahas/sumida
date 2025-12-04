@@ -17,7 +17,7 @@ use crate::util::pagination::Pagination;
 use crate::util::storage::{Storage, SumidaStorage};
 
 pub struct FileService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -35,7 +35,7 @@ impl<S: SumidaState> FileService<S> {
 
     let db = self.state.db();
     let mut query = filter.apply(self.select(Files::find()));
-    let count = query.clone().select_only().column(Column::Id).count(db).await?;
+    let count = query.clone().select_only().column(Column::Uuid).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
       "user" => Column::UserId.into_simple_expr(),
@@ -44,7 +44,7 @@ impl<S: SumidaState> FileService<S> {
       "uri" => Column::Uri.into_simple_expr(),
       "status" => Column::Status.into_simple_expr(),
       "mimeType" => Column::MimeType.into_simple_expr(),
-      _ => Column::Id.into_simple_expr(),
+      _ => Column::Uuid.into_simple_expr(),
     });
     query = pagination.paginate(query);
 
@@ -53,10 +53,10 @@ impl<S: SumidaState> FileService<S> {
     Ok((items, count))
   }
 
-  pub async fn get(&self, id: i32) -> Result<Option<GetFile>, SumidaError> {
+  pub async fn get(&self, uuid: Uuid) -> Result<Option<GetFile>, SumidaError> {
     Ok(
       self
-        .select(Files::find_by_id(id))
+        .select(Files::find_by_id(uuid))
         .into_partial_model::<GetFile>()
         .one(self.state.db())
         .await?,
@@ -75,8 +75,8 @@ impl<S: SumidaState> FileService<S> {
     let static_file = data.into_static_file();
     let storage = SumidaStorage::new();
 
-    let file_id = Files::insert(entity::fs::files::ActiveModel {
-      id: NotSet,
+    let file_uuid = Files::insert(entity::fs::files::ActiveModel {
+      uuid: NotSet,
       uri: Set(Some(storage.get_uri(&static_file.get_path()))),
       dir: Set(file_dir),
       name: Set(static_file.name.clone()),
@@ -97,7 +97,7 @@ impl<S: SumidaState> FileService<S> {
     let result = storage.store(static_file).await;
 
     Files::update(entity::fs::files::ActiveModel {
-      id: Unchanged(file_id),
+      uuid: Unchanged(file_uuid),
       status: Set(if result.is_ok() { FileStatus::Temporary } else { FileStatus::Error }),
       ..Default::default()
     })
@@ -106,12 +106,12 @@ impl<S: SumidaState> FileService<S> {
 
     result?;
 
-    Ok(FileUploaded { id: file_id })
+    Ok(FileUploaded { uuid: file_uuid })
   }
 
-  pub async fn download(&self, id: i32) -> Result<Response<Body>, SumidaError> {
-    let Some(file) = self.select(Files::find_by_id(id)).one(self.state.db()).await? else {
-      return Err(SumidaError::NoData("File".to_string(), id.to_string()));
+  pub async fn download(&self, uuid: Uuid) -> Result<Response<Body>, SumidaError> {
+    let Some(file) = self.select(Files::find_by_id(uuid)).one(self.state.db()).await? else {
+      return Err(SumidaError::NoData("File".to_string(), uuid.to_string()));
     };
     let storage = SumidaStorage::new();
     let response = storage.download(file.into(), true).await?;
@@ -119,17 +119,17 @@ impl<S: SumidaState> FileService<S> {
     Ok(response)
   }
 
-  pub async fn delete(&self, id: i32, data: DeleteFile) -> Result<DeleteResult, SumidaError> {
+  pub async fn delete(&self, uuid: Uuid, data: DeleteFile) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let Some(file) = self.select(Files::find_by_id(id)).one(&txn).await? else {
-      return Err(SumidaError::NoData("File".to_string(), id.to_string()));
+    let Some(file) = self.select(Files::find_by_id(uuid)).one(&txn).await? else {
+      return Err(SumidaError::NoData("File".to_string(), uuid.to_string()));
     };
 
     if data.hard {
       SumidaStorage::new().delete(&file.get_path()).await?;
     }
 
-    let result = Files::delete_by_id(id).exec(&txn).await?;
+    let result = Files::delete_by_id(uuid).exec(&txn).await?;
 
     txn.commit().await?;
 
@@ -148,7 +148,7 @@ impl<S: SumidaState> FileService<S> {
     let total_result = base_query
       .clone()
       .select_only()
-      .expr_as(Func::count(Expr::col(Column::Id)), "total_files")
+      .expr_as(Func::count(Expr::col(Column::Uuid)), "total_files")
       .expr_as(Func::sum(Expr::col(Column::Size)), "total_size")
       .into_tuple::<(i64, Option<i64>)>()
       .one(db)
@@ -161,7 +161,7 @@ impl<S: SumidaState> FileService<S> {
       .clone()
       .select_only()
       .column(Column::MimeType)
-      .expr_as(Func::count(Expr::col(Column::Id)), "count")
+      .expr_as(Func::count(Expr::col(Column::Uuid)), "count")
       .expr_as(Func::sum(Expr::col(Column::Size)), "total_size")
       .group_by(Column::MimeType)
       .into_tuple::<(String, i64, Option<i64>)>()
@@ -179,7 +179,7 @@ impl<S: SumidaState> FileService<S> {
       .clone()
       .select_only()
       .column(Column::Status)
-      .expr_as(Func::count(Expr::col(Column::Id)), "count")
+      .expr_as(Func::count(Expr::col(Column::Uuid)), "count")
       .group_by(Column::Status)
       .into_tuple::<(String, i64)>()
       .all(db)
@@ -206,14 +206,14 @@ impl<S: SumidaState> ApiService<ApCondition, Files> for FileService<S> {
 
   fn ap(&self) -> ApCondition {
     use entity::fs::files::Column;
-    ap::ns("file").who(&self.session).join(Files, Column::Id)
+    ap::ns("file").who(&self.session).join(Files, Column::Uuid)
   }
 
   fn select(&self, query: sea_orm::Select<Files>) -> sea_orm::Select<Files> {
     use entity::fs::files::Column;
     self
       .ap()
-      .expr(Expr::col((Files, Column::Id)).cast_as("varchar"))
+      .expr(Expr::col((Files, Column::Uuid)).cast_as("varchar"))
       .action("read")
       .apply(Self::default_query_with(query))
   }

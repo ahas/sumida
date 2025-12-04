@@ -5,9 +5,19 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
-  QuerySelect, RelationTrait, Select, TransactionTrait,
+  ColumnTrait,
+  DeleteResult,
+  EntityTrait,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
 };
+use uuid::Uuid;
 
 use self::dto::*;
 use crate::SumidaState;
@@ -19,7 +29,7 @@ use crate::util::file_validation::FileValidator;
 use crate::util::pagination::Pagination;
 
 pub struct BoardFileService<S: SumidaState> {
-  state: S,
+  state:   S,
   #[allow(dead_code)]
   session: UserSession,
 }
@@ -43,7 +53,7 @@ impl<S: SumidaState> BoardFileService<S> {
       BoardFiles::find()
         .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
-        .column_as(Column::FileId, "id")
+        .column_as(Column::FileUuid, "id")
         .column_as(Column::PostId, "post_id"),
     ));
 
@@ -65,7 +75,7 @@ impl<S: SumidaState> BoardFileService<S> {
     Ok((items, count))
   }
 
-  pub async fn get(&self, post_id: i32, file_id: i32) -> Result<Option<GetBoardFile>, SumidaError> {
+  pub async fn get(&self, post_id: i32, file_uuid: Uuid) -> Result<Option<GetBoardFile>, SumidaError> {
     use entity::bps::board_files::Column;
     use entity::fs::files::Column as FileColumn;
 
@@ -74,11 +84,11 @@ impl<S: SumidaState> BoardFileService<S> {
     let result = util::with_file_columns(
       BoardFiles::find()
         .filter(Column::PostId.eq(post_id))
-        .filter(Column::FileId.eq(file_id))
+        .filter(Column::FileUuid.eq(file_uuid))
         .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
         .column_as(Column::PostId, "post_id")
-        .column_as(Column::FileId, "file_id")
+        .column_as(Column::FileUuid, "file_uuid")
         .column_as(FileColumn::Hash, "hash"),
     )
     .into_model::<GetBoardFile>()
@@ -114,12 +124,12 @@ impl<S: SumidaState> BoardFileService<S> {
 
     let result = BoardFiles::delete_many()
       .filter(BoardFilesColumn::PostId.eq(data.post_id))
-      .filter(BoardFilesColumn::FileId.eq(data.file_id))
+      .filter(BoardFilesColumn::FileUuid.eq(data.file_uuid))
       .exec(db)
       .await?;
 
     FileService::new(self.state.clone(), self.session.clone())
-      .delete(data.file_id, DeleteFile { hard: data.hard })
+      .delete(data.file_uuid, DeleteFile { hard: data.hard })
       .await?;
 
     Ok(result)
@@ -135,7 +145,7 @@ impl<S: SumidaState> BoardFileService<S> {
         .filter(Column::PostId.eq(post_id))
         .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
-        .column_as(Column::FileId, "id")
+        .column_as(Column::FileUuid, "uuid")
         .column_as(Column::PostId, "post_id"),
     )
     .into_model::<BoardFileListItem>()
@@ -145,13 +155,13 @@ impl<S: SumidaState> BoardFileService<S> {
     Ok(items)
   }
 
-  pub async fn get_posts_for_file(&self, file_id: i32) -> Result<Vec<i32>, SumidaError> {
+  pub async fn get_posts_for_file(&self, file_uuid: Uuid) -> Result<Vec<i32>, SumidaError> {
     use entity::bps::board_files::Column;
 
     let db = self.state.db();
 
     let post_ids = BoardFiles::find()
-      .filter(Column::FileId.eq(file_id))
+      .filter(Column::FileUuid.eq(file_uuid))
       .select_only()
       .column(Column::PostId)
       .into_tuple::<i32>()

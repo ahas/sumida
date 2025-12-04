@@ -7,7 +7,7 @@ use super::helper::*;
 #[derive(DeriveIden)]
 enum Files {
   Table,
-  Id,
+  Uuid,
   UserId,
   OriginalName,
   Dir,
@@ -39,7 +39,7 @@ impl MigrationTrait for Migration {
         Table::create()
           .if_not_exists()
           .table(Files::Table)
-          .col(integer(Files::Id).auto_increment())
+          .col(uuid(Files::Uuid).default(Expr::cust("uuid_generate_v4()")))
           .col(integer_null(Files::UserId))
           .col(string(Files::OriginalName))
           .col(string(Files::Dir))
@@ -55,7 +55,7 @@ impl MigrationTrait for Migration {
           .col(timestamp_with_time_zone(Files::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Files::UpdatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone_null(Files::DeletedAt))
-          .primary_key(Index::create().name("pk_files__id").col(Files::Id))
+          .primary_key(Index::create().name("pk_files__uuid").col(Files::Uuid))
           .to_owned(),
       )
       .await?;

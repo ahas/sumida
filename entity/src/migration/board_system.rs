@@ -119,14 +119,14 @@ enum BoardPostReports {
 enum BoardFiles {
   Table,
   PostId,
-  FileId,
+  FileUuid,
 }
 
 // files
 #[derive(DeriveIden)]
 enum Files {
   Table,
-  Id,
+  Uuid,
 }
 
 #[derive(DeriveMigrationName)]
@@ -538,7 +538,7 @@ impl MigrationTrait for Migration {
           .if_not_exists()
           .table(BoardFiles::Table)
           .col(integer_null(BoardFiles::PostId))
-          .col(integer(BoardFiles::FileId))
+          .col(uuid(BoardFiles::FileUuid))
           .foreign_key(
             ForeignKey::create()
               .name("fk_board_files__post_id")
@@ -549,9 +549,9 @@ impl MigrationTrait for Migration {
           )
           .foreign_key(
             ForeignKey::create()
-              .name("fk_board_files__file_id")
-              .from(BoardFiles::Table, BoardFiles::FileId)
-              .to(Files::Table, Files::Id)
+              .name("fk_board_files__file_uuid")
+              .from(BoardFiles::Table, BoardFiles::FileUuid)
+              .to(Files::Table, Files::Uuid)
               .on_delete(Cascade)
               .on_update(Cascade),
           )
@@ -562,9 +562,9 @@ impl MigrationTrait for Migration {
       .create_index(
         Index::create()
           .if_not_exists()
-          .name("idx_board_files__file_id")
+          .name("idx_board_files__file_uuid")
           .table(BoardFiles::Table)
-          .col(BoardFiles::FileId)
+          .col(BoardFiles::FileUuid)
           .index_type(IndexType::BTree)
           .to_owned(),
       )

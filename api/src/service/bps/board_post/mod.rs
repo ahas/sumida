@@ -14,6 +14,7 @@ use sea_orm::{
   ConnectionTrait,
   DeleteResult,
   EntityTrait,
+  FromQueryResult,
   InsertResult,
   IntoActiveModel,
   IntoSimpleExpr,
@@ -32,7 +33,7 @@ use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApChain, ApGuard};
-use crate::util::pagination::Pagination;
+use crate::util::pagination::{List, Pagination};
 use crate::util::user::hash_password;
 
 pub struct BoardPostService<S: SumidaState> {
@@ -46,11 +47,32 @@ impl<S: SumidaState> BoardPostService<S> {
     Self { state, session }
   }
 
+  fn apply_pagination(&self, query: Select<BoardPosts>, pagination: Pagination) -> Select<BoardPosts> {
+    let query = pagination.order_by(query, |col| match col {
+      "title" => BoardPostsColumn::Title.into_simple_expr(),
+      _ => BoardPostsColumn::CreatedAt.into_simple_expr(),
+    });
+
+    pagination.paginate(query)
+  }
+
   pub async fn list(
     &self,
     filter: BoardPostFilter,
     pagination: Pagination,
-  ) -> Result<(Vec<BoardPostListItem>, u64), SumidaError> {
+  ) -> Result<List<BoardPostListItem>, SumidaError> {
+    let db = self.state.db();
+    let mut query = self.get_list_query(filter)?;
+    let count = query.clone().count(db).await?;
+
+    query = self.apply_pagination(query, pagination);
+
+    let items = query.into_model::<BoardPostListItem>().all(db).await?;
+
+    Ok(List::new(items, count))
+  }
+
+  pub fn get_list_query(&self, filter: BoardPostFilter) -> Result<Select<BoardPosts>, SumidaError> {
     let search_text = filter.search.clone().unwrap_or_else(|| filter.text.clone().unwrap_or_default());
     let with_snippet = filter.with_snippet;
     let query = util::with_conditional_post_columns(
@@ -64,45 +86,111 @@ impl<S: SumidaState> BoardPostService<S> {
       query.column_as(Expr::cust("NULL::tsvector"), "snippet")
     };
 
-    let db = self.state.db();
-    let mut query = filter.apply(query);
-    if filter.with_replies.unwrap_or(false) {
-      let kind = filter.kind.clone().unwrap_or(BoardPostKind::Article);
+    Ok(filter.apply(query))
+  }
 
-      match kind {
-        BoardPostKind::Article => {
-          query = query.filter(BoardPostsColumn::ParentId.is_null());
-        }
-        BoardPostKind::Comment => {
-          query = query.column_as(BoardPostsColumn::Content, "content")
-        }
-        _ => {}
-      }
-    }
+  pub async fn get_notices(
+    &self,
+    filter: BoardPostFilter,
+    pagination: Pagination,
+  ) -> Result<List<BoardPostListItem>, SumidaError> {
+    let db = self.state.db();
+    let mut query = self.get_list_query(filter)?;
+    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Notice));
 
     let count = query.clone().count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "title" => BoardPostsColumn::Title.into_simple_expr(),
-      _ => BoardPostsColumn::CreatedAt.into_simple_expr(),
-    });
-    query = pagination.paginate(query);
+    query = self.apply_pagination(query, pagination);
+
+    let items = query.into_model::<BoardPostListItem>().all(db).await?;
+
+    Ok(List::new(items, count))
+  }
+
+  pub async fn get_articles(
+    &self,
+    filter: BoardPostFilter,
+    pagination: Pagination,
+  ) -> Result<List<BoardPostListItem>, SumidaError> {
+    let db = self.state.db();
+    let mut query = self.get_list_query(filter)?;
+    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Notice));
+
+    let count = query.clone().count(db).await?;
+
+    query = self.apply_pagination(query, pagination);
 
     let mut items = query.into_model::<BoardPostListItem>().all(db).await?;
 
-    if filter.with_replies.unwrap_or(false) && !items.is_empty() {
-      let reply_kind = match filter.kind {
-        Some(BoardPostKind::Comment) => BoardPostKind::Comment,
-        _ => BoardPostKind::Reply,
-      };
+    if !items.is_empty() {
+      let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
       let mut replies_by_parent = self
-        .load_replies_tree(&items.iter().map(|item| item.common.id).collect::<Vec<_>>(), reply_kind, db)
+        .load_replies_tree(self.select(BoardPosts::find()), &item_ids, BoardPostKind::Article, db)
         .await?;
 
-      self.attach_replies(&mut items, &mut replies_by_parent);
+      self.attach_list_item_replies(&mut items, &mut replies_by_parent);
     }
 
-    Ok((items, count))
+    Ok(List::new(items, count))
+  }
+
+  pub async fn get_comments(
+    &self,
+    filter: BoardPostFilter,
+    pagination: Pagination,
+  ) -> Result<List<BoardPostListItem>, SumidaError> {
+    let db = self.state.db();
+    let mut query = self.get_list_query(filter)?;
+    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Comment));
+
+    let count = query.clone().count(db).await?;
+
+    query = self.apply_pagination(query, pagination);
+
+    let mut items = query.into_model::<BoardPostListItem>().all(db).await?;
+
+    if !items.is_empty() {
+      let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
+      let mut replies_by_parent = self
+        .load_replies_tree(
+          self.select(BoardPosts::find()).column_as(BoardPostsColumn::Content, "content"),
+          &item_ids,
+          BoardPostKind::Comment,
+          db,
+        )
+        .await?;
+
+      self.attach_list_item_replies(&mut items, &mut replies_by_parent);
+    }
+
+    Ok(List::new(items, count))
+  }
+
+  pub async fn get_replies(
+    &self,
+    filter: BoardPostFilter,
+    pagination: Pagination,
+  ) -> Result<List<BoardPostListItem>, SumidaError> {
+    let db = self.state.db();
+    let mut query = self.get_list_query(filter)?;
+    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Reply));
+
+    let count = query.clone().count(db).await?;
+
+    query = self.apply_pagination(query, pagination);
+
+    let mut items = query.into_model::<BoardPostListItem>().all(db).await?;
+
+    if !items.is_empty() {
+      let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
+      let mut replies_by_parent = self
+        .load_replies_tree(self.select(BoardPosts::find()), &item_ids, BoardPostKind::Reply, db)
+        .await?;
+
+      self.attach_list_item_replies(&mut items, &mut replies_by_parent);
+    }
+
+    Ok(List::new(items, count))
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
@@ -122,41 +210,31 @@ impl<S: SumidaState> BoardPostService<S> {
     // Load attached files together
     post = util::load_attached_files(post, id, &txn).await?;
 
-    if let Some(ref mut post) = post {
-      let mut replies_by_parent =
-        self.load_replies_tree(&[post.common.id], BoardPostKind::Reply, &txn).await?;
-      let mut replies = replies_by_parent.remove(&post.common.id).unwrap_or_default();
-      self.attach_replies(&mut replies, &mut replies_by_parent);
-      post.replies = replies;
-    }
-
     txn.commit().await?;
 
     Ok(post)
   }
 
-  pub async fn view(
-    &self,
-    session: &UserSession,
-    dto: ViewBoardPost,
-  ) -> Result<Option<GetBoardPost>, SumidaError> {
+  pub async fn view(&self, id: i32, dto: ViewBoardPost) -> Result<Option<GetBoardPost>, SumidaError> {
     let txn = self.state.db().begin().await?;
 
     let board_post_query = util::with_conditional_post_columns(
       self.session.profile.get_id(),
       self.session.profile.is_admin,
-      self.select(BoardPosts::find()).column_as(BoardPostsColumn::Content, "content"),
+      self.select(BoardPosts::find_by_id(id)).column_as(BoardPostsColumn::Content, "content"),
     );
 
     // Find post record
     let Some(post) = board_post_query.clone().one(&txn).await? else {
-      return Err(SumidaError::NoData("BoardPost".to_string(), dto.id.to_string()));
+      return Err(SumidaError::NoData("BoardPost".to_string(), id.to_string()));
     };
 
     // Verify post password if it exists
-    if let Some(ref post_password) = post.password {
-      if !dto.verify_password(post_password) {
-        return Err(SumidaError::NoAccessPermission);
+    if !self.session.profile.is_admin {
+      if let Some(ref post_password) = post.password {
+        if !dto.verify_password(post_password) {
+          return Err(SumidaError::NoAccessPermission);
+        }
       }
     }
 
@@ -164,14 +242,14 @@ impl<S: SumidaState> BoardPostService<S> {
     let Some(board) = Boards::find_by_id(post.board_id).one(&txn).await? else {
       return Err(SumidaError::NoData("Board".to_string(), post.board_id.to_string()));
     };
-    let user_id = if session.profile.is_authorized { Some(session.profile.id) } else { None };
+    let user_id = if self.session.profile.is_authorized { Some(self.session.profile.id) } else { None };
 
     // Check board record/content visibility limitations
     // Board configs override post configs when the permission level is lower
     if !util::check_post_visible(
       user_id,
       post.user_id,
-      session.profile.is_admin,
+      self.session.profile.is_admin,
       board.content_visibility,
       post.content_visibility,
     )? {
@@ -179,17 +257,29 @@ impl<S: SumidaState> BoardPostService<S> {
     }
 
     // Increase `views` column value
-    if session.profile.is_authorized {
-      util::increase_view_count_if_not_viewed(post.id, post.views, session.profile.id, &txn).await?;
+    if self.session.profile.is_authorized {
+      util::increase_view_count_if_not_viewed(post.id, post.views, self.session.profile.id, &txn).await?;
     }
 
     // Get a board post item with files
     let mut post = board_post_query.into_model::<GetBoardPost>().one(&txn).await?;
-    post = util::load_attached_files(post, dto.id, &txn).await?;
+    post = util::load_attached_files(post, id, &txn).await?;
 
-    txn.commit().await?;
+    if let Some(post) = post {
+      let post_ids = [post.common.id];
+      let query = self.select(BoardPosts::find()).column_as(BoardPostsColumn::Content, "content");
+      let mut comments =
+        self.load_replies_tree(query.clone(), &post_ids, BoardPostKind::Comment, &txn).await?;
+      let mut replies = self.load_replies_tree(query, &post_ids, BoardPostKind::Reply, &txn).await?;
 
-    Ok(post)
+      let mut posts = [post];
+      self.attach_view_children(&mut posts, &mut comments, &mut replies);
+      txn.commit().await?;
+
+      return Ok(posts.into_iter().next());
+    }
+
+    Err(SumidaError::NoData("Post".to_string(), id.to_string()))
   }
 
   pub async fn create(
@@ -211,7 +301,7 @@ impl<S: SumidaState> BoardPostService<S> {
       .await?;
 
     // Store attached file IDs for later processing
-    let attached_file_ids = data.attached_file_ids.clone();
+    let attached_file_uuids = data.attached_file_uuids.clone();
     let plain_text = data.parse_plain_text()?;
     let password = data.password.clone();
 
@@ -230,7 +320,7 @@ impl<S: SumidaState> BoardPostService<S> {
     BoardPosts::update_text(post_id, plain_text, &txn).await?;
 
     // Associate attached files with the created post
-    util::link_files(board.id, post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
+    util::link_files(board.id, post_id, attached_file_uuids.unwrap_or_default(), &txn).await?;
 
     ap::edit()
       .namespace("board_post")
@@ -245,44 +335,6 @@ impl<S: SumidaState> BoardPostService<S> {
 
     Ok(result)
   }
-
-  // pub async fn create_draft(
-  //   &self,
-  //   data: CreateBoardDraft,
-  // ) -> Result<InsertResult<BoardPostsActiveModel>, SumidaError> {
-  //   let txn = self.state.db().begin().await?;
-  //
-  //   let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
-  //     return Err(SumidaError::NoData("Board".into(), data.board_id.to_string()));
-  //   };
-  //   ap::chain()
-  //     .push_if(board.group_id, |x| ap::ns("board_group").action("update").object(x))
-  //     .push(ap::ns("board").action("update").object(board.id))
-  //     .who(&self.session)
-  //     .action("update")
-  //     .try_check_allowed(&txn)
-  //     .await?;
-  //
-  //   let attached_file_ids = data.attached_file_ids.clone();
-  //   let plain_text = data.parse_plain_text()?;
-  //
-  //   let mut am = data.into_active_model();
-  //   am.user_id = Set(Some(self.session.profile.id));
-  //   am.status = Set(BoardPostStatus::Draft);
-  //
-  //   let result = BoardPosts::insert(am).exec(&txn).await?;
-  //   let post_id = result.last_insert_id;
-  //
-  //   // Update `text_tsv`(tsvector) column
-  //   BoardPosts::update_text(post_id, plain_text, &txn).await?;
-  //
-  //   // Associate attached files with the created post
-  //   util::link_files(post_id, attached_file_ids.unwrap_or_default(), &txn).await?;
-  //
-  //   txn.commit().await?;
-  //
-  //   Ok(result)
-  // }
 
   pub async fn update(&self, id: i32, data: UpdateBoardPost) -> Result<BoardPostsModel, SumidaError> {
     let txn = self.state.db().begin().await?;
@@ -304,8 +356,8 @@ impl<S: SumidaState> BoardPostService<S> {
       BoardPosts::insert(am).exec(&txn).await?;
     }
 
-    let attached_file_ids = data.attached_file_ids.clone();
-    let detached_file_ids = data.detached_file_ids.clone();
+    let attached_file_uuids = data.attached_file_uuids.clone();
+    let detached_file_uuids = data.detached_file_uuids.clone();
     let plain_text = data.parse_plain_text(post.content_type)?;
     let password = data.password.clone();
 
@@ -320,12 +372,12 @@ impl<S: SumidaState> BoardPostService<S> {
     let item = BoardPosts::update(am).exec(&txn).await?;
     BoardPosts::update_text(id, plain_text, &txn).await?;
 
-    if let Some(file_ids) = attached_file_ids {
-      util::link_files(board.id, id, file_ids, &txn).await?;
+    if let Some(file_uuids) = attached_file_uuids {
+      util::link_files(board.id, id, file_uuids, &txn).await?;
     }
 
-    if let Some(file_ids) = detached_file_ids {
-      util::unlink_files(id, file_ids, &txn).await?;
+    if let Some(file_uuids) = detached_file_uuids {
+      util::unlink_files(id, file_uuids, &txn).await?;
     }
 
     txn.commit().await?;
@@ -345,27 +397,28 @@ impl<S: SumidaState> BoardPostService<S> {
     Ok(result)
   }
 
-  async fn load_replies_tree<C: ConnectionTrait>(
+  async fn load_replies_tree<T: Reply + FromQueryResult, C: ConnectionTrait>(
     &self,
+    query: Select<BoardPosts>,
     parent_ids: &[i32],
     reply_kind: BoardPostKind,
     db: &C,
-  ) -> Result<HashMap<i32, Vec<BoardPostListItem>>, SumidaError> {
-    let mut replies_by_parent: HashMap<i32, Vec<BoardPostListItem>> = HashMap::new();
+  ) -> Result<HashMap<i32, Vec<T>>, SumidaError> {
+    let mut replies_by_parent: HashMap<i32, Vec<T>> = HashMap::new();
     let mut current_parent_ids = parent_ids.to_vec();
 
     while !current_parent_ids.is_empty() {
       let replies = util::with_conditional_post_columns(
         self.session.profile.get_id(),
         self.session.profile.is_admin,
-        self
-          .select(BoardPosts::find())
+        query
+          .clone()
           .filter(BoardPostsColumn::Kind.eq(reply_kind.clone()))
           .filter(BoardPostsColumn::ParentId.is_in(current_parent_ids.clone()))
           .order_by(BoardPostsColumn::CreatedAt, Order::Asc)
           .column_as(Expr::cust("NULL::tsvector"), "snippet"),
       )
-      .into_model::<BoardPostListItem>()
+      .into_model::<T>()
       .all(db)
       .await?;
 
@@ -376,8 +429,8 @@ impl<S: SumidaState> BoardPostService<S> {
       current_parent_ids.clear();
 
       for reply in replies {
-        if let Some(parent_id) = reply.common.parent_id {
-          current_parent_ids.push(reply.common.id);
+        if let Some(parent_id) = reply.get_parent_id() {
+          current_parent_ids.push(reply.get_id());
           replies_by_parent.entry(parent_id).or_default().push(reply);
         }
       }
@@ -386,15 +439,34 @@ impl<S: SumidaState> BoardPostService<S> {
     Ok(replies_by_parent)
   }
 
-  fn attach_replies(
+  fn attach_list_item_replies(
     &self,
     items: &mut [BoardPostListItem],
     replies_by_parent: &mut HashMap<i32, Vec<BoardPostListItem>>,
   ) {
     for item in items {
       if let Some(mut replies) = replies_by_parent.remove(&item.common.id) {
-        self.attach_replies(&mut replies, replies_by_parent);
+        self.attach_list_item_replies(&mut replies, replies_by_parent);
         item.replies = Some(replies);
+      }
+    }
+  }
+
+  fn attach_view_children(
+    &self,
+    views: &mut [GetBoardPost],
+    comments_by_parent: &mut HashMap<i32, Vec<GetBoardPost>>,
+    replies_by_parent: &mut HashMap<i32, Vec<GetBoardPost>>,
+  ) {
+    for view in views {
+      if let Some(mut comments) = comments_by_parent.remove(&view.common.id) {
+        self.attach_view_children(&mut comments, comments_by_parent, replies_by_parent);
+        view.comments = Some(comments);
+      }
+
+      if let Some(mut replies) = replies_by_parent.remove(&view.common.id) {
+        self.attach_view_children(&mut replies, comments_by_parent, replies_by_parent);
+        view.replies = Some(replies);
       }
     }
   }
@@ -413,6 +485,7 @@ impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
       .column_as(BoardPostsColumn::Kind, "kind")
       .column_as(BoardPostsColumn::Status, "status")
       .column_as(BoardPostsColumn::ContentType, "content_type")
+      .column_as(BoardPostsColumn::ContentVisibility, "content_visibility")
       .column_as(BoardPostsColumn::CompressionType, "compression_type")
       .column_as(BoardPostsColumn::Revision, "reivision")
       .column_as(BoardPostsColumn::Tags, "tags")

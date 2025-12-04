@@ -66,7 +66,7 @@ pub struct List<T> {
 }
 
 impl<T> List<T> {
-  fn new(items: Vec<T>, count: u64) -> Self {
+  pub fn new(items: Vec<T>, count: u64) -> Self {
     Self { items, count }
   }
 }

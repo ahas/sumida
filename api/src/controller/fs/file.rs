@@ -4,6 +4,7 @@ use axum::response::Response;
 use axum::{Json, Router, routing};
 use error::SumidaError;
 use infra::session::UserSession;
+use uuid::Uuid;
 
 use crate::controller::ApiController;
 use crate::service::fs::dto::*;
@@ -35,12 +36,12 @@ impl<S: SumidaState> FileController<S> {
   async fn get(
     session: UserSession,
     State(state): State<S>,
-    Path(id): Path<i32>,
+    Path(uuid): Path<Uuid>,
   ) -> Result<GetFile, SumidaError> {
     FileService::new(state, session)
-      .get(id)
+      .get(uuid)
       .await?
-      .ok_or_else(|| SumidaError::NoData("File".to_owned(), id.to_string()))
+      .ok_or_else(|| SumidaError::NoData("File".to_owned(), uuid.to_string()))
   }
 
   async fn upload(
@@ -57,10 +58,10 @@ impl<S: SumidaState> FileController<S> {
   async fn delete(
     session: UserSession,
     State(state): State<S>,
-    Path(id): Path<i32>,
+    Path(uuid): Path<Uuid>,
     Json(body): Json<DeleteFile>,
   ) -> Result<FileDeleted, SumidaError> {
-    FileService::new(state, session).delete(id, body).await?;
+    FileService::new(state, session).delete(uuid, body).await?;
 
     Ok(FileDeleted)
   }
@@ -77,9 +78,9 @@ impl<S: SumidaState> FileController<S> {
   async fn download(
     session: UserSession,
     State(state): State<S>,
-    Path(id): Path<i32>,
+    Path(uuid): Path<Uuid>,
   ) -> Result<Response<Body>, SumidaError> {
-    FileService::new(state.clone(), session.clone()).download(id).await
+    FileService::new(state.clone(), session.clone()).download(uuid).await
   }
 }
 
@@ -90,9 +91,9 @@ where
   fn router(self, state: &S) -> axum::Router<S> {
     let route_read = Router::new()
       .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get))
+      .route("/{uuid}", routing::get(Self::get))
       .route("/stats", routing::get(Self::get_stats))
-      .route("/{id}/download", routing::get(Self::download))
+      .route("/{uuid}/download", routing::get(Self::download))
       .route_layer(service_ap!(state, "file", read));
 
     let route_create = Router::new()
@@ -103,7 +104,7 @@ where
     //   .route_layer(service_ap!(state, "file", update));
 
     let route_delete = Router::new()
-      .route("/{id}", routing::delete(Self::delete))
+      .route("/{uuid}", routing::delete(Self::delete))
       .route_layer(service_ap!(state, "file", delete));
 
     Router::new()

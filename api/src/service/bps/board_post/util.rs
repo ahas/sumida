@@ -2,12 +2,23 @@ use entity::bps::board_posts::BoardPostContentType;
 use entity::bps::boards::BoardPostContentVisibility;
 use entity::prelude::*;
 use error::SumidaError;
+use sea_orm::ActiveValue::Unchanged;
 use sea_orm::sea_query::{Alias, Expr, Func};
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DbErr, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
-  RelationTrait, Select, Set,
+  ColumnTrait,
+  ConnectionTrait,
+  DbErr,
+  EntityTrait,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  Set,
 };
 use sea_orm_crud::Nullable;
+use uuid::Uuid;
 
 use crate::service::prelude::{BoardFileListItem, BoardPostFilter, GetBoardPost};
 use crate::util::board::{HtmlContent, MarkdownContent};
@@ -113,7 +124,7 @@ pub fn check_post_visible(
 
   match content_visibility {
     BoardPostContentVisibility::Public => Ok(true),
-    BoardPostContentVisibility::UserOnly => Ok(user_id.is_some()),
+    BoardPostContentVisibility::MembersOnly => Ok(user_id.is_some()),
     BoardPostContentVisibility::Private => {
       if is_admin {
         Ok(true)
@@ -148,18 +159,18 @@ pub async fn load_attached_files<C: ConnectionTrait>(
 pub async fn link_files<C: ConnectionTrait>(
   board_id: i32,
   post_id: i32,
-  file_ids: Vec<i32>,
+  file_uuids: Vec<Uuid>,
   db: &C,
 ) -> Result<(), SumidaError> {
-  FileValidator::from_board_id(board_id, db).await?.validate_count(file_ids.len())?;
+  FileValidator::from_board_id(board_id, db).await?.validate_count(file_uuids.len())?;
 
   // First, remove all existing file associations for this post
   BoardFiles::delete_many().filter(BoardFilesColumn::PostId.eq(post_id)).exec(db).await?;
 
   // Then, add new file associations
-  for file_id in file_ids {
+  for file_uuid in file_uuids {
     let file_conflict_count: u64 = BoardFiles::find()
-      .filter(BoardFilesColumn::FileId.eq(file_id))
+      .filter(BoardFilesColumn::FileUuid.eq(file_uuid))
       .filter(BoardFilesColumn::PostId.ne(post_id))
       .count(db)
       .await?;
@@ -169,8 +180,8 @@ pub async fn link_files<C: ConnectionTrait>(
     }
 
     let file_am = BoardFilesActiveModel {
-      post_id: Set(post_id),
-      file_id: Set(file_id),
+      post_id:   Set(post_id),
+      file_uuid: Set(file_uuid),
     };
 
     BoardFiles::insert(file_am).exec(db).await?;
@@ -181,12 +192,12 @@ pub async fn link_files<C: ConnectionTrait>(
 
 pub async fn unlink_files<C: ConnectionTrait>(
   post_id: i32,
-  file_ids: Vec<i32>,
+  file_uuids: Vec<Uuid>,
   db: &C,
 ) -> Result<(), SumidaError> {
   BoardFiles::delete_many()
     .filter(BoardFilesColumn::PostId.eq(post_id))
-    .filter(BoardFilesColumn::FileId.is_in(file_ids))
+    .filter(BoardFilesColumn::FileUuid.is_in(file_uuids))
     .exec(db)
     .await?;
 
@@ -216,6 +227,7 @@ pub async fn increase_view_count_if_not_viewed<C: ConnectionTrait>(
 
     BoardPostViews::insert(view_am).exec(db).await?;
     BoardPosts::update(BoardPostsActiveModel {
+      id: Unchanged(post_id),
       views: Set(next_views),
       ..Default::default()
     })

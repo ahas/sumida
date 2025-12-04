@@ -63,7 +63,7 @@ pub struct FileUser {
 #[sea_orm(entity = "Files", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct FileListItem {
-  pub id: i32,
+  pub uuid: Uuid,
   #[sea_orm(nested)]
   pub user: FileUser,
   pub original_name: String,
@@ -85,7 +85,7 @@ pub struct FileListItem {
 #[sea_orm(entity = "Files", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetFile {
-  pub id: i32,
+  pub uuid: Uuid,
   #[sea_orm(nested)]
   pub user: FileUser,
   pub original_name: String,
@@ -261,7 +261,7 @@ impl FileUploadTrait for UploadFile {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileUploaded {
-  pub id: i32,
+  pub uuid: Uuid,
 }
 
 impl IntoResponse for FileUploaded {

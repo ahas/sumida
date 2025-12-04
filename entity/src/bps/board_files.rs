@@ -6,7 +6,7 @@ pub struct Model {
   #[sea_orm(primary_key)]
   pub post_id: i32,
   #[sea_orm(primary_key)]
-  pub file_id: i32,
+  pub file_uuid: Uuid,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -21,8 +21,8 @@ pub enum Relation {
   Post,
   #[sea_orm(
     belongs_to = "crate::fs::files::Entity",
-    from = "Column::FileId",
-    to = "crate::fs::files::Column::Id",
+    from = "Column::FileUuid",
+    to = "crate::fs::files::Column::Uuid",
     on_update = "Cascade",
     on_delete = "Cascade"
   )]

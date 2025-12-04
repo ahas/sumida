@@ -2,6 +2,7 @@ pub mod helpers {
   use entity::prelude::*;
   use error::SumidaError;
   use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+  use uuid::Uuid;
 
   /// Extract board_id from board_post
   pub async fn get_board_id_from_post<C>(post_id: i32, db: &C) -> Result<i32, SumidaError>
@@ -17,13 +18,13 @@ pub mod helpers {
   }
 
   /// Extract board_id from post that has this file attached
-  pub async fn get_board_id_from_file<C>(file_id: i32, db: &C) -> Result<Option<i32>, SumidaError>
+  pub async fn get_board_id_from_file<C>(file_uuid: Uuid, db: &C) -> Result<Option<i32>, SumidaError>
   where
     C: ConnectionTrait,
   {
     use entity::bps::board_files::Column;
 
-    let board_file = BoardFiles::find().filter(Column::FileId.eq(file_id)).one(db).await?;
+    let board_file = BoardFiles::find().filter(Column::FileUuid.eq(file_uuid)).one(db).await?;
 
     if let Some(board_file) = board_file {
       let post_id = board_file.post_id;

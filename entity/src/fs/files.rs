@@ -17,8 +17,8 @@ pub enum FileStatus {
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "files")]
 pub struct Model {
-  #[sea_orm(primary_key, auto_increment = true)]
-  pub id: i32,
+  #[sea_orm(primary_key, default = "uuid_generate_v4()")]
+  pub uuid: Uuid,
   #[sea_orm(nullable)]
   pub user_id: Option<i32>,
   pub original_name: String,
