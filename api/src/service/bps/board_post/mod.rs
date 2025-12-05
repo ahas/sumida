@@ -274,9 +274,22 @@ impl<S: SumidaState> BoardPostService<S> {
 
       let mut posts = [post];
       self.attach_view_children(&mut posts, &mut comments, &mut replies);
+
+      let Some(mut post) = posts.into_iter().next() else {
+        return Ok(None);
+      };
+
+      if post.comments.is_none() {
+        post.comments = Some(Vec::new());
+      }
+
+      if post.replies.is_none() {
+        post.replies = Some(Vec::new());
+      }
+
       txn.commit().await?;
 
-      return Ok(posts.into_iter().next());
+      return Ok(Some(post));
     }
 
     Err(SumidaError::NoData("Post".to_string(), id.to_string()))
