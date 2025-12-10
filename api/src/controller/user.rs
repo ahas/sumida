@@ -75,6 +75,16 @@ impl<S: SumidaState> UserController<S> {
     Ok(StatusCode::OK)
   }
 
+  async fn ban(
+    session: UserSession,
+    State(state): State<S>,
+    Path(user_id): Path<i32>,
+    Json(body): Json<BanSettings>,
+  ) -> Result<StatusCode, SumidaError> {
+    BanService::new(state, session).create_by_user_id(body, user_id).await?;
+    Ok(StatusCode::OK)
+  }
+
   async fn activate(
     session: UserSession,
     State(state): State<S>,
@@ -118,6 +128,7 @@ where
     let route_update = Router::new()
       .route("/{user_id}", routing::patch(Self::update))
       .route("/{user_id}/invite", routing::post(Self::invite))
+      .route("/{user_id}/ban", routing::post(Self::ban))
       .route_layer(service_ap!(state, "user", update));
     let route_delete = Router::new()
       .route("/{user_id}", routing::delete(Self::delete))

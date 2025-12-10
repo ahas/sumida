@@ -7,8 +7,21 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Alias, Asterisk, Expr, SimpleExpr};
 use sea_orm::{
-  ColumnTrait, Condition, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr,
-  JoinType, PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, RelationTrait, Select, TransactionTrait,
+  ColumnTrait,
+  Condition,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  IntoSimpleExpr,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  QueryTrait,
+  RelationTrait,
+  Select,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -18,7 +31,7 @@ use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::pagination::Pagination;
 
 pub struct BanService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -33,13 +46,9 @@ impl<S: SumidaState> BanService<S> {
       Bans::find()
         .select_only()
         .expr(Expr::val(1))
-        .filter(Expr::col(entity::bans::Column::UserId).eq(Expr::col((Users, entity::users::Column::Id))))
-        .filter(Condition::any().add(entity::bans::Column::LiftedAt.is_null()))
-        .filter(
-          Condition::any()
-            .add(entity::bans::Column::ExpiresAt.is_null())
-            .add(entity::bans::Column::ExpiresAt.gt(now)),
-        )
+        .filter(Expr::col(BansColumn::UserId).eq(Expr::col((Users, entity::users::Column::Id))))
+        .filter(Condition::any().add(BansColumn::LiftedAt.is_null()))
+        .filter(Condition::any().add(BansColumn::ExpiresAt.is_null()).add(BansColumn::ExpiresAt.gt(now)))
         .limit(1)
         .into_query(),
     )
@@ -50,18 +59,16 @@ impl<S: SumidaState> BanService<S> {
     filter: BanFilter,
     pagination: Pagination,
   ) -> Result<(Vec<BanListItem>, u64), SumidaError> {
-    use entity::bans::Column;
-
     let txn = self.state.db().begin().await?;
 
     let mut query = filter.apply(self.select(Bans::find()));
 
-    let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
+    let count = query.clone().select_only().column(BansColumn::Id).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
-      "user_id" => Column::UserId.into_simple_expr(),
-      "fullName" => Expr::col((Alias::new("u"), entity::users::Column::FullName)).into_simple_expr(),
-      _ => Column::CreatedAt.into_simple_expr(),
+      "user_id" => BansColumn::UserId.into_simple_expr(),
+      "fullName" => Expr::col((Alias::new("u"), UsersColumn::FullName)).into_simple_expr(),
+      _ => BansColumn::CreatedAt.into_simple_expr(),
     });
     query = pagination.paginate(query);
 
@@ -77,8 +84,8 @@ impl<S: SumidaState> BanService<S> {
       .select(Bans::find_by_id(id))
       .select_only()
       .expr(Expr::col((Bans, Asterisk)))
-      .join_as(JoinType::LeftJoin, entity::bans::Relation::User.def(), Alias::new("u"))
-      .join_as(JoinType::LeftJoin, entity::bans::Relation::CreatedUser.def(), Alias::new("b"))
+      .join_as(JoinType::LeftJoin, BansRelation::User.def(), Alias::new("u"))
+      .join_as(JoinType::LeftJoin, BansRelation::CreatedUser.def(), Alias::new("b"))
       .into_partial_model::<GetBan>()
       .one(&txn)
       .await?;
@@ -87,17 +94,26 @@ impl<S: SumidaState> BanService<S> {
     Ok(item)
   }
 
-  pub async fn create(
-    &self,
-    data: CreateBan,
-  ) -> Result<InsertResult<entity::bans::ActiveModel>, SumidaError> {
+  pub async fn create(&self, data: CreateBan) -> Result<InsertResult<BansActiveModel>, SumidaError> {
     let active_model = data.into_active_model();
     let result = Bans::insert(active_model).exec(self.state.db()).await?;
 
     Ok(result)
   }
 
-  pub async fn update(&self, id: i32, data: UpdateBan) -> Result<entity::bans::Model, SumidaError> {
+  pub async fn create_by_user_id(
+    &self,
+    data: BanSettings,
+    user_id: i32,
+  ) -> Result<InsertResult<BansActiveModel>, SumidaError> {
+    let mut active_model = data.into_active_model();
+    active_model.user_id = Set(Some(user_id));
+    let result = Bans::insert(active_model).exec(self.state.db()).await?;
+
+    Ok(result)
+  }
+
+  pub async fn update(&self, id: i32, data: UpdateBan) -> Result<BansModel, SumidaError> {
     let txn = self.state.db().begin().await?;
     self.try_access("update", Bans::find_by_id(id), &txn).await?;
 
@@ -129,14 +145,12 @@ impl<S: SumidaState> ApiService<ApCondition, Bans> for BanService<S> {
     query
       .select_only()
       .expr(Expr::col((Bans, Asterisk)))
-      .join_as(JoinType::LeftJoin, entity::bans::Relation::User.def(), user_alias.clone())
-      .join_as(JoinType::LeftJoin, entity::bans::Relation::CreatedUser.def(), created_by_alias.clone())
+      .join_as(JoinType::LeftJoin, BansRelation::User.def(), user_alias.clone())
+      .join_as(JoinType::LeftJoin, BansRelation::CreatedUser.def(), created_by_alias.clone())
   }
 
   fn ap(&self) -> ApCondition {
-    use entity::bans::Column;
-
-    ap::ns("ban").who(&self.session).join(Bans, Column::Id)
+    ap::ns("ban").who(&self.session).join(Bans, BansColumn::Id)
   }
 
   fn select(&self, query: sea_orm::Select<Bans>) -> sea_orm::Select<Bans> {
