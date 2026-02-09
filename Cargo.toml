@@ -37,6 +37,7 @@ storage-local = ["api/storage-local"]
 [workspace]
 resolver = "2"
 members = ["api", "infra", "entity", "error", "examples/*", "e2e"]
+default-members = ["examples/basic"]
 
 [workspace.dependencies]
 sea-orm-crud = { path = "../sea-orm-crud" }

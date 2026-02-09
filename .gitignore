@@ -1,3 +1,4 @@
+settings.toml
 settings.e2e.toml
 /target/
 **/*.rs.bk

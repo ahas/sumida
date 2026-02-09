@@ -1,8 +1,9 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 
 use axum::http::StatusCode;
 use axum::{Extension, Router, routing};
+use sea_orm::DatabaseConnection;
+use sumida::api::SumidaState;
 use sumida::infra::session::redis_store::RedisSessionStore;
 use tokio::signal;
 use tower_http::trace::TraceLayer;
@@ -10,7 +11,15 @@ use tower_http::trace::TraceLayer;
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
 
 #[derive(Clone)]
-pub struct BasicState;
+pub struct BasicState {
+  db: DatabaseConnection,
+}
+
+impl SumidaState for BasicState {
+  fn db(&self) -> &DatabaseConnection {
+    &self.db
+  }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -20,14 +29,20 @@ async fn main() -> Result<(), anyhow::Error> {
   let settings = sumida::infra::settings::get();
 
   sumida::infra::tracing::subscribe();
-  sumida::infra::db::establish_connection().await;
+  let db = sumida::infra::db::connect().await;
 
   tracing::info!("version: {}", VERSION);
 
-  let state = BasicState;
+  let state = BasicState { db };
 
   let (messenger_layer, messenger) = sumida::infra::messenger::new_layer();
-  let redis_store = Arc::new(Mutex::new(RedisSessionStore::new(&settings.session.redis).await?));
+  let redis_settings = settings
+    .session
+    .redis
+    .as_ref()
+    .ok_or_else(|| anyhow::anyhow!("missing `session.redis` in settings"))?;
+  let redis_store = RedisSessionStore::new(redis_settings).await?;
+  let redis_store_handle = redis_store.handle.clone();
 
   let app = Router::new()
     .merge(
@@ -36,7 +51,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .router(),
     )
     .layer(messenger_layer)
-    .layer(sumida::api::layer::session::new(redis_store.clone().lock().unwrap().store()).await?)
+    .layer(sumida::api::layer::session::new(redis_store.store()).await?)
     .layer(sumida::api::layer::cors::new())
     .layer(Extension(messenger))
     .layer(Extension(settings))
@@ -53,11 +68,10 @@ async fn main() -> Result<(), anyhow::Error> {
   tracing::info!("listening on {}", listener.local_addr().unwrap());
   axum::serve(listener, app)
     .with_graceful_shutdown(shutdown_signal({
-      let redis_store = redis_store.clone();
+      let redis_store_handle = redis_store_handle.clone();
 
       move || {
-        let redis_store = redis_store.lock().unwrap();
-        let redis_store_handle = redis_store.handle.lock().unwrap();
+        let redis_store_handle = redis_store_handle.lock().unwrap();
         redis_store_handle.abort_handle().abort();
       }
     }))
