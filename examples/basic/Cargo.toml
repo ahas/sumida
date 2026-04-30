@@ -36,4 +36,4 @@ tokio.workspace = true
 tower.workspace = true
 tower-http = { workspace = true, features = ["full"] }
 tracing.workspace = true
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }

@@ -17,4 +17,4 @@ tracing = { workspace = true }
 
 aws-sdk-s3 = { workspace = true, optional = true }
 
-thiserror = "2.0.12"
+thiserror = "2.0.18"

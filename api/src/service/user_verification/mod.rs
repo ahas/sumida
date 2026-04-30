@@ -5,7 +5,7 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use infra::settings;
-use rand::Rng;
+use rand::RngExt;
 use sea_orm::{
   ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
   TransactionTrait,

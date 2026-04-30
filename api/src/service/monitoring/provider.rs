@@ -30,8 +30,8 @@ pub struct SysinfoMetricsProvider {
 
 impl SysinfoMetricsProvider {
   pub fn new() -> Self {
-    let refresh = RefreshKind::new()
-      .with_memory(MemoryRefreshKind::new().with_ram())
+    let refresh = RefreshKind::nothing()
+      .with_memory(MemoryRefreshKind::nothing().with_ram())
       .with_cpu(CpuRefreshKind::everything());
 
     let mut system = System::new_with_specifics(refresh);
