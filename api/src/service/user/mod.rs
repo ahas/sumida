@@ -129,6 +129,8 @@ impl<S: SumidaState> UserService<S> {
       password: opts.password.clone(),
       auth: opts.auth.clone(),
       server: opts.server.clone(),
+      port: opts.resolved_port(),
+      tls: opts.tls,
     });
 
     MailFormService::<S>::send(

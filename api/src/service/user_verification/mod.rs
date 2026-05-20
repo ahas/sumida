@@ -118,6 +118,8 @@ impl<S: SumidaState> UserVerificationService<S> {
         password: opts.password.clone(),
         server: opts.server.clone(),
         auth: opts.auth.clone(),
+        port: opts.resolved_port(),
+        tls: opts.tls,
       });
 
       MailFormService::<S>::send(

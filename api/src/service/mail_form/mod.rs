@@ -3,6 +3,7 @@ pub mod dto;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
+use infra::settings::smtp::SmtpTlsMode;
 use lettre::message::Message;
 use lettre::message::header::ContentType;
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
@@ -25,6 +26,8 @@ pub struct MailFormSendOptions {
   pub password: String,
   pub auth: String,
   pub server: String,
+  pub port: u16,
+  pub tls: SmtpTlsMode,
 }
 
 impl MailFormSendOptions {
@@ -37,7 +40,13 @@ impl MailFormSendOptions {
       _ => Mechanism::Plain,
     };
 
-    Ok(SmtpTransport::relay(&self.server)?.credentials(cred).authentication(vec![auth]).build())
+    let builder = match self.tls {
+      SmtpTlsMode::None => SmtpTransport::builder_dangerous(&self.server),
+      SmtpTlsMode::Starttls => SmtpTransport::starttls_relay(&self.server)?,
+      SmtpTlsMode::Implicit => SmtpTransport::relay(&self.server)?,
+    };
+
+    Ok(builder.port(self.port).credentials(cred).authentication(vec![auth]).build())
   }
 }
 
