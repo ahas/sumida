@@ -50,9 +50,14 @@ pub async fn get_jwt_secret() -> Result<String, SumidaError> {
     } else if #[cfg(feature = "jwt-secret-store-aws-ssm")] {
       use infra::aws;
       let ssm_client = aws_sdk_ssm::Client::new(aws::get_sdk_config());
+      let ssm_path = settings
+        .jwt
+        .as_ref()
+        .and_then(|x| x.ssm_path.clone())
+        .unwrap_or_else(|| format!("/sumida/{}/jwt-secret", settings.server.stage));
       let parameter = ssm_client
         .get_parameter()
-        .name(format!("/sumida/{}/jwt-secret", settings.server.stage))
+        .name(ssm_path)
         .with_decryption(true)
         .send()
         .await
@@ -131,12 +136,22 @@ pub async fn generate_refresh_token(
 
 pub async fn verify_jwt_token(token: &str) -> Result<JwtClaims, SumidaError> {
   let secret = get_jwt_secret().await?;
+  let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
+  validation.set_required_spec_claims(&["exp", "sub", "iat", "jti"]);
 
-  let token =
-    decode::<JwtClaims>(token, &DecodingKey::from_secret(secret.as_ref()), &Validation::default())
-      .map_err(|_| SumidaError::InvalidJwt)?;
+  let token = decode::<JwtClaims>(token, &DecodingKey::from_secret(secret.as_ref()), &validation)
+    .map_err(|_| SumidaError::InvalidJwt)?;
 
   Ok(token.claims)
+}
+
+/// access token 전용 검증. `token_type == "access"`만 허용.
+pub async fn verify_access_token(token: &str) -> Result<JwtClaims, SumidaError> {
+  let claims = verify_jwt_token(token).await?;
+  if claims.token_type != "access" {
+    return Err(SumidaError::InvalidJwt);
+  }
+  Ok(claims)
 }
 
 pub async fn generate_token_pair(

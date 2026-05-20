@@ -4,18 +4,16 @@ use axum::body::Body;
 use axum::extract::FromRequestParts;
 use axum::http::{HeaderMap, HeaderValue, Request, Response};
 use axum::response::IntoResponse;
-use cfg_if::cfg_if;
 use entity::prelude::*;
 use error::SumidaError;
 use futures::future::BoxFuture;
 use infra::session::UserSession;
-use jsonwebtoken as jwt;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-use serde::{Deserialize, Serialize};
 use tower::{Layer, Service};
 use tower_sessions::Expiry;
 
 use crate::SumidaState;
+use crate::service::auth::helper;
 
 #[derive(Clone)]
 pub struct UserGuardLayer<S> {
@@ -92,59 +90,20 @@ where
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct JwtClaims {
-  pub user_id: i32,
-  pub username: String,
-  pub exp: usize,
-}
-
 pub async fn verify_jwt<S: SumidaState>(
   session: &mut UserSession,
   state: S,
   token: &str,
 ) -> Result<(), SumidaError> {
   let settings = infra::settings::get();
-  #[cfg(not(any(feature = "jwt-secret-store-static", feature = "jwt-secret-store-aws-ssm")))]
-  compile_error!("Either `jwt-secret-store-static` or `jwt-secret-store-aws-ssm` feature must be enabled");
-
-  #[allow(unused_assignments)]
-  let mut secret = "".to_string();
-
-  cfg_if! {
-      if #[cfg(feature = "jwt-secret-store-static")] {
-          secret = settings
-              .jwt
-              .as_ref()
-              .and_then(|x| x.secret.clone())
-              .unwrap_or_default();
-      } else if #[cfg(feature = "jwt-secret-store-aws-ssm")] {
-          use infra::aws;
-          let ssm_client = aws_sdk_ssm::Client::new(aws::get_sdk_config());
-          secret = ssm_client
-              .get_parameter()
-              .name(format!("/trainer/{}/jwt-secret", settings.server.stage))
-              .with_decryption(true)
-              .send()
-              .await
-              .map_err(|e| SumidaError::Unsupported(e.to_string()))?
-              .parameter
-              .and_then(|param| param.value)
-              .ok_or(SumidaError::NoJwtSecret)?;
-      }
-  };
-
-  let token = jwt::decode::<JwtClaims>(
-    token,
-    &jwt::DecodingKey::from_secret(secret.as_ref()),
-    &jwt::Validation::default(),
-  )
-  .map_err(|_err| SumidaError::InvalidJwt)?;
+  // access token만 허용. token_type 검증 포함.
+  let claims = helper::verify_access_token(token).await?;
   let expiry = settings.jwt.as_ref().ok_or(SumidaError::NoJwtSecret)?.expiry.access_token_expiry()?;
 
-  session
-    .authorize(token.claims.user_id, &token.claims.username, Some(expiry), state.db())
-    .await?;
+  // 표준 클레임 sub(문자열)을 user_id(i32)로 파싱.
+  let user_id: i32 = claims.sub.parse().map_err(|_| SumidaError::InvalidJwt)?;
+
+  session.authorize(user_id, &claims.username, Some(expiry), state.db()).await?;
 
   Ok(())
 }
