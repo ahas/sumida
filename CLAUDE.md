@@ -202,3 +202,7 @@ room 자동 가입 규칙: 접속 사용자는 `org:N`, `user:N`, `admin`(관리
 ## 테스트
 
 유닛 테스트는 대상 모듈 옆 `#[cfg(test)]`. E2E는 `e2e/`, feature flag를 모듈 docs에 명시. DB-heavy 케이스는 `infra`의 SeaORM 인-메모리 헬퍼 사용(ad-hoc 연결 금지).
+
+## 후속 작업
+
+미완 작업·기술 부채는 [`TASKS.md`](TASKS.md)에 기록한다. 새 작업 지시를 받기 전에 한 번 훑어보면 누락된 follow-up이 있는지 확인할 수 있다.
