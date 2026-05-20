@@ -7,8 +7,8 @@ use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, JoinType, PaginatorTrait,
-  QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait, Unchanged,
+  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType,
+  PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait, Unchanged,
 };
 use sea_orm_crud::Optional;
 
@@ -19,6 +19,7 @@ use crate::SumidaState;
 use crate::service::ApiService;
 use crate::service::auth::session::AuthSessionService;
 use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::util::org::organization_ancestors_subquery;
 use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
 
@@ -83,7 +84,29 @@ impl<S: SumidaState> UserService<S> {
 
   pub async fn update(&self, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", Users::find_by_id(user_id), &txn).await?;
+
+    // 권한 3단 분기:
+    //   (1) is_admin = true                          → 보안 필드 포함 전체 update
+    //   (2) namespace="org:user", action=update      → 자기 조직 + 후손 조직 user에 한정.
+    //                                                  보안 필드(is_admin/role_id/organization_id/is_enabled) 잠금
+    //   (3) 그 외                                     → 차단 (NoAccessPermission)
+    //
+    // 자기 자신 프로필 변경은 /me 경로(UpdateMe DTO)를 사용해야 한다. 이 경로는
+    // 타인을 update할 때 쓰는 운영자 권한 채널.
+    let allow_security_fields = if self.session.profile.is_admin {
+      true
+    } else {
+      let start_org_col = Expr::col((entity::users::Entity, entity::users::Column::OrganizationId))
+        .into_simple_expr();
+      ap::ns("org:user")
+        .who(&self.session)
+        .join(Users, entity::users::Column::Id)
+        .object_in_subquery(organization_ancestors_subquery(start_org_col))
+        .action("update")
+        .try_access(Users::find_by_id(user_id), &txn)
+        .await?;
+      false
+    };
 
     let Optional(password) = data.password.clone();
 
@@ -92,6 +115,15 @@ impl<S: SumidaState> UserService<S> {
 
     if let Some(password) = password {
       model.password = Set(hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?)
+    }
+
+    if !allow_security_fields {
+      // 권한 상승을 일으킬 수 있는 필드는 잘라낸다. 운영자가 admin 승격/role 변경을 하려면
+      // is_admin=true 계정으로 동작해야 한다.
+      model.is_admin = NotSet;
+      model.role_id = NotSet;
+      model.organization_id = NotSet;
+      model.is_enabled = NotSet;
     }
 
     let result = Users::update(model).exec(&txn).await?;
