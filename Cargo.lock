@@ -154,6 +154,7 @@ dependencies = [
  "anyhow",
  "argon2",
  "async-trait",
+ "aws-sdk-dynamodb",
  "aws-sdk-s3",
  "aws-sdk-ssm",
  "aws-smithy-types",

@@ -1,5 +1,5 @@
 use chrono::Utc;
-use entity::access_logs::{LoginCode, LoginMethod};
+use entity::access_logs::{AccessMethod, AccessResultCode};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::jwt::{JwtTokenStore, RefreshTokenData};
@@ -37,7 +37,7 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     else {
       self
         .session
-        .write_log(None, LoginMethod::Password, LoginCode::AccountNotFound, db)
+        .write_log(None, AccessMethod::Password, AccessResultCode::AccountNotFound, db)
         .await?;
       return Err(SumidaError::InvalidAccount);
     };
@@ -46,7 +46,7 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     if self.session.check_banned(Some(user.id), db).await? {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountBanned, db)
+        .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::AccountBanned, db)
         .await?;
       return Err(SumidaError::AccountBanned);
     }
@@ -55,7 +55,7 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     if !user.is_enabled {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::AccountInactive, db)
+        .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::AccountInactive, db)
         .await?;
       return Err(SumidaError::InactiveAccount);
     }
@@ -64,7 +64,7 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     let result = if helper::verify_password(&data.password, &user.password) {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::Success, db)
+        .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::Success, db)
         .await?;
 
       // Generate JWT token pair
@@ -87,7 +87,7 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     } else {
       self
         .session
-        .write_log(Some(user.id), LoginMethod::Password, LoginCode::PasswordMismatch, db)
+        .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::PasswordMismatch, db)
         .await?;
       let banned = self.session.ban_if_exceeded_limit(Some(user.id), db).await?;
 
@@ -173,26 +173,42 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
   }
 }
 
-pub async fn create_jwt_store<S: SumidaState>(
-  state: &S,
-) -> Result<impl infra::jwt::JwtTokenStore, SumidaError> {
-  #[cfg(feature = "session-store-redis")]
-  {
-    use infra::jwt::RedisJwtStore;
-    let redis_url = state.settings().session.redis.url.as_deref().unwrap_or("redis://localhost:6379/0");
-    RedisJwtStore::new(redis_url).await
-  }
+/// 활성화된 cargo feature(`session-store-redis` 또는 `session-store-aws-dynamodb`)에
+/// 따라 적절한 `JwtTokenStore` 구현체를 생성. 둘 다 없으면 컴파일 에러.
+///
+/// 우선순위: redis > dynamodb (둘 다 활성화된 경우 redis 사용).
+#[cfg(feature = "session-store-redis")]
+pub async fn create_jwt_store() -> Result<impl infra::jwt::JwtTokenStore, SumidaError> {
+  use infra::jwt::RedisJwtStore;
 
-  #[cfg(all(feature = "session-store-aws-dynamodb", not(feature = "session-store-redis")))]
-  {
-    use infra::jwt::DynamoJwtStore;
-    let dynamodb_client = state.aws_client().dynamodb_client().clone();
-    let table_name = state.settings().session.dynamodb.table_name.clone();
-    Ok(DynamoJwtStore::new(dynamodb_client, table_name))
-  }
+  let redis_url = infra::settings::get()
+    .session
+    .redis
+    .as_ref()
+    .and_then(|x| x.url.clone())
+    .unwrap_or_else(|| "redis://localhost:6379/0".to_string());
 
-  #[cfg(not(any(feature = "session-store-redis", feature = "session-store-aws-dynamodb")))]
-  {
-    Err(SumidaError::Unsupported("No JWT store implementation available".to_string()))
-  }
+  RedisJwtStore::new(&redis_url).await
 }
+
+#[cfg(all(feature = "session-store-aws-dynamodb", not(feature = "session-store-redis")))]
+pub async fn create_jwt_store() -> Result<impl infra::jwt::JwtTokenStore, SumidaError> {
+  use aws_sdk_dynamodb::Client as DynamoClient;
+  use infra::jwt::DynamoJwtStore;
+
+  let settings = infra::settings::get();
+  let table_name = settings
+    .session
+    .dynamodb
+    .as_ref()
+    .map(|x| x.table.clone())
+    .ok_or_else(|| SumidaError::Unsupported("session.dynamodb.table not configured".to_string()))?;
+
+  let dynamodb_client = DynamoClient::new(infra::aws::get_sdk_config());
+  Ok(DynamoJwtStore::new(dynamodb_client, table_name))
+}
+
+#[cfg(not(any(feature = "session-store-redis", feature = "session-store-aws-dynamodb")))]
+compile_error!(
+  "JWT token endpoints require one of `session-store-redis` or `session-store-aws-dynamodb` features"
+);

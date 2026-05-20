@@ -24,8 +24,12 @@ aws-s3 = ["infra/aws-s3", "api/aws-s3"]
 image = ["api/image"]
 
 session = []
-session-store-redis = ["session", "infra/session-store-redis"]
-session-store-aws-dynamodb = ["session", "infra/session-store-aws-dynamodb"]
+session-store-redis = ["session", "infra/session-store-redis", "api/session-store-redis"]
+session-store-aws-dynamodb = [
+  "session",
+  "infra/session-store-aws-dynamodb",
+  "api/session-store-aws-dynamodb",
+]
 
 jwt = []
 jwt-secret-store-aws-ssm = ["jwt", "api/jwt-secret-store-aws-ssm"]

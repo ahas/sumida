@@ -44,6 +44,7 @@ where
     let org_controller = OrganizationController::<StateT>::new();
     let role_controller = RoleController::<StateT>::new();
     let auth_session_controller = AuthSessionController::<StateT>::new();
+    let auth_token_controller = AuthTokenController::<StateT>::new();
     let me_controller = MeController::<StateT>::new();
     let user_controller = UserController::<StateT>::new();
     let ban_controller = BanController::<StateT>::new();
@@ -70,6 +71,7 @@ where
       .nest("/organizations", org_controller.router(state))
       .nest("/roles", role_controller.router(state))
       .nest("/auth/session", auth_session_controller.router(state))
+      .nest("/auth/token", auth_token_controller.router(state))
       .nest("/me", me_controller.router(state))
       .nest("/users", user_controller.router(state))
       .nest("/user-invitations", user_invitation_controller.router(state))

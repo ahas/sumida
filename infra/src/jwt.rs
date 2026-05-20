@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use cfg_if::cfg_if;
 use chrono::{DateTime, Utc};
 use error::SumidaError;
@@ -20,25 +19,26 @@ pub struct BlacklistEntry {
   pub blacklisted_at: DateTime<Utc>,
 }
 
-#[async_trait]
+/// Rust 1.75+ native `async fn` in trait. trait object(`dyn JwtTokenStore`)는 불가하므로
+/// 사용 측은 `impl JwtTokenStore` 또는 generic param으로 받는다.
 pub trait JwtTokenStore: Send + Sync {
   fn store_refresh_token(
     &self,
     token_id: &str,
     data: RefreshTokenData,
-  ) -> impl Future<Output = Result<(), SumidaError>>;
+  ) -> impl Future<Output = Result<(), SumidaError>> + Send;
   fn get_refresh_token(
     &self,
     token_id: &str,
-  ) -> impl Future<Output = Result<Option<RefreshTokenData>, SumidaError>>;
-  fn delete_refresh_token(&self, token_id: &str) -> impl Future<Output = Result<(), SumidaError>>;
+  ) -> impl Future<Output = Result<Option<RefreshTokenData>, SumidaError>> + Send;
+  fn delete_refresh_token(&self, token_id: &str) -> impl Future<Output = Result<(), SumidaError>> + Send;
   fn blacklist_token(
     &self,
     jti: &str,
     expires_at: DateTime<Utc>,
-  ) -> impl Future<Output = Result<(), SumidaError>>;
-  fn is_token_blacklisted(&self, jti: &str) -> impl Future<Output = Result<bool, SumidaError>>;
-  fn cleanup_expired(&self) -> impl Future<Output = Result<(), SumidaError>>;
+  ) -> impl Future<Output = Result<(), SumidaError>> + Send;
+  fn is_token_blacklisted(&self, jti: &str) -> impl Future<Output = Result<bool, SumidaError>> + Send;
+  fn cleanup_expired(&self) -> impl Future<Output = Result<(), SumidaError>> + Send;
 }
 
 cfg_if! {

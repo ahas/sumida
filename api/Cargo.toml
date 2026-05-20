@@ -10,14 +10,23 @@ path = "src/lib.rs"
 default = ["full-local"]
 aws = ["aws-smithy-types"]
 aws-s3 = ["aws", "aws-sdk-s3", "infra/aws-s3"]
+aws-dynamodb = ["aws", "aws-sdk-dynamodb", "infra/aws-dynamodb"]
 image = ["dep:image"]
 jwt = ["jsonwebtoken", "jsonwebtoken/rust_crypto"]
 jwt-secret-store-aws-ssm = ["jwt", "aws", "aws-sdk-ssm"]
 jwt-secret-store-static = ["jwt"]
 storage-aws-s3 = ["aws", "aws-s3"]
 storage-local = []
-full-local = ["image", "jwt-secret-store-static", "storage-local"]
-full-aws = ["aws-s3", "image", "jwt-secret-store-aws-ssm", "storage-aws-s3"]
+session-store-redis = ["infra/session-store-redis"]
+session-store-aws-dynamodb = ["aws-dynamodb", "infra/session-store-aws-dynamodb"]
+full-local = ["image", "jwt-secret-store-static", "storage-local", "session-store-redis"]
+full-aws = [
+  "aws-s3",
+  "image",
+  "jwt-secret-store-aws-ssm",
+  "storage-aws-s3",
+  "session-store-aws-dynamodb",
+]
 
 [dev-dependencies]
 e2e = { path = "../e2e" }
@@ -57,6 +66,7 @@ sysinfo = { workspace = true }
 
 aws-sdk-s3 = { workspace = true, optional = true }
 aws-sdk-ssm = { workspace = true, optional = true }
+aws-sdk-dynamodb = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 jsonwebtoken = { workspace = true, optional = true }
