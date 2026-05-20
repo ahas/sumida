@@ -1,0 +1,50 @@
+[server]
+host = "0.0.0.0:7997"
+stage = "dev"
+logging = "info"
+
+[database]
+url = "postgres://user:password@localhost:5432/sumida"
+logging = "INFO"
+
+[aws]
+region = "ap-northeast-2"
+
+[aws.s3]
+bucket = "your-s3-bucket"
+
+[session]
+ip_source = "ConnectInfo"
+
+# session-store-redis feature 사용 시
+[session.redis]
+url = "redis://0.0.0.0:6379/0"
+
+# session-store-aws-dynamodb feature 사용 시
+# [session.dynamodb]
+# table = "your-sessions-table"
+
+[storage]
+directory = "/static/upload"
+
+[session.cookie]
+name = "sumida.sid"
+secure = true
+same_site = "strict"
+
+[smtp]
+username = "smtp_user"
+password = "REPLACE_WITH_SMTP_PASSWORD"
+server = "smtp.example.com"
+auth = "LOGIN"
+# 신규 옵션 (G4 SMTP TLS 작업 후 사용 가능):
+# port = 587
+# tls = "starttls"  # "none" | "starttls" | "implicit"
+
+# JWT 사용 시
+# [jwt]
+# secret = "REPLACE_WITH_JWT_SECRET"  # jwt-secret-store-static feature
+# [jwt.expiry]
+# access_token = "15m"
+# refresh_token = "7d"
+# remember_me = "30d"
