@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 fn _build_object_condition<C: IntoColumnRef>(
   objects: &[String],
   exprs: &[SimpleExpr],
+  in_subqueries: &[SimpleExpr],
   col: C,
 ) -> Condition {
   let col = Expr::col(col);
@@ -29,6 +30,17 @@ fn _build_object_condition<C: IntoColumnRef>(
 
   for expr in exprs {
     cond = cond.add(col.clone().eq(expr.clone()));
+  }
+
+  // object_in_subquery: 호출자가 ANY(SELECT ...) 형태로 만든 raw SimpleExpr에
+  // ap.object가 매칭되면 OR 분기 충족. 조직 트리 ancestor ids 같은 동적 집합용.
+  // 사용 예:
+  //   Expr::cust_with_expr(
+  //     "ANY(WITH RECURSIVE chain AS ( ... ) SELECT id::text FROM chain)",
+  //     [start_col_expr],
+  //   )
+  for sub in in_subqueries {
+    cond = cond.add(col.clone().eq(sub.clone()));
   }
 
   cond
@@ -115,6 +127,9 @@ pub trait ApGuard {
   fn expr<E: IntoSimpleExpr + Clone>(self, expr: E) -> Self;
   fn join<S: IntoIden + Clone + 'static, T: IntoIden + Clone + 'static>(self, entity: S, column: T)
   -> Self;
+  /// `ap.object`가 raw `ANY(SELECT ...)` 또는 동등한 SimpleExpr에 매칭되면 통과시키는 OR 분기.
+  /// 조직 트리 ancestor 같은 동적 집합을 호출자가 직접 SQL로 짜서 넣는 escape hatch.
+  fn object_in_subquery(self, sub: SimpleExpr) -> Self;
   fn action<T: ApValue>(self, action: T) -> Self;
   fn user(self, user: ApUser) -> Self;
   fn who(self, session: &UserSession) -> Self;
@@ -139,6 +154,7 @@ pub struct ApCondition {
   actions: Vec<String>,
   objects: Vec<String>,
   exprs: Vec<SimpleExpr>,
+  object_in_subqueries: Vec<SimpleExpr>,
   users: Vec<ApUser>,
   alias: Option<Alias>,
 }
@@ -150,10 +166,12 @@ impl ApCondition {
       actions: Vec::new(),
       objects: Vec::new(),
       exprs: Vec::new(),
+      object_in_subqueries: Vec::new(),
       users: Vec::new(),
       alias: None,
     }
   }
+
 
   pub fn alias(mut self, alias: Alias) -> Self {
     self.alias = Some(alias);
@@ -197,7 +215,9 @@ impl ApCondition {
       .expr_as(Expr::expr(Func::cust("bool_or").arg(col_effect.eq("deny"))), "has_deny")
       .from_as(ApEntity.into_table_ref(), ap_alias.clone())
       .and_where(_build_namespace_condition(&self.namespace, col_ns).into())
-      .and_where(_build_object_condition(&self.objects, &self.exprs, col_obj).into())
+      .and_where(
+        _build_object_condition(&self.objects, &self.exprs, &self.object_in_subqueries, col_obj).into(),
+      )
       .and_where(_build_action_condition(&self.actions, col_action).into())
       .and_where(_build_user_conditions(&self.users, col_user).into())
       .to_owned();
@@ -222,6 +242,11 @@ impl ApGuard for ApCondition {
 
   fn expr<E: IntoSimpleExpr + Clone>(mut self, expr: E) -> Self {
     self.exprs.push(expr.into_simple_expr());
+    self
+  }
+
+  fn object_in_subquery(mut self, sub: SimpleExpr) -> Self {
+    self.object_in_subqueries.push(sub);
     self
   }
 
@@ -275,7 +300,12 @@ impl ApGuard for ApCondition {
     let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
     let condition = Condition::all()
       .add(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)))
-      .add(_build_object_condition(&self.objects, &self.exprs, (ap_alias.clone(), ApCol::Object)))
+      .add(_build_object_condition(
+        &self.objects,
+        &self.exprs,
+        &self.object_in_subqueries,
+        (ap_alias.clone(), ApCol::Object),
+      ))
       .add(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)))
       .add(_build_user_conditions(&self.users, (ap_alias.clone(), ApCol::User)));
 
@@ -384,6 +414,14 @@ impl ApGuard for ApChain {
     self
   }
 
+  fn object_in_subquery(mut self, sub: SimpleExpr) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).object_in_subquery(sub.clone());
+    }
+
+    self
+  }
+
   fn join<S, T>(mut self, entity: S, col: T) -> Self
   where
     S: IntoIden + Clone + 'static,
@@ -473,6 +511,160 @@ impl ApGuard for ApChain {
 
     Ok(())
   }
+}
+
+/// `ApChain`의 OR 결합 버전. 자식 중 하나라도 통과하면 매칭.
+///
+/// 시멘틱:
+/// - `apply(query)` — 자식들의 `condition()`을 `Condition::any()`로 묶어 필터.
+///   각 자식은 별도 LATERAL JOIN(`ap_or_<i>`)을 자기 영역에 깐다.
+/// - `can_access/check_allowed` — 자식 중 하나라도 true면 true.
+/// - deny 시멘틱: 각 자식 내부에서는 기존 그대로 `has_allow AND NOT has_deny`. 자식 간 deny 전파는 없음.
+#[derive(Clone, Debug, Default)]
+pub struct ApOr {
+  children: Vec<ApCondition>,
+}
+
+impl ApOr {
+  pub fn new() -> Self {
+    Self { children: Vec::new() }
+  }
+
+  pub fn push(mut self, child: ApCondition) -> Self {
+    self.children.push(child);
+    self
+  }
+
+  pub fn push_if<V, F>(mut self, value: Option<V>, mut cb: F) -> Self
+  where
+    V: ToString,
+    F: FnMut(V) -> ApCondition,
+  {
+    if let Some(v) = value {
+      self.children.push(cb(v));
+    }
+
+    self
+  }
+}
+
+impl ApGuard for ApOr {
+  fn object<O: ToString>(mut self, object: O) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).object(object.to_string());
+    }
+    self
+  }
+
+  fn column<C: IntoSimpleExpr + Clone>(mut self, col: C) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).column(col.clone());
+    }
+    self
+  }
+
+  fn expr<E: IntoSimpleExpr + Clone>(mut self, expr: E) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).expr(expr.clone());
+    }
+    self
+  }
+
+  fn object_in_subquery(mut self, sub: SimpleExpr) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).object_in_subquery(sub.clone());
+    }
+    self
+  }
+
+  fn join<S, T>(mut self, entity: S, col: T) -> Self
+  where
+    S: IntoIden + Clone + 'static,
+    T: IntoIden + Clone + 'static,
+  {
+    for child in &mut self.children {
+      *child = mem::take(child).join(entity.clone(), col.clone());
+    }
+    self
+  }
+
+  fn action<V: ApValue>(mut self, action: V) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).action(action.clone());
+    }
+    self
+  }
+
+  fn user(mut self, ap_user: ApUser) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).user(ap_user.clone());
+    }
+    self
+  }
+
+  fn who(mut self, session: &UserSession) -> Self {
+    for child in &mut self.children {
+      *child = mem::take(child).who(session);
+    }
+    self
+  }
+
+  fn apply<E: EntityTrait>(self, mut query: Select<E>) -> Select<E> {
+    let mut any_cond = Condition::any();
+    for (i, child) in self.children.iter().enumerate() {
+      let alias = Alias::new(format!("ap_or_{i}"));
+      query = child.with_lateral_join(query, alias.clone());
+      any_cond = any_cond.add(child.condition(alias));
+    }
+
+    QueryFilter::filter(query, any_cond)
+  }
+
+  async fn check_allowed<C>(self, db: &C) -> bool
+  where
+    C: ConnectionTrait,
+  {
+    for child in self.children {
+      if child.check_allowed(db).await {
+        return true;
+      }
+    }
+    false
+  }
+
+  async fn try_check_allowed<C: ConnectionTrait>(self, db: &C) -> Result<(), SumidaError> {
+    if self.check_allowed(db).await { Ok(()) } else { Err(SumidaError::NoAccessPermission) }
+  }
+
+  async fn can_access<E, C>(self, query: Select<E>, db: &C) -> bool
+  where
+    E: EntityTrait,
+    C: ConnectionTrait,
+  {
+    for child in self.children {
+      if child.can_access(query.clone(), db).await {
+        return true;
+      }
+    }
+    false
+  }
+
+  async fn try_access<E, C>(self, query: Select<E>, db: &C) -> Result<(), SumidaError>
+  where
+    E: EntityTrait,
+    C: ConnectionTrait,
+  {
+    if self.can_access(query, db).await {
+      Ok(())
+    } else {
+      Err(SumidaError::NoAccessPermission)
+    }
+  }
+}
+
+/// `ApOr::new()` shortcut.
+pub fn or() -> ApOr {
+  ApOr::new()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
@@ -670,9 +862,9 @@ impl FindUsersOfAp {
 
     if !self.objects.is_empty() {
       cond = cond.add(_build_object_condition(
-        //
         &self.objects,
         &self.exprs,
+        &[],
         (ap_alias.clone(), ApCol::Object),
       ));
     }
