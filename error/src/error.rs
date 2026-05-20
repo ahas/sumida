@@ -134,6 +134,64 @@ impl SumidaError {
   }
 }
 
+/// 다운스트림 도메인 에러가 sumida 표준 응답 스키마를 따르도록 하는 트레잇.
+///
+/// 다운스트림은 자체 enum에 이 트레잇을 구현하고 `into_response`에서
+/// `SumidaApiError::to_response(&self)`를 호출하면, sumida의 `SumidaError`와
+/// 동일한 JSON 형식(`{ code, statusCode, reason? }`)으로 응답한다.
+///
+/// ```ignore
+/// impl SumidaApiError for DaqsError {
+///   fn status_code(&self) -> StatusCode { ... }
+///   fn error_code(&self) -> String { "lab-app.something".into() }
+/// }
+///
+/// impl IntoResponse for DaqsError {
+///   fn into_response(self) -> Response { self.to_response() }
+/// }
+/// ```
+pub trait SumidaApiError: std::error::Error {
+  fn status_code(&self) -> StatusCode;
+
+  fn error_code(&self) -> String {
+    "E-1".to_owned()
+  }
+
+  fn to_response(&self) -> axum::response::Response {
+    let status_code = self.status_code();
+    let code = self.error_code();
+    let reason = self.to_string();
+    tracing::error!("ApiError: {}, {}", status_code, reason);
+
+    (
+      status_code,
+      if cfg!(debug_assertions) {
+        Json(json!({
+          "code": code,
+          "statusCode": status_code.as_u16(),
+          "reason": reason,
+        }))
+      } else {
+        Json(json!({
+          "code": code,
+          "statusCode": status_code.as_u16(),
+        }))
+      },
+    )
+      .into_response()
+  }
+}
+
+impl SumidaApiError for SumidaError {
+  fn status_code(&self) -> StatusCode {
+    self.clone().into()
+  }
+
+  fn error_code(&self) -> String {
+    SumidaError::code(self)
+  }
+}
+
 // impl Into<StatusCode> for SumidaError {
 impl From<SumidaError> for StatusCode {
   fn from(err: SumidaError) -> Self {
