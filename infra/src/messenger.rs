@@ -110,7 +110,16 @@ pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerSt
 }
 
 pub fn new_layer() -> (SocketIoLayer, SumidaMessenger) {
-  let (layer, io) = SocketIo::builder().with_state(SumidaMessengerState).build_layer();
+  let (layer, io) = SocketIo::builder()
+    .with_state(SumidaMessengerState)
+    // 소켓당 송신 버퍼 확대(기본 128). 일시적 backpressure로 emit(예: term:open)이
+    // `InternalChannelFull`로 유실되는 것을 줄인다.
+    .max_buffer_size(1024)
+    // 죽은(half-open) 소켓을 더 빨리 감지/정리한다(기본 25s/20s → ~45s 소요).
+    // 좀비 소켓이 room에 오래 남아 그쪽으로 보낸 메시지가 버려지는 시간을 줄인다.
+    .ping_interval(std::time::Duration::from_secs(10))
+    .ping_timeout(std::time::Duration::from_secs(10))
+    .build_layer();
 
   io.ns("/user", on_connect);
 
