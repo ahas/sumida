@@ -571,6 +571,11 @@ where
       state: user_state,
     };
     session.profile.last_seen_at = Utc::now().into();
+    // tower-sessions는 record에 만료 "시각"만 저장하고 "정책"(Expiry)은 매 요청 layer 기본값
+    // (여기선 None=OnSessionEnd)으로 리셋된다. 아래 save()가 그 None 정책으로 덮어쓰면
+    // 로그인 시 설정한 remember-me/만료가 사라지고(쿠키가 세션 쿠키로 다운그레이드) 풀린다.
+    // 그래서 로그인 때 저장해 둔 profile.expiry를 매 요청 재적용한다.
+    session.inner.set_expiry(session.profile.expiry);
     session
       .inner
       .insert(Self::USER_PROFILE_KEY, session.profile.clone())
