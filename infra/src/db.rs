@@ -50,7 +50,8 @@ fn get_pg_pool_options() -> (String, PoolOptions<Postgres>) {
   conn_opts.sqlx_logging(is_logging_enabled);
 
   if is_logging_enabled {
-    let filter = tracing::log::LevelFilter::from_str(&logging).unwrap();
+    let filter = tracing::log::LevelFilter::from_str(&logging)
+      .unwrap_or_else(|_| panic!("invalid database.logging level: {logging:?}"));
     conn_opts.sqlx_logging_level(filter);
   }
 

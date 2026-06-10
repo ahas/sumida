@@ -5,7 +5,21 @@ use tower_http::cors::CorsLayer;
 pub fn new() -> CorsLayer {
   let settings = settings::get();
   let origins = settings.server.cors.as_ref().map_or_else(Vec::new, |x| {
-    x.allow_origins.clone().into_iter().filter_map(|v| v.parse().ok()).collect()
+    x.allow_origins
+      .clone()
+      .into_iter()
+      .filter(|v| {
+        // allow_credentials(true) combined with a wildcard '*' origin is an invalid combination that browsers reject.
+        // Ignore it explicitly to avoid the misconception that a misconfiguration opens up all origins.
+        if v == "*" {
+          tracing::warn!("CORS allow_origins '*' is ignored: it cannot be combined with allow_credentials=true");
+          false
+        } else {
+          true
+        }
+      })
+      .filter_map(|v| v.parse().ok())
+      .collect()
   });
 
   CorsLayer::new()

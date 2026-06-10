@@ -13,6 +13,7 @@ use super::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::util::file_validation::{FileValidationConfig, FileValidator};
 use crate::util::pagination::Pagination;
 use crate::util::storage::{Storage, SumidaStorage};
 
@@ -65,6 +66,20 @@ impl<S: SumidaState> FileService<S> {
 
   pub async fn upload(&self, data: UploadFile) -> Result<FileUploaded, SumidaError> {
     let db = self.state.db();
+
+    // General-purpose upload validation: size/extension/MIME checks based on the global storage.upload limits.
+    // (Unlike board uploads, there is no per-board policy, so the global limits apply. Even if the limits are empty,
+    //  validate_mime_type always blocks dangerous MIME types (executables/scripts).)
+    let upload_limits = &infra::settings::get().storage.upload;
+    FileValidator::new(FileValidationConfig {
+      can_upload_file: true,
+      max_file_size: upload_limits.max_file_size,
+      max_file_count: 0,
+      allowed_file_types: upload_limits.allowed_file_types.clone(),
+    })
+    .validate_size(data.file.bytes.len())?
+    .validate_extension(data.file.get_extension().as_deref())?
+    .validate_mime_type(&data.file.mime_type)?;
 
     let file_dir = data.options.dir.clone();
     let file_hash = data.file.hash();

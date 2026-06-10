@@ -85,10 +85,17 @@ pub async fn get_json(
 pub async fn get_image(client: &aws_sdk_s3::Client, uri: String) -> Result<DynamicImage, anyhow::Error> {
   let bytes = get_bytes(client, uri.clone()).await?;
   let cursor = Cursor::new(bytes.into_bytes());
+  let format = ImageFormat::from_path(&uri)?;
 
-  ImageFormat::from_path(&uri)
-    .and_then(|x| image::load(cursor, x))
-    .map_err(anyhow::Error::from)
+  // decompression bomb defense: cap the decode dimensions/memory.
+  let mut reader = image::ImageReader::with_format(cursor, format);
+  let mut limits = image::Limits::default();
+  limits.max_image_width = Some(16_384);
+  limits.max_image_height = Some(16_384);
+  limits.max_alloc = Some(256 * 1024 * 1024);
+  reader.limits(limits);
+
+  reader.decode().map_err(anyhow::Error::from)
 }
 
 #[allow(dead_code)]

@@ -5,10 +5,10 @@ use tower_sessions::Expiry;
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct JwtSettings {
-  /// `jwt-secret-store-static` feature 사용 시 평문 비밀.
+  /// Plaintext secret used with the `jwt-secret-store-static` feature.
   pub secret: Option<String>,
-  /// `jwt-secret-store-aws-ssm` feature 사용 시 SSM 파라미터 경로.
-  /// 미지정 시 `/sumida/{stage}/jwt-secret` 기본값 사용.
+  /// SSM parameter path used with the `jwt-secret-store-aws-ssm` feature.
+  /// Defaults to `/sumida/{stage}/jwt-secret` when unspecified.
   pub ssm_path: Option<String>,
   #[serde(default)]
   pub expiry: JwtExpirySettings,

@@ -10,7 +10,8 @@ pub fn subscribe() {
   let logging = settings.server.logging.clone().unwrap_or("off".to_string());
 
   if logging != "off" && logging != "false" {
-    let filter = tracing_subscriber::EnvFilter::from_str(&logging).unwrap();
+    let filter = tracing_subscriber::EnvFilter::from_str(&logging)
+      .unwrap_or_else(|_| panic!("invalid server.logging filter expression: {logging:?}"));
 
     tracing_subscriber::registry()
       .with(filter)

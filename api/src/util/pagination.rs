@@ -31,7 +31,8 @@ impl Pagination {
   where
     E: EntityTrait,
   {
-    let offset = std::cmp::max((self.page - 1) * self.limit, 0);
+    // page starts at 1. Use saturating so that even ?page=0 does not underflow u64 (panic / huge offset).
+    let offset = self.page.saturating_sub(1) * self.limit;
 
     QueryTrait::query(&mut query).offset(offset).limit(std::cmp::min(self.limit, MAX_LIMIT));
 

@@ -7,7 +7,7 @@ use sea_orm::{ColumnTrait, DbErr};
 use serde::{Deserialize, Deserializer, de};
 
 pub fn is_serialization_failure(error: &DbErr) -> bool {
-  // PostgreSQL의 직렬화 실패 오류 코드 40001을 확인합니다.
+  // Check for PostgreSQL's serialization failure error code 40001.
   match error {
     DbErr::Query(err) => err.to_string().contains("could not serialize access"),
     DbErr::Exec(err) => err.to_string().contains("could not serialize access"),
@@ -19,7 +19,10 @@ pub fn wrap_ilike<S>(col: Expr, text: S) -> SimpleExpr
 where
   S: AsRef<str>,
 {
-  col.ilike(format!("%{text}%", text = text.as_ref()))
+  // Treat LIKE wildcards (%, _) and the escape character (\) as literals.
+  // Without escaping, %/_ in user input would be interpreted as patterns and cause over-matching.
+  let escaped = text.as_ref().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+  col.ilike(format!("%{escaped}%"))
 }
 
 pub fn tsquery<C, S>(col: C, search: S) -> SimpleExpr

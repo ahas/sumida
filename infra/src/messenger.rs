@@ -64,8 +64,15 @@ impl SumidaMessenger {
   where
     T: ?Sized + serde::Serialize,
   {
-    let io = self.io.of(if let Some(ref path) = self.path { path.as_str() } else { "/" }).unwrap();
+    let path = if let Some(ref path) = self.path { path.as_str() } else { "/" };
+    let Some(io) = self.io.of(path) else {
+      // If the namespace is not registered, there is no target to send to. Silently ignore instead of panicking.
+      tracing::warn!("messenger namespace not found: {path}");
+      return Ok(());
+    };
     let io = if let Some(rooms) = self.rooms.clone() { io.within(rooms) } else { io };
+    // Every emit is also broadcast to the admin room (for admin monitoring; intended behavior).
+    // Even org/user-only messages reach admins, so use a dedicated channel for sensitive payloads.
     let io = io.within("admin");
 
     io.emit(event, data).await?;
@@ -101,7 +108,9 @@ pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerSt
   socket.join([
     format!("org:{}", user_data.organization.id),
     format!("role:{}", user_data.role.id),
-    format!("user:{}", user_data.username),
+    // user rooms are keyed by user_id. `messenger.user([id])` emit sends to `user:{id}`, so
+    // join must also use the id, not the username, for targeted notifications to arrive.
+    format!("user:{}", user_data.id),
   ]);
 
   if user_data.is_admin {
@@ -112,11 +121,11 @@ pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerSt
 pub fn new_layer() -> (SocketIoLayer, SumidaMessenger) {
   let (layer, io) = SocketIo::builder()
     .with_state(SumidaMessengerState)
-    // 소켓당 송신 버퍼 확대(기본 128). 일시적 backpressure로 emit(예: term:open)이
-    // `InternalChannelFull`로 유실되는 것을 줄인다.
+    // Enlarge the per-socket send buffer (default 128). This reduces emits (e.g. term:open)
+    // being dropped as `InternalChannelFull` due to transient backpressure.
     .max_buffer_size(1024)
-    // 죽은(half-open) 소켓을 더 빨리 감지/정리한다(기본 25s/20s → ~45s 소요).
-    // 좀비 소켓이 room에 오래 남아 그쪽으로 보낸 메시지가 버려지는 시간을 줄인다.
+    // Detect/clean up dead (half-open) sockets faster (default 25s/20s → takes ~45s).
+    // This reduces the time a zombie socket lingers in a room and messages sent there are dropped.
     .ping_interval(std::time::Duration::from_secs(10))
     .ping_timeout(std::time::Duration::from_secs(10))
     .build_layer();

@@ -1,6 +1,6 @@
 use std::io::{BufWriter, Cursor};
 
-use axum::http::header;
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use image::codecs::jpeg;
 use image::{DynamicImage, ImageFormat, RgbImage, imageops};
@@ -14,11 +14,17 @@ impl IntoResponse for ImageResponse {
     let format = self.1;
 
     let mut buffer = BufWriter::new(Cursor::new(Vec::new()));
-    img.write_to(&mut buffer, format).expect("failed to write a image to buffer");
-    let bytes = buffer
-      .into_inner()
-      .map(|x| x.into_inner())
-      .expect("failed to convert a image into byte");
+    if let Err(err) = img.write_to(&mut buffer, format) {
+      tracing::error!("failed to write image to buffer: {err}");
+      return (StatusCode::INTERNAL_SERVER_ERROR, "failed to encode image").into_response();
+    }
+    let bytes = match buffer.into_inner().map(|x| x.into_inner()) {
+      Ok(bytes) => bytes,
+      Err(err) => {
+        tracing::error!("failed to convert image into bytes: {err}");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "failed to encode image").into_response();
+      }
+    };
 
     ([(header::CONTENT_TYPE, format.to_mime_type().to_string())], bytes).into_response()
   }

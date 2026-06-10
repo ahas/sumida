@@ -14,6 +14,19 @@ use crate::util::s3;
 
 pub type FileStream = Pin<Box<dyn AsyncRead + Send>>;
 
+/// RFC 5987 `ext-value` encoding (for Content-Disposition `filename*`). Leaves attr-char as-is
+/// and percent-encodes the rest as `%HH`.
+fn percent_encode_rfc5987(s: &str) -> String {
+  let mut out = String::with_capacity(s.len());
+  for &b in s.as_bytes() {
+    match b {
+      b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => out.push(b as char),
+      _ => out.push_str(&format!("%{b:02X}")),
+    }
+  }
+  out
+}
+
 #[derive(Clone, Debug)]
 pub struct StaticFile {
   pub name: String,
@@ -81,11 +94,23 @@ pub trait Storage: Send + Sync {
     let stream = ReaderStream::new(file_stream);
     let body = Body::from_stream(stream);
 
+    // RFC 6266/5987: provide both an ASCII fallback (dangerous characters stripped) and the full UTF-8 representation.
+    // file_name is the user-controlled original_name received at upload, so interpolating quotes/control characters
+    // as-is allows header injection and filename spoofing.
+    let ascii_fallback: String = file_name
+      .chars()
+      .filter(|c| c.is_ascii() && !c.is_ascii_control() && *c != '"' && *c != '\\')
+      .collect();
+    let content_disposition = format!(
+      "attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{}",
+      percent_encode_rfc5987(&file_name)
+    );
+
     let response = Response::builder()
       .status(StatusCode::OK)
       .header(header::CONTENT_TYPE, content_type)
       .header(header::CONTENT_LENGTH, file_size.to_string())
-      .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{file_name}\""))
+      .header(header::CONTENT_DISPOSITION, content_disposition)
       .body(body)
       .map_err(|_| SumidaError::InternalServerError("Failed to create response".into()))?;
 
@@ -189,14 +214,29 @@ impl LocalStorage {
     }
   }
 
-  fn resolve_path(&self, relative: &str) -> PathBuf {
-    self.base_directory.join(relative)
+  /// Ensures the path resolves only within `base_directory`.
+  /// If a `..` (parent directory) or absolute-path component comes in, `PathBuf::join` escapes outside base,
+  /// so allow only normal components and reject anything else.
+  fn resolve_path(&self, relative: &str) -> Result<PathBuf, SumidaError> {
+    use std::path::{Component, Path};
+
+    let rel = Path::new(relative);
+    for component in rel.components() {
+      match component {
+        Component::Normal(_) | Component::CurDir => {}
+        Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+          return Err(SumidaError::BadRequest(format!("Invalid file path: {relative}")));
+        }
+      }
+    }
+
+    Ok(self.base_directory.join(rel))
   }
 
   async fn store(&self, file: &StaticFile) -> Result<(), SumidaError> {
     use tokio::fs;
 
-    let target_path = self.resolve_path(&file.get_path());
+    let target_path = self.resolve_path(&file.get_path())?;
 
     if let Some(parent) = target_path.parent() {
       fs::create_dir_all(parent).await.map_err(|err| {
@@ -214,7 +254,7 @@ impl LocalStorage {
   async fn delete(&self, path: &str) -> Result<(), SumidaError> {
     use tokio::fs;
 
-    let target_path = self.resolve_path(path);
+    let target_path = self.resolve_path(path)?;
     fs::remove_file(&target_path)
       .await
       .map_err(|err| SumidaError::InternalServerError(format!("Failed to delete file: {err}")))?;
@@ -225,7 +265,7 @@ impl LocalStorage {
   async fn stream(&self, path: &str) -> Result<FileStream, SumidaError> {
     use tokio::fs::File;
 
-    let file = File::open(self.resolve_path(path))
+    let file = File::open(self.resolve_path(path)?)
       .await
       .map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
 
@@ -235,7 +275,7 @@ impl LocalStorage {
   async fn get_file_size(&self, path: &str) -> Result<u64, SumidaError> {
     use tokio::fs;
 
-    let metadata = fs::metadata(self.resolve_path(path))
+    let metadata = fs::metadata(self.resolve_path(path)?)
       .await
       .map_err(|_| SumidaError::NoData("File".into(), path.to_string()))?;
 
@@ -243,7 +283,8 @@ impl LocalStorage {
   }
 
   fn get_uri(&self, path: &str) -> String {
-    self.resolve_path(path).to_string_lossy().into_owned()
+    // Returns the resolved absolute path for a normal path, or an empty string for an escaping path.
+    self.resolve_path(path).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
   }
 }
 
@@ -337,5 +378,27 @@ impl S3Storage {
 
   fn get_uri(&self, path: &str) -> String {
     format!("https://{}.s3.amazonaws.com/{}", self.bucket, self.get_key(path))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // percent_encode_rfc5987 (M-8): Content-Disposition filename* encoding
+  #[test]
+  fn rfc5987_keeps_attr_chars() {
+    assert_eq!(percent_encode_rfc5987("plain_file-1.0.txt"), "plain_file-1.0.txt");
+  }
+
+  #[test]
+  fn rfc5987_encodes_space_and_quote() {
+    assert_eq!(percent_encode_rfc5987("a b"), "a%20b");
+    assert_eq!(percent_encode_rfc5987("a\"b"), "a%22b");
+  }
+
+  #[test]
+  fn rfc5987_encodes_utf8() {
+    assert_eq!(percent_encode_rfc5987("é"), "%C3%A9");
   }
 }

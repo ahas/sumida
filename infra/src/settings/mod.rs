@@ -48,7 +48,8 @@ impl SumidaSettings {
 }
 
 lazy_static! {
-  pub static ref SUMIDA_SETTINGS: SumidaSettings = SumidaSettings::build().unwrap();
+  pub static ref SUMIDA_SETTINGS: SumidaSettings = SumidaSettings::build()
+    .expect("failed to load settings: check the settings file/env vars (SUMIDA_*) and required keys");
 }
 
 pub fn get() -> &'static SumidaSettings {

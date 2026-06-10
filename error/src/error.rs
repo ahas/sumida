@@ -124,21 +124,77 @@ pub enum SumidaError {
 }
 
 impl SumidaError {
+  /// A stable error code per variant. Release builds hide `reason`, so clients
+  /// distinguish error kinds by this code. Categories: 0 data-no-content, 1xxx auth/authz,
+  /// 2xxx data, 3xxx mail/verification, 4xxx file, 5xxx runtime, 6xxx request, 7xxx external, 9xxx uncategorized.
   fn code(&self) -> String {
     let n: i32 = match self {
       Self::NoContent => 0,
-      _ => -1,
+
+      Self::InvalidAccount => 1000,
+      Self::InactiveAccount => 1001,
+      Self::AccountBanned => 1002,
+      Self::NoUserOrganization(_) => 1003,
+      Self::NoUserRole(_) => 1004,
+      Self::NoUserEmail(_) => 1005,
+      Self::NotAuthorized(_) => 1006,
+      Self::NoCredentials => 1007,
+      Self::NoAccessPermission => 1008,
+      Self::NoServiceAvailable => 1009,
+      Self::NoJwtSecret => 1010,
+      Self::InvalidJwt => 1011,
+      Self::JwtGenerationFailed => 1012,
+      Self::InvalidJwtExpiry => 1013,
+      Self::InvalidApiKey => 1014,
+      Self::InvalidAuthorizationToken => 1015,
+      Self::InvalidAuthorizationMethod(_) => 1016,
+      Self::OnlyAdminAllowed => 1017,
+      Self::InvalidUserAgent => 1018,
+
+      Self::NoData(..) => 2000,
+
+      Self::NoMailForm(_) => 3000,
+      Self::MailFormAddTemplateFailed(_) => 3001,
+      Self::MailFormRenderFailed(_) => 3002,
+      Self::EmailParseFailed => 3003,
+      Self::EmailMessageBuildFailed(_) => 3004,
+      Self::EmailSendFailed(_) => 3005,
+      Self::VerificationFailed => 3006,
+
+      Self::FileUploadNotAllowed => 4000,
+      Self::TooManyFiles { .. } => 4001,
+      Self::InvalidFileType { .. } => 4002,
+      Self::InvalidFilename(_) => 4003,
+      Self::UnsupportedMimeType(_) => 4004,
+      Self::FileTooLarge { .. } => 4005,
+      Self::FileNotFound => 4006,
+      Self::FileReuseNotAllowed => 4007,
+      Self::FieldNotProvided(_) => 4008,
+
+      Self::Unsupported(_) => 5000,
+      Self::Timeout(_) => 5001,
+      Self::Busy(_) => 5002,
+      Self::Disconnected => 5003,
+      Self::InternalServerError(_) => 5004,
+
+      Self::BadRequest(_) => 6000,
+
+      Self::DatabaseError(..) => 7000,
+      #[cfg(feature = "aws-s3")]
+      Self::AwsS3SdkError(..) => 7001,
+
+      Self::Unknown(..) => 9000,
     };
 
     format!("E{n:04}")
   }
 }
 
-/// 다운스트림 도메인 에러가 sumida 표준 응답 스키마를 따르도록 하는 트레잇.
+/// Trait that makes downstream domain errors follow sumida's standard response schema.
 ///
-/// 다운스트림은 자체 enum에 이 트레잇을 구현하고 `into_response`에서
-/// `SumidaApiError::to_response(&self)`를 호출하면, sumida의 `SumidaError`와
-/// 동일한 JSON 형식(`{ code, statusCode, reason? }`)으로 응답한다.
+/// A downstream service implements this trait on its own enum and calls
+/// `SumidaApiError::to_response(&self)` in `into_response`, producing the same
+/// JSON format (`{ code, statusCode, reason? }`) as sumida's `SumidaError`.
 ///
 /// ```ignore
 /// impl SumidaApiError for DaqsError {
