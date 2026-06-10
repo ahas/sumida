@@ -16,16 +16,22 @@ bucket = "your-s3-bucket"
 [session]
 ip_source = "ConnectInfo"
 
-# session-store-redis feature 사용 시
+# When using the session-store-redis feature
 [session.redis]
 url = "redis://0.0.0.0:6379/0"
 
-# session-store-aws-dynamodb feature 사용 시
+# When using the session-store-aws-dynamodb feature
 # [session.dynamodb]
 # table = "your-sessions-table"
 
 [storage]
 directory = "/static/upload"
+
+# Global limits for the generic /files upload (board uploads follow per-board settings).
+# When omitted, size/extension are unlimited but dangerous MIME types are always blocked.
+[storage.upload]
+max-file-size = 0                  # bytes; 0 = unlimited
+allowed-file-types = []            # lowercase extension whitelist; empty = allow all
 
 [session.cookie]
 name = "sumida.sid"
@@ -37,13 +43,13 @@ username = "smtp_user"
 password = "REPLACE_WITH_SMTP_PASSWORD"
 server = "smtp.example.com"
 auth = "LOGIN"
-# 신규 옵션 (G4 SMTP TLS 작업 후 사용 가능):
+# Newer options (available after the G4 SMTP TLS work):
 # port = 587
 # tls = "starttls"  # "none" | "starttls" | "implicit"
 
-# JWT 사용 시
+# When using JWT
 # [jwt]
-# secret = "REPLACE_WITH_JWT_SECRET"  # jwt-secret-store-static feature
+# secret = "REPLACE_WITH_JWT_SECRET"  # jwt-secret-store-static feature; must be at least 32 bytes
 # [jwt.expiry]
 # access_token = "15m"
 # refresh_token = "7d"

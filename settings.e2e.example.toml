@@ -1,0 +1,51 @@
+# E2E test settings. Copy to settings.e2e.toml and fill in real values.
+# The e2e harness loads this via SUMIDA_SETTINGS (see .env.e2e).
+# Use a DEDICATED test database — the harness wipes and re-migrates it.
+
+[server]
+host = "0.0.0.0:7997"
+stage = "test"
+logging = "info"
+
+[database]
+# Must point to a dedicated test DB (e.g. sumida_test), NOT a real one.
+url = "postgres://user:password@localhost:5432/sumida_test"
+logging = "INFO"
+
+[aws]
+region = "ap-northeast-2"
+
+[aws.s3]
+bucket = "your-test-bucket"
+
+[session]
+ip_source = "ConnectInfo"
+
+[session.redis]
+url = "redis://0.0.0.0:6379/0"
+
+[storage]
+directory = "/tmp/sumida-e2e-upload"
+
+[storage.upload]
+max-file-size = 0
+allowed-file-types = []
+
+[session.cookie]
+name = "sumida.test.sid"
+secure = false
+same_site = "strict"
+
+[smtp]
+username = "smtp_user"
+password = "REPLACE_WITH_SMTP_PASSWORD"
+server = "smtp.example.com"
+auth = "LOGIN"
+
+# jwt-secret-store-static feature (full-local): secret must be at least 32 bytes
+[jwt]
+secret = "REPLACE_WITH_JWT_SECRET_AT_LEAST_32_BYTES"
+[jwt.expiry]
+access_token = "15m"
+refresh_token = "7d"
+remember_me = "30d"

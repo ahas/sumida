@@ -8,6 +8,7 @@ settings.e2e.toml
 /*.log
 .env
 .env.*
+!.env.e2e.example
 config.toml
 .vscode/
 *.code-workspace
