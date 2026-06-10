@@ -11,6 +11,18 @@ pub struct PermissionTestConfig {
 }
 
 /// Helper to create access policies
+/// Backward-compatible alias for `create_ap` (older tests reference this name).
+pub async fn create_access_policy(
+  db: &DatabaseConnection,
+  user: &TestUser,
+  namespace: &str,
+  object: &str,
+  actions: Vec<String>,
+  effect: &str,
+) -> anyhow::Result<()> {
+  create_ap(db, user, namespace, object, actions, effect).await
+}
+
 pub async fn create_ap(
   db: &DatabaseConnection,
   user: &TestUser,

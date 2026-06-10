@@ -1,5 +1,5 @@
 use chrono::Utc;
-use entity::bps::board_posts::{BoardPostKind, BoardPostStatus};
+use entity::bps::board_posts::{BoardPostContentType, BoardPostKind, BoardPostStatus};
 use entity::bps::boards::BoardPostRecordVisibility;
 use entity::bps::{board_groups, board_posts, board_topics, boards};
 use entity::{organizations, roles, users};
@@ -29,41 +29,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let db = infra::db::connect().await;
   let now = Utc::now().fixed_offset();
 
-  println!("더미 데이터 생성 시작...");
+  println!("Starting dummy data creation...");
 
-  // 1. 조직 생성
+  // 1. Create organization
   let org = organizations::ActiveModel {
-    name: Set("테스트 조직".to_string()),
-    description: Set(Some("더미 데이터용 테스트 조직".to_string())),
-    is_enabled: Set(true),
+    name: Set("Test Organization".to_string()),
     created_at: Set(now),
     updated_at: Set(now),
     ..Default::default()
   };
   let org = org.insert(&db).await?;
-  println!("조직 생성됨: {}", org.name);
+  println!("Organization created: {}", org.name);
 
-  // 2. 역할 생성
+  // 2. Create role
   let role = roles::ActiveModel {
-    name: Set("사용자".to_string()),
-    description: Set(Some("일반 사용자 역할".to_string())),
-    level: Set(1),
-    is_enabled: Set(true),
+    name: Set("User".to_string()),
+    description: Set(Some("Regular user role".to_string())),
     created_at: Set(now),
     updated_at: Set(now),
     ..Default::default()
   };
   let role = role.insert(&db).await?;
-  println!("역할 생성됨: {}", role.name);
+  println!("Role created: {}", role.name);
 
-  // 3. 사용자들 생성
+  // 3. Create users
   let mut users_data = Vec::new();
   for i in 1..=5 {
     let user = users::ActiveModel {
       username: Set(format!("user{}", i)),
       password: Set("hashed_password".to_string()),
       email: Set(Some(format!("user{}@example.com", i))),
-      full_name: Set(Some(format!("사용자 {}", i))),
+      full_name: Set(Some(format!("User {}", i))),
       is_admin: Set(false),
       is_enabled: Set(true),
       role_id: Set(role.id),
@@ -74,18 +70,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let user = user.insert(&db).await?;
     users_data.push(user);
-    println!("사용자 생성됨: {}", users_data.last().unwrap().username);
+    println!("User created: {}", users_data.last().unwrap().username);
   }
 
-  // 4. 게시판 그룹 생성
+  // 4. Create board groups
   let board_groups_data = vec![
-    ("자유게시판", "자유롭게 이야기하는 공간"),
-    ("질문게시판", "궁금한 것들을 질문하는 공간"),
-    ("공지사항", "중요한 공지사항을 올리는 공간"),
+    ("Free Board", "A space for free discussion"),
+    ("Q&A Board", "A space to ask questions"),
+    ("Notices", "A space for important announcements"),
   ];
 
   let mut groups = Vec::new();
-  for (i, (name, desc)) in board_groups_data.iter().enumerate() {
+  for (i, (name, desc)) in board_groups_data.into_iter().enumerate() {
     let group = board_groups::ActiveModel {
       parent_id: Set(None),
       name: Set(name.to_string()),
@@ -97,15 +93,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let group = group.insert(&db).await?;
     groups.push(group);
-    println!("게시판 그룹 생성됨: {}", name);
+    println!("Board group created: {}", name);
   }
 
-  // 5. 게시판 생성
+  // 5. Create boards
   let boards_data = vec![
-    (0, "자유 토론", "자유롭게 이야기해요", true, 10485760, 5), // 10MB
-    (1, "개발 질문", "개발 관련 질문", true, 5242880, 3),       // 5MB
-    (1, "일반 질문", "일반적인 질문", false, 2097152, 2),       // 2MB
-    (2, "서비스 공지", "서비스 관련 공지", false, 0, 0),
+    (0, "Free Talk", "Talk about anything", true, 10485760, 5), // 10MB
+    (1, "Dev Questions", "Development-related questions", true, 5242880, 3), // 5MB
+    (1, "General Questions", "General questions", false, 2097152, 2), // 2MB
+    (2, "Service Notices", "Service-related notices", false, 0, 0),
   ];
 
   let mut boards_list = Vec::new();
@@ -129,18 +125,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let board = board.insert(&db).await?;
     boards_list.push(board);
-    println!("게시판 생성됨: {}", name);
+    println!("Board created: {}", name);
   }
 
-  // 6. 게시판 토픽 생성
+  // 6. Create board topics
   let topics_data = vec![
-    (0, "일반", "일반적인 주제"),
-    (0, "유머", "재미있는 이야기"),
-    (1, "Backend", "백엔드 개발 질문"),
-    (1, "Frontend", "프론트엔드 개발 질문"),
-    (2, "생활", "일상생활 관련 질문"),
-    (3, "업데이트", "서비스 업데이트 공지"),
-    (3, "점검", "서비스 점검 공지"),
+    (0, "General", "General topics"),
+    (0, "Humor", "Fun stories"),
+    (1, "Backend", "Backend development questions"),
+    (1, "Frontend", "Frontend development questions"),
+    (2, "Life", "Questions about everyday life"),
+    (3, "Updates", "Service update notices"),
+    (3, "Maintenance", "Service maintenance notices"),
   ];
 
   let mut topics_list = Vec::new();
@@ -156,98 +152,98 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let topic = topic.insert(&db).await?;
     topics_list.push(topic);
-    println!("토픽 생성됨: {}", name);
+    println!("Topic created: {}", name);
   }
 
-  // 7. 게시글 생성
+  // 7. Create posts
   let posts_data = vec![
-    // 자유게시판 - 일반 토픽
+    // Free board - General topic
     (
       0,
       0,
       0,
       BoardPostKind::Article,
-      "안녕하세요!",
-      "첫 번째 게시글입니다. 반갑습니다!",
-      vec!["인사", "첫글"],
+      "Hello!",
+      "This is the first post. Nice to meet you!",
+      vec!["greeting", "first-post"],
     ),
     (
       0,
       0,
       1,
       BoardPostKind::Article,
-      "Rust는 정말 좋은 언어네요",
-      "메모리 안전성도 보장하고 성능도 좋고...",
-      vec!["rust", "개발"],
+      "Rust is a really nice language",
+      "It guarantees memory safety and has great performance...",
+      vec!["rust", "dev"],
     ),
-    // 자유게시판 - 유머 토픽
+    // Free board - Humor topic
     (
       0,
       1,
       2,
       BoardPostKind::Article,
-      "개발자 유머",
-      "컴파일러와 싸우다가 이겼습니다",
-      vec!["유머", "개발"],
+      "Developer humor",
+      "I fought the compiler and won",
+      vec!["humor", "dev"],
     ),
-    // 개발 질문 - Backend 토픽
+    // Dev questions - Backend topic
     (
       1,
       2,
       0,
       BoardPostKind::Article,
-      "Rust에서 async/await 질문",
-      "async 함수를 어떻게 효율적으로 사용하나요?",
-      vec!["rust", "async", "질문"],
+      "Question about async/await in Rust",
+      "How do I use async functions efficiently?",
+      vec!["rust", "async", "question"],
     ),
     (
       1,
       2,
       1,
       BoardPostKind::Article,
-      "DB 연결 풀 관리",
-      "SeaORM에서 커넥션 풀은 어떻게 관리하는게 좋을까요?",
+      "Managing the DB connection pool",
+      "What's the best way to manage the connection pool in SeaORM?",
       vec!["database", "seaorm"],
     ),
-    // 개발 질문 - Frontend 토픽
+    // Dev questions - Frontend topic
     (
       1,
       3,
       3,
       BoardPostKind::Article,
-      "Vue.js 상태 관리",
-      "Pinia vs Vuex 어떤 걸 쓰는게 좋을까요?",
-      vec!["vue", "상태관리"],
+      "Vue.js state management",
+      "Pinia vs Vuex — which one should I use?",
+      vec!["vue", "state-management"],
     ),
-    // 일반 질문 - 생활 토픽
+    // General questions - Life topic
     (
       2,
       4,
       4,
       BoardPostKind::Article,
-      "맛있는 커피 추천",
-      "개발하면서 마실 커피 추천해주세요",
-      vec!["커피", "추천"],
+      "Recommend a good coffee",
+      "Please recommend coffee to drink while coding",
+      vec!["coffee", "recommendation"],
     ),
-    // 공지사항 - 업데이트 토픽
+    // Notices - Update topic
     (
       3,
       5,
       1,
       BoardPostKind::Article,
-      "서비스 업데이트 v1.2.0",
-      "새로운 기능들이 추가되었습니다.",
-      vec!["공지", "업데이트"],
+      "Service update v1.2.0",
+      "New features have been added.",
+      vec!["notice", "update"],
     ),
-    // 공지사항 - 점검 토픽
+    // Notices - Maintenance topic
     (
       3,
       6,
       1,
       BoardPostKind::Article,
-      "정기 점검 안내",
-      "매주 일요일 새벽 2시-4시 정기점검이 있습니다.",
-      vec!["공지", "점검"],
+      "Scheduled maintenance notice",
+      "There is scheduled maintenance every Sunday from 2 AM to 4 AM.",
+      vec!["notice", "maintenance"],
     ),
   ];
 
@@ -258,7 +254,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let post = board_posts::ActiveModel {
       board_id: Set(board_id),
-      topic_id: Set(topic_id),
+      topic_id: Set(Some(topic_id)),
       parent_id: Set(None),
       user_id: Set(Some(user_id)),
       kind: Set(kind),
@@ -266,10 +262,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       revision: Set(Some(1)),
       title: Set(title.to_string()),
       compression_type: Set(None),
-      content_type: Set(Some("text/html".to_string())),
+      content_type: Set(BoardPostContentType::Html),
       content: Set(Some(plain_text_to_html(content))),
       text: Set(Some(content.to_string())),
-      tags: Set(Some(tags.iter().map(|s| s.to_string()).collect())),
+      tags: Set(Some(tags.into_iter().map(|s| s.to_string()).collect())),
       views: Set(0),
       reactions: Set(Some(json!({}))),
       published_at: Set(Some(now)),
@@ -281,19 +277,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let post = post.insert(&db).await?;
-    println!("게시글 생성됨: {} (ID: {})", title, post.id);
+    println!("Post created: {} (ID: {})", title, post.id);
   }
 
-  // 8. 댓글 생성
+  // 8. Create comments
   let comments_data = vec![
-    (0, 0, "좋은 글이네요! 감사합니다."),
-    (0, 1, "저도 동감합니다."),
-    (3, 2, "async/await는 정말 편리해요. tokio 문서를 참고해보세요."),
-    (4, 3, "답변 감사합니다!"),
-    (6, 4, "아메리카노 추천합니다!"),
+    (0, 0, "Great post! Thank you."),
+    (0, 1, "I agree."),
+    (3, 2, "async/await is really convenient. Check out the tokio docs."),
+    (4, 3, "Thanks for the answer!"),
+    (6, 4, "I recommend an americano!"),
   ];
+  let comments_count = comments_data.len();
 
-  // 게시글 ID들을 다시 조회
+  // Re-query the post IDs
   let published_posts: Vec<board_posts::Model> = board_posts::Entity::find()
     .filter(board_posts::Column::Status.eq(BoardPostStatus::Published))
     .all(&db)
@@ -311,7 +308,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         revision: Set(Some(1)),
         title: Set("".to_string()),
         compression_type: Set(None),
-        content_type: Set(Some("text/html".to_string())),
+        content_type: Set(BoardPostContentType::Html),
         content: Set(Some(plain_text_to_html(comment_content))),
         text: Set(Some(comment_content.to_string())),
         tags: Set(None),
@@ -326,19 +323,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       };
 
       let comment = comment.insert(&db).await?;
-      println!("댓글 생성됨: {} (Parent: {})", comment.id, parent_post.id);
+      println!("Comment created: {} (Parent: {})", comment.id, parent_post.id);
     }
   }
 
-  println!("더미 데이터 생성 완료!");
-  println!("생성된 데이터:");
-  println!("- 조직: 1개");
-  println!("- 역할: 1개");
-  println!("- 사용자: {}명", users_data.len());
-  println!("- 게시판 그룹: {}개", groups.len());
-  println!("- 게시판: {}개", boards_list.len());
-  println!("- 토픽: {}개", topics_list.len());
-  println!("- 게시글: {}개 (댓글 포함)", published_posts.len() + comments_data.len());
+  println!("Dummy data creation complete!");
+  println!("Created data:");
+  println!("- Organizations: 1");
+  println!("- Roles: 1");
+  println!("- Users: {}", users_data.len());
+  println!("- Board groups: {}", groups.len());
+  println!("- Boards: {}", boards_list.len());
+  println!("- Topics: {}", topics_list.len());
+  println!("- Posts: {} (including comments)", published_posts.len() + comments_count);
 
   Ok(())
 }

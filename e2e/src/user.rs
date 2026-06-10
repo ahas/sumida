@@ -62,6 +62,39 @@ impl TestUser {
     Self::create_with_admin(db, true).await
   }
 
+  /// Create a user in an existing organization (the operator and target share an org for
+  /// org-scoped authorization tests).
+  pub async fn create_in_org<C: ConnectionTrait>(db: &C, organization_id: i32) -> anyhow::Result<Self> {
+    let role = TestRole::create(db).await?;
+    let password = generate_url_safe_string(8).unwrap();
+    let hashed_password = hash_password(password.clone()).expect("Failed to hash password");
+
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
+    let timestamp = now.as_nanos();
+    let random_suffix = generate_url_safe_string(12).unwrap();
+
+    let id = Users::insert(entity::users::ActiveModel {
+      username: Set(format!("test-{timestamp}-{random_suffix}")),
+      password: Set(hashed_password),
+      email: Set(Some(format!("test-{random_suffix}@example.com"))),
+      full_name: Set(Some(format!("Test User {random_suffix}"))),
+      phone: Set(Some(format!("+1555{}", generate_url_safe_string(7).unwrap()))),
+      role_id: Set(role.model.id),
+      organization_id: Set(organization_id),
+      is_admin: Set(false),
+      is_enabled: Set(true),
+      ..Default::default()
+    })
+    .exec(db)
+    .await?
+    .last_insert_id;
+
+    Ok(Self {
+      model: Users::find_by_id(id).one(db).await?.unwrap(),
+      password,
+    })
+  }
+
   pub async fn create_with_admin<C: ConnectionTrait>(db: &C, is_admin: bool) -> anyhow::Result<Self> {
     let org = TestOrg::create(db).await?;
     let role = TestRole::create(db).await?;

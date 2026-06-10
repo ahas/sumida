@@ -42,7 +42,16 @@ impl TestServer {
   pub async fn spawn() -> anyhow::Result<Self> {
     let settings = settings::get();
     let db = infra::db::connect().await;
-    let listener = tokio::net::TcpListener::bind(&settings.server.host).await?;
+    // Bind to an ephemeral port (host:0) so concurrent tests don't collide on the
+    // fixed configured port. The actual port is read back from local_addr().
+    let bind_host = {
+      let configured = &settings.server.host;
+      match configured.rsplit_once(':') {
+        Some((host, _)) => format!("{host}:0"),
+        None => format!("{configured}:0"),
+      }
+    };
+    let listener = tokio::net::TcpListener::bind(&bind_host).await?;
     let addr = listener.local_addr()?;
 
     let state = TestServerState { db };

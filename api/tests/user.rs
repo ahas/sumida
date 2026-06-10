@@ -75,31 +75,58 @@ async fn test_user_create_permissions_comprehensive() {
 
 #[tokio::test]
 async fn test_user_update_permissions_comprehensive() {
+  // User update authorization differs from other resources: a non-admin operator may only
+  // update users in their own organization (or descendant orgs) and must hold an `org:user`
+  // update policy (see UserService::update). So we put the operator and target in the SAME
+  // organization and grant the `org:user` policy, rather than using the generic `user` suite.
   let mock = Mock::new().await;
   let db = infra::db::connect().await;
-  let target_user = TestUser::create(&db).await.expect("Failed to create target user");
 
-  let random_suffix = api::util::random::generate_url_safe_string(8).unwrap();
-  let crud_data = CrudTestData {
-    create_data: serde_json::json!({
-      "username": format!("newuser-{}@example.com", random_suffix),
-      "password": "password123",
-      "fullName": "New User",
-      "organizationId": target_user.model.organization_id,
-      "roleId": target_user.model.role_id
-    }),
-    update_data: serde_json::json!({
-      "fullName": "Updated Name"
-    }),
-  };
+  let operator = TestUser::create(&db).await.expect("Failed to create operator");
+  // Target user in the same organization as the operator.
+  let target_user = TestUser::create_in_org(&db, operator.model.organization_id)
+    .await
+    .expect("Failed to create target user");
 
-  let config = PermissionTestConfig {
-    namespace: "user",
-    base_url: "/users",
-  };
+  // update has a two-stage gate:
+  //   (1) the `service_ap!("user", update)` route layer → needs a `user` service policy
+  //   (2) the in-service org-scoped row guard → needs an `org:user` update policy
+  // Grant both.
+  ap_test_utils::create_ap(&db, &operator, "user", "service", vec!["update".to_string()], "allow")
+    .await
+    .expect("Failed to grant user service permission");
+  ap_test_utils::grant_service_and_resource_access(
+    &db,
+    &operator,
+    "org:user",
+    vec!["update".to_string()],
+    None,
+  )
+  .await
+  .expect("Failed to grant org:user update permission");
 
-  let test_suite = PermissionTestSuite::new(config, crud_data);
-  test_suite.test_update_permission(&mock, target_user.model.id).await;
+  operator.login(&mock.client).await;
+  let resp = mock
+    .client
+    .patch(&format!("/users/{}", target_user.model.id))
+    .json(&serde_json::json!({ "fullName": "Updated Name" }))
+    .send()
+    .await
+    .expect("Failed to send PATCH request");
+  assert_eq!(resp.status(), reqwest::StatusCode::OK, "Should be able to update with org:user permission");
+
+  // Without permission: a fresh operator with no policy is forbidden.
+  let mock2 = Mock::new().await;
+  let no_perm = TestUser::create(&db).await.expect("Failed to create user");
+  no_perm.login(&mock2.client).await;
+  let resp = mock2
+    .client
+    .patch(&format!("/users/{}", target_user.model.id))
+    .json(&serde_json::json!({ "fullName": "Updated Name" }))
+    .send()
+    .await
+    .expect("Failed to send PATCH request");
+  assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN, "Should be forbidden without permission");
 }
 
 #[tokio::test]
@@ -276,12 +303,21 @@ async fn test_user_wildcard_action_comprehensive() {
   let db = infra::db::connect().await;
 
   let user = TestUser::create(&db).await.expect("Failed to create test user");
-  let target_user = TestUser::create(&db).await.expect("Failed to create target user");
+  // Target in the same org as the operator (user update is org-scoped, see UserService::update).
+  let target_user = TestUser::create_in_org(&db, user.model.organization_id)
+    .await
+    .expect("Failed to create target user");
 
-  // Grant wildcard action permission (action: ['*'])
+  // Grant wildcard read on `user` (read/create/list are gated only by the `user` service policy)
+  // and wildcard action on `org:user` (update/delete go through the org-scoped row guard).
   ap_test_utils::grant_wildcard_action_permission(&db, &user, "user", Some(target_user.model.id))
     .await
-    .expect("Failed to grant wildcard action permission");
+    .expect("Failed to grant wildcard action permission on user");
+  // org:user objects are organization ids (matched via the org-ancestors subquery), so use
+  // a wildcard object here rather than the target user's id.
+  ap_test_utils::grant_wildcard_action_permission(&db, &user, "org:user", None)
+    .await
+    .expect("Failed to grant wildcard action permission on org:user");
 
   let login_resp = user.login(&mock.client).await;
   assert_eq!(login_resp.status(), reqwest::StatusCode::OK, "User login should succeed");
@@ -547,31 +583,71 @@ async fn test_admin_user_bypasses_restrictions() {
 
 #[tokio::test]
 async fn test_wildcard_action_permissions() {
+  // Full-CRUD wildcard test honoring the user resource's split authorization model:
+  // read/create/list are gated by the `user` service policy, while update/delete additionally
+  // require an org-scoped `org:user` policy and a same-org target.
   let mock = Mock::new().await;
   let db = infra::db::connect().await;
-  let target_user = TestUser::create(&db).await.expect("Failed to create target user");
+
+  let operator = TestUser::create(&db).await.expect("Failed to create operator");
+  let target_user = TestUser::create_in_org(&db, operator.model.organization_id)
+    .await
+    .expect("Failed to create target user");
+
+  ap_test_utils::grant_wildcard_action_permission(&db, &operator, "user", Some(target_user.model.id))
+    .await
+    .expect("Failed to grant wildcard action on user");
+  // org:user objects are organization ids (matched via the org-ancestors subquery), so use
+  // a wildcard object here rather than the target user's id.
+  ap_test_utils::grant_wildcard_action_permission(&db, &operator, "org:user", None)
+    .await
+    .expect("Failed to grant wildcard action on org:user");
+
+  operator.login(&mock.client).await;
+
+  let resp = mock
+    .client
+    .get(&format!("/users/{}", target_user.model.id))
+    .send()
+    .await
+    .expect("Failed to send GET request");
+  assert_eq!(resp.status(), reqwest::StatusCode::OK, "Wildcard action should allow read");
 
   let random_suffix = api::util::random::generate_url_safe_string(8).unwrap();
-  let crud_data = CrudTestData {
-    create_data: serde_json::json!({
+  let resp = mock
+    .client
+    .post("/users")
+    .json(&serde_json::json!({
       "username": format!("wildcard-action-{}@example.com", random_suffix),
       "password": "password123",
       "fullName": "Wildcard Action Test User",
-      "organizationId": target_user.model.organization_id,
-      "roleId": target_user.model.role_id
-    }),
-    update_data: serde_json::json!({
-      "fullName": "Updated via Wildcard Action"
-    }),
-  };
+      "organizationId": operator.model.organization_id,
+      "roleId": operator.model.role_id
+    }))
+    .send()
+    .await
+    .expect("Failed to send POST request");
+  assert_eq!(resp.status(), reqwest::StatusCode::CREATED, "Wildcard action should allow create");
 
-  let config = PermissionTestConfig {
-    namespace: "user",
-    base_url: "/users",
-  };
+  let resp = mock
+    .client
+    .patch(&format!("/users/{}", target_user.model.id))
+    .json(&serde_json::json!({ "fullName": "Updated via Wildcard Action" }))
+    .send()
+    .await
+    .expect("Failed to send PATCH request");
+  assert_eq!(resp.status(), reqwest::StatusCode::OK, "Wildcard action should allow update");
 
-  let test_suite = PermissionTestSuite::new(config, crud_data);
-  test_suite.test_wildcard_action_permissions(&mock, target_user.model.id).await;
+  let resp = mock.client.get("/users").send().await.expect("Failed to send GET request");
+  assert_eq!(resp.status(), reqwest::StatusCode::OK, "Wildcard action should allow list");
+
+  let resp = mock
+    .client
+    .delete(&format!("/users/{}", target_user.model.id))
+    .send()
+    .await
+    .expect("Failed to send DELETE request");
+  assert_eq!(resp.status(), reqwest::StatusCode::OK, "Wildcard action should allow delete");
 }
 
 #[tokio::test]
