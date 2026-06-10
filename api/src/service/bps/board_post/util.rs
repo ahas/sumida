@@ -216,7 +216,8 @@ pub async fn increase_view_count_if_not_viewed<C: ConnectionTrait>(
     .one(db)
     .await?
     .is_none();
-  let next_views = if not_viewed { last_views } else { last_views + 1 };
+  // Increment the view count by 1 only on first view (actually applied in the not_viewed block below).
+  let next_views = if not_viewed { last_views + 1 } else { last_views };
 
   if not_viewed {
     let view_am = BoardPostViewsActiveModel {

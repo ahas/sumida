@@ -32,7 +32,10 @@ full-aws = [
 e2e = { path = "../e2e" }
 
 [dependencies]
-infra = { path = "../infra" }
+# default-features=false: if infra's default (session-store-redis) is force-enabled,
+# jwt.rs's cfg_if always picks the redis branch, killing DynamoJwtStore even on full-aws.
+# Pass only the session-store-* that api enables, explicitly.
+infra = { path = "../infra", default-features = false }
 entity = { path = "../entity" }
 error = { path = "../error" }
 

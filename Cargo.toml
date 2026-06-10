@@ -96,7 +96,12 @@ api = { path = "./api", default-features = false }
 infra = { path = "./infra", default-features = false }
 entity = { path = "./entity", default-features = false }
 error = { path = "./error", default-features = false }
-e2e = { path = "./e2e", default-features = false }
 
 aws-smithy-types.workspace = true
 cfg-if.workspace = true
+
+# e2e forces api to full-local, so keeping it as a regular dependency leaks
+# full-local into the root full-aws build via feature unification (DynamoJwtStore dies again).
+# It is only needed for tests, so isolate it as a dev-dependency.
+[dev-dependencies]
+e2e = { path = "./e2e", default-features = false }
