@@ -43,8 +43,9 @@ impl<S: SumidaState> ApiKeyController<S> {
     State(state): State<S>,
     Json(body): Json<CreateApiKey>,
   ) -> Result<ApiKeyCreated, SumidaError> {
+    // The plaintext key returned by create() is exposed only in this response (DB stores only the hash).
     Ok(ApiKeyCreated {
-      key: ApiKeyService::new(state, session).create(body).await?.last_insert_id,
+      key: ApiKeyService::new(state, session).create(body).await?,
     })
   }
 

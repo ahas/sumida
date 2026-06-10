@@ -16,6 +16,17 @@ pub fn verify_password(plain_password: &str, hashed_password: &str) -> bool {
   argon2.verify_password(plain_password.as_bytes(), &parsed_hash).is_ok()
 }
 
+/// Spends the same argon2 verification cost even for non-existent accounts, preventing
+/// timing-based user enumeration that would leak account existence via login response time differences.
+pub fn dummy_verify_password(plain_password: &str) {
+  static DUMMY_PASSWORD_HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+  let hash = DUMMY_PASSWORD_HASH
+    .get_or_init(|| crate::util::user::hash_password("sumida-timing-equalizer").unwrap_or_default());
+
+  let _ = verify_password(plain_password, hash);
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
   pub sub: String, // Subject (user_id)
@@ -35,6 +46,19 @@ pub struct TokenPair {
 }
 
 pub async fn get_jwt_secret() -> Result<String, SumidaError> {
+  let secret = get_jwt_secret_raw().await?;
+
+  // HS256 key strength: shorter than 256 bits (32 bytes) is vulnerable to key brute-forcing.
+  if secret.len() < 32 {
+    return Err(SumidaError::Unsupported(
+      "JWT secret must be at least 32 bytes (256 bits)".to_string(),
+    ));
+  }
+
+  Ok(secret)
+}
+
+async fn get_jwt_secret_raw() -> Result<String, SumidaError> {
   #[cfg(not(any(feature = "jwt-secret-store-static", feature = "jwt-secret-store-aws-ssm")))]
   compile_error!("Either `jwt-secret-store-static` or `jwt-secret-store-aws-ssm` feature must be enabled");
 
@@ -145,7 +169,7 @@ pub async fn verify_jwt_token(token: &str) -> Result<JwtClaims, SumidaError> {
   Ok(token.claims)
 }
 
-/// access token 전용 검증. `token_type == "access"`만 허용.
+/// Access-token-only verification. Allows only `token_type == "access"`.
 pub async fn verify_access_token(token: &str) -> Result<JwtClaims, SumidaError> {
   let claims = verify_jwt_token(token).await?;
   if claims.token_type != "access" {

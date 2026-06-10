@@ -7,6 +7,10 @@ use super::users::Entity as Users;
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = false)]
   pub key: String,
+  /// The leading part of the plaintext key (for identification/display). Since the key itself is stored as a hash and
+  /// the plaintext cannot be recovered, this is a non-secret label for telling keys apart in the list UI.
+  #[sea_orm(nullable)]
+  pub key_prefix: Option<String>,
   #[sea_orm(indexed)]
   pub user_id: i32,
   #[sea_orm(nullable, default_value = "CURRENT_TIMESTAMP")]

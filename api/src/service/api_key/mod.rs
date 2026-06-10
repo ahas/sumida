@@ -7,8 +7,8 @@ use sea_orm::ActiveValue::Unchanged;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{
-  DbErr, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType,
-  PaginatorTrait, QuerySelect, RelationTrait, Select, Set, SqlErr, TransactionTrait,
+  DbErr, DeleteResult, EntityTrait, IntoActiveModel, IntoSimpleExpr, JoinType, PaginatorTrait,
+  QuerySelect, RelationTrait, Select, Set, SqlErr, TransactionTrait,
 };
 
 use self::dto::*;
@@ -16,6 +16,12 @@ use crate::SumidaState;
 use crate::service::ApiService;
 use crate::util::ap::{self, ApCondition, ApGuard, ApUser};
 use crate::util::pagination::Pagination;
+
+/// Converts an API key into a hash for storage and lookup. The plaintext is exposed only once at issuance; the DB keeps only the hash.
+/// (Prevents key reuse on a DB leak. Must use the same algorithm as the migration's conversion logic.)
+pub fn hash_api_key(key: &str) -> String {
+  blake3::hash(key.as_bytes()).to_hex().to_string()
+}
 
 pub struct ApiKeyService<S: SumidaState> {
   state: S,
@@ -77,35 +83,46 @@ impl<S: SumidaState> ApiKeyService<S> {
     matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
   }
 
-  pub async fn create(
-    &self,
-    data: CreateApiKey,
-  ) -> Result<InsertResult<entity::api_keys::ActiveModel>, SumidaError> {
+  /// Issues a new API key. The plaintext key is exposed **only once, via this return value**, and the DB stores only the hash.
+  /// Policies (access_policies) are also bound to the hash identifier (`api:<hash>`) (looked up by hash on verify).
+  pub async fn create(&self, data: CreateApiKey) -> Result<String, SumidaError> {
     loop {
       let txn = self.state.db().begin().await?;
-      let key = match crate::util::random::generate_url_safe_string(64) {
+      let plaintext = match crate::util::random::generate_url_safe_string(64) {
         Ok(v) => v,
         _ => {
           continue;
         }
       };
+      let key_hash = hash_api_key(&plaintext);
+      // Identifying prefix (first 8 chars of the plaintext). Not a secret; for display in the list UI.
+      let key_prefix: String = plaintext.chars().take(8).collect();
 
       let user_aps =
         if data.is_secured.0.unwrap_or_default() { data.access_policies.clone() } else { None };
       let mut active_model = data.clone().into_active_model();
-      active_model.key = Set(key);
+      active_model.key = Set(key_hash.clone());
+      active_model.key_prefix = Set(Some(key_prefix));
 
       match ApiKeys::insert(active_model).exec(&txn).await {
-        Ok(result) => {
+        Ok(_) => {
           if let Some(user_aps) = user_aps {
-            ap::for_users()
-              .user(ApUser::ApiKey(result.last_insert_id.clone()))
-              .update(user_aps, &txn)
-              .await?;
+            for policy in &user_aps {
+              ap::assert_policy_within_authority(
+                self.session.profile.is_admin,
+                &policy.namespace,
+                &policy.object,
+                &policy.action,
+                "",
+                &policy.effect,
+              )?;
+            }
+            ap::for_users().user(ApUser::ApiKey(key_hash.clone())).update(user_aps, &txn).await?;
           }
 
           txn.commit().await?;
-          return Ok(result);
+          // The plaintext is returned only here (not retrievable afterwards).
+          return Ok(plaintext);
         }
         Err(err) if Self::is_unique_violation(&err) => {
           txn.rollback().await?;
@@ -131,6 +148,16 @@ impl<S: SumidaState> ApiKeyService<S> {
     let user_aps = if data.is_secured.0.unwrap_or_default() { data.access_policies.clone() } else { None };
 
     if let Some(user_aps) = user_aps {
+      for policy in &user_aps {
+        ap::assert_policy_within_authority(
+          self.session.profile.is_admin,
+          &policy.namespace,
+          &policy.object,
+          &policy.action,
+          "",
+          &policy.effect,
+        )?;
+      }
       ap::for_users().user(ApUser::ApiKey(key.to_string())).update(user_aps, &txn).await?;
     }
 
@@ -182,5 +209,21 @@ impl<S: SumidaState> ApiService<ApCondition, ApiKeys> for ApiKeyService<S> {
       .expr(Expr::col((ApiKeys, Column::Key)).cast_as("varchar"))
       .action("read")
       .apply(Self::default_query_with(query))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // hash_api_key (M-2): deterministic, 64-char hex, and different inputs yield different hashes
+  #[test]
+  fn hash_is_deterministic_hex64() {
+    let h1 = hash_api_key("super-secret-key");
+    let h2 = hash_api_key("super-secret-key");
+    assert_eq!(h1, h2);
+    assert_eq!(h1.len(), 64);
+    assert!(h1.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_ne!(hash_api_key("key-a"), hash_api_key("key-b"));
   }
 }

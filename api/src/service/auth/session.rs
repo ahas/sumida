@@ -28,6 +28,8 @@ impl<S: SumidaState> AuthSessionService<S> {
       .one(db)
       .await?
     else {
+      // Prevent timing-based user enumeration: spend the same argon2 cost even when the account does not exist.
+      super::helper::dummy_verify_password(&data.password);
       self
         .session
         .write_log(None, AccessMethod::Password, AccessResultCode::AccountNotFound, db)

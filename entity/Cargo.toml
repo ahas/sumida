@@ -10,6 +10,7 @@ path = "src/lib.rs"
 error = { path = "../error" }
 
 anyhow = { workspace = true }
+blake3 = { workspace = true }
 chrono = { workspace = true }
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }

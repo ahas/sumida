@@ -134,14 +134,22 @@ where
       .route("/{user_id}", routing::delete(Self::delete))
       .route_layer(service_ap!(state, "user", delete));
 
-    Router::new()
+    // Standard CRUD routes requiring session/token auth + service_ap permission.
+    // impersonate issues a session for an arbitrary user, so it must go through authentication.
+    // (admin status is checked once more in the service-layer impersonate().)
+    let route_guarded = Router::new()
       .merge(route_read)
       .merge(route_create)
       .merge(route_update)
       .merge(route_delete)
-      .route_layer(user_guard!(state))
-      .route("/change-password", routing::post(Self::change_password))
-      .route("/activate", routing::post(Self::activate))
       .route("/{user_id}/impersonate", routing::post(Self::impersonate))
+      .route_layer(user_guard!(state));
+
+    // Pre-auth endpoints that self-verify via a body token (invitation uuid / verification code).
+    let route_public = Router::new()
+      .route("/change-password", routing::post(Self::change_password))
+      .route("/activate", routing::post(Self::activate));
+
+    Router::new().merge(route_guarded).merge(route_public)
   }
 }

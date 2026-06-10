@@ -35,6 +35,8 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
       .one(db)
       .await?
     else {
+      // Prevent timing-based user enumeration: spend the same argon2 cost even when the account does not exist.
+      helper::dummy_verify_password(&data.password);
       self
         .session
         .write_log(None, AccessMethod::Password, AccessResultCode::AccountNotFound, db)
@@ -97,11 +99,15 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     result
   }
 
-  pub async fn logout(&mut self, refresh_token: Option<String>) -> Result<(), SumidaError>
+  pub async fn logout(
+    &mut self,
+    refresh_token: Option<String>,
+    access_token: Option<String>,
+  ) -> Result<(), SumidaError>
   where
     J: infra::jwt::JwtTokenStore,
   {
-    // If refresh token provided, blacklist it
+    // If a refresh token is present, blacklist it and delete it from the store.
     if let Some(token) = refresh_token {
       if let Ok(claims) = helper::verify_jwt_token(&token).await {
         self
@@ -110,6 +116,17 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
           .await?;
         self.jwt_store.delete_refresh_token(&claims.jti).await?;
       }
+    }
+
+    // Blacklist the access token too for immediate invalidation (verify_jwt looks up the jti).
+    // Kept with a TTL only until the expiry time.
+    if let Some(token) = access_token
+      && let Ok(claims) = helper::verify_access_token(&token).await
+    {
+      self
+        .jwt_store
+        .blacklist_token(&claims.jti, chrono::DateTime::from_timestamp(claims.exp, 0).unwrap_or_default())
+        .await?;
     }
 
     self.session.logout().await?;
@@ -173,12 +190,19 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
   }
 }
 
-/// 활성화된 cargo feature(`session-store-redis` 또는 `session-store-aws-dynamodb`)에
-/// 따라 적절한 `JwtTokenStore` 구현체를 생성. 둘 다 없으면 컴파일 에러.
-///
-/// 우선순위: redis > dynamodb (둘 다 활성화된 경우 redis 사용).
+/// The concrete `JwtTokenStore` type, determined by the enabled cargo feature.
+/// (It is a native async trait, so `dyn` is not possible; we handle it via a concrete type alias.)
 #[cfg(feature = "session-store-redis")]
-pub async fn create_jwt_store() -> Result<impl infra::jwt::JwtTokenStore, SumidaError> {
+pub type JwtStore = infra::jwt::RedisJwtStore;
+#[cfg(all(feature = "session-store-aws-dynamodb", not(feature = "session-store-redis")))]
+pub type JwtStore = infra::jwt::DynamoJwtStore;
+
+/// Creates the appropriate `JwtTokenStore` implementation based on the enabled cargo feature
+/// (`session-store-redis` or `session-store-aws-dynamodb`). A compile error if neither is set.
+///
+/// Priority: redis > dynamodb (uses redis when both are enabled).
+#[cfg(feature = "session-store-redis")]
+pub async fn create_jwt_store() -> Result<JwtStore, SumidaError> {
   use infra::jwt::RedisJwtStore;
 
   let redis_url = infra::settings::get()
@@ -192,7 +216,7 @@ pub async fn create_jwt_store() -> Result<impl infra::jwt::JwtTokenStore, Sumida
 }
 
 #[cfg(all(feature = "session-store-aws-dynamodb", not(feature = "session-store-redis")))]
-pub async fn create_jwt_store() -> Result<impl infra::jwt::JwtTokenStore, SumidaError> {
+pub async fn create_jwt_store() -> Result<JwtStore, SumidaError> {
   use aws_sdk_dynamodb::Client as DynamoClient;
   use infra::jwt::DynamoJwtStore;
 
@@ -206,6 +230,16 @@ pub async fn create_jwt_store() -> Result<impl infra::jwt::JwtTokenStore, Sumida
 
   let dynamodb_client = DynamoClient::new(infra::aws::get_sdk_config());
   Ok(DynamoJwtStore::new(dynamodb_client, table_name))
+}
+
+/// A process-wide shared JWT token store (connects only once on first use).
+/// Used for blacklist lookups on the verify path (`user_guard`).
+#[cfg(any(feature = "session-store-redis", feature = "session-store-aws-dynamodb"))]
+static SHARED_JWT_STORE: tokio::sync::OnceCell<JwtStore> = tokio::sync::OnceCell::const_new();
+
+#[cfg(any(feature = "session-store-redis", feature = "session-store-aws-dynamodb"))]
+pub async fn shared_jwt_store() -> Result<&'static JwtStore, SumidaError> {
+  SHARED_JWT_STORE.get_or_try_init(create_jwt_store).await
 }
 
 #[cfg(not(any(feature = "session-store-redis", feature = "session-store-aws-dynamodb")))]

@@ -19,8 +19,8 @@ pub struct BlacklistEntry {
   pub blacklisted_at: DateTime<Utc>,
 }
 
-/// Rust 1.75+ native `async fn` in trait. trait object(`dyn JwtTokenStore`)는 불가하므로
-/// 사용 측은 `impl JwtTokenStore` 또는 generic param으로 받는다.
+/// Rust 1.75+ native `async fn` in trait. A trait object (`dyn JwtTokenStore`) is not possible, so
+/// callers take it via `impl JwtTokenStore` or a generic param.
 pub trait JwtTokenStore: Send + Sync {
   fn store_refresh_token(
     &self,
@@ -43,70 +43,84 @@ pub trait JwtTokenStore: Send + Sync {
 
 cfg_if! {
   if #[cfg(feature = "session-store-redis")] {
-    // TODO: Redis JWT store implementation
-    // Currently disabled due to Fred API complexity
-    // Will implement when we find a simpler Redis abstraction
+    use tower_sessions_redis_store::fred::prelude::*;
+    use tower_sessions_redis_store::fred::types::Expiration;
 
-    pub struct RedisJwtStore;
+    /// A fred (Redis)-backed JWT token store.
+    /// - refresh tokens: stored as JSON under the `jwt:refresh:{token_id}` key (TTL until expiry time)
+    /// - blacklist: determined by the existence of the `jwt:blacklist:{jti}` key (TTL until expiry time)
+    pub struct RedisJwtStore {
+      pool: Pool,
+    }
 
     impl RedisJwtStore {
       pub async fn new(redis_url: &str) -> Result<Self, SumidaError> {
-        // TODO: Implement Redis connection using fred
-        // - Create Redis client/pool from redis_url
-        // - Connect and wait for connection
-        // - Store connection handle for later use
-        let _ = redis_url;
-        Err(SumidaError::Unsupported("Redis JWT store not yet implemented".to_string()))
+        let config =
+          Config::from_url(redis_url).map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        let pool = Pool::new(config, None, None, None, 5)
+          .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        pool.connect();
+        pool.wait_for_connect().await.map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        Ok(Self { pool })
       }
     }
 
     impl JwtTokenStore for RedisJwtStore {
       async fn store_refresh_token(&self, token_id: &str, data: RefreshTokenData) -> Result<(), SumidaError> {
-        // TODO: Implement refresh token storage
-        // - Serialize RefreshTokenData to JSON
-        // - Store in Redis with key "refresh_token:{token_id}"
-        // - Set TTL based on data.expires_at
-        let _ = (token_id, data);
-        Err(SumidaError::Unsupported("Redis JWT store not yet implemented".to_string()))
+        let json = serde_json::to_string(&data).map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        let expire = Some(Expiration::EXAT(data.expires_at.timestamp()));
+        self
+          .pool
+          .set::<(), _, _>(format!("jwt:refresh:{token_id}"), json, expire, None, false)
+          .await
+          .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        Ok(())
       }
 
       async fn get_refresh_token(&self, token_id: &str) -> Result<Option<RefreshTokenData>, SumidaError> {
-        // TODO: Implement refresh token retrieval
-        // - Get value from Redis with key "refresh_token:{token_id}"
-        // - Deserialize JSON to RefreshTokenData if exists
-        // - Return None if key doesn't exist
-        let _ = token_id;
-        Err(SumidaError::Unsupported("Redis JWT store not yet implemented".to_string()))
+        let value: Option<String> = self
+          .pool
+          .get(format!("jwt:refresh:{token_id}"))
+          .await
+          .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        match value {
+          Some(json) => {
+            Ok(Some(serde_json::from_str(&json).map_err(|e| SumidaError::Unsupported(e.to_string()))?))
+          }
+          None => Ok(None),
+        }
       }
 
       async fn delete_refresh_token(&self, token_id: &str) -> Result<(), SumidaError> {
-        // TODO: Implement refresh token deletion
-        // - Delete key "refresh_token:{token_id}" from Redis
-        let _ = token_id;
-        Err(SumidaError::Unsupported("Redis JWT store not yet implemented".to_string()))
+        self
+          .pool
+          .del::<(), _>(format!("jwt:refresh:{token_id}"))
+          .await
+          .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        Ok(())
       }
 
       async fn blacklist_token(&self, jti: &str, expires_at: DateTime<Utc>) -> Result<(), SumidaError> {
-        // TODO: Implement token blacklisting
-        // - Create BlacklistEntry with jti, expires_at, and current timestamp
-        // - Serialize and store in Redis with key "blacklist:{jti}"
-        // - Set TTL based on expires_at
-        let _ = (jti, expires_at);
-        Err(SumidaError::Unsupported("Redis JWT store not yet implemented".to_string()))
+        let expire = Some(Expiration::EXAT(expires_at.timestamp()));
+        self
+          .pool
+          .set::<(), _, _>(format!("jwt:blacklist:{jti}"), "1", expire, None, false)
+          .await
+          .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        Ok(())
       }
 
       async fn is_token_blacklisted(&self, jti: &str) -> Result<bool, SumidaError> {
-        // TODO: Implement blacklist check
-        // - Check if key "blacklist:{jti}" exists in Redis
-        // - Return true if exists, false otherwise
-        let _ = jti;
-        Err(SumidaError::Unsupported("Redis JWT store not yet implemented".to_string()))
+        let count: i64 = self
+          .pool
+          .exists(format!("jwt:blacklist:{jti}"))
+          .await
+          .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        Ok(count > 0)
       }
 
       async fn cleanup_expired(&self) -> Result<(), SumidaError> {
-        // TODO: Implement expired token cleanup (optional)
-        // - Redis automatically expires keys with TTL
-        // - This method can remain empty or implement manual cleanup logic
+        // Redis auto-expires via TTL, so no separate cleanup is needed.
         Ok(())
       }
     }

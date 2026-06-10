@@ -14,7 +14,8 @@ pub struct RedisSessionStore {
 
 impl RedisSessionStore {
   pub async fn new(settings: &SessionRedisSettings) -> Result<Self, anyhow::Error> {
-    let config = Config::from_url(settings.url.as_deref().unwrap_or("http://localhost:6379/0")).unwrap();
+    // The Redis URL scheme is redis://. fred rejects http://. Propagate the error instead of unwrapping.
+    let config = Config::from_url(settings.url.as_deref().unwrap_or("redis://localhost:6379/0"))?;
     let pool = Pool::new(config, None, None, None, settings.size.unwrap_or(10))?;
     let handle = Arc::new(Mutex::new(pool.connect()));
 

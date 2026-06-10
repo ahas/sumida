@@ -219,6 +219,10 @@ impl UserSession {
     self.inner.set_expiry(expiry);
     self.identify(db).await?;
 
+    // Session fixation defense: reissue the session ID on login.
+    // (Prevents a pre-auth anonymous session ID from continuing to be used after authentication.)
+    self.inner.cycle_id().await.map_err(anyhow::Error::from)?;
+
     Ok(())
   }
 
@@ -443,6 +447,10 @@ impl UserSession {
     db: &C,
   ) -> Result<bool, SumidaError> {
     let settings = &settings::get().security.ban;
+    // Do nothing if the ban feature is disabled.
+    if !settings.enabled {
+      return Ok(false);
+    }
     let user_id = self.resolve_user_id(user_id);
 
     let Some(last_fail_log) = AccessLogs::find()
@@ -473,11 +481,13 @@ impl UserSession {
       let duration = humantime::parse_duration(&settings.failure_reset_after)
         .ok()
         .and_then(|x| Duration::from_std(x).ok());
-      let reason = Some("system banned");
+      // The ban_ip/ban_account signature is (.., reason: &str, note: Option<&str>, ..).
+      // Put the reason in reason and leave note empty (previously the positions were swapped, so reason was an empty string).
+      let reason = "system banned";
 
       match settings.target.as_str() {
-        "ip" => self.ban_ip(duration, "", reason, db).await?,
-        "account" => self.ban_account(Some(user_id), duration, "", reason, db).await?,
+        "ip" => self.ban_ip(duration, reason, None, db).await?,
+        "account" => self.ban_account(Some(user_id), duration, reason, None, db).await?,
         _ => {}
       };
 
@@ -523,7 +533,9 @@ impl UserSession {
 
       txn.commit().await?;
     } else {
-      self.logout().await?;
+      // Clean up the unauthenticated session. Since the subsequent store() saves the anonymous profile again,
+      // here we only reset the profile rather than flush (kept separate from public logout).
+      self.profile = UserProfile::default();
     }
 
     self.profile.last_seen_at = Utc::now().into();
@@ -543,8 +555,8 @@ impl UserSession {
 
   pub async fn logout(&mut self) -> Result<(), anyhow::Error> {
     self.profile = UserProfile::default();
-    self.inner.insert(Self::USER_PROFILE_KEY, self.profile.clone()).await?;
-    self.inner.save().await?;
+    // Completely destroy the session data and ID (overwriting only the profile would leave the session record/ID behind).
+    self.inner.flush().await?;
 
     Ok(())
   }
@@ -571,10 +583,10 @@ where
       state: user_state,
     };
     session.profile.last_seen_at = Utc::now().into();
-    // tower-sessions는 record에 만료 "시각"만 저장하고 "정책"(Expiry)은 매 요청 layer 기본값
-    // (여기선 None=OnSessionEnd)으로 리셋된다. 아래 save()가 그 None 정책으로 덮어쓰면
-    // 로그인 시 설정한 remember-me/만료가 사라지고(쿠키가 세션 쿠키로 다운그레이드) 풀린다.
-    // 그래서 로그인 때 저장해 둔 profile.expiry를 매 요청 재적용한다.
+    // tower-sessions stores only the expiry "instant" in the record, while the "policy" (Expiry) is
+    // reset every request to the layer default (here None=OnSessionEnd). If the save() below overwrites
+    // it with that None policy, the remember-me/expiry set at login is lost (the cookie is downgraded to
+    // a session cookie) and the session drops. So we re-apply profile.expiry saved at login on every request.
     session.inner.set_expiry(session.profile.expiry);
     session
       .inner

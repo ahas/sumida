@@ -4,9 +4,11 @@ use axum::body::Body;
 use axum::extract::FromRequestParts;
 use axum::http::{HeaderMap, HeaderValue, Request, Response};
 use axum::response::IntoResponse;
+use chrono::Utc;
 use entity::prelude::*;
 use error::SumidaError;
 use futures::future::BoxFuture;
+use infra::jwt::JwtTokenStore;
 use infra::session::UserSession;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use tower::{Layer, Service};
@@ -96,14 +98,37 @@ pub async fn verify_jwt<S: SumidaState>(
   token: &str,
 ) -> Result<(), SumidaError> {
   let settings = infra::settings::get();
-  // access token만 허용. token_type 검증 포함.
+  // Allow only access tokens. Includes token_type validation.
   let claims = helper::verify_access_token(token).await?;
   let expiry = settings.jwt.as_ref().ok_or(SumidaError::NoJwtSecret)?.expiry.access_token_expiry()?;
 
-  // 표준 클레임 sub(문자열)을 user_id(i32)로 파싱.
+  // Parse the standard claim sub (a string) into user_id (i32).
   let user_id: i32 = claims.sub.parse().map_err(|_| SumidaError::InvalidJwt)?;
 
-  session.authorize(user_id, &claims.username, Some(expiry), state.db()).await?;
+  // Block logged-out / forcibly revoked access tokens (jti blacklist lookup).
+  // This turns the access token from stateless into stateful (a store lookup on every auth), but
+  // enables immediate invalidation. The blacklist is kept with a TTL only until the token's expiry.
+  if crate::service::auth::token::shared_jwt_store()
+    .await?
+    .is_token_blacklisted(&claims.jti)
+    .await?
+  {
+    return Err(SumidaError::InvalidJwt);
+  }
+
+  // Reject inactive/banned accounts even with a valid access token (same policy as the session login path).
+  let db = state.db();
+  let Some(user) = Users::find_by_id(user_id).one(db).await? else {
+    return Err(SumidaError::InvalidAccount);
+  };
+  if !user.is_enabled {
+    return Err(SumidaError::InactiveAccount);
+  }
+  if session.check_banned(Some(user_id), db).await? {
+    return Err(SumidaError::AccountBanned);
+  }
+
+  session.authorize(user_id, &claims.username, Some(expiry), db).await?;
 
   Ok(())
 }
@@ -114,18 +139,41 @@ pub async fn verify_api_key<S: SumidaState>(
   key: &str,
 ) -> Result<(), SumidaError> {
   let db = state.db();
+  // The DB stores only the hash, so hash the incoming plaintext key to look it up.
+  let key_hash = crate::service::api_key::hash_api_key(key);
   let api_key = ApiKeys::find()
-    .filter(entity::api_keys::Column::Key.eq(key))
+    .filter(entity::api_keys::Column::Key.eq(&key_hash))
     .one(db)
     .await?
     .ok_or(SumidaError::InvalidApiKey)?;
+
+  // Reject expired keys.
+  if api_key.expires_at.is_some_and(|expires_at| expires_at < Utc::now().fixed_offset()) {
+    return Err(SumidaError::InvalidApiKey);
+  }
+
   let user = Users::find_by_id(api_key.user_id).one(db).await?;
 
   if let Some(user) = user {
+    // Reject inactive/banned accounts (same policy as the session login path).
+    if !user.is_enabled {
+      return Err(SumidaError::InactiveAccount);
+    }
+    if session.check_banned(Some(user.id), db).await? {
+      return Err(SumidaError::AccountBanned);
+    }
+
     session.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd), db).await?;
 
+    // Key scope policy (intended design):
+    //   - is_secured=true : sets profile.api_key → who() evaluates only the `api:KEY` identifier,
+    //                       isolating permissions to the access_policy scope explicitly granted to the key.
+    //   - is_secured=false: does not set api_key → who() expands all of the owner's User/Role/Org/Admin
+    //                       identifiers, so the key inherits the owner's full permissions as-is.
+    // In short: an unsecured key = owner full access (for convenience), a secured key = scope-limited. Announce this distinction to downstream.
+    // Policies are stored under the hash identifier (`api:<hash>`), so put the hash into profile.api_key too.
     if api_key.is_secured {
-      session.profile.api_key = Some(key.to_owned());
+      session.profile.api_key = Some(key_hash);
     }
   } else {
     return Err(SumidaError::InvalidAccount);

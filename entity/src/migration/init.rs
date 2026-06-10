@@ -135,6 +135,7 @@ enum UserPrefs {
 enum ApiKeys {
   Table,
   Key,
+  KeyPrefix,
   UserId,
   ExpiresAt,
   IsSecured,
@@ -412,6 +413,7 @@ impl MigrationTrait for Migration {
           .if_not_exists()
           .table(ApiKeys::Table)
           .col(string(ApiKeys::Key))
+          .col(string_null(ApiKeys::KeyPrefix))
           .col(integer(ApiKeys::UserId))
           .col(timestamp_with_time_zone_null(ApiKeys::ExpiresAt).default(Expr::current_timestamp()))
           .col(boolean(ApiKeys::IsSecured).default(false))

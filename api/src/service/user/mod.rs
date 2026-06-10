@@ -79,20 +79,29 @@ impl<S: SumidaState> UserService<S> {
     active_model.password =
       Set(hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
 
+    // A non-admin cannot control privilege-escalation fields (same policy as update()).
+    // role_id/organization_id are NOT NULL, so instead of locking them, force them to safe values:
+    //   - is_admin: always false → blocks creating a backdoor admin via {isAdmin:true}
+    //   - organization_id: the operator's own organization → blocks planting users into other organizations
+    if !self.session.profile.is_admin {
+      active_model.is_admin = Set(false);
+      active_model.organization_id = Set(self.session.profile.organization.id);
+    }
+
     Ok(Users::insert(active_model).exec(self.state.db()).await?)
   }
 
   pub async fn update(&self, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    // 권한 3단 분기:
-    //   (1) is_admin = true                          → 보안 필드 포함 전체 update
-    //   (2) namespace="org:user", action=update      → 자기 조직 + 후손 조직 user에 한정.
-    //                                                  보안 필드(is_admin/role_id/organization_id/is_enabled) 잠금
-    //   (3) 그 외                                     → 차단 (NoAccessPermission)
+    // Three-way authorization branch:
+    //   (1) is_admin = true                          → full update including security fields
+    //   (2) namespace="org:user", action=update      → limited to users in own org + descendant orgs.
+    //                                                  Security fields (is_admin/role_id/organization_id/is_enabled) locked
+    //   (3) otherwise                                 → blocked (NoAccessPermission)
     //
-    // 자기 자신 프로필 변경은 /me 경로(UpdateMe DTO)를 사용해야 한다. 이 경로는
-    // 타인을 update할 때 쓰는 운영자 권한 채널.
+    // Changing one's own profile must go through the /me route (UpdateMe DTO). This route is
+    // the operator-privilege channel used to update other people.
     let allow_security_fields = if self.session.profile.is_admin {
       true
     } else {
@@ -118,8 +127,8 @@ impl<S: SumidaState> UserService<S> {
     }
 
     if !allow_security_fields {
-      // 권한 상승을 일으킬 수 있는 필드는 잘라낸다. 운영자가 admin 승격/role 변경을 하려면
-      // is_admin=true 계정으로 동작해야 한다.
+      // Strip fields that could cause privilege escalation. To promote to admin or change a role,
+      // an operator must act under an is_admin=true account.
       model.is_admin = NotSet;
       model.role_id = NotSet;
       model.organization_id = NotSet;
@@ -193,7 +202,10 @@ impl<S: SumidaState> UserService<S> {
     let Some(user) = Users::find_by_id(user_id).one(db).await? else {
       return Err(SumidaError::InvalidAccount);
     };
+    // The invitation uuid must have been issued for that user_id.
+    // Verifying only the uuid without matching user_id would let one reset the password of any account (including admins).
     let Some(_) = UserInvitations::find_by_id(*uuid)
+      .filter(entity::user_invitations::Column::UserId.eq(user_id))
       .filter(entity::user_invitations::Column::ExpiresAt.gt(Utc::now()))
       .one(db)
       .await?
@@ -268,6 +280,12 @@ impl<S: SumidaState> UserService<S> {
   }
 
   pub async fn impersonate(&mut self, user_id: i32) -> Result<(), SumidaError> {
+    // Only admins may impersonate another user. The router's user_guard guarantees authentication, but
+    // authorization (admin) is enforced once more here, independent of layer ordering.
+    if !self.session.profile.is_admin {
+      return Err(SumidaError::OnlyAdminAllowed);
+    }
+
     let db = self.state.db();
     let settings = &settings::get().session.cookie;
     let Some(user) = Users::find_by_id(user_id).one(db).await? else {

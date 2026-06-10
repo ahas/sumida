@@ -47,10 +47,13 @@ impl<S: SumidaState> UserVerificationService<S> {
     let Some(_) = Users::find_by_id(user_id).one(txn).await? else {
       return Err(SumidaError::InvalidAccount);
     };
+    // Reject expired codes. Without this filter, codes would stay valid forever,
+    // exposing them to an unbounded 6-digit (10^6) brute-force with no time constraint.
     let is_verified = Entity::find()
       .filter(Column::Kind.eq(kind))
       .filter(Column::UserId.eq(user_id))
       .filter(Column::Code.eq(code))
+      .filter(Column::ExpiresAt.gt(Utc::now()))
       .count(txn)
       .await?
       > 0;
@@ -72,16 +75,36 @@ impl<S: SumidaState> UserVerificationService<S> {
   pub async fn send(&self, data: SendUserVerification) -> Result<(), SumidaError> {
     use entity::user_verifications::Column;
 
-    let code: String = {
-      let mut rng = rand::rng();
-      (0..6).map(|_| rng.random_range(0..10).to_string()).collect()
-    };
-
     let txn = self.state.db().begin().await?;
 
     let user_id = data.user_id;
     let kind = data.kind.clone();
     let method = data.method.clone();
+
+    // Do not reveal account existence in the response (enumeration prevention).
+    // If there is no target, silently succeed without sending a code.
+    let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
+      txn.rollback().await?;
+      return Ok(());
+    };
+
+    // Email bomb prevention: do not resend if a still-valid code remains (3-minute cooldown per user).
+    let has_active_code = UserVerifications::find()
+      .filter(Column::UserId.eq(user_id))
+      .filter(Column::Kind.eq(&kind))
+      .filter(Column::ExpiresAt.gt(Utc::now()))
+      .count(&txn)
+      .await?
+      > 0;
+    if has_active_code {
+      txn.rollback().await?;
+      return Ok(());
+    }
+
+    let code: String = {
+      let mut rng = rand::rng();
+      (0..6).map(|_| rng.random_range(0..10).to_string()).collect()
+    };
 
     let mut active_model = data.into_active_model();
     active_model.user_id = Set(user_id);
@@ -103,15 +126,11 @@ impl<S: SumidaState> UserVerificationService<S> {
       UserVerifications::insert(active_model).exec(&txn).await?;
     }
 
-    let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
-      txn.rollback().await?;
-      return Err(SumidaError::InvalidAccount);
-    };
-
     if method == "email" {
+      // Do not reveal whether an email is on file either (enumeration prevention). Silently succeed.
       let Some(email) = user.email else {
         txn.rollback().await?;
-        return Err(SumidaError::NoUserEmail(user.id));
+        return Ok(());
       };
       let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
         username: opts.username.clone(),

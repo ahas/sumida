@@ -50,6 +50,7 @@ pub struct ApiKeyUser {
 #[serde(rename_all = "camelCase")]
 pub struct ApiKeyListItem {
   pub key: String,
+  pub key_prefix: Option<String>,
   #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
   pub expires_at: Option<DateTimeWithTimeZone>,
@@ -61,6 +62,7 @@ pub struct ApiKeyListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetApiKey {
   pub key: String,
+  pub key_prefix: Option<String>,
   #[sea_orm(nested, alias = "user")]
   pub user: ApiKeyUser,
   #[sea_orm(skip)]
