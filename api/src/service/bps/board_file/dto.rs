@@ -111,7 +111,16 @@ impl FileUploadTrait for UploadBoardFile {
 
       match name.as_str() {
         "board_id" => {
-          board_id = Some(field.text().await.unwrap().parse::<i32>().unwrap());
+          let text = field
+            .text()
+            .await
+            .map_err(|err| SumidaError::BadRequest(format!("Invalid board_id: {err}")))?;
+          board_id = Some(
+            text
+              .trim()
+              .parse::<i32>()
+              .map_err(|err| SumidaError::BadRequest(format!("Invalid board_id: {err}")))?,
+          );
         }
         "metadata" => {
           let text = field
@@ -142,9 +151,9 @@ impl FileUploadTrait for UploadBoardFile {
     }
 
     Ok(Self {
-      board_id: board_id.unwrap(),
-      file:     file_data.unwrap(),
-      options:  options.unwrap(),
+      board_id: board_id.ok_or_else(|| SumidaError::BadRequest("Missing field: board_id".into()))?,
+      file:     file_data.ok_or_else(|| SumidaError::BadRequest("Missing field: file".into()))?,
+      options:  options.ok_or_else(|| SumidaError::BadRequest("Missing field: metadata".into()))?,
     })
   }
 }

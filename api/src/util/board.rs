@@ -103,21 +103,13 @@ impl TsHeadlineExpr {
   }
 
   pub fn apply<E: EntityTrait>(self, mut query: Select<E>) -> Select<E> {
-    let sql = format!(
-      "ts_headline(
-        '{config}',
-        {column},
-        plainto_tsquery('{config}', $1),
-        'StartSel={start}
-        , StopSel={stop}
-        , MaxWords={max_words}
-        , MinWords={min_words}
-        , ShortWord={short_word}
-        , MaxFragments={max_fragments}
-        , HighlightAll={highlight_all}'
-      )",
-      config = self.config,
-      column = self.column,
+    // Bind the entire ts_headline options string as a parameter ($2).
+    // start_sel/stop_sel are client-controlled values coming from query parameters, so
+    // interpolating them directly into the options literal allows SQL injection by escaping the literal with a single quote.
+    // (config is fixed to "simple", column is a ColumnTrait, and the rest are numbers, so they are safe.)
+    let options = format!(
+      "StartSel={start}, StopSel={stop}, MaxWords={max_words}, MinWords={min_words}, \
+       ShortWord={short_word}, MaxFragments={max_fragments}, HighlightAll={highlight_all}",
       start = self.start_sel,
       stop = self.stop_sel,
       max_words = self.max_words,
@@ -127,9 +119,17 @@ impl TsHeadlineExpr {
       highlight_all = if self.highlight_all { "TRUE" } else { "FALSE" }
     );
 
+    let sql = format!(
+      "ts_headline('{config}', {column}, plainto_tsquery('{config}', $1), $2)",
+      config = self.config,
+      column = self.column,
+    );
+
     query.query().join_lateral(
       JoinType::LeftJoin,
-      Query::select().expr_as(Expr::cust_with_values(sql, [self.keyword]), "snippet").take(),
+      Query::select()
+        .expr_as(Expr::cust_with_values(sql, [self.keyword.clone(), options]), "snippet")
+        .take(),
       Alias::new("H"),
       Expr::cust("TRUE"),
     );

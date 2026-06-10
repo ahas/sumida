@@ -349,13 +349,57 @@ impl<S: SumidaState> BoardPostService<S> {
     Ok(result)
   }
 
+  /// Permission check for editing/deleting a post.
+  /// Allows if either operator permission (board_group (if present) AND board) **or** author ownership
+  /// (board_post namespace, granted on create) is satisfied. Unlike ap() (an AND chain for list/read), this needs OR semantics.
+  async fn authorize_post_mutation<C: sea_orm::ConnectionTrait>(
+    &self,
+    action: &str,
+    post_id: i32,
+    board_id: i32,
+    board_group_id: Option<i32>,
+    txn: &C,
+  ) -> Result<(), SumidaError> {
+    // Operator permission: board_group (if present) AND board
+    let operator = ap::chain()
+      .push_if(board_group_id, |x| ap::ns("board_group").object(x))
+      .push(ap::ns("board").object(board_id))
+      .who(&self.session)
+      .action(action)
+      .check_allowed(txn)
+      .await;
+    if operator {
+      return Ok(());
+    }
+
+    // Author ownership: board_post namespace, object=post_id
+    let owner = ap::ns("board_post")
+      .object(post_id)
+      .who(&self.session)
+      .action(action)
+      .check_allowed(txn)
+      .await;
+    if owner {
+      return Ok(());
+    }
+
+    Err(SumidaError::NoAccessPermission)
+  }
+
   pub async fn update(&self, id: i32, data: UpdateBoardPost) -> Result<BoardPostsModel, SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    self.try_access("update", BoardPosts::find_by_id(id), &txn).await?;
+    let post = BoardPosts::find_by_id(id)
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Post".to_string(), id.to_string()))?;
+    let board = Boards::find_by_id(post.board_id)
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Board".to_string(), post.board_id.to_string()))?;
 
-    let post = BoardPosts::find_by_id(id).one(&txn).await?.unwrap();
-    let board = Boards::find_by_id(post.board_id).one(&txn).await?.unwrap();
+    // Operator permission (board_group AND board) OR author ownership (board_post)
+    self.authorize_post_mutation("update", id, board.id, board.group_id, &txn).await?;
 
     if board.is_versioned {
       let mut am = post.clone().into_active_model();
@@ -400,7 +444,19 @@ impl<S: SumidaState> BoardPostService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", BoardPosts::find_by_id(id), &txn).await?;
+
+    let post = BoardPosts::find_by_id(id)
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Post".to_string(), id.to_string()))?;
+    let board = Boards::find_by_id(post.board_id)
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Board".to_string(), post.board_id.to_string()))?;
+
+    // Operator permission (board_group AND board) OR author ownership (board_post)
+    self.authorize_post_mutation("delete", id, board.id, board.group_id, &txn).await?;
+
     let result = BoardPosts::delete_by_id(id).exec(&txn).await?;
 
     ap::edit().namespace("board_post").object(id).delete(&txn).await?;
@@ -527,7 +583,9 @@ impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
   fn ap(&self) -> ApChain {
     ap::chain()
       .push(ap::ns("board_group").column(BoardsColumn::GroupId))
-      .push(ap::ns("board").column(BoardPostsColumn::Id))
+      // The object for the board namespace must be the board id, not the post id.
+      // Keep it consistent with create's permission check (`ap::ns("board").object(board.id)`) and the seed policy.
+      .push(ap::ns("board").column(BoardPostsColumn::BoardId))
       .who(&self.session)
   }
 }

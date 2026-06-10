@@ -69,6 +69,17 @@ impl<S: SumidaState> RoleService<S> {
   ) -> Result<InsertResult<entity::roles::ActiveModel>, SumidaError> {
     let txn = self.state.db().begin().await?;
     let user_aps = data.access_policies.clone();
+    // Block a non-admin from escalating privileges by attaching a wildcard allow policy to a role.
+    for policy in &user_aps {
+      ap::assert_policy_within_authority(
+        self.session.profile.is_admin,
+        &policy.namespace,
+        &policy.object,
+        &policy.action,
+        "",
+        &policy.effect,
+      )?;
+    }
     let result = Roles::insert(data.into_active_model()).exec(&txn).await?;
     ap::for_users().user(ApUser::Role(result.last_insert_id)).update(user_aps, &txn).await?;
     txn.commit().await?;
@@ -81,6 +92,16 @@ impl<S: SumidaState> RoleService<S> {
     self.try_access("update", Roles::find_by_id(id), &txn).await?;
 
     if let Some(user_aps) = data.access_policies.clone() {
+      for policy in &user_aps {
+        ap::assert_policy_within_authority(
+          self.session.profile.is_admin,
+          &policy.namespace,
+          &policy.object,
+          &policy.action,
+          "",
+          &policy.effect,
+        )?;
+      }
       ap::for_users().user(ApUser::Role(id)).update(user_aps, &txn).await?;
     }
 

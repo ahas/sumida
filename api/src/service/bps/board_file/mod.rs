@@ -49,8 +49,11 @@ impl<S: SumidaState> BoardFileService<S> {
 
     let db = self.state.db();
 
+    // Apply the board_file read ReBAC filter via self.select(...).
+    // Without this, board_file:read permission alone would let one read attachments across all organizations.
     let mut query = filter.apply(util::with_file_columns(
-      BoardFiles::find()
+      self
+        .select(BoardFiles::find())
         .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
         .column_as(Column::FileUuid, "id")
@@ -82,7 +85,8 @@ impl<S: SumidaState> BoardFileService<S> {
     let db = self.state.db();
 
     let result = util::with_file_columns(
-      BoardFiles::find()
+      self
+        .select(BoardFiles::find())
         .filter(Column::PostId.eq(post_id))
         .filter(Column::FileUuid.eq(file_uuid))
         .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
@@ -120,13 +124,27 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   pub async fn delete(&self, data: DeleteBoardFile) -> Result<DeleteResult, SumidaError> {
-    let db = self.state.db();
+    let txn = self.state.db().begin().await?;
+
+    // Row-level permission check: reject if there is no delete permission for that post's attachment.
+    // Without this check, board_file:delete permission alone would let one delete any post's attachment (and the original file).
+    self
+      .try_access(
+        "delete",
+        BoardFiles::find()
+          .filter(BoardFilesColumn::PostId.eq(data.post_id))
+          .filter(BoardFilesColumn::FileUuid.eq(data.file_uuid)),
+        &txn,
+      )
+      .await?;
 
     let result = BoardFiles::delete_many()
       .filter(BoardFilesColumn::PostId.eq(data.post_id))
       .filter(BoardFilesColumn::FileUuid.eq(data.file_uuid))
-      .exec(db)
+      .exec(&txn)
       .await?;
+
+    txn.commit().await?;
 
     FileService::new(self.state.clone(), self.session.clone())
       .delete(data.file_uuid, DeleteFile { hard: data.hard })

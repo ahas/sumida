@@ -120,12 +120,7 @@ macro_rules! service_ap {
   };
 }
 
-#[macro_export]
-macro_rules! board_ap {
-  ($state:expr, $board_id:expr, $action:ident) => {
-    $crate::layer::BoardApLayer::new($state.clone(), Some($board_id), stringify!($action))
-  };
-  ($state:expr, $action:ident) => {
-    $crate::layer::BoardApLayer::new($state.clone(), None, stringify!($action))
-  };
-}
+// NOTE: The former `board_ap!` macro referenced the unimplemented `BoardApLayer`, so it broke
+// compilation when used; with zero call sites it was removed. Per-board permissions are handled
+// by each service's internal `ap::chain`/ownership checks (e.g. board_post's `authorize_post_mutation`).
+// If you need to extract board_id, use `layer::board_ap::helpers`.

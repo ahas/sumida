@@ -7,6 +7,7 @@ use sea_orm::ActiveValue::*;
 use sea_orm::{
   DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, TransactionTrait,
 };
+use sea_orm_crud::Optional;
 use uuid::Uuid;
 
 use self::dto::*;
@@ -65,6 +66,16 @@ impl<S: SumidaState> AccessPolicyService<S> {
     &self,
     data: CreateAccessPolicy,
   ) -> Result<InsertResult<entity::access_policies::ActiveModel>, SumidaError> {
+    // Block privilege escalation where a non-admin self-grants a wildcard allow.
+    ap::assert_policy_within_authority(
+      self.session.profile.is_admin,
+      &data.namespace,
+      std::slice::from_ref(&data.object),
+      &data.action,
+      &data.user,
+      &data.effect,
+    )?;
+
     Ok(AccessPolicies::insert(data.into_active_model()).exec(self.state.db()).await?)
   }
 
@@ -75,6 +86,28 @@ impl<S: SumidaState> AccessPolicyService<S> {
   ) -> Result<entity::access_policies::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
     self.try_access("update", AccessPolicies::find_by_id(uuid), &txn).await?;
+
+    // Since this is a partial update, validate against the 'final state' that merges the existing policy with the changes.
+    // (Prevents stepwise circumvention, e.g. changing namespace to * while leaving effect alone.)
+    if !self.session.profile.is_admin {
+      let existing = AccessPolicies::find_by_id(uuid)
+        .one(&txn)
+        .await?
+        .ok_or_else(|| SumidaError::NoData("AccessPolicy".to_owned(), uuid.to_string()))?;
+      let Optional(namespace) = data.namespace.clone();
+      let Optional(object) = data.object.clone();
+      let Optional(action) = data.action.clone();
+      let Optional(user) = data.user.clone();
+      let Optional(effect) = data.effect.clone();
+      ap::assert_policy_within_authority(
+        false,
+        &namespace.unwrap_or(existing.namespace),
+        std::slice::from_ref(&object.unwrap_or(existing.object)),
+        &action.unwrap_or(existing.action),
+        &user.unwrap_or(existing.user),
+        &effect.unwrap_or(existing.effect),
+      )?;
+    }
 
     let mut model = data.into_active_model();
     model.uuid = Set(uuid);

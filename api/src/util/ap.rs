@@ -32,15 +32,12 @@ fn _build_object_condition<C: IntoColumnRef>(
     cond = cond.add(col.clone().eq(expr.clone()));
   }
 
-  // object_in_subquery: 호출자가 ANY(SELECT ...) 형태로 만든 raw SimpleExpr에
-  // ap.object가 매칭되면 OR 분기 충족. 조직 트리 ancestor ids 같은 동적 집합용.
-  // 사용 예:
-  //   Expr::cust_with_expr(
-  //     "ANY(WITH RECURSIVE chain AS ( ... ) SELECT id::text FROM chain)",
-  //     [start_col_expr],
-  //   )
+  // object_in_subquery: each entry is a COMPLETE boolean comparison expression
+  // (e.g. `"ap"."object" = ANY(SELECT ...)`) built by the caller — added directly as an OR branch.
+  // It must NOT be wrapped with `col.eq(..)`, which would render `col = (ANY(...))` (invalid SQL).
+  // See `util::org::organization_ancestors_subquery`.
   for sub in in_subqueries {
-    cond = cond.add(col.clone().eq(sub.clone()));
+    cond = cond.add(sub.clone());
   }
 
   cond
@@ -127,8 +124,8 @@ pub trait ApGuard {
   fn expr<E: IntoSimpleExpr + Clone>(self, expr: E) -> Self;
   fn join<S: IntoIden + Clone + 'static, T: IntoIden + Clone + 'static>(self, entity: S, column: T)
   -> Self;
-  /// `ap.object`가 raw `ANY(SELECT ...)` 또는 동등한 SimpleExpr에 매칭되면 통과시키는 OR 분기.
-  /// 조직 트리 ancestor 같은 동적 집합을 호출자가 직접 SQL로 짜서 넣는 escape hatch.
+  /// OR branch that passes when `ap.object` matches a raw `ANY(SELECT ...)` or equivalent SimpleExpr.
+  /// An escape hatch where the caller injects hand-written SQL for a dynamic set like org tree ancestors.
   fn object_in_subquery(self, sub: SimpleExpr) -> Self;
   fn action<T: ApValue>(self, action: T) -> Self;
   fn user(self, user: ApUser) -> Self;
@@ -513,13 +510,13 @@ impl ApGuard for ApChain {
   }
 }
 
-/// `ApChain`의 OR 결합 버전. 자식 중 하나라도 통과하면 매칭.
+/// OR-combined version of `ApChain`. Matches if any child passes.
 ///
-/// 시멘틱:
-/// - `apply(query)` — 자식들의 `condition()`을 `Condition::any()`로 묶어 필터.
-///   각 자식은 별도 LATERAL JOIN(`ap_or_<i>`)을 자기 영역에 깐다.
-/// - `can_access/check_allowed` — 자식 중 하나라도 true면 true.
-/// - deny 시멘틱: 각 자식 내부에서는 기존 그대로 `has_allow AND NOT has_deny`. 자식 간 deny 전파는 없음.
+/// Semantics:
+/// - `apply(query)` — combines the children's `condition()` with `Condition::any()` as a filter.
+///   Each child lays down its own LATERAL JOIN (`ap_or_<i>`) in its own scope.
+/// - `can_access/check_allowed` — true if any child is true.
+/// - deny semantics: inside each child it stays `has_allow AND NOT has_deny` as before. There is no deny propagation across children.
 #[derive(Clone, Debug, Default)]
 pub struct ApOr {
   children: Vec<ApCondition>,
@@ -675,6 +672,36 @@ pub struct ApForUser {
   pub object: Vec<String>,
   pub action: Vec<String>,
   pub effect: String,
+}
+
+/// Prevents a non-admin from granting a dangerous policy that leads directly to self-elevation to super-admin.
+///
+/// Rejects when `effect="allow"` and any of `namespace`/`object`/`action`/`user` is a wildcard (`*`).
+/// Passes for an admin or a `deny` policy (a deny wildcard does not broaden permissions).
+/// For paths where `user` is fixed to `role:N`/`api:K`, such as policy injection from role/api_key,
+/// pass an empty string for `user` (it is not a wildcard, so it is ignored).
+pub fn assert_policy_within_authority(
+  is_admin: bool,
+  namespace: &str,
+  objects: &[String],
+  actions: &[String],
+  user: &str,
+  effect: &str,
+) -> Result<(), SumidaError> {
+  if is_admin || effect != "allow" {
+    return Ok(());
+  }
+
+  let has_wildcard = namespace == "*"
+    || user == "*"
+    || objects.iter().any(|o| o == "*")
+    || actions.iter().any(|a| a == "*");
+
+  if has_wildcard {
+    return Err(SumidaError::NoAccessPermission);
+  }
+
+  Ok(())
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1040,4 +1067,60 @@ pub fn find_users<S: ToString>(namespace: S) -> FindUsersOfAp {
 
 pub fn edit() -> EditAp {
   EditAp::new()
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn vs(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| s.to_string()).collect()
+  }
+
+  // assert_policy_within_authority (H-2): block a non-admin's self-elevation to super-admin
+  #[test]
+  fn admin_bypasses_wildcard_allow() {
+    assert!(assert_policy_within_authority(true, "*", &vs(&["*"]), &vs(&["*"]), "*", "allow").is_ok());
+  }
+
+  #[test]
+  fn deny_with_wildcard_is_allowed() {
+    // deny does not broaden permissions, so allow it even with a wildcard.
+    assert!(assert_policy_within_authority(false, "*", &vs(&["*"]), &vs(&["*"]), "*", "deny").is_ok());
+  }
+
+  #[test]
+  fn non_admin_concrete_allow_is_ok() {
+    assert!(
+      assert_policy_within_authority(false, "my:ns", &vs(&["obj"]), &vs(&["read"]), "user:1", "allow").is_ok()
+    );
+  }
+
+  #[test]
+  fn non_admin_wildcard_namespace_allow_rejected() {
+    assert!(
+      assert_policy_within_authority(false, "*", &vs(&["obj"]), &vs(&["read"]), "user:1", "allow").is_err()
+    );
+  }
+
+  #[test]
+  fn non_admin_wildcard_object_allow_rejected() {
+    assert!(
+      assert_policy_within_authority(false, "my:ns", &vs(&["*"]), &vs(&["read"]), "user:1", "allow").is_err()
+    );
+  }
+
+  #[test]
+  fn non_admin_wildcard_action_allow_rejected() {
+    assert!(
+      assert_policy_within_authority(false, "my:ns", &vs(&["obj"]), &vs(&["*"]), "user:1", "allow").is_err()
+    );
+  }
+
+  #[test]
+  fn non_admin_wildcard_user_allow_rejected() {
+    assert!(
+      assert_policy_within_authority(false, "my:ns", &vs(&["obj"]), &vs(&["read"]), "*", "allow").is_err()
+    );
+  }
 }
