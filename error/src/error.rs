@@ -99,6 +99,38 @@ pub enum SumidaError {
   #[error("\"{0}\" field not provided")]
   FieldNotProvided(String),
 
+  // membership / billing errors
+  #[error("membership plan `{0}` not found")]
+  PlanNotFound(String),
+  #[error("no active subscription for this action")]
+  NoActiveSubscription,
+  #[error("subscription has expired")]
+  SubscriptionExpired,
+  #[error("action `{0}` is not allowed by the current membership")]
+  MembershipActionNotAllowed(String),
+  #[error("plan scope does not match the subscription owner")]
+  MembershipPlanScopeMismatch,
+  #[error("an active subscription for this plan already exists")]
+  DuplicateActiveSubscription,
+  #[error("insufficient credits: required {required}, available {available}")]
+  InsufficientCredits { required: i64, available: i64 },
+  #[error("refund amount {0} exceeds available balance {1}")]
+  RefundWouldExceedBalance(i64, i64),
+  #[error("credit wallet balance diverges from ledger (wallet `{0}`)")]
+  BalanceDivergence(i32),
+  #[error("purchase `{0}` not found")]
+  PurchaseNotFound(String),
+  #[error("payment is not configured")]
+  PaymentNotConfigured,
+  #[error("payment provider error: {0}")]
+  PaymentProviderError(String),
+  #[error("payment not completed (status: {0})")]
+  PaymentNotCompleted(String),
+  #[error("payment amount mismatch: expected {expected}, paid {actual}")]
+  PaymentAmountMismatch { expected: i64, actual: i64 },
+  #[error("webhook verification failed")]
+  WebhookVerificationFailed,
+
   // runtime errors
   #[error("reason: {0}")]
   Unsupported(String),
@@ -178,6 +210,22 @@ impl SumidaError {
       Self::InternalServerError(_) => 5004,
 
       Self::BadRequest(_) => 6000,
+
+      Self::PlanNotFound(_) => 8000,
+      Self::NoActiveSubscription => 8001,
+      Self::SubscriptionExpired => 8002,
+      Self::MembershipActionNotAllowed(_) => 8003,
+      Self::MembershipPlanScopeMismatch => 8004,
+      Self::DuplicateActiveSubscription => 8005,
+      Self::InsufficientCredits { .. } => 8006,
+      Self::RefundWouldExceedBalance(..) => 8007,
+      Self::BalanceDivergence(_) => 8008,
+      Self::PurchaseNotFound(_) => 8009,
+      Self::PaymentNotConfigured => 8010,
+      Self::PaymentProviderError(_) => 8011,
+      Self::PaymentNotCompleted(_) => 8012,
+      Self::PaymentAmountMismatch { .. } => 8013,
+      Self::WebhookVerificationFailed => 8014,
 
       Self::DatabaseError(..) => 7000,
       #[cfg(feature = "aws-s3")]
@@ -277,6 +325,23 @@ impl From<SumidaError> for StatusCode {
       SumidaError::NoAccessPermission => Ok(StatusCode::FORBIDDEN),
       SumidaError::NoServiceAvailable => Ok(StatusCode::FORBIDDEN),
       SumidaError::InvalidAuthorizationMethod(_) => Ok(StatusCode::NOT_IMPLEMENTED),
+
+      // membership / billing errors
+      SumidaError::PlanNotFound(_) => Ok(StatusCode::NOT_FOUND),
+      SumidaError::NoActiveSubscription
+      | SumidaError::SubscriptionExpired
+      | SumidaError::MembershipActionNotAllowed(_) => Ok(StatusCode::FORBIDDEN),
+      SumidaError::InsufficientCredits { .. } => Ok(StatusCode::PAYMENT_REQUIRED),
+      SumidaError::MembershipPlanScopeMismatch | SumidaError::RefundWouldExceedBalance(..) => {
+        Ok(StatusCode::BAD_REQUEST)
+      }
+      SumidaError::DuplicateActiveSubscription => Ok(StatusCode::CONFLICT),
+      SumidaError::PurchaseNotFound(_) => Ok(StatusCode::NOT_FOUND),
+      SumidaError::PaymentNotConfigured => Ok(StatusCode::SERVICE_UNAVAILABLE),
+      SumidaError::PaymentProviderError(_) => Ok(StatusCode::BAD_GATEWAY),
+      SumidaError::PaymentNotCompleted(_) => Ok(StatusCode::PAYMENT_REQUIRED),
+      SumidaError::PaymentAmountMismatch { .. } => Ok(StatusCode::BAD_REQUEST),
+      SumidaError::WebhookVerificationFailed => Ok(StatusCode::BAD_REQUEST),
 
       // runtime errors
       SumidaError::Unsupported(_) => Ok(StatusCode::NOT_IMPLEMENTED),

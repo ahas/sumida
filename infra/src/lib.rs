@@ -1,6 +1,7 @@
 pub mod db;
 pub mod jwt;
 pub mod messenger;
+pub mod payment;
 pub mod session;
 pub mod settings;
 pub mod tracing;

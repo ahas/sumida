@@ -11,6 +11,7 @@ pub use super::dashboard::DashboardMonitoringController;
 pub use super::fs::prelude::*;
 pub use super::mail_form::MailFormController;
 pub use super::me::MeController;
+pub use super::membership::prelude::*;
 pub use super::organization::OrganizationController;
 pub use super::role::RoleController;
 pub use super::user::UserController;

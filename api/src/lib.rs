@@ -55,6 +55,14 @@ where
     // File System
     let file_controller = FileController::<StateT>::new();
 
+    // Membership / Billing System
+    let plan_controller = PlanController::<StateT>::new();
+    let subscription_controller = SubscriptionController::<StateT>::new();
+    let credit_controller = CreditController::<StateT>::new();
+    let entitlement_controller = EntitlementController::<StateT>::new();
+    let purchase_controller = PurchaseController::<StateT>::new();
+    let payment_controller = PaymentController::<StateT>::new();
+
     // Board System
     let board_group_controller = BoardGroupController::<StateT>::new();
     let board_controller = BoardController::<StateT>::new();
@@ -83,6 +91,13 @@ where
       .nest("/board-topics", board_topic_controller.router(state))
       .nest("/board-posts", board_post_controller.router(state))
       .nest("/board-files", board_files_controller.router(state))
+      // Membership / Billing System
+      .nest("/membership-plans", plan_controller.router(state))
+      .nest("/subscriptions", subscription_controller.router(state))
+      .nest("/credits", credit_controller.router(state))
+      .nest("/entitlements", entitlement_controller.router(state))
+      .nest("/membership-purchases", purchase_controller.router(state))
+      .nest("/payments", payment_controller.router(state))
       // File System
       .nest("/files", file_controller.router(state))
   }

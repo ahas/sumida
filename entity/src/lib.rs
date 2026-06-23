@@ -5,6 +5,7 @@ pub mod bans;
 pub mod bps;
 pub mod fs;
 pub mod mail_forms;
+pub mod membership;
 pub mod organizations;
 pub mod roles;
 pub mod user_invitations;

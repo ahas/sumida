@@ -8,6 +8,7 @@ pub mod dashboard;
 pub mod fs;
 pub mod mail_form;
 pub mod me;
+pub mod membership;
 pub mod organization;
 pub mod role;
 pub mod user;

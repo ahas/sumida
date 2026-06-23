@@ -2,6 +2,7 @@
 pub mod aws;
 pub mod database;
 pub mod jwt;
+pub mod membership;
 pub mod security;
 pub mod server;
 pub mod session;
@@ -23,6 +24,8 @@ pub struct SumidaSettings {
   pub security: security::SecuritySettings,
   #[serde(default)]
   pub storage: storage::StorageSettings,
+  #[serde(default)]
+  pub membership: membership::MembershipSettings,
   pub smtp: Option<smtp::SmtpSettings>,
   pub jwt: Option<jwt::JwtSettings>,
   #[cfg(feature = "aws")]

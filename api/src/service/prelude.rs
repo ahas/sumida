@@ -33,6 +33,18 @@ pub use super::mail_form::dto::*;
 pub use super::me::MeService;
 pub use super::me::dto::*;
 //
+pub use super::membership::credit::CreditService;
+pub use super::membership::credit::dto::*;
+pub use super::membership::entitlement::{EntitlementOutcome, EntitlementService, RequireActionRequest};
+pub use super::membership::payment::PaymentService;
+pub use super::membership::payment::dto::*;
+pub use super::membership::plan::PlanService;
+pub use super::membership::plan::dto::*;
+pub use super::membership::purchase::PurchaseService;
+pub use super::membership::purchase::dto::*;
+pub use super::membership::subscription::SubscriptionService;
+pub use super::membership::subscription::dto::*;
+//
 pub use super::monitoring::MonitoringService;
 pub use super::monitoring::dto::*;
 //
