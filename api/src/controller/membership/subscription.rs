@@ -72,6 +72,15 @@ impl<S: SumidaState> SubscriptionController<S> {
     SubscriptionService::new(state, session).set_auto_renew(id, body).await?;
     Ok(SubscriptionUpdated)
   }
+
+  async fn reactivate(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+  ) -> Result<SubscriptionUpdated, SumidaError> {
+    SubscriptionService::new(state, session).reactivate(id).await?;
+    Ok(SubscriptionUpdated)
+  }
 }
 
 impl<S: SumidaState> ApiController<S> for SubscriptionController<S> {
@@ -84,6 +93,7 @@ impl<S: SumidaState> ApiController<S> for SubscriptionController<S> {
       .route("/{id}/cancel", routing::post(Self::cancel))
       .route("/{id}/renew", routing::post(Self::renew))
       .route("/{id}/auto-renew", routing::post(Self::set_auto_renew))
+      .route("/{id}/reactivate", routing::post(Self::reactivate))
       .route_layer(user_guard!(state))
   }
 }

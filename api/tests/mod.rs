@@ -10,4 +10,5 @@ mod payment;
 mod quota;
 mod reservation;
 mod role;
+mod subscription_lifecycle;
 mod user;

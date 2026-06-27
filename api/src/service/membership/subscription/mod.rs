@@ -436,4 +436,70 @@ impl<S: SumidaState> SubscriptionService<S> {
     txn.commit().await?;
     Ok(())
   }
+
+  /// Reactivate a canceled / expired / past-due subscription into a fresh period
+  /// starting now (no payment is taken here — manual/owner reactivation). The plan
+  /// must still exist (not retired) and the owner must not already hold an active
+  /// subscription on it. Re-snapshots `allowed_actions` from the current plan.
+  pub async fn reactivate(&self, id: i32) -> Result<(), SumidaError> {
+    let txn = self.state.db().begin().await?;
+    let Some(sub) = Subscriptions::find_by_id(id).one(&txn).await? else {
+      return Err(SumidaError::NoData("Subscription".into(), id.to_string()));
+    };
+    self.authorize(&sub.owner_kind, sub.owner_id, "manage", &txn).await?;
+
+    match sub.status {
+      SubscriptionStatus::Active => {
+        return Err(SumidaError::BadRequest("subscription is already active".into()));
+      }
+      SubscriptionStatus::Pending => {
+        return Err(SumidaError::BadRequest("pending subscription cannot be reactivated".into()));
+      }
+      SubscriptionStatus::Canceled | SubscriptionStatus::Expired | SubscriptionStatus::PastDue => {}
+    }
+
+    let plan = MembershipPlans::find_by_id(sub.plan_id)
+      .filter(entity::membership::membership_plans::Column::DeletedAt.is_null())
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::PlanNotFound(sub.plan_code.clone()))?;
+
+    // The partial-unique index forbids two active subs per (owner, plan); fail fast.
+    let conflict = Subscriptions::find()
+      .filter(Column::OwnerKind.eq(sub.owner_kind.clone()))
+      .filter(Column::OwnerId.eq(sub.owner_id))
+      .filter(Column::PlanId.eq(sub.plan_id))
+      .filter(Column::Status.eq(SubscriptionStatus::Active))
+      .one(&txn)
+      .await?;
+    if conflict.is_some() {
+      return Err(SumidaError::DuplicateActiveSubscription);
+    }
+
+    let allowed = Self::snapshot_allowed_actions(plan.id, &txn).await?;
+    let now = Utc::now();
+    let duration = plan.duration_days.unwrap_or(30).max(0);
+    let period_end = now + Duration::days(duration as i64);
+    let old = status_str(&sub.status);
+
+    Subscriptions::update(SubscriptionsActiveModel {
+      id: Unchanged(id),
+      status: Set(SubscriptionStatus::Active),
+      current_period_start: Set(now.into()),
+      current_period_end: Set(period_end.into()),
+      canceled_at: Set(None),
+      cancel_at_period_end: Set(false),
+      expiring_notified_at: Set(None),
+      allowed_actions: Set(allowed),
+      ..Default::default()
+    })
+    .exec(&txn)
+    .await?;
+    self
+      .record_event(id, SubscriptionEventKind::Reactivated, Some(old), Some("active"), None, &txn)
+      .await?;
+
+    txn.commit().await?;
+    Ok(())
+  }
 }
