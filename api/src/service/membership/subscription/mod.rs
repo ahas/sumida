@@ -229,8 +229,28 @@ impl<S: SumidaState> SubscriptionService<S> {
     Ok(Some(sub))
   }
 
+  /// Verify a billing key with the configured PG before storing it (delegated to
+  /// the `PaymentProvider` abstraction, so it works for any PG).
+  async fn verify_billing_key(&self, key: &str) -> Result<(), SumidaError> {
+    infra::payment::provider().verify_billing_key(key).await.map_err(|e| match e {
+      infra::payment::PaymentError::NotConfigured => SumidaError::PaymentNotConfigured,
+      _ => SumidaError::BadRequest("invalid or inactive billing key".into()),
+    })
+  }
+
   pub async fn subscribe(&self, data: CreateSubscription) -> Result<SubscriptionCreated, SumidaError> {
     let (owner_kind, owner_id) = resolve_owner(&self.session, &data.owner_kind, data.owner_id);
+
+    // Auto-renew needs a verified billing key (checked before the transaction so the
+    // PG round-trip isn't held inside it).
+    if data.auto_renew {
+      let key = data
+        .billing_key
+        .as_deref()
+        .ok_or_else(|| SumidaError::BadRequest("auto_renew requires a billing_key".into()))?;
+      self.verify_billing_key(key).await?;
+    }
+
     let txn = self.state.db().begin().await?;
     self.authorize(&owner_kind, owner_id, "manage", &txn).await?;
 
@@ -261,9 +281,6 @@ impl<S: SumidaState> SubscriptionService<S> {
     }
     if plan.scope != owner_kind {
       return Err(SumidaError::MembershipPlanScopeMismatch);
-    }
-    if data.auto_renew && data.billing_key.is_none() {
-      return Err(SumidaError::BadRequest("auto_renew requires a billing_key".into()));
     }
 
     // At most one active subscription per (owner, plan).
@@ -443,6 +460,10 @@ impl<S: SumidaState> SubscriptionService<S> {
   /// Enable or disable auto-renewal. Enabling requires a billing key — supplied
   /// here or already stored on the subscription. Disabling keeps the stored key.
   pub async fn set_auto_renew(&self, id: i32, data: SetAutoRenew) -> Result<(), SumidaError> {
+    if let Some(key) = &data.billing_key {
+      self.verify_billing_key(key).await?;
+    }
+
     let txn = self.state.db().begin().await?;
     let Some(sub) = Subscriptions::find_by_id(id).one(&txn).await? else {
       return Err(SumidaError::NoData("Subscription".into(), id.to_string()));

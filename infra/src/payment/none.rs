@@ -35,6 +35,10 @@ impl PaymentProvider for NoneProvider {
     Err(PaymentError::NotConfigured)
   }
 
+  async fn verify_billing_key(&self, _billing_key: &str) -> Result<(), PaymentError> {
+    Err(PaymentError::NotConfigured)
+  }
+
   fn verify_webhook(&self, _headers: &WebhookHeaders, _body: &[u8]) -> Result<WebhookEvent, PaymentError> {
     Err(PaymentError::NotConfigured)
   }

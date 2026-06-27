@@ -451,6 +451,60 @@ async fn test_change_plan_same_plan_rejected() {
 }
 
 // ---------------------------------------------------------------------------
+// An injected billing key is verified with the PG before it is stored.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_billing_key_verified_on_inject() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  if infra::settings::get().membership.payment.provider != "mock" {
+    eprintln!("skipping: payment provider is not 'mock'");
+    return;
+  }
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("bk-{}", rnd()), "name": "BK", "kind": "subscription", "scope": "personal",
+      "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+  let (m, _u) = user_mock(&db).await;
+
+  // An unrecognized billing key is rejected up front.
+  let bad = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code, "autoRenew": true, "billingKey": "not-a-real-key" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(bad.status(), StatusCode::BAD_REQUEST, "invalid billing key is rejected");
+
+  // A valid (issued) billing key is accepted.
+  let ok = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code, "autoRenew": true, "billingKey": "mock:bill:ok" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(ok.status(), StatusCode::CREATED, "verified billing key is accepted");
+  let sub_id = ok.json::<Value>().await.unwrap()["id"].as_i64().unwrap() as i32;
+
+  // set_auto_renew also verifies an injected key.
+  let r = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/auto-renew"))
+    .json(&json!({ "enabled": true, "billingKey": "garbage" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(r.status(), StatusCode::BAD_REQUEST, "set_auto_renew verifies the key too");
+}
+
+// ---------------------------------------------------------------------------
 // A free trial is granted only once per (owner, plan); a re-subscribe is paid.
 // ---------------------------------------------------------------------------
 #[tokio::test]

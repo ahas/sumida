@@ -118,6 +118,13 @@ signature-verified and idempotent (deduped by `webhook-id`).
 A free trial (`plan.trial_days`) is granted at most once per (owner, plan); a
 later subscribe to the same plan starts a normal paid period.
 
+**Billing keys** (정기결제 keys) are issued client-side via the PG SDK (card data
+never touches the server) and injected via `POST /subscriptions`
+(`billingKey` + `autoRenew`) or `POST /subscriptions/{id}/auto-renew`. On
+injection the key is verified with the PG (`PaymentProvider::verify_billing_key`)
+so an invalid/inactive key is rejected up front rather than failing at the first
+auto-renew. No server-side issuance webhook is required.
+
 ## 6. Capabilities & limitations
 
 What this domain can and cannot do today.

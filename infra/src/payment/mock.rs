@@ -90,6 +90,16 @@ impl PaymentProvider for MockProvider {
     })
   }
 
+  async fn verify_billing_key(&self, billing_key: &str) -> Result<(), PaymentError> {
+    // Any `mock:bill:*` is a "real" key (issuance succeeded); the charge outcome
+    // — paid vs declined — is decided separately in `charge_recurring`.
+    if billing_key.starts_with("mock:bill:") {
+      Ok(())
+    } else {
+      Err(PaymentError::NotFound(billing_key.to_string()))
+    }
+  }
+
   fn verify_webhook(&self, _headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError> {
     let v: Value = serde_json::from_slice(body).map_err(|e| PaymentError::Other(e.to_string()))?;
     let event_type = v.get("type").and_then(Value::as_str).unwrap_or("").to_string();

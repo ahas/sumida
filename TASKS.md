@@ -70,10 +70,11 @@
 멤버십·결제 도메인의 1차 구현은 완료(`docs/membership.md`). 남은 항목은 외부 의존성
 또는 제품 결정이 필요해 보류함.
 
-### 빌링키 발급(issuance) 서버 연동
-- 현재: `charge_recurring`(빌링키 결제)만 실연동. 빌링키 *발급*은 클라이언트 SDK 단계
-- 필요 작업: PortOne `BillingKey.Issued` 웹훅 처리 → 발급된 billing_key를 대상 구독에 저장
-  (구독-빌링키 연결 플로우/식별자 설계 필요)
+### ~~빌링키 발급(issuance) 서버 연동~~ — 결정: 수동/클라이언트 주입 (완료)
+- 결정: 빌링키는 클라이언트 SDK가 발급(카드정보 서버 미경유) → 문자열을 서버에 주입.
+  `POST /subscriptions`(billingKey) / `POST /subscriptions/{id}/auto-renew`로 주입 가능.
+- 주입 시 `PaymentProvider::verify_billing_key`로 PG 검증(PortOne `GET /billing-keys/{key}`,
+  Mock/None 대응) → 잘못된 키는 즉시 400. `BillingKey.Issued` 웹훅은 불필요로 폐기.
 
 ### per-currency 크레딧 월렛 / 환율
 - 현재: 크레딧 월렛은 owner당 1개·단일 통화(통화 필드는 정보성). 통화는 plan/purchase/coupon에만 의미

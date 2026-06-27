@@ -218,6 +218,32 @@ impl PaymentProvider for PortOneProvider {
     Ok(Self::payment_from_json(payment, order_code, currency))
   }
 
+  async fn verify_billing_key(&self, billing_key: &str) -> Result<(), PaymentError> {
+    // PortOne V2: GET {base}/billing-keys/{billingKey} → { status: ISSUED|DELETED, … }.
+    let token = self.token().await?;
+    let url = format!("{}/billing-keys/{}", self.api_base, urlencoding(billing_key));
+    let resp = self
+      .client
+      .get(url)
+      .bearer_auth(token)
+      .send()
+      .await
+      .map_err(|e| PaymentError::Request(e.to_string()))?;
+
+    if resp.status().as_u16() == 404 {
+      return Err(PaymentError::NotFound(billing_key.to_string()));
+    }
+    if !resp.status().is_success() {
+      return Err(PaymentError::Request(format!("billing-key lookup failed: {}", resp.status())));
+    }
+    let v: Value = resp.json().await.map_err(|e| PaymentError::Request(e.to_string()))?;
+    let status = v.get("status").and_then(Value::as_str).unwrap_or("");
+    if status.eq_ignore_ascii_case("DELETED") {
+      return Err(PaymentError::NotFound(billing_key.to_string()));
+    }
+    Ok(())
+  }
+
   fn verify_webhook(&self, headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError> {
     let secret = self.webhook_secret.as_ref().ok_or(PaymentError::NotConfigured)?;
     verify_standard_webhook(secret, headers, body)?;

@@ -144,6 +144,12 @@ pub trait PaymentProvider: Send + Sync {
     order_code: &str,
   ) -> Result<PaymentVerification, PaymentError>;
 
+  /// Verify a billing key exists and is active at the PG before storing it for
+  /// recurring charges (issued client-side via the SDK, then injected here).
+  /// `Ok(())` = usable; `Err(NotFound)` = invalid/inactive; `Err(NotConfigured)`
+  /// when no PG is configured.
+  async fn verify_billing_key(&self, billing_key: &str) -> Result<(), PaymentError>;
+
   /// Verify a webhook signature and extract the normalized event.
   fn verify_webhook(&self, headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError>;
 }
