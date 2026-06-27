@@ -81,6 +81,15 @@ impl<S: SumidaState> SubscriptionController<S> {
     SubscriptionService::new(state, session).reactivate(id).await?;
     Ok(SubscriptionUpdated)
   }
+
+  async fn change_plan(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+    Json(body): Json<ChangePlan>,
+  ) -> Result<ProrationResult, SumidaError> {
+    SubscriptionService::new(state, session).change_plan(id, body).await
+  }
 }
 
 impl<S: SumidaState> ApiController<S> for SubscriptionController<S> {
@@ -94,6 +103,7 @@ impl<S: SumidaState> ApiController<S> for SubscriptionController<S> {
       .route("/{id}/renew", routing::post(Self::renew))
       .route("/{id}/auto-renew", routing::post(Self::set_auto_renew))
       .route("/{id}/reactivate", routing::post(Self::reactivate))
+      .route("/{id}/change-plan", routing::post(Self::change_plan))
       .route_layer(user_guard!(state))
   }
 }

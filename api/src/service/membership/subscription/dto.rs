@@ -92,6 +92,39 @@ pub struct SetAutoRenew {
   pub billing_key: Option<String>,
 }
 
+/// Switch an active subscription to a different plan mid-period (upgrade/downgrade).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangePlan {
+  pub plan_code: String,
+}
+
+/// Proration breakdown for a mid-period plan change. Amounts are in minor currency
+/// units, prorated by the fraction of the current period still remaining. Actual
+/// money movement (charging `proration_amount` or crediting a negative one) is the
+/// PG layer's responsibility; this records the canonical breakdown.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProrationResult {
+  pub subscription_id: i32,
+  pub old_plan_code: String,
+  pub new_plan_code: String,
+  /// Unused remainder of the old plan's price for this period (a credit).
+  pub old_unused: i64,
+  /// New plan's price prorated for the remaining period (a charge).
+  pub new_prorated: i64,
+  /// Net to settle now = new_prorated - old_unused (negative = credit owed).
+  pub proration_amount: i64,
+  /// Tracking code of the recorded proration purchase.
+  pub purchase_code: String,
+}
+
+impl IntoResponse for ProrationResult {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
+  }
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelQuery {

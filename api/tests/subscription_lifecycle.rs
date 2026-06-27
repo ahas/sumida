@@ -356,3 +356,96 @@ async fn test_expire_finalizes_past_due_after_grace() {
     .unwrap();
   assert!(!events.is_empty(), "a grace-ended expiry event must be recorded");
 }
+
+// ---------------------------------------------------------------------------
+// Mid-period plan change (upgrade) prorates and switches coverage in place.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_change_plan_prorates_and_switches_coverage() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+
+  let cheap = create_plan(
+    &am.client,
+    json!({
+      "code": format!("cp-{}", rnd()), "name": "Cheap", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "old-act" }],
+    }),
+  )
+  .await;
+  let pricey = create_plan(
+    &am.client,
+    json!({
+      "code": format!("pp-{}", rnd()), "name": "Pricey", "kind": "subscription", "scope": "personal",
+      "price": 3000, "durationDays": 30, "actions": [{ "action": "new-act" }],
+    }),
+  )
+  .await;
+
+  let (m, _u) = user_mock(&db).await;
+  let created: Value =
+    m.client.post("/subscriptions").json(&json!({ "planCode": cheap })).send().await.unwrap().json().await.unwrap();
+  let sub_id = created["id"].as_i64().unwrap() as i32;
+
+  // Upgrade immediately (≈ full period remaining): net ≈ 3000 - 1000 = 2000.
+  let res: Value = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/change-plan"))
+    .json(&json!({ "planCode": pricey }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let proration = res["prorationAmount"].as_i64().unwrap();
+  assert!((1980..=2000).contains(&proration), "upgrade proration ≈ 2000, got {proration}");
+  assert_eq!(res["newPlanCode"].as_str().unwrap(), pricey);
+  assert_eq!(res["oldPlanCode"].as_str().unwrap(), cheap);
+
+  // The subscription is now on the new plan (period preserved, prev_plan_id set).
+  let got: Value = m.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  assert_eq!(got["status"].as_str().unwrap(), "active");
+  assert_eq!(got["planCode"].as_str().unwrap(), pricey);
+  let row = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert!(row.prev_plan_id.is_some(), "prev_plan_id records the prior plan");
+
+  // Coverage switched: the new action is entitled, the old one is not.
+  let r = m.client.post("/entitlements/check").json(&json!({ "action": "new-act" })).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::OK, "new plan action is entitled");
+  let r = m.client.post("/entitlements/check").json(&json!({ "action": "old-act" })).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::FORBIDDEN, "old plan action no longer covered");
+}
+
+// ---------------------------------------------------------------------------
+// Changing to the same plan is rejected.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_change_plan_same_plan_rejected() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("sp-{}", rnd()), "name": "SP", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  let (m, _u) = user_mock(&db).await;
+  let created: Value =
+    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let sub_id = created["id"].as_i64().unwrap() as i32;
+
+  let r = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/change-plan"))
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(r.status(), StatusCode::BAD_REQUEST, "changing to the same plan must be rejected");
+}

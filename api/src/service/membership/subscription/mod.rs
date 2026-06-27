@@ -515,4 +515,129 @@ impl<S: SumidaState> SubscriptionService<S> {
     txn.commit().await?;
     Ok(())
   }
+
+  /// Switch an active subscription to another plan mid-period (upgrade/downgrade).
+  /// The current period is preserved; coverage is re-snapshotted from the new plan,
+  /// `prev_plan_id` is recorded, and a proration breakdown (unused old credit vs
+  /// prorated new charge) is computed and stored as a canonical purchase. Actual
+  /// money settlement is left to the PG layer.
+  pub async fn change_plan(&self, id: i32, data: ChangePlan) -> Result<ProrationResult, SumidaError> {
+    let txn = self.state.db().begin().await?;
+    let Some(sub) = Subscriptions::find_by_id(id).one(&txn).await? else {
+      return Err(SumidaError::NoData("Subscription".into(), id.to_string()));
+    };
+    self.authorize(&sub.owner_kind, sub.owner_id, "manage", &txn).await?;
+
+    if sub.status != SubscriptionStatus::Active {
+      return Err(SumidaError::BadRequest("only an active subscription can change plan".into()));
+    }
+
+    let old_plan = MembershipPlans::find_by_id(sub.plan_id).one(&txn).await?;
+    let new_plan = MembershipPlans::find()
+      .filter(entity::membership::membership_plans::Column::Code.eq(data.plan_code.clone()))
+      .filter(entity::membership::membership_plans::Column::DeletedAt.is_null())
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::PlanNotFound(data.plan_code.clone()))?;
+
+    if new_plan.kind != PlanKind::Subscription {
+      return Err(SumidaError::BadRequest("plan is not a subscription plan".into()));
+    }
+    if !new_plan.is_enabled {
+      return Err(SumidaError::BadRequest("plan is not enabled".into()));
+    }
+    if new_plan.scope != sub.owner_kind {
+      return Err(SumidaError::MembershipPlanScopeMismatch);
+    }
+    if new_plan.id == sub.plan_id {
+      return Err(SumidaError::BadRequest("subscription is already on this plan".into()));
+    }
+
+    // Another active subscription already on the target plan would violate the
+    // partial-unique (owner, plan) WHERE active index.
+    let conflict = Subscriptions::find()
+      .filter(Column::OwnerKind.eq(sub.owner_kind.clone()))
+      .filter(Column::OwnerId.eq(sub.owner_id))
+      .filter(Column::PlanId.eq(new_plan.id))
+      .filter(Column::Status.eq(SubscriptionStatus::Active))
+      .filter(Column::Id.ne(sub.id))
+      .one(&txn)
+      .await?;
+    if conflict.is_some() {
+      return Err(SumidaError::DuplicateActiveSubscription);
+    }
+
+    // Prorate by the fraction of the current period still remaining (i128 math to
+    // avoid overflow on large prices).
+    let now: sea_orm::prelude::DateTimeWithTimeZone = Utc::now().into();
+    let remaining = (sub.current_period_end - now).num_seconds().max(0);
+    let total = (sub.current_period_end - sub.current_period_start).num_seconds().max(1);
+    let prorate = |price: i64| -> i64 { ((price as i128 * remaining as i128) / total as i128) as i64 };
+    let old_price = old_plan.as_ref().map(|p| p.price).unwrap_or(0);
+    let old_unused = prorate(old_price);
+    let new_prorated = prorate(new_plan.price);
+    let proration_amount = new_prorated - old_unused;
+
+    let old_plan_code = old_plan.as_ref().map(|p| p.code.clone()).unwrap_or_else(|| sub.plan_code.clone());
+    let allowed = Self::snapshot_allowed_actions(new_plan.id, &txn).await?;
+
+    Subscriptions::update(SubscriptionsActiveModel {
+      id: Unchanged(id),
+      plan_id: Set(new_plan.id),
+      plan_code: Set(new_plan.code.clone()),
+      prev_plan_id: Set(Some(sub.plan_id)),
+      allowed_actions: Set(allowed),
+      ..Default::default()
+    })
+    .exec(&txn)
+    .await?;
+
+    let purchase_code = gen_code("pur");
+    MembershipPurchases::insert(MembershipPurchasesActiveModel {
+      code: Set(purchase_code.clone()),
+      kind: Set(PlanKind::Subscription),
+      plan_id: Set(new_plan.id),
+      plan_code: Set(new_plan.code.clone()),
+      owner_kind: Set(sub.owner_kind.clone()),
+      owner_id: Set(sub.owner_id),
+      status: Set(PurchaseStatus::Completed),
+      amount: Set(proration_amount.max(0)),
+      currency: Set(new_plan.currency.clone()),
+      paid_at: Set(Some(now)),
+      metadata: Set(Some(json!({
+        "kind": "proration",
+        "oldPlanCode": old_plan_code,
+        "newPlanCode": new_plan.code,
+        "oldUnused": old_unused,
+        "newProrated": new_prorated,
+        "prorationAmount": proration_amount,
+      }))),
+      ..Default::default()
+    })
+    .exec(&txn)
+    .await?;
+
+    self
+      .record_event(
+        id,
+        SubscriptionEventKind::StatusChanged,
+        Some("active"),
+        Some("active"),
+        Some(&format!("plan-changed:{old_plan_code}->{}", new_plan.code)),
+        &txn,
+      )
+      .await?;
+
+    txn.commit().await?;
+
+    Ok(ProrationResult {
+      subscription_id: id,
+      old_plan_code,
+      new_plan_code: new_plan.code,
+      old_unused,
+      new_prorated,
+      proration_amount,
+      purchase_code,
+    })
+  }
 }
