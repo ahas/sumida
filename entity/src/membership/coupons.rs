@@ -28,6 +28,9 @@ pub struct Model {
   /// When true, only owners the coupon was granted to may redeem it.
   #[sea_orm(default_value = false)]
   pub requires_grant: bool,
+  /// When true, may be combined with other stackable coupons in one checkout.
+  #[sea_orm(default_value = false)]
+  pub stackable: bool,
   #[sea_orm(nullable)]
   pub expires_at: Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = true)]

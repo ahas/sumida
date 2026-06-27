@@ -9,11 +9,10 @@ use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
   ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter,
-  QuerySelect, QueryTrait, Statement,
+  QuerySelect, QueryTrait, Statement, TransactionTrait,
 };
 
 use self::dto::*;
-use super::owner_kind_str;
 use crate::SumidaState;
 use crate::util::pagination::Pagination;
 
@@ -39,6 +38,7 @@ impl<S: SumidaState> CouponService<S> {
     if data.amount_off.is_some() && data.currency.is_none() {
       return Err(SumidaError::BadRequest("amount_off coupons need a currency".into()));
     }
+    let txn = self.state.db().begin().await?;
     let model = Coupons::insert(CouponsActiveModel {
       code: Set(data.code),
       percent_off: Set(data.percent_off),
@@ -47,12 +47,45 @@ impl<S: SumidaState> CouponService<S> {
       max_redemptions: Set(data.max_redemptions),
       max_redemptions_per_owner: Set(data.max_redemptions_per_owner),
       requires_grant: Set(data.requires_grant),
+      stackable: Set(data.stackable),
       expires_at: Set(data.expires_at),
       ..Default::default()
     })
-    .exec_with_returning(self.state.db())
+    .exec_with_returning(&txn)
     .await?;
+
+    if let Some(plan_codes) = data.plan_codes {
+      for plan_code in plan_codes {
+        CouponPlans::insert(CouponPlansActiveModel {
+          coupon_id: Set(model.id),
+          plan_code: Set(plan_code),
+          ..Default::default()
+        })
+        .exec(&txn)
+        .await?;
+      }
+    }
+    txn.commit().await?;
     Ok(CouponCreated { id: model.id, code: model.code })
+  }
+
+  /// Issue a coupon to many owners at once (campaign distribution). Each owner
+  /// follows the single-grant lifecycle; the summary counts the outcomes.
+  pub async fn grant_bulk(&self, coupon_id: i32, data: BulkGrantCoupon) -> Result<BulkGrantResult, SumidaError> {
+    self.require_admin()?;
+    if Coupons::find_by_id(coupon_id).one(self.state.db()).await?.is_none() {
+      return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
+    }
+    let mut result = BulkGrantResult { granted: 0, skipped: 0, conflicts: 0 };
+    for owner in &data.owners {
+      match self.grant_once(coupon_id, owner).await {
+        Ok(true) => result.granted += 1,
+        Ok(false) => result.skipped += 1,
+        Err(SumidaError::Conflict(_)) => result.conflicts += 1,
+        Err(e) => return Err(e),
+      }
+    }
+    Ok(result)
   }
 
   pub async fn list(
@@ -89,6 +122,9 @@ impl<S: SumidaState> CouponService<S> {
     if let Some(v) = data.requires_grant {
       am.requires_grant = Set(v);
     }
+    if let Some(v) = data.stackable {
+      am.stackable = Set(v);
+    }
     if let Some(v) = data.expires_at {
       am.expires_at = Set(Some(v));
     }
@@ -121,28 +157,21 @@ impl<S: SumidaState> CouponService<S> {
     )
   }
 
-  /// Issue a coupon to a specific owner ("distribute"). Lifecycle-aware:
-  /// - no grant → issue;
-  /// - already issued (unused) → idempotent no-op (safe for campaign retries);
-  /// - revoked → re-issue (the recall enabled it);
-  /// - already redeemed → **409** (revoke first to re-issue — no silent re-grant).
-  pub async fn grant_to(&self, coupon_id: i32, data: GrantCoupon) -> Result<CouponGranted, SumidaError> {
-    self.require_admin()?;
+  /// Issue a grant (lifecycle-aware). Returns whether it was newly (re)issued or a
+  /// no-op; an already-redeemed grant is a `Conflict`.
+  async fn grant_once(&self, coupon_id: i32, owner: &GrantCoupon) -> Result<bool, SumidaError> {
     let db = self.state.db();
-    if Coupons::find_by_id(coupon_id).one(db).await?.is_none() {
-      return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
-    }
-
-    match Self::find_grant(coupon_id, &data.owner_kind, data.owner_id, db).await? {
+    match Self::find_grant(coupon_id, &owner.owner_kind, owner.owner_id, db).await? {
       None => {
         CouponGrants::insert(CouponGrantsActiveModel {
           coupon_id: Set(coupon_id),
-          owner_kind: Set(data.owner_kind),
-          owner_id: Set(data.owner_id),
+          owner_kind: Set(owner.owner_kind.clone()),
+          owner_id: Set(owner.owner_id),
           ..Default::default()
         })
         .exec(db)
         .await?;
+        Ok(true)
       }
       Some(g) if g.revoked_at.is_some() => {
         // Re-issue: the prior recall makes a fresh grant deliberate.
@@ -154,14 +183,26 @@ impl<S: SumidaState> CouponService<S> {
         })
         .exec(db)
         .await?;
+        Ok(true)
       }
-      Some(g) if g.redeemed_at.is_some() => {
-        return Err(SumidaError::Conflict(
-          "coupon already redeemed by this owner; revoke it to re-issue".into(),
-        ));
-      }
-      Some(_) => { /* issued & unused → idempotent no-op */ }
+      Some(g) if g.redeemed_at.is_some() => Err(SumidaError::Conflict(
+        "coupon already redeemed by this owner; revoke it to re-issue".into(),
+      )),
+      Some(_) => Ok(false), // issued & unused → idempotent no-op
     }
+  }
+
+  /// Issue a coupon to a specific owner ("distribute").
+  /// - no grant → issue;
+  /// - already issued (unused) → idempotent no-op (safe for campaign retries);
+  /// - revoked → re-issue (the recall enabled it);
+  /// - already redeemed → **409** (revoke first to re-issue — no silent re-grant).
+  pub async fn grant_to(&self, coupon_id: i32, data: GrantCoupon) -> Result<CouponGranted, SumidaError> {
+    self.require_admin()?;
+    if Coupons::find_by_id(coupon_id).one(self.state.db()).await?.is_none() {
+      return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
+    }
+    self.grant_once(coupon_id, &data).await?;
     Ok(CouponGranted)
   }
 
@@ -248,17 +289,19 @@ impl<S: SumidaState> CouponService<S> {
     Ok((items, count))
   }
 
-  /// Validate a coupon and atomically redeem one use, returning the discount (in
-  /// minor units, clamped to `subtotal`) and the coupon code. Runs in the caller's
-  /// checkout transaction. All failures are `BadRequest`.
+  /// Validate a coupon against `plan_code` and atomically redeem one use, returning
+  /// the discount (clamped to `subtotal`), its code, and whether it stacks. Runs in
+  /// the checkout transaction; records a `coupon_redemptions` row. Failures are
+  /// `BadRequest`.
   pub(crate) async fn apply_in_txn<C: ConnectionTrait>(
     code: &str,
     currency: &str,
     subtotal: i64,
     owner_kind: &OwnerKind,
     owner_id: i32,
+    plan_code: &str,
     txn: &C,
-  ) -> Result<(i64, String), SumidaError> {
+  ) -> Result<AppliedCoupon, SumidaError> {
     let coupon = Coupons::find()
       .filter(CouponsColumn::Code.eq(code))
       .one(txn)
@@ -275,9 +318,14 @@ impl<S: SumidaState> CouponService<S> {
       }
     }
 
+    // Plan-scope: if the coupon lists plans, the checkout plan must be among them.
+    let plan_rows = CouponPlans::find().filter(CouponPlansColumn::CouponId.eq(coupon.id)).all(txn).await?;
+    if !plan_rows.is_empty() && !plan_rows.iter().any(|p| p.plan_code == plan_code) {
+      return Err(SumidaError::BadRequest("coupon is not valid for this plan".into()));
+    }
+
     if coupon.requires_grant {
-      // Grant-gated: must hold an issued (not redeemed/revoked) grant; consume it
-      // (one grant = one use). The grant lifecycle is the per-owner control here.
+      // Grant-gated: consume an issued grant (one grant = one use).
       let grant = Self::find_grant(coupon.id, owner_kind, owner_id, txn)
         .await?
         .ok_or_else(|| SumidaError::BadRequest("coupon is not available to this owner".into()))?;
@@ -295,22 +343,14 @@ impl<S: SumidaState> CouponService<S> {
       .exec(txn)
       .await?;
     } else if let Some(per_owner) = coupon.max_redemptions_per_owner {
-      // Public coupon: cap per owner by counting prior non-failed purchases.
-      #[derive(FromQueryResult)]
-      struct CountRow {
-        total: i64,
-      }
-      let used = CountRow::find_by_statement(Statement::from_sql_and_values(
-        txn.get_database_backend(),
-        r#"SELECT COUNT(*)::bigint AS total FROM membership_purchases
-           WHERE coupon_code = $1 AND owner_kind = $2 AND owner_id = $3 AND status <> 'failed'"#,
-        [code.into(), owner_kind_str(owner_kind).into(), owner_id.into()],
-      ))
-      .one(txn)
-      .await?
-      .map(|r| r.total)
-      .unwrap_or(0);
-      if used >= per_owner as i64 {
+      // Public coupon: cap per owner from the redemption ledger.
+      let used = CouponRedemptions::find()
+        .filter(CouponRedemptionsColumn::CouponId.eq(coupon.id))
+        .filter(CouponRedemptionsColumn::OwnerKind.eq(owner_kind.clone()))
+        .filter(CouponRedemptionsColumn::OwnerId.eq(owner_id))
+        .count(txn)
+        .await?;
+      if used >= per_owner as u64 {
         return Err(SumidaError::BadRequest("coupon redemption limit reached for this owner".into()));
       }
     }
@@ -327,7 +367,7 @@ impl<S: SumidaState> CouponService<S> {
     };
     let discount = discount.clamp(0, subtotal);
 
-    // Atomic redeem under the cap (serialized on the row by ON CONFLICT-style guard).
+    // Global cap: atomic increment guarded by max_redemptions.
     #[derive(FromQueryResult)]
     struct Redeemed {
       redeemed_count: i32,
@@ -345,6 +385,16 @@ impl<S: SumidaState> CouponService<S> {
       return Err(SumidaError::BadRequest("coupon redemption limit reached".into()));
     }
 
-    Ok((discount, coupon.code))
+    // Redemption ledger (per-owner cap source + analytics).
+    CouponRedemptions::insert(CouponRedemptionsActiveModel {
+      coupon_id: Set(coupon.id),
+      owner_kind: Set(owner_kind.clone()),
+      owner_id: Set(owner_id),
+      ..Default::default()
+    })
+    .exec(txn)
+    .await?;
+
+    Ok(AppliedCoupon { code: coupon.code, discount, stackable: coupon.stackable })
   }
 }

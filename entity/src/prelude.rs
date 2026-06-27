@@ -83,6 +83,14 @@ pub use super::membership::coupon_grants::{
   ActiveModel as CouponGrantsActiveModel, Column as CouponGrantsColumn, Entity as CouponGrants,
   Model as CouponGrantsModel, Relation as CouponGrantsRelation,
 };
+pub use super::membership::coupon_plans::{
+  ActiveModel as CouponPlansActiveModel, Column as CouponPlansColumn, Entity as CouponPlans,
+  Model as CouponPlansModel, Relation as CouponPlansRelation,
+};
+pub use super::membership::coupon_redemptions::{
+  ActiveModel as CouponRedemptionsActiveModel, Column as CouponRedemptionsColumn,
+  Entity as CouponRedemptions, Model as CouponRedemptionsModel, Relation as CouponRedemptionsRelation,
+};
 pub use super::membership::coupons::{
   ActiveModel as CouponsActiveModel, Column as CouponsColumn, Entity as Coupons, Model as CouponsModel,
   Relation as CouponsRelation,

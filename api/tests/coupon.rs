@@ -405,6 +405,120 @@ async fn test_my_coupons() {
 }
 
 // ---------------------------------------------------------------------------
+// A plan-scoped coupon applies only to its listed plans.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_plan_scoped() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan_a = create_sub_plan(&am.client, 1000).await;
+  let plan_b = create_sub_plan(&am.client, 1000).await;
+  let code = format!("PS-{}", rnd());
+  create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "planCodes": [plan_a] })).await;
+
+  let m = user_mock(&db).await;
+  // Allowed plan → applies.
+  let ok = m
+    .client
+    .post("/payments/checkout")
+    .json(&json!({ "kind": "subscription", "planCode": plan_a, "couponCode": code }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(ok.status(), StatusCode::CREATED);
+  assert_eq!(ok.json::<Value>().await.unwrap()["discountAmount"].as_i64().unwrap(), 100);
+
+  // Other plan → rejected.
+  let bad = m
+    .client
+    .post("/payments/checkout")
+    .json(&json!({ "kind": "subscription", "planCode": plan_b, "couponCode": code }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(bad.status(), StatusCode::BAD_REQUEST, "coupon not valid for an unlisted plan");
+}
+
+// ---------------------------------------------------------------------------
+// Stackable coupons combine; a non-stackable one cannot be mixed.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_stacking() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let c10 = format!("S10-{}", rnd());
+  let c20 = format!("S20-{}", rnd());
+  let solo = format!("SOLO-{}", rnd());
+  create_coupon(&am.client, json!({ "code": c10, "percentOff": 10, "stackable": true })).await;
+  create_coupon(&am.client, json!({ "code": c20, "percentOff": 20, "stackable": true })).await;
+  create_coupon(&am.client, json!({ "code": solo, "percentOff": 50 })).await; // not stackable
+
+  let m = user_mock(&db).await;
+  // Two stackable coupons → 10% + 20% = 30% of 1000 = 300.
+  let r = m
+    .client
+    .post("/payments/checkout")
+    .json(&json!({ "kind": "subscription", "planCode": plan, "couponCodes": [c10, c20] }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(r.status(), StatusCode::CREATED);
+  assert_eq!(r.json::<Value>().await.unwrap()["discountAmount"].as_i64().unwrap(), 300, "stacked discounts sum");
+
+  // Mixing a non-stackable coupon is rejected.
+  let r = m
+    .client
+    .post("/payments/checkout")
+    .json(&json!({ "kind": "subscription", "planCode": plan, "couponCodes": [c10, solo] }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(r.status(), StatusCode::BAD_REQUEST, "non-stackable coupon cannot be combined");
+}
+
+// ---------------------------------------------------------------------------
+// Bulk grant issues to many owners and reports outcomes (idempotent on retry).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_bulk_grant() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let code = format!("BULK-{}", rnd());
+  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await["id"]
+    .as_i64()
+    .unwrap();
+
+  let a = TestUser::create(&db).await.unwrap();
+  let b = TestUser::create(&db).await.unwrap();
+  let owners = json!({ "owners": [
+    { "ownerKind": "personal", "ownerId": a.model.id },
+    { "ownerKind": "personal", "ownerId": b.model.id },
+  ] });
+
+  let r: Value = am
+    .client
+    .post(&format!("/coupons/{cid}/grant-bulk"))
+    .json(&owners)
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  assert_eq!(r["granted"].as_u64().unwrap(), 2);
+
+  // Re-running is idempotent: both already issued → skipped.
+  let r2: Value =
+    am.client.post(&format!("/coupons/{cid}/grant-bulk")).json(&owners).send().await.unwrap().json().await.unwrap();
+  assert_eq!(r2["skipped"].as_u64().unwrap(), 2, "already-issued owners are skipped");
+  assert_eq!(r2["granted"].as_u64().unwrap(), 0);
+}
+
+// ---------------------------------------------------------------------------
 // Coupon management is admin-only.
 // ---------------------------------------------------------------------------
 #[tokio::test]

@@ -59,6 +59,15 @@ impl<S: SumidaState> CouponController<S> {
     CouponService::new(state, session).grant_to(id, body).await
   }
 
+  async fn grant_bulk(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+    Json(body): Json<BulkGrantCoupon>,
+  ) -> Result<BulkGrantResult, SumidaError> {
+    CouponService::new(state, session).grant_bulk(id, body).await
+  }
+
   async fn revoke(
     session: UserSession,
     State(state): State<S>,
@@ -94,6 +103,7 @@ impl<S: SumidaState> ApiController<S> for CouponController<S> {
       .route("/mine", routing::get(Self::mine))
       .route("/{id}", routing::patch(Self::update).delete(Self::delete))
       .route("/{id}/grant", routing::post(Self::grant).delete(Self::revoke))
+      .route("/{id}/grant-bulk", routing::post(Self::grant_bulk))
       .route("/{id}/grants", routing::get(Self::grants))
       .route_layer(user_guard!(state))
   }

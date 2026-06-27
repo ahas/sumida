@@ -1,4 +1,6 @@
 pub mod coupon_grants;
+pub mod coupon_plans;
+pub mod coupon_redemptions;
 pub mod coupons;
 pub mod credit_grants;
 pub mod credit_reservations;

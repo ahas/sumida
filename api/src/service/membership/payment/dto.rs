@@ -19,9 +19,12 @@ pub struct CheckoutRequest {
   pub owner_kind: OwnerKind,
   #[serde(default)]
   pub owner_id: Option<i32>,
-  /// Optional discount coupon code.
+  /// Optional discount coupon code (single).
   #[serde(default)]
   pub coupon_code: Option<String>,
+  /// Optional multiple coupon codes (stacking — all must be `stackable`).
+  #[serde(default)]
+  pub coupon_codes: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize)]

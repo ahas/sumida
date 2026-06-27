@@ -36,6 +36,12 @@ pub struct CreateCoupon {
   /// When true, only owners the coupon is granted to may redeem it.
   #[serde(default)]
   pub requires_grant: bool,
+  /// When true, combinable with other stackable coupons in one checkout.
+  #[serde(default)]
+  pub stackable: bool,
+  /// Restrict the coupon to these plan codes (omit/empty = all plans).
+  #[serde(default)]
+  pub plan_codes: Option<Vec<String>>,
   #[serde(default)]
   pub expires_at: Option<DateTimeWithTimeZone>,
 }
@@ -52,6 +58,7 @@ pub struct CouponItem {
   pub max_redemptions_per_owner: Option<i32>,
   pub redeemed_count: i32,
   pub requires_grant: bool,
+  pub stackable: bool,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub is_active: bool,
   pub created_at: DateTimeWithTimeZone,
@@ -64,6 +71,37 @@ pub struct GrantCoupon {
   #[serde(default = "default_owner_kind")]
   pub owner_kind: OwnerKind,
   pub owner_id: i32,
+}
+
+/// Issue a coupon to many owners at once.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkGrantCoupon {
+  pub owners: Vec<GrantCoupon>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkGrantResult {
+  /// Newly issued or re-issued.
+  pub granted: usize,
+  /// Already held an issued grant (idempotent no-op).
+  pub skipped: usize,
+  /// Already redeemed — not re-issued (revoke first).
+  pub conflicts: usize,
+}
+
+impl IntoResponse for BulkGrantResult {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
+  }
+}
+
+/// Result of applying one coupon during checkout.
+pub struct AppliedCoupon {
+  pub code: String,
+  pub discount: i64,
+  pub stackable: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -137,6 +175,8 @@ pub struct UpdateCoupon {
   pub max_redemptions_per_owner: Option<i32>,
   #[serde(default)]
   pub requires_grant: Option<bool>,
+  #[serde(default)]
+  pub stackable: Option<bool>,
   #[serde(default)]
   pub expires_at: Option<DateTimeWithTimeZone>,
 }

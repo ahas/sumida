@@ -117,16 +117,42 @@ impl<S: SumidaState> PaymentService<S> {
       return Err(SumidaError::BadRequest("credit plan must define a positive creditAmount".into()));
     }
 
-    // Price breakdown: subtotal → coupon discount → tax → total charged.
+    // Price breakdown: subtotal → coupon discount(s) → tax → total charged.
     let subtotal = plan.price;
-    let (discount, coupon_code) = match &req.coupon_code {
-      Some(code) => {
-        let (d, c) =
-          CouponService::<S>::apply_in_txn(code, &plan.currency, subtotal, &owner_kind, owner_id, &txn).await?;
-        (d, Some(c))
-      }
-      None => (0, None),
-    };
+    let mut codes: Vec<String> = Vec::new();
+    if let Some(c) = &req.coupon_code {
+      codes.push(c.clone());
+    }
+    if let Some(list) = &req.coupon_codes {
+      codes.extend(list.iter().cloned());
+    }
+    codes.sort();
+    codes.dedup();
+
+    let mut discount = 0i64;
+    let mut applied: Vec<String> = Vec::new();
+    let mut all_stackable = true;
+    for code in &codes {
+      let a = CouponService::<S>::apply_in_txn(
+        code,
+        &plan.currency,
+        subtotal,
+        &owner_kind,
+        owner_id,
+        &plan.code,
+        &txn,
+      )
+      .await?;
+      discount += a.discount;
+      all_stackable &= a.stackable;
+      applied.push(a.code);
+    }
+    if codes.len() > 1 && !all_stackable {
+      return Err(SumidaError::BadRequest("one or more coupons are not stackable".into()));
+    }
+    let discount = discount.min(subtotal);
+    let coupon_code = (!applied.is_empty()).then(|| applied.join(","));
+
     let taxable = (subtotal - discount).max(0);
     let tax_bp = settings::get().membership.tax_percent_bp.max(0) as i128;
     let tax = ((taxable as i128 * tax_bp) / 10_000) as i64;
