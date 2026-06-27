@@ -218,3 +218,141 @@ async fn test_grace_window_keeps_entitlement_then_expires() {
   let r = m.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
   assert_eq!(r.status(), StatusCode::FORBIDDEN, "entitlement stops once grace ends");
 }
+
+/// Returns true when grace + dunning + mock PG are all configured for the run.
+fn dunning_ready() -> bool {
+  let s = infra::settings::get();
+  s.membership.grace_days > 0
+    && s.membership.max_dunning_attempts > 0
+    && s.membership.payment.provider == "mock"
+}
+
+/// Drive a fresh auto-renew subscription into past_due + grace via a declined
+/// renewal. Returns `(user client, subscription id)`.
+async fn past_due_with_grace(db: &sea_orm::DatabaseConnection, am: &Mock) -> (Mock, i32) {
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("dn-{}", rnd()), "name": "DN", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "read-article" }],
+    }),
+  )
+  .await;
+  let (m, _u) = user_mock(db).await;
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code, "autoRenew": true, "billingKey": "mock:bill:fail" }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let sub_id = created["id"].as_i64().unwrap() as i32;
+
+  let sub = Subscriptions::find_by_id(sub_id).one(db).await.unwrap().unwrap();
+  let mut a = sub.into_active_model();
+  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.update(db).await.unwrap();
+  maintenance::renew_due_subscriptions(db).await.unwrap();
+  (m, sub_id)
+}
+
+// ---------------------------------------------------------------------------
+// Dunning: a retry with a now-good billing key recovers the subscription.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_dunning_recovers_subscription() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  if !dunning_ready() {
+    eprintln!("skipping: grace/dunning/mock not configured");
+    return;
+  }
+  let am = admin_mock(&db).await;
+  let (m, sub_id) = past_due_with_grace(&db, &am).await;
+
+  // The customer fixes their card → swap to an accepted billing key.
+  let row = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(row.status, entity::membership::SubscriptionStatus::PastDue);
+  let mut a = row.into_active_model();
+  a.billing_key = Set(Some("mock:bill:ok".to_string()));
+  a.update(&db).await.unwrap();
+
+  let (recovered, _failed) = maintenance::retry_dunning_subscriptions(&db).await.unwrap();
+  assert!(recovered >= 1, "dunning should recover with a good billing key");
+
+  let after = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(after.status, entity::membership::SubscriptionStatus::Active, "recovered → active");
+  assert!(after.grace_ends_at.is_none(), "grace cleared on recovery");
+  assert_eq!(after.dunning_attempts, 0, "attempts reset on recovery");
+
+  let r = m.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::OK, "recovered subscription entitles again");
+}
+
+// ---------------------------------------------------------------------------
+// Dunning caps retries at max_dunning_attempts (one retry per tick).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_dunning_caps_attempts() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  if !dunning_ready() {
+    eprintln!("skipping: grace/dunning/mock not configured");
+    return;
+  }
+  let max = infra::settings::get().membership.max_dunning_attempts;
+  let am = admin_mock(&db).await;
+  let (_m, sub_id) = past_due_with_grace(&db, &am).await;
+
+  // Each tick retries once (still the failing key) and increments attempts.
+  for _ in 0..max {
+    maintenance::retry_dunning_subscriptions(&db).await.unwrap();
+  }
+  let capped = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(capped.dunning_attempts, max, "attempts climb to the cap");
+  assert_eq!(capped.status, entity::membership::SubscriptionStatus::PastDue, "still past_due");
+
+  // A further tick is a no-op (attempts already at the cap).
+  let (recovered, failed) = maintenance::retry_dunning_subscriptions(&db).await.unwrap();
+  let still = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(still.dunning_attempts, max, "no retries past the cap");
+  // (recovered, failed) here pertain to all eligible subs; ours contributes nothing.
+  let _ = (recovered, failed);
+}
+
+// ---------------------------------------------------------------------------
+// Once grace ends, the expire job finalizes a past_due subscription as expired.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_expire_finalizes_past_due_after_grace() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  if !dunning_ready() {
+    eprintln!("skipping: grace/dunning/mock not configured");
+    return;
+  }
+  let am = admin_mock(&db).await;
+  let (_m, sub_id) = past_due_with_grace(&db, &am).await;
+
+  // Push grace into the past, then run the expiry job.
+  let row = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  let mut a = row.into_active_model();
+  a.grace_ends_at = Set(Some((Utc::now() - Duration::hours(1)).into()));
+  a.update(&db).await.unwrap();
+
+  maintenance::expire_due_subscriptions(&db).await.unwrap();
+
+  let after = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(after.status, entity::membership::SubscriptionStatus::Expired, "grace ended → expired");
+
+  let events = SubscriptionEvents::find()
+    .filter(EventCol::SubscriptionId.eq(sub_id))
+    .filter(EventCol::Reason.eq("grace-ended"))
+    .all(&db)
+    .await
+    .unwrap();
+  assert!(!events.is_empty(), "a grace-ended expiry event must be recorded");
+}

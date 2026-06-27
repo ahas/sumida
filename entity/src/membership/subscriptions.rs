@@ -36,6 +36,10 @@ pub struct Model {
   /// PG billing key (정기결제) used by auto-renew. Required for `auto_renew`.
   #[sea_orm(nullable)]
   pub billing_key: Option<String>,
+  /// Number of failed renewal-charge retries in the current dunning cycle.
+  /// Reset to 0 on a successful (re)charge.
+  #[sea_orm(default_value = 0)]
+  pub dunning_attempts: i32,
   // --- reserved for future payment-provider integration ---
   #[sea_orm(nullable)]
   pub provider_subscription_id: Option<String>,

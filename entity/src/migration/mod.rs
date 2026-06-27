@@ -5,6 +5,7 @@ pub mod helper;
 pub mod init;
 pub mod membership;
 pub mod membership_billing;
+pub mod membership_dunning;
 pub mod membership_reservations;
 pub mod membership_scheduler;
 pub mod membership_trial;

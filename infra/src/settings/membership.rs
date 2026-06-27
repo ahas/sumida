@@ -35,6 +35,10 @@ pub struct MembershipSettings {
   /// expiry (dunning grace window). 0 = no grace (immediate loss of entitlement).
   #[serde(default)]
   pub grace_days: i32,
+  /// Max failed renewal-charge retries during the grace window before giving up.
+  /// 0 = no retries (the subscription simply expires at grace end).
+  #[serde(default)]
+  pub max_dunning_attempts: i32,
   /// Payment-gateway (PG) configuration.
   #[serde(default)]
   pub payment: PaymentSettings,
@@ -97,6 +101,7 @@ impl Default for MembershipSettings {
       expiring_soon_notify_days: default_expiring_soon_notify_days(),
       credit_low_balance_threshold: None,
       grace_days: 0,
+      max_dunning_attempts: 0,
       payment: PaymentSettings::default(),
     }
   }

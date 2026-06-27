@@ -23,7 +23,8 @@ use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+  ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+  TransactionTrait,
 };
 use serde_json::json;
 
@@ -39,6 +40,8 @@ const BATCH: u64 = 500;
 pub struct MaintenanceReport {
   pub subscriptions_renewed: usize,
   pub subscriptions_renew_failed: usize,
+  pub dunning_recovered: usize,
+  pub dunning_failed: usize,
   pub subscriptions_expired: usize,
   pub reservations_released: usize,
   pub wallets_swept: usize,
@@ -117,6 +120,8 @@ pub async fn renew_due_subscriptions(db: &DatabaseConnection) -> Result<(usize, 
           current_period_start: Set(base),
           current_period_end: Set(new_end),
           expiring_notified_at: Set(None),
+          grace_ends_at: Set(None),
+          dunning_attempts: Set(0),
           ..Default::default()
         })
         .exec(&txn)
@@ -192,18 +197,166 @@ pub async fn renew_due_subscriptions(db: &DatabaseConnection) -> Result<(usize, 
   Ok((renewed, failed))
 }
 
-/// Transition subscriptions whose period has ended: those flagged
-/// `cancel_at_period_end` become `canceled`, the rest `expired`. Each row is
-/// locked and re-checked inside its own transaction (so a concurrent renew wins),
-/// and a matching `subscription_events` audit row is written.
+/// Dunning: retry the renewal charge for `past_due` subscriptions still inside
+/// their grace window, up to `max_dunning_attempts`. One retry per call (per
+/// scheduler tick): a recovery returns the subscription to `active` (new period,
+/// counters reset); a failure increments `dunning_attempts` (final expiry is left
+/// to [`expire_due_subscriptions`] at grace end). Returns `(recovered, failed)`.
+///
+/// Disabled when `max_dunning_attempts == 0`.
+pub async fn retry_dunning_subscriptions(db: &DatabaseConnection) -> Result<(usize, usize), SumidaError> {
+  let max = settings::get().membership.max_dunning_attempts.max(0);
+  if max == 0 {
+    return Ok((0, 0));
+  }
+  let now: DateTimeWithTimeZone = Utc::now().into();
+  let provider = payment::provider();
+  let mut recovered = 0usize;
+  let mut failed = 0usize;
+
+  // Single bounded pass — a failed retry stays eligible, so re-querying in a loop
+  // would exhaust all attempts in one tick. Remaining rows are handled next tick.
+  let due = Subscriptions::find()
+    .filter(SubColumn::Status.eq(SubscriptionStatus::PastDue))
+    .filter(SubColumn::AutoRenew.eq(true))
+    .filter(SubColumn::BillingKey.is_not_null())
+    .filter(SubColumn::GraceEndsAt.is_not_null())
+    .filter(SubColumn::GraceEndsAt.gt(now))
+    .filter(SubColumn::DunningAttempts.lt(max))
+    .order_by_asc(SubColumn::Id)
+    .limit(BATCH)
+    .all(db)
+    .await?;
+
+  for sub in due {
+    let txn = db.begin().await?;
+    let Some(row) = Subscriptions::find_by_id(sub.id).lock_exclusive().one(&txn).await? else {
+      txn.rollback().await?;
+      continue;
+    };
+    let eligible = row.status == SubscriptionStatus::PastDue
+      && row.auto_renew
+      && row.dunning_attempts < max
+      && row.grace_ends_at.map(|g| g > now).unwrap_or(false);
+    let Some(billing_key) = row.billing_key.clone().filter(|_| eligible) else {
+      txn.rollback().await?;
+      continue;
+    };
+    let Some(plan) = MembershipPlans::find_by_id(row.plan_id).one(&txn).await? else {
+      txn.rollback().await?;
+      continue;
+    };
+
+    let order_code = gen_code("dun");
+    let charge =
+      provider.charge_recurring(&billing_key, plan.price, &plan.currency, &order_code).await;
+    let paid = matches!(&charge, Ok(v) if v.status.is_paid());
+
+    if paid {
+      let duration = plan.duration_days.unwrap_or(30).max(0);
+      let new_end = now + Duration::days(duration as i64);
+      Subscriptions::update(SubscriptionsActiveModel {
+        id: Unchanged(row.id),
+        status: Set(SubscriptionStatus::Active),
+        current_period_start: Set(now),
+        current_period_end: Set(new_end),
+        grace_ends_at: Set(None),
+        dunning_attempts: Set(0),
+        expiring_notified_at: Set(None),
+        ..Default::default()
+      })
+      .exec(&txn)
+      .await?;
+
+      let txn_id = charge.ok().and_then(|v| v.transaction_id);
+      MembershipPurchases::insert(MembershipPurchasesActiveModel {
+        code: Set(order_code.clone()),
+        kind: Set(PlanKind::Subscription),
+        plan_id: Set(plan.id),
+        plan_code: Set(plan.code.clone()),
+        owner_kind: Set(row.owner_kind.clone()),
+        owner_id: Set(row.owner_id),
+        status: Set(PurchaseStatus::Completed),
+        amount: Set(plan.price),
+        currency: Set(plan.currency.clone()),
+        provider: Set(provider.name().to_string()),
+        provider_payment_id: Set(txn_id),
+        paid_at: Set(Some(now)),
+        ..Default::default()
+      })
+      .exec(&txn)
+      .await?;
+
+      SubscriptionEvents::insert(SubscriptionEventsActiveModel {
+        subscription_id: Set(row.id),
+        event_kind: Set(SubscriptionEventKind::Renewed),
+        old_status: Set(Some("past-due".to_string())),
+        new_status: Set(Some("active".to_string())),
+        reason: Set(Some("dunning-recovered".to_string())),
+        reference_code: Set(Some(order_code)),
+        ..Default::default()
+      })
+      .exec(&txn)
+      .await?;
+
+      txn.commit().await?;
+      recovered += 1;
+    } else {
+      let attempts = row.dunning_attempts + 1;
+      Subscriptions::update(SubscriptionsActiveModel {
+        id: Unchanged(row.id),
+        dunning_attempts: Set(attempts),
+        ..Default::default()
+      })
+      .exec(&txn)
+      .await?;
+
+      SubscriptionEvents::insert(SubscriptionEventsActiveModel {
+        subscription_id: Set(row.id),
+        event_kind: Set(SubscriptionEventKind::StatusChanged),
+        old_status: Set(Some("past-due".to_string())),
+        new_status: Set(Some("past-due".to_string())),
+        reason: Set(Some(format!("dunning-retry-failed:{attempts}"))),
+        ..Default::default()
+      })
+      .exec(&txn)
+      .await?;
+
+      txn.commit().await?;
+      failed += 1;
+    }
+  }
+
+  Ok((recovered, failed))
+}
+
+/// Transition subscriptions whose period has ended: active ones become `canceled`
+/// (if flagged `cancel_at_period_end`) or `expired`; `past_due` ones whose grace
+/// window has closed (or never opened) become `expired`. Each row is locked and
+/// re-checked inside its own transaction, with a matching audit event.
 pub async fn expire_due_subscriptions(db: &DatabaseConnection) -> Result<usize, SumidaError> {
   let now: DateTimeWithTimeZone = Utc::now().into();
   let mut total = 0usize;
 
   loop {
+    // Active subscriptions past their period end, OR past_due ones whose grace
+    // window has closed (or never opened).
     let due = Subscriptions::find()
-      .filter(SubColumn::Status.eq(SubscriptionStatus::Active))
-      .filter(SubColumn::CurrentPeriodEnd.lte(now))
+      .filter(
+        Condition::any()
+          .add(
+            Condition::all()
+              .add(SubColumn::Status.eq(SubscriptionStatus::Active))
+              .add(SubColumn::CurrentPeriodEnd.lte(now)),
+          )
+          .add(
+            Condition::all().add(SubColumn::Status.eq(SubscriptionStatus::PastDue)).add(
+              Condition::any()
+                .add(SubColumn::GraceEndsAt.is_null())
+                .add(SubColumn::GraceEndsAt.lte(now)),
+            ),
+          ),
+      )
       .order_by_asc(SubColumn::Id)
       .limit(BATCH)
       .all(db)
@@ -215,25 +368,35 @@ pub async fn expire_due_subscriptions(db: &DatabaseConnection) -> Result<usize, 
 
     for sub in due {
       let txn = db.begin().await?;
-      // Re-read under a row lock: a renew may have extended the period meanwhile.
+      // Re-read under a row lock: a renew/dunning recovery may have intervened.
       let Some(row) = Subscriptions::find_by_id(sub.id).lock_exclusive().one(&txn).await? else {
         txn.rollback().await?;
         continue;
       };
-      if row.status != SubscriptionStatus::Active || row.current_period_end > now {
+
+      let active_due = row.status == SubscriptionStatus::Active && row.current_period_end <= now;
+      let pastdue_done = row.status == SubscriptionStatus::PastDue
+        && row.grace_ends_at.map(|g| g <= now).unwrap_or(true);
+      if !(active_due || pastdue_done) {
         txn.rollback().await?;
         continue;
       }
 
-      let (new_status, new_status_str, kind, reason) = if row.cancel_at_period_end {
-        (
-          SubscriptionStatus::Canceled,
-          "canceled",
-          SubscriptionEventKind::Canceled,
-          Some("cancel-at-period-end-reached"),
-        )
+      let (new_status, new_status_str, kind, reason, old_status_str) = if active_due {
+        if row.cancel_at_period_end {
+          (
+            SubscriptionStatus::Canceled,
+            "canceled",
+            SubscriptionEventKind::Canceled,
+            Some("cancel-at-period-end-reached"),
+            "active",
+          )
+        } else {
+          (SubscriptionStatus::Expired, "expired", SubscriptionEventKind::Expired, None, "active")
+        }
       } else {
-        (SubscriptionStatus::Expired, "expired", SubscriptionEventKind::Expired, None)
+        // past_due with grace ended → final expiry (dunning exhausted / no grace).
+        (SubscriptionStatus::Expired, "expired", SubscriptionEventKind::Expired, Some("grace-ended"), "past-due")
       };
 
       let mut update = SubscriptionsActiveModel {
@@ -249,7 +412,7 @@ pub async fn expire_due_subscriptions(db: &DatabaseConnection) -> Result<usize, 
       SubscriptionEvents::insert(SubscriptionEventsActiveModel {
         subscription_id: Set(row.id),
         event_kind: Set(kind),
-        old_status: Set(Some("active".to_string())),
+        old_status: Set(Some(old_status_str.to_string())),
         new_status: Set(Some(new_status_str.to_string())),
         reason: Set(reason.map(|s| s.to_string())),
         ..Default::default()
@@ -415,6 +578,13 @@ pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceRep
     }
     Err(e) => tracing::warn!("membership maintenance: renew subscriptions failed: {e}"),
   }
+  match retry_dunning_subscriptions(db).await {
+    Ok((recovered, failed)) => {
+      report.dunning_recovered = recovered;
+      report.dunning_failed = failed;
+    }
+    Err(e) => tracing::warn!("membership maintenance: dunning retries failed: {e}"),
+  }
   match expire_due_subscriptions(db).await {
     Ok(n) => report.subscriptions_expired = n,
     Err(e) => tracing::warn!("membership maintenance: expire subscriptions failed: {e}"),
@@ -451,9 +621,11 @@ pub fn spawn<S: SumidaState>(state: S, interval: StdDuration) -> tokio::task::Jo
       ticker.tick().await;
       let report = run_once::<S>(state.db()).await;
       tracing::debug!(
-        "membership maintenance: {} renewed, {} renew-failed, {} expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices",
+        "membership maintenance: {} renewed, {} renew-failed, {} dunning-recovered, {} dunning-failed, {} expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices",
         report.subscriptions_renewed,
         report.subscriptions_renew_failed,
+        report.dunning_recovered,
+        report.dunning_failed,
         report.subscriptions_expired,
         report.reservations_released,
         report.wallets_swept,
