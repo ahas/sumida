@@ -13,7 +13,6 @@ pub struct Model {
   pub id: i32,
   pub owner_kind: OwnerKind,
   pub owner_id: i32,
-  pub currency: String,
   #[sea_orm(default_value = 0)]
   pub balance: i64,
   /// When a "low balance" alert was last sent. Cleared on top-up above the

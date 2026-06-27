@@ -93,6 +93,14 @@ impl<S: SumidaState> CouponController<S> {
   ) -> Result<List<MyCouponItem>, SumidaError> {
     Ok(CouponService::new(state, session).my_coupons(pagination).await?.into())
   }
+
+  async fn redeem(
+    session: UserSession,
+    State(state): State<S>,
+    Json(body): Json<RedeemCoupon>,
+  ) -> Result<RedeemResult, SumidaError> {
+    CouponService::new(state, session).redeem(body).await
+  }
 }
 
 impl<S: SumidaState> ApiController<S> for CouponController<S> {
@@ -101,6 +109,7 @@ impl<S: SumidaState> ApiController<S> for CouponController<S> {
     Router::new()
       .route("/", routing::get(Self::list).post(Self::create))
       .route("/mine", routing::get(Self::mine))
+      .route("/redeem", routing::post(Self::redeem))
       .route("/{id}", routing::patch(Self::update).delete(Self::delete))
       .route("/{id}/grant", routing::post(Self::grant).delete(Self::revoke))
       .route("/{id}/grant-bulk", routing::post(Self::grant_bulk))

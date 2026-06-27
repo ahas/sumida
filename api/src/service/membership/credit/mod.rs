@@ -138,7 +138,6 @@ impl<S: SumidaState> CreditService<S> {
   async fn ensure_wallet_id<C: ConnectionTrait>(
     owner_kind: &OwnerKind,
     owner_id: i32,
-    currency: &str,
     db: &C,
   ) -> Result<i32, SumidaError> {
     #[derive(FromQueryResult)]
@@ -148,11 +147,11 @@ impl<S: SumidaState> CreditService<S> {
     let backend = db.get_database_backend();
     let row = IdRow::find_by_statement(Statement::from_sql_and_values(
       backend,
-      r#"INSERT INTO credit_wallets (owner_kind, owner_id, currency, balance)
-         VALUES ($1, $2, $3, 0)
+      r#"INSERT INTO credit_wallets (owner_kind, owner_id, balance)
+         VALUES ($1, $2, 0)
          ON CONFLICT (owner_kind, owner_id) DO UPDATE SET updated_at = now()
          RETURNING id"#,
-      [owner_kind_str(owner_kind).into(), owner_id.into(), currency.into()],
+      [owner_kind_str(owner_kind).into(), owner_id.into()],
     ))
     .one(db)
     .await?;
@@ -419,14 +418,13 @@ impl<S: SumidaState> CreditService<S> {
     expiry_at: Option<DateTimeWithTimeZone>,
     reference_code: Option<&str>,
     idempotency_key: Option<&str>,
-    currency: &str,
     txn: &C,
   ) -> Result<GrantResult, SumidaError> {
     if amount <= 0 {
       return Err(SumidaError::BadRequest("grant amount must be positive".into()));
     }
 
-    let wallet_id = Self::ensure_wallet_id(owner_kind, owner_id, currency, txn).await?;
+    let wallet_id = Self::ensure_wallet_id(owner_kind, owner_id, txn).await?;
     let wallet = CreditWallets::find_by_id(wallet_id)
       .lock_exclusive()
       .one(txn)
@@ -519,7 +517,6 @@ impl<S: SumidaState> CreditService<S> {
           wallet_id: wallet.id,
           owner_kind: wallet.owner_kind,
           owner_id: wallet.owner_id,
-          currency: wallet.currency,
           balance,
           reserved,
           spendable: balance - reserved,
@@ -529,7 +526,6 @@ impl<S: SumidaState> CreditService<S> {
         wallet_id: 0,
         owner_kind,
         owner_id,
-        currency: settings::get().membership.default_currency.clone(),
         balance: 0,
         reserved: 0,
         spendable: 0,
@@ -541,7 +537,6 @@ impl<S: SumidaState> CreditService<S> {
 
   pub async fn grant(&self, data: GrantCredit) -> Result<GrantResult, SumidaError> {
     let (owner_kind, owner_id) = resolve_owner(&self.session, &data.owner_kind, data.owner_id);
-    let currency = settings::get().membership.default_currency.clone();
     let expiry_at = data.expiry_at.or_else(|| {
       settings::get()
         .membership
@@ -559,7 +554,6 @@ impl<S: SumidaState> CreditService<S> {
         expiry_at,
         data.reference_code.as_deref(),
         data.idempotency_key.as_deref(),
-        &currency,
         &txn,
       )
       .await?;

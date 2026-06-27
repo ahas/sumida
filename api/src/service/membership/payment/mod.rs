@@ -472,7 +472,6 @@ impl<S: SumidaState> PaymentService<S> {
           Some(&purchase.code),
           // idempotency_key = purchase code → webhook/confirm retries never double-grant.
           Some(&purchase.code),
-          &purchase.currency,
           txn,
         )
         .await?;

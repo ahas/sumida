@@ -5,6 +5,7 @@ use entity::membership::OwnerKind;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
+use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
@@ -13,6 +14,8 @@ use sea_orm::{
 };
 
 use self::dto::*;
+use super::credit::CreditService;
+use super::subscription::SubscriptionService;
 use crate::SumidaState;
 use crate::util::pagination::Pagination;
 
@@ -32,17 +35,20 @@ impl<S: SumidaState> CouponService<S> {
 
   pub async fn create(&self, data: CreateCoupon) -> Result<CouponCreated, SumidaError> {
     self.require_admin()?;
-    if data.percent_off.is_none() && data.amount_off.is_none() {
-      return Err(SumidaError::BadRequest("coupon needs percent_off or amount_off".into()));
+    // Exactly one reward: discount (percent_off), credits, or a free plan.
+    let rewards = [data.percent_off.is_some(), data.grant_credits.is_some(), data.free_plan_code.is_some()];
+    if rewards.iter().filter(|x| **x).count() != 1 {
+      return Err(SumidaError::BadRequest(
+        "coupon needs exactly one of percent_off / grant_credits / free_plan_code".into(),
+      ));
     }
-    if data.amount_off.is_some() && data.currency.is_none() {
-      return Err(SumidaError::BadRequest("amount_off coupons need a currency".into()));
-    }
+
     let txn = self.state.db().begin().await?;
     let model = Coupons::insert(CouponsActiveModel {
       code: Set(data.code),
       percent_off: Set(data.percent_off),
-      amount_off: Set(data.amount_off),
+      grant_credits: Set(data.grant_credits),
+      free_plan_code: Set(data.free_plan_code),
       currency: Set(data.currency),
       max_redemptions: Set(data.max_redemptions),
       max_redemptions_per_owner: Set(data.max_redemptions_per_owner),
@@ -289,10 +295,78 @@ impl<S: SumidaState> CouponService<S> {
     Ok((items, count))
   }
 
-  /// Validate a coupon against `plan_code` and atomically redeem one use, returning
-  /// the discount (clamped to `subtotal`), its code, and whether it stacks. Runs in
-  /// the checkout transaction; records a `coupon_redemptions` row. Failures are
-  /// `BadRequest`.
+  /// Shared eligibility + atomic consumption for one coupon use: grant gate
+  /// (consume the grant), per-owner cap, global cap, and the redemption-ledger row.
+  /// Returns the redemption id. Failures are `BadRequest`.
+  async fn consume_coupon<C: ConnectionTrait>(
+    coupon: &entity::membership::coupons::Model,
+    owner_kind: &OwnerKind,
+    owner_id: i32,
+    txn: &C,
+  ) -> Result<i32, SumidaError> {
+    let mut grant_id: Option<i32> = None;
+    if coupon.requires_grant {
+      let grant = Self::find_grant(coupon.id, owner_kind, owner_id, txn)
+        .await?
+        .ok_or_else(|| SumidaError::BadRequest("coupon is not available to this owner".into()))?;
+      if grant.revoked_at.is_some() {
+        return Err(SumidaError::BadRequest("coupon grant was revoked".into()));
+      }
+      if grant.redeemed_at.is_some() {
+        return Err(SumidaError::BadRequest("coupon already redeemed by this owner".into()));
+      }
+      CouponGrants::update(CouponGrantsActiveModel {
+        id: Unchanged(grant.id),
+        redeemed_at: Set(Some(Utc::now().into())),
+        ..Default::default()
+      })
+      .exec(txn)
+      .await?;
+      grant_id = Some(grant.id);
+    } else if let Some(per_owner) = coupon.max_redemptions_per_owner {
+      let used = CouponRedemptions::find()
+        .filter(CouponRedemptionsColumn::CouponId.eq(coupon.id))
+        .filter(CouponRedemptionsColumn::OwnerKind.eq(owner_kind.clone()))
+        .filter(CouponRedemptionsColumn::OwnerId.eq(owner_id))
+        .count(txn)
+        .await?;
+      if used >= per_owner as u64 {
+        return Err(SumidaError::BadRequest("coupon redemption limit reached for this owner".into()));
+      }
+    }
+
+    #[derive(FromQueryResult)]
+    struct Redeemed {
+      redeemed_count: i32,
+    }
+    let updated = Redeemed::find_by_statement(Statement::from_sql_and_values(
+      txn.get_database_backend(),
+      r#"UPDATE coupons SET redeemed_count = redeemed_count + 1
+         WHERE id = $1 AND (max_redemptions IS NULL OR redeemed_count < max_redemptions)
+         RETURNING redeemed_count"#,
+      [coupon.id.into()],
+    ))
+    .one(txn)
+    .await?;
+    if updated.is_none() {
+      return Err(SumidaError::BadRequest("coupon redemption limit reached".into()));
+    }
+
+    let redemption = CouponRedemptions::insert(CouponRedemptionsActiveModel {
+      coupon_id: Set(coupon.id),
+      owner_kind: Set(owner_kind.clone()),
+      owner_id: Set(owner_id),
+      grant_id: Set(grant_id),
+      ..Default::default()
+    })
+    .exec_with_returning(txn)
+    .await?;
+    Ok(redemption.id)
+  }
+
+  /// Apply a **discount** coupon (percent_off) at checkout: validate active /
+  /// expiry / currency-scope / plan-scope, then consume it. Reward coupons
+  /// (credits / free-plan) are rejected here — those are redeemed via `redeem`.
   pub(crate) async fn apply_in_txn<C: ConnectionTrait>(
     code: &str,
     currency: &str,
@@ -312,94 +386,112 @@ impl<S: SumidaState> CouponService<S> {
       return Err(SumidaError::BadRequest("coupon is not active".into()));
     }
     if let Some(exp) = coupon.expires_at {
-      let now: DateTimeWithTimeZone = Utc::now().into();
-      if exp <= now {
+      if exp <= Utc::now() {
         return Err(SumidaError::BadRequest("coupon has expired".into()));
       }
     }
-
+    let Some(pct) = coupon.percent_off else {
+      return Err(SumidaError::BadRequest("this is a reward coupon — redeem it instead".into()));
+    };
+    // Currency-scope: a regional promo applies only to its currency.
+    if let Some(scope) = &coupon.currency {
+      if scope != currency {
+        return Err(SumidaError::BadRequest("coupon is not valid for this currency".into()));
+      }
+    }
     // Plan-scope: if the coupon lists plans, the checkout plan must be among them.
     let plan_rows = CouponPlans::find().filter(CouponPlansColumn::CouponId.eq(coupon.id)).all(txn).await?;
     if !plan_rows.is_empty() && !plan_rows.iter().any(|p| p.plan_code == plan_code) {
       return Err(SumidaError::BadRequest("coupon is not valid for this plan".into()));
     }
 
-    let mut grant_id: Option<i32> = None;
-    if coupon.requires_grant {
-      // Grant-gated: consume an issued grant (one grant = one use).
-      let grant = Self::find_grant(coupon.id, owner_kind, owner_id, txn)
-        .await?
-        .ok_or_else(|| SumidaError::BadRequest("coupon is not available to this owner".into()))?;
-      if grant.revoked_at.is_some() {
-        return Err(SumidaError::BadRequest("coupon grant was revoked".into()));
+    let discount = ((subtotal as i128 * pct.clamp(0, 100) as i128 / 100) as i64).clamp(0, subtotal);
+    let redemption_id = Self::consume_coupon(&coupon, owner_kind, owner_id, txn).await?;
+    Ok(AppliedCoupon { code: coupon.code, discount, stackable: coupon.stackable, redemption_id })
+  }
+
+  /// Redeem a **reward** coupon (credits / free plan) for the calling user.
+  pub async fn redeem(&self, data: RedeemCoupon) -> Result<RedeemResult, SumidaError> {
+    let owner_kind = OwnerKind::Personal;
+    let owner_id = self.session.profile.id;
+
+    let txn = self.state.db().begin().await?;
+    let coupon = Coupons::find()
+      .filter(CouponsColumn::Code.eq(data.code.clone()))
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::BadRequest("coupon not found".into()))?;
+
+    if !coupon.is_active {
+      return Err(SumidaError::BadRequest("coupon is not active".into()));
+    }
+    if let Some(exp) = coupon.expires_at {
+      if exp <= Utc::now() {
+        return Err(SumidaError::BadRequest("coupon has expired".into()));
       }
-      if grant.redeemed_at.is_some() {
-        return Err(SumidaError::BadRequest("coupon already redeemed by this owner".into()));
-      }
-      CouponGrants::update(CouponGrantsActiveModel {
-        id: Unchanged(grant.id),
-        redeemed_at: Set(Some(Utc::now().into())),
-        ..Default::default()
-      })
-      .exec(txn)
+    }
+    if coupon.percent_off.is_some() {
+      return Err(SumidaError::BadRequest("this is a discount coupon — use it at checkout".into()));
+    }
+
+    Self::consume_coupon(&coupon, &owner_kind, owner_id, &txn).await?;
+
+    let mut result = RedeemResult { reward: String::new(), credits_granted: None, subscription_id: None };
+    if let Some(credits) = coupon.grant_credits {
+      let expiry_at = settings::get()
+        .membership
+        .credit_default_expiry_days
+        .map(|d| (Utc::now() + chrono::Duration::days(d as i64)).into());
+      let reference = format!("coupon:{}", coupon.code);
+      CreditService::<S>::grant_in_txn(
+        &owner_kind,
+        owner_id,
+        credits,
+        Some(&coupon.code),
+        expiry_at,
+        Some(&reference),
+        Some(&reference),
+        &txn,
+      )
       .await?;
-      grant_id = Some(grant.id);
-    } else if let Some(per_owner) = coupon.max_redemptions_per_owner {
-      // Public coupon: cap per owner from the redemption ledger.
-      let used = CouponRedemptions::find()
-        .filter(CouponRedemptionsColumn::CouponId.eq(coupon.id))
-        .filter(CouponRedemptionsColumn::OwnerKind.eq(owner_kind.clone()))
-        .filter(CouponRedemptionsColumn::OwnerId.eq(owner_id))
-        .count(txn)
+      result.reward = "credits".into();
+      result.credits_granted = Some(credits);
+    } else if let Some(plan_code) = &coupon.free_plan_code {
+      let plan = MembershipPlans::find()
+        .filter(entity::membership::membership_plans::Column::Code.eq(plan_code.clone()))
+        .filter(entity::membership::membership_plans::Column::DeletedAt.is_null())
+        .one(&txn)
+        .await?
+        .ok_or_else(|| SumidaError::PlanNotFound(plan_code.clone()))?;
+      if plan.kind != entity::membership::PlanKind::Subscription {
+        return Err(SumidaError::BadRequest("free_plan_code is not a subscription plan".into()));
+      }
+      // Don't double-activate.
+      let existing = Subscriptions::find()
+        .filter(entity::membership::subscriptions::Column::OwnerKind.eq(owner_kind.clone()))
+        .filter(entity::membership::subscriptions::Column::OwnerId.eq(owner_id))
+        .filter(entity::membership::subscriptions::Column::PlanId.eq(plan.id))
+        .filter(entity::membership::subscriptions::Column::Status.eq(entity::membership::SubscriptionStatus::Active))
+        .one(&txn)
         .await?;
-      if used >= per_owner as u64 {
-        return Err(SumidaError::BadRequest("coupon redemption limit reached for this owner".into()));
+      if existing.is_some() {
+        return Err(SumidaError::DuplicateActiveSubscription);
       }
+      let sub = SubscriptionService::<S>::activate_in_txn(
+        &plan,
+        &owner_kind,
+        owner_id,
+        Some(&coupon.code),
+        Some(owner_id),
+        &txn,
+      )
+      .await?;
+      result.reward = "free-plan".into();
+      result.subscription_id = Some(sub.id);
     }
 
-    let discount = if let Some(pct) = coupon.percent_off {
-      (subtotal as i128 * pct.clamp(0, 100) as i128 / 100) as i64
-    } else if let Some(amount) = coupon.amount_off {
-      if coupon.currency.as_deref() != Some(currency) {
-        return Err(SumidaError::BadRequest("coupon currency mismatch".into()));
-      }
-      amount
-    } else {
-      0
-    };
-    let discount = discount.clamp(0, subtotal);
-
-    // Global cap: atomic increment guarded by max_redemptions.
-    #[derive(FromQueryResult)]
-    struct Redeemed {
-      redeemed_count: i32,
-    }
-    let updated = Redeemed::find_by_statement(Statement::from_sql_and_values(
-      txn.get_database_backend(),
-      r#"UPDATE coupons SET redeemed_count = redeemed_count + 1
-         WHERE id = $1 AND (max_redemptions IS NULL OR redeemed_count < max_redemptions)
-         RETURNING redeemed_count"#,
-      [coupon.id.into()],
-    ))
-    .one(txn)
-    .await?;
-    if updated.is_none() {
-      return Err(SumidaError::BadRequest("coupon redemption limit reached".into()));
-    }
-
-    // Redemption ledger (per-owner cap source + analytics). `purchase_code` is
-    // linked by the caller once the purchase exists, so a failed checkout reverses.
-    let redemption = CouponRedemptions::insert(CouponRedemptionsActiveModel {
-      coupon_id: Set(coupon.id),
-      owner_kind: Set(owner_kind.clone()),
-      owner_id: Set(owner_id),
-      grant_id: Set(grant_id),
-      ..Default::default()
-    })
-    .exec_with_returning(txn)
-    .await?;
-
-    Ok(AppliedCoupon { code: coupon.code, discount, stackable: coupon.stackable, redemption_id: redemption.id })
+    txn.commit().await?;
+    Ok(result)
   }
 
   /// Link the just-applied redemptions to their purchase.

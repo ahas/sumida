@@ -20,12 +20,18 @@ pub struct CouponFilter {
 #[serde(rename_all = "camelCase")]
 pub struct CreateCoupon {
   pub code: String,
-  /// Percentage discount (0–100). Mutually exclusive with `amount_off`.
+  /// Discount coupon: percentage off at checkout (0–100). Exactly one reward of
+  /// `percent_off` / `grant_credits` / `free_plan_code` must be set.
   #[serde(default)]
   pub percent_off: Option<i32>,
-  /// Fixed discount in minor units of `currency`. Mutually exclusive with `percent_off`.
+  /// Reward coupon: credit units granted on redeem.
   #[serde(default)]
-  pub amount_off: Option<i64>,
+  pub grant_credits: Option<i64>,
+  /// Reward coupon: subscription plan code granted free for one period on redeem.
+  #[serde(default)]
+  pub free_plan_code: Option<String>,
+  /// Discount scope: only valid for purchases in this currency (regional promo).
+  /// None = any currency.
   #[serde(default)]
   pub currency: Option<String>,
   #[serde(default)]
@@ -52,7 +58,8 @@ pub struct CouponItem {
   pub id: i32,
   pub code: String,
   pub percent_off: Option<i32>,
-  pub amount_off: Option<i64>,
+  pub grant_credits: Option<i64>,
+  pub free_plan_code: Option<String>,
   pub currency: Option<String>,
   pub max_redemptions: Option<i32>,
   pub max_redemptions_per_owner: Option<i32>,
@@ -146,9 +153,32 @@ pub struct MyCouponItem {
   pub id: i32,
   pub code: String,
   pub percent_off: Option<i32>,
-  pub amount_off: Option<i64>,
+  pub grant_credits: Option<i64>,
+  pub free_plan_code: Option<String>,
   pub currency: Option<String>,
   pub expires_at: Option<DateTimeWithTimeZone>,
+}
+
+/// Redeem a reward coupon (credits / free plan) for the calling user.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedeemCoupon {
+  pub code: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedeemResult {
+  /// How the coupon was redeemed: "credits" or "free-plan".
+  pub reward: String,
+  pub credits_granted: Option<i64>,
+  pub subscription_id: Option<i32>,
+}
+
+impl IntoResponse for RedeemResult {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
+  }
 }
 
 #[derive(Clone, Debug, Serialize)]

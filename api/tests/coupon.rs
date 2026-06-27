@@ -79,19 +79,19 @@ async fn test_checkout_percent_coupon_and_tax() {
 }
 
 // ---------------------------------------------------------------------------
-// Fixed-amount coupon requires a matching currency; a mismatch is rejected.
+// A currency-scoped discount (regional promo) applies only to that currency.
 // ---------------------------------------------------------------------------
 #[tokio::test]
-async fn test_amount_coupon_currency_match() {
+async fn test_coupon_currency_scope() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
   let am = admin_mock(&db).await;
   let plan = create_sub_plan(&am.client, 1000).await; // currency defaults to KRW
-
-  // Matching currency → applies.
-  let ok_code = format!("KRW-{}", rnd());
-  create_coupon(&am.client, json!({ "code": ok_code, "amountOff": 300, "currency": "KRW" })).await;
   let m = user_mock(&db).await;
+
+  // Scoped to the plan's currency (KRW) → applies.
+  let ok_code = format!("KRW-{}", rnd());
+  create_coupon(&am.client, json!({ "code": ok_code, "percentOff": 20, "currency": "KRW" })).await;
   let res: Value = m
     .client
     .post("/payments/checkout")
@@ -102,11 +102,11 @@ async fn test_amount_coupon_currency_match() {
     .json()
     .await
     .unwrap();
-  assert_eq!(res["discountAmount"].as_i64().unwrap(), 300);
+  assert_eq!(res["discountAmount"].as_i64().unwrap(), 200, "20% of 1000");
 
-  // Mismatched currency → rejected.
+  // Scoped to a different currency (USD) → rejected for a KRW purchase.
   let bad_code = format!("USD-{}", rnd());
-  create_coupon(&am.client, json!({ "code": bad_code, "amountOff": 300, "currency": "USD" })).await;
+  create_coupon(&am.client, json!({ "code": bad_code, "percentOff": 20, "currency": "USD" })).await;
   let r = m
     .client
     .post("/payments/checkout")
@@ -114,7 +114,65 @@ async fn test_amount_coupon_currency_match() {
     .send()
     .await
     .unwrap();
-  assert_eq!(r.status(), StatusCode::BAD_REQUEST, "currency mismatch must be rejected");
+  assert_eq!(r.status(), StatusCode::BAD_REQUEST, "currency-scoped coupon rejected for other currency");
+}
+
+// ---------------------------------------------------------------------------
+// A reward coupon grants credits on redeem (and is rejected at checkout).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_redeem_credit_coupon() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("CR-{}", rnd());
+  create_coupon(&am.client, json!({ "code": code, "grantCredits": 250 })).await;
+
+  let m = user_mock(&db).await;
+  // Reward coupons can't be used as a checkout discount.
+  let at_checkout = m
+    .client
+    .post("/payments/checkout")
+    .json(&json!({ "kind": "subscription", "planCode": plan, "couponCode": code }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(at_checkout.status(), StatusCode::BAD_REQUEST, "reward coupon is not a discount");
+
+  // Redeem → credits land in the wallet.
+  let r = m.client.post("/coupons/redeem").json(&json!({ "code": code })).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::OK);
+  let body: Value = r.json().await.unwrap();
+  assert_eq!(body["reward"].as_str().unwrap(), "credits");
+  assert_eq!(body["creditsGranted"].as_i64().unwrap(), 250);
+  let bal: Value = m.client.get("/credits/balance").send().await.unwrap().json().await.unwrap();
+  assert_eq!(bal["balance"].as_i64().unwrap(), 250);
+}
+
+// ---------------------------------------------------------------------------
+// A reward coupon grants a free subscription period on redeem.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_redeem_free_plan_coupon() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("FREE-{}", rnd());
+  create_coupon(&am.client, json!({ "code": code, "freePlanCode": plan })).await;
+
+  let m = user_mock(&db).await;
+  let r = m.client.post("/coupons/redeem").json(&json!({ "code": code })).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::OK);
+  let body: Value = r.json().await.unwrap();
+  assert_eq!(body["reward"].as_str().unwrap(), "free-plan");
+  let sub_id = body["subscriptionId"].as_i64().unwrap();
+
+  // The granted subscription is active and free.
+  let got: Value = m.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  assert_eq!(got["status"].as_str().unwrap(), "active");
+  assert_eq!(got["planCode"].as_str().unwrap(), plan);
 }
 
 // ---------------------------------------------------------------------------

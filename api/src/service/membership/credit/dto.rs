@@ -80,7 +80,6 @@ pub struct WalletBalance {
   pub wallet_id: i32,
   pub owner_kind: OwnerKind,
   pub owner_id: i32,
-  pub currency: String,
   /// Cached sum of non-expired lots.
   pub balance: i64,
   /// Credits currently on hold by reservations.

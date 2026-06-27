@@ -11,18 +11,6 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::board_system::Migration),
       Box::new(entity::migration::api_key_hash::Migration),
       Box::new(entity::migration::membership::Migration),
-      Box::new(entity::migration::membership_scheduler::Migration),
-      Box::new(entity::migration::membership_billing::Migration),
-      Box::new(entity::migration::membership_reservations::Migration),
-      Box::new(entity::migration::membership_usage::Migration),
-      Box::new(entity::migration::membership_trial::Migration),
-      Box::new(entity::migration::membership_dunning::Migration),
-      Box::new(entity::migration::membership_coupons::Migration),
-      Box::new(entity::migration::membership_coupon_per_owner::Migration),
-      Box::new(entity::migration::membership_coupon_grants::Migration),
-      Box::new(entity::migration::membership_coupon_grant_lifecycle::Migration),
-      Box::new(entity::migration::membership_coupon_ext::Migration),
-      Box::new(entity::migration::membership_coupon_redemption_link::Migration),
     ]
   }
 }

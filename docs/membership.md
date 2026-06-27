@@ -4,7 +4,7 @@ The membership domain adds subscription + credit plans, a FIFO credit ledger wit
 reservations, a hybrid entitlement gate, coupons/tax, a PG abstraction (PortOne
 V2 first-class), and a background maintenance scheduler.
 
-- Entities: `entity/src/membership/*`, migrations `entity/src/migration/membership*.rs`
+- Entities: `entity/src/membership/*`, schema in the single `entity/src/migration/membership.rs`
 - Services: `api/src/service/membership/*`
 - Controllers nest at: `/membership-plans`, `/subscriptions`, `/credits`,
   `/entitlements`, `/membership-purchases`, `/payments`, `/coupons`
@@ -56,7 +56,7 @@ See `settings.example.toml` for the full annotated block. Keys (kebab-case):
 
 | Key | Default | Meaning |
 |---|---|---|
-| `default-currency` | `KRW` | currency when a plan/wallet omits one |
+| `default-currency` | `KRW` | currency when a plan omits one (credits are unitless) |
 | `default-gate-order` | `subscription-first` | entitlement order: `subscription-first` \| `credit-first` |
 | `credit-default-expiry-days` | none | default expiry for granted credit lots |
 | `expiring-soon-notify-days` | `7` | lead time for the "expiring soon" notice |
@@ -146,12 +146,18 @@ What this domain can and cannot do today.
   refund; recurring billing-key charge (auto-renew, dunning, proration); webhook
   signature verification + idempotency.
 - **Coupons & tax**: percent / fixed-amount coupons (currency-matched), global +
-  **per-owner** redemption caps, expiry, activate/retire/delete; **plan-scoping**
-  (valid only for listed plans); **stacking** (combine `stackable` coupons in one
-  checkout); flat checkout tax; full price breakdown recorded. A **failed or
-  abandoned checkout reverses** its coupons (the consumed grant/redemption is
-  returned) — on a declined `confirm`, and via the scheduler for stale pending
-  purchases (`pending-purchase-ttl-hours`).
+  Each coupon is exactly one reward — a **discount** (`percent_off`, currency-free),
+  **credits** (`grant_credits`, redeem → wallet), or a **free plan** (`free_plan_code`,
+  redeem → a free subscription period). Discount coupons apply at checkout; reward
+  coupons are claimed self-service via `POST /coupons/redeem`. Coupons support
+  global + **per-owner** caps, expiry, grant-gating (`requires_grant`),
+  activate/retire/delete; **plan-scoping** (valid only for listed plans);
+  **currency-scoping** (`currency` = a regional promo valid only for that currency);
+  **stacking** (combine `stackable` discount coupons in one checkout). There is no
+  fixed-money discount — money lives only on plans/purchases, not coupons. A
+  **failed or abandoned checkout reverses** its coupons (the consumed grant/
+  redemption is returned) — on a declined `confirm`, and via the scheduler for
+  stale pending purchases (`pending-purchase-ttl-hours`).
 - **Coupon distribution**: issue a coupon to specific owners (`POST
   /coupons/{id}/grant`, idempotent), **recall** it (`DELETE /coupons/{id}/grant`).
   `requires_grant` makes a coupon redeemable **only** by granted owners and each
@@ -171,13 +177,15 @@ What this domain can and cannot do today.
   cannot auto-renew (it expires).
 - **Downgrade refund / negative-proration payout** — recorded as a breakdown only;
   actual money-out is left to the operator/PG.
-- **Per-currency credit wallets / FX** — one wallet per owner, single currency
-  (currency travels on plans/purchases/coupons only).
+- **Per-currency credit wallets / FX** — credits are a unitless internal balance
+  (one wallet per owner); money currency lives only on plans/purchases and a
+  coupon's discount scope. Multi-currency *plan pricing* (a price book) is the
+  open item if regional pricing is ever needed.
 - **Usage-based / overage billing** — quotas *block*; they do not bill the excess.
 - **Reserve/capture tied to an external PG authorize-capture** — credit holds are
   internal-ledger only.
-- **Coupons on the free `POST /subscriptions` path** — applied at PG checkout only;
-  no coupon stacking; not scoped to specific plans (only to owners, via grants).
+- **Reward-coupon owner scope** — `POST /coupons/redeem` grants to the calling
+  user (personal). Redeeming on behalf of an organization is not exposed yet.
 - **Tax tables** — a single flat basis-point rate (no per-region/exemptions/tax id).
 
 See `TASKS.md` ("멤버십 후속") for the deferred items and rationale.
