@@ -42,6 +42,8 @@ pub use super::membership::plan::PlanService;
 pub use super::membership::plan::dto::*;
 pub use super::membership::purchase::PurchaseService;
 pub use super::membership::purchase::dto::*;
+pub use super::membership::coupon::CouponService;
+pub use super::membership::coupon::dto::*;
 pub use super::membership::subscription::SubscriptionService;
 pub use super::membership::subscription::dto::*;
 //

@@ -63,7 +63,9 @@ async fn test_payment_subscription_checkout_confirm() {
 
   let co = checkout(&user_mock.client, json!({ "kind": "subscription", "planCode": code })).await;
   let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
-  assert_eq!(co["amount"].as_i64().unwrap(), 1000);
+  // amount = price + tax (no coupon); tax depends on the configured rate.
+  let tax_bp = infra::settings::get().membership.tax_percent_bp as i64;
+  assert_eq!(co["amount"].as_i64().unwrap(), 1000 + 1000 * tax_bp / 10_000);
   assert_eq!(co["provider"].as_str().unwrap(), "mock");
 
   // Happy path: paymentId = purchaseCode (mock order code encodes PAID 1000).
@@ -175,7 +177,8 @@ async fn test_payment_credit_purchase_grants_units() {
 
   let co = checkout(&user_mock.client, json!({ "kind": "credit", "planCode": code })).await;
   let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
-  assert_eq!(co["amount"].as_i64().unwrap(), 5000, "charge = plan price");
+  let tax_bp = infra::settings::get().membership.tax_percent_bp as i64;
+  assert_eq!(co["amount"].as_i64().unwrap(), 5000 + 5000 * tax_bp / 10_000, "charge = price + tax");
 
   let cf = confirm(&user_mock.client, &purchase_code, &purchase_code).await;
   assert_eq!(cf.status(), StatusCode::OK);

@@ -1,3 +1,4 @@
+pub use super::coupon::CouponController;
 pub use super::credit::CreditController;
 pub use super::entitlement::EntitlementController;
 pub use super::payment::PaymentController;

@@ -82,6 +82,14 @@ impl<S: SumidaState> CreditController<S> {
   ) -> Result<ReservationResult, SumidaError> {
     CreditService::new(state, session).release(id).await
   }
+
+  async fn audit(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+  ) -> Result<WalletAudit, SumidaError> {
+    CreditService::new(state, session).audit(id).await
+  }
 }
 
 impl<S: SumidaState> ApiController<S> for CreditController<S> {
@@ -96,6 +104,7 @@ impl<S: SumidaState> ApiController<S> for CreditController<S> {
       .route("/reserve", routing::post(Self::reserve))
       .route("/reservations/{id}/capture", routing::post(Self::capture))
       .route("/reservations/{id}/release", routing::post(Self::release))
+      .route("/wallets/{id}/audit", routing::get(Self::audit))
       .route_layer(user_guard!(state))
   }
 }

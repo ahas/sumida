@@ -19,6 +19,9 @@ pub struct CheckoutRequest {
   pub owner_kind: OwnerKind,
   #[serde(default)]
   pub owner_id: Option<i32>,
+  /// Optional discount coupon code.
+  #[serde(default)]
+  pub coupon_code: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -26,7 +29,11 @@ pub struct CheckoutRequest {
 pub struct CheckoutResult {
   /// Merchant order id = `membership_purchases.code`; use as the PG `paymentId`.
   pub purchase_code: String,
+  /// Total to charge (= subtotal - discount + tax).
   pub amount: i64,
+  pub subtotal: i64,
+  pub discount_amount: i64,
+  pub tax_amount: i64,
   pub currency: String,
   pub provider: String,
 }

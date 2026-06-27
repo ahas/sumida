@@ -19,8 +19,20 @@ pub struct Model {
   pub owner_kind: OwnerKind,
   pub owner_id: i32,
   pub status: PurchaseStatus,
-  /// Minor currency units.
+  /// Total charged, minor currency units (= subtotal - discount + tax).
   pub amount: i64,
+  /// List price before discount/tax (minor units). Defaults to `amount`.
+  #[sea_orm(default_value = 0)]
+  pub subtotal: i64,
+  /// Coupon discount applied (minor units).
+  #[sea_orm(default_value = 0)]
+  pub discount_amount: i64,
+  /// Tax added on the post-discount amount (minor units).
+  #[sea_orm(default_value = 0)]
+  pub tax_amount: i64,
+  /// Coupon code applied, if any.
+  #[sea_orm(nullable)]
+  pub coupon_code: Option<String>,
   pub currency: String,
   /// PG provider name ("none" for immediate/no-PG purchases).
   #[sea_orm(default_value = "'none'")]

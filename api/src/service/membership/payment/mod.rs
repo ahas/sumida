@@ -6,11 +6,13 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::payment::{self, PaymentError, WebhookHeaders};
 use infra::session::UserSession;
+use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::Expr;
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, IntoSimpleExpr, QueryFilter, TransactionTrait};
 
 use self::dto::*;
+use super::coupon::CouponService;
 use super::credit::CreditService;
 use super::subscription::SubscriptionService;
 use super::{gen_code, resolve_owner};
@@ -115,8 +117,22 @@ impl<S: SumidaState> PaymentService<S> {
       return Err(SumidaError::BadRequest("credit plan must define a positive creditAmount".into()));
     }
 
+    // Price breakdown: subtotal → coupon discount → tax → total charged.
+    let subtotal = plan.price;
+    let (discount, coupon_code) = match &req.coupon_code {
+      Some(code) => {
+        let (d, c) = CouponService::<S>::apply_in_txn(code, &plan.currency, subtotal, &txn).await?;
+        (d, Some(c))
+      }
+      None => (0, None),
+    };
+    let taxable = (subtotal - discount).max(0);
+    let tax_bp = settings::get().membership.tax_percent_bp.max(0) as i128;
+    let tax = ((taxable as i128 * tax_bp) / 10_000) as i64;
+    let total = taxable + tax;
+
     let provider = payment::provider();
-    let code = order_code(provider.name(), plan.price);
+    let code = order_code(provider.name(), total);
 
     MembershipPurchases::insert(MembershipPurchasesActiveModel {
       code: Set(code.clone()),
@@ -126,7 +142,11 @@ impl<S: SumidaState> PaymentService<S> {
       owner_kind: Set(owner_kind),
       owner_id: Set(owner_id),
       status: Set(PurchaseStatus::Pending),
-      amount: Set(plan.price),
+      amount: Set(total),
+      subtotal: Set(subtotal),
+      discount_amount: Set(discount),
+      tax_amount: Set(tax),
+      coupon_code: Set(coupon_code),
       currency: Set(plan.currency.clone()),
       provider: Set(provider.name().to_string()),
       ..Default::default()
@@ -138,7 +158,10 @@ impl<S: SumidaState> PaymentService<S> {
 
     Ok(CheckoutResult {
       purchase_code: code,
-      amount: plan.price,
+      amount: total,
+      subtotal,
+      discount_amount: discount,
+      tax_amount: tax,
       currency: plan.currency,
       provider: provider.name().to_string(),
     })

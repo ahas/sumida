@@ -1,6 +1,7 @@
 pub use e2e::prelude::*;
 
 mod board;
+mod coupon;
 mod dashboard;
 mod entitlement_layer;
 mod maintenance;

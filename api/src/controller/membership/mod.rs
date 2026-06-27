@@ -1,3 +1,4 @@
+pub mod coupon;
 pub mod credit;
 pub mod entitlement;
 pub mod payment;

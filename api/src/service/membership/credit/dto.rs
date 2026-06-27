@@ -160,6 +160,24 @@ impl IntoResponse for ReservationResult {
   }
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletAudit {
+  pub wallet_id: i32,
+  /// Cached balance (sum of non-expired lots).
+  pub balance: i64,
+  /// Sum of all ledger entry amounts (the authoritative running total).
+  pub ledger_sum: i64,
+  /// True when the cache and the ledger disagree (a consistency bug).
+  pub diverged: bool,
+}
+
+impl IntoResponse for WalletAudit {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
+  }
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditTxFilter {

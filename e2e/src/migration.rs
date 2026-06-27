@@ -17,6 +17,7 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::membership_usage::Migration),
       Box::new(entity::migration::membership_trial::Migration),
       Box::new(entity::migration::membership_dunning::Migration),
+      Box::new(entity::migration::membership_coupons::Migration),
     ]
   }
 }

@@ -813,4 +813,42 @@ impl<S: SumidaState> CreditService<S> {
     let items = query.into_model::<CreditTxItem>().all(db).await?;
     Ok((items, count))
   }
+
+  /// Consistency audit: compare the cached `balance` against the sum of the
+  /// append-only ledger. A divergence is a bug (logged at error level) — the
+  /// ledger is authoritative.
+  pub async fn audit(&self, wallet_id: i32) -> Result<WalletAudit, SumidaError> {
+    let db = self.state.db();
+    let Some(wallet) = CreditWallets::find_by_id(wallet_id).one(db).await? else {
+      return Err(SumidaError::NoData("CreditWallet".into(), wallet_id.to_string()));
+    };
+    self.authorize_use(&wallet.owner_kind, wallet.owner_id, db).await?;
+
+    #[derive(FromQueryResult)]
+    struct SumRow {
+      total: i64,
+    }
+    let backend = db.get_database_backend();
+    let ledger_sum = SumRow::find_by_statement(Statement::from_sql_and_values(
+      backend,
+      r#"SELECT COALESCE(SUM(amount), 0)::bigint AS total
+         FROM credit_transactions WHERE wallet_id = $1"#,
+      [wallet_id.into()],
+    ))
+    .one(db)
+    .await?
+    .map(|r| r.total)
+    .unwrap_or(0);
+
+    let diverged = ledger_sum != wallet.balance;
+    if diverged {
+      tracing::error!(
+        "credit wallet {} balance divergence: cache={} ledger={}",
+        wallet_id,
+        wallet.balance,
+        ledger_sum
+      );
+    }
+    Ok(WalletAudit { wallet_id, balance: wallet.balance, ledger_sum, diverged })
+  }
 }

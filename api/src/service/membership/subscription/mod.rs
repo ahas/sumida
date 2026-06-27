@@ -15,7 +15,7 @@ use sea_orm::{
 use serde_json::json;
 
 use self::dto::*;
-use super::{gen_code, notify, resolve_owner};
+use super::{gen_code, managed_org_ids, notify, resolve_owner};
 use crate::SumidaState;
 use crate::util::ap::{self, ApGuard};
 use crate::util::org::organization_ancestors_subquery;
@@ -43,13 +43,20 @@ impl<S: SumidaState> SubscriptionService<S> {
 
   // ---- authorization & scoping ----
 
-  /// Restrict a list/query to subscriptions the caller may see:
-  /// admin → all; otherwise own personal + own organization.
-  fn scope(&self, query: Select<Subscriptions>) -> Select<Subscriptions> {
+  /// Restrict a list/query to subscriptions the caller may see: admin → all;
+  /// otherwise own personal + own organization + every organization the caller
+  /// manages via an `org:subscription` read policy (including descendants).
+  async fn scope<C: ConnectionTrait>(
+    &self,
+    query: Select<Subscriptions>,
+    db: &C,
+  ) -> Result<Select<Subscriptions>, SumidaError> {
     if self.session.profile.is_admin {
-      return query;
+      return Ok(query);
     }
-    query.filter(
+    let mut org_ids = managed_org_ids(&self.session, "org:subscription", "read", db).await?;
+    org_ids.push(self.session.profile.organization.id);
+    Ok(query.filter(
       Condition::any()
         .add(
           Condition::all()
@@ -59,9 +66,9 @@ impl<S: SumidaState> SubscriptionService<S> {
         .add(
           Condition::all()
             .add(Column::OwnerKind.eq(OwnerKind::Organization))
-            .add(Column::OwnerId.eq(self.session.profile.organization.id)),
+            .add(Column::OwnerId.is_in(org_ids)),
         ),
-    )
+    ))
   }
 
   async fn authorize<C: ConnectionTrait>(
@@ -193,7 +200,8 @@ impl<S: SumidaState> SubscriptionService<S> {
   ) -> Result<(Vec<SubscriptionListItem>, u64), SumidaError> {
     let db = self.state.db();
     let mut query = self
-      .scope(Subscriptions::find())
+      .scope(Subscriptions::find(), db)
+      .await?
       .apply_if(filter.owner_kind.clone(), |q, v| q.filter(Column::OwnerKind.eq(v)))
       .apply_if(filter.owner_id, |q, v| q.filter(Column::OwnerId.eq(v)))
       .apply_if(filter.status.clone(), |q, v| q.filter(Column::Status.eq(v)))

@@ -1,3 +1,4 @@
+pub mod coupon;
 pub mod credit;
 pub mod entitlement;
 pub mod maintenance;
@@ -7,9 +8,11 @@ pub mod purchase;
 pub mod subscription;
 
 use entity::membership::OwnerKind;
+use entity::prelude::*;
+use error::SumidaError;
 use infra::session::UserSession;
 use infra::settings;
-use sea_orm::ConnectionTrait;
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, Statement};
 use serde::Serialize;
 
 use crate::SumidaState;
@@ -59,6 +62,68 @@ pub fn resolve_owner(
       (OwnerKind::Organization, owner_id.unwrap_or(session.profile.organization.id))
     }
   }
+}
+
+/// Organization ids the session may manage under `namespace`/`action`: every org
+/// the caller holds an allow policy on (matching `action` or `*`), plus all of
+/// their descendant organizations. Used to widen list visibility so a parent-org
+/// manager sees child-org rows (single-row access is already hierarchy-aware via
+/// the org-ancestors lateral join).
+pub async fn managed_org_ids<C: ConnectionTrait>(
+  session: &UserSession,
+  namespace: &str,
+  action: &str,
+  db: &C,
+) -> Result<Vec<i32>, SumidaError> {
+  // The identities the AP system expands `who(&session)` into.
+  let mut identities = vec![
+    format!("user:{}", session.profile.id),
+    format!("role:{}", session.profile.role.id),
+    format!("org:{}", session.profile.organization.id),
+  ];
+  if let Some(key) = &session.profile.api_key {
+    identities.push(format!("api:{key}"));
+  }
+  if session.profile.is_admin {
+    identities.push("user:admin".to_string());
+  }
+
+  let policies = AccessPolicies::find()
+    .filter(AccessPoliciesColumn::Namespace.eq(namespace))
+    .filter(AccessPoliciesColumn::Effect.eq("allow"))
+    .filter(AccessPoliciesColumn::User.is_in(identities))
+    .all(db)
+    .await?;
+
+  let mut seed: Vec<i32> = policies
+    .into_iter()
+    .filter(|p| p.action.iter().any(|a| a == action || a == "*"))
+    .filter_map(|p| p.object.parse::<i32>().ok())
+    .collect();
+  seed.sort_unstable();
+  seed.dedup();
+  if seed.is_empty() {
+    return Ok(vec![]);
+  }
+
+  // Expand seed orgs to all descendants (ints are safe to inline).
+  let list = seed.iter().map(i32::to_string).collect::<Vec<_>>().join(",");
+  #[derive(FromQueryResult)]
+  struct IdRow {
+    id: i32,
+  }
+  let sql = format!(
+    r#"WITH RECURSIVE _mng AS (
+         SELECT id FROM organizations WHERE id = ANY(ARRAY[{list}]::int[])
+         UNION
+         SELECT o.id FROM organizations o JOIN _mng m ON o.parent_id = m.id
+       )
+       SELECT id FROM _mng"#
+  );
+  let rows = IdRow::find_by_statement(Statement::from_string(db.get_database_backend(), sql))
+    .all(db)
+    .await?;
+  Ok(rows.into_iter().map(|r| r.id).collect())
 }
 
 /// Best-effort membership notification. Never fails the caller: it is skipped

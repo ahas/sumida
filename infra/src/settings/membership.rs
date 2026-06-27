@@ -39,6 +39,9 @@ pub struct MembershipSettings {
   /// 0 = no retries (the subscription simply expires at grace end).
   #[serde(default)]
   pub max_dunning_attempts: i32,
+  /// Sales tax applied at checkout, in basis points (e.g. 1000 = 10%). 0 = none.
+  #[serde(default)]
+  pub tax_percent_bp: i32,
   /// Payment-gateway (PG) configuration.
   #[serde(default)]
   pub payment: PaymentSettings,
@@ -102,6 +105,7 @@ impl Default for MembershipSettings {
       credit_low_balance_threshold: None,
       grace_days: 0,
       max_dunning_attempts: 0,
+      tax_percent_bp: 0,
       payment: PaymentSettings::default(),
     }
   }

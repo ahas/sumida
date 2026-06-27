@@ -62,6 +62,7 @@ where
     let entitlement_controller = EntitlementController::<StateT>::new();
     let purchase_controller = PurchaseController::<StateT>::new();
     let payment_controller = PaymentController::<StateT>::new();
+    let coupon_controller = CouponController::<StateT>::new();
 
     // Board System
     let board_group_controller = BoardGroupController::<StateT>::new();
@@ -98,6 +99,7 @@ where
       .nest("/entitlements", entitlement_controller.router(state))
       .nest("/membership-purchases", purchase_controller.router(state))
       .nest("/payments", payment_controller.router(state))
+      .nest("/coupons", coupon_controller.router(state))
       // File System
       .nest("/files", file_controller.router(state))
   }
