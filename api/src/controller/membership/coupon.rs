@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
@@ -32,6 +32,23 @@ impl<S: SumidaState> CouponController<S> {
   ) -> Result<CouponCreated, SumidaError> {
     CouponService::new(state, session).create(body).await
   }
+
+  async fn update(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+    Json(body): Json<UpdateCoupon>,
+  ) -> Result<CouponUpdated, SumidaError> {
+    CouponService::new(state, session).update(id, body).await
+  }
+
+  async fn delete(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+  ) -> Result<CouponDeleted, SumidaError> {
+    CouponService::new(state, session).delete(id).await
+  }
 }
 
 impl<S: SumidaState> ApiController<S> for CouponController<S> {
@@ -39,6 +56,7 @@ impl<S: SumidaState> ApiController<S> for CouponController<S> {
     // Admin-only management (the service also enforces is_admin).
     Router::new()
       .route("/", routing::get(Self::list).post(Self::create))
+      .route("/{id}", routing::patch(Self::update).delete(Self::delete))
       .route_layer(user_guard!(state))
   }
 }

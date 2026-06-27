@@ -326,6 +326,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       owner_id: Set(owner_id),
       status: Set(PurchaseStatus::Completed),
       amount: Set(charge_amount),
+      subtotal: Set(charge_amount),
       currency: Set(plan.currency.clone()),
       paid_at: Set(Some(now.into())),
       ..Default::default()
@@ -610,6 +611,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       owner_id: Set(sub.owner_id),
       status: Set(PurchaseStatus::Completed),
       amount: Set(proration_amount.max(0)),
+      subtotal: Set(proration_amount.max(0)),
       currency: Set(new_plan.currency.clone()),
       paid_at: Set(Some(now)),
       metadata: Set(Some(json!({

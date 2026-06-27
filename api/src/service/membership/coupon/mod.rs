@@ -70,6 +70,31 @@ impl<S: SumidaState> CouponService<S> {
     Ok((items, count))
   }
 
+  pub async fn update(&self, id: i32, data: UpdateCoupon) -> Result<CouponUpdated, SumidaError> {
+    self.require_admin()?;
+    let mut am = CouponsActiveModel { id: Unchanged(id), ..Default::default() };
+    if let Some(v) = data.is_active {
+      am.is_active = Set(v);
+    }
+    if let Some(v) = data.max_redemptions {
+      am.max_redemptions = Set(Some(v));
+    }
+    if let Some(v) = data.expires_at {
+      am.expires_at = Set(Some(v));
+    }
+    Coupons::update(am)
+      .exec(self.state.db())
+      .await
+      .map_err(|_| SumidaError::NoData("Coupon".into(), id.to_string()))?;
+    Ok(CouponUpdated)
+  }
+
+  pub async fn delete(&self, id: i32) -> Result<CouponDeleted, SumidaError> {
+    self.require_admin()?;
+    Coupons::delete_by_id(id).exec(self.state.db()).await?;
+    Ok(CouponDeleted)
+  }
+
   /// Validate a coupon and atomically redeem one use, returning the discount (in
   /// minor units, clamped to `subtotal`) and the coupon code. Runs in the caller's
   /// checkout transaction. All failures are `BadRequest`.

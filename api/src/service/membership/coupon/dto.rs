@@ -56,3 +56,34 @@ impl IntoResponse for CouponCreated {
     (StatusCode::CREATED, Json(self)).into_response()
   }
 }
+
+/// Partial update; only present fields are changed. Use `is_active=false` to retire
+/// a coupon without deleting it.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCoupon {
+  #[serde(default)]
+  pub is_active: Option<bool>,
+  #[serde(default)]
+  pub max_redemptions: Option<i32>,
+  #[serde(default)]
+  pub expires_at: Option<DateTimeWithTimeZone>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CouponUpdated;
+
+impl IntoResponse for CouponUpdated {
+  fn into_response(self) -> axum::response::Response {
+    Json(serde_json::json!({})).into_response()
+  }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CouponDeleted;
+
+impl IntoResponse for CouponDeleted {
+  fn into_response(self) -> axum::response::Response {
+    Json(serde_json::json!({})).into_response()
+  }
+}

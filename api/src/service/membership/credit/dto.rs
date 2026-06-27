@@ -160,6 +160,26 @@ impl IntoResponse for ReservationResult {
   }
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReservationFilter {
+  pub wallet_id: Option<i32>,
+  pub status: Option<entity::membership::ReservationStatus>,
+}
+
+#[derive(Clone, Debug, Serialize, FromQueryResult)]
+#[serde(rename_all = "camelCase")]
+pub struct ReservationListItem {
+  pub id: i32,
+  pub wallet_id: i32,
+  pub amount: i64,
+  pub status: entity::membership::ReservationStatus,
+  pub action: Option<String>,
+  pub reference_code: Option<String>,
+  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub created_at: DateTimeWithTimeZone,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WalletAudit {

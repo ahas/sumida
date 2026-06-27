@@ -228,6 +228,42 @@ async fn test_reserve_idempotent() {
 }
 
 // ---------------------------------------------------------------------------
+// Reservations are listable (owner-scoped), filterable by status.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_reservation_list() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let (_user, action, wallet_id, m) = setup_wallet(&db, 100, 10).await;
+
+  let res: Value =
+    m.client.post("/credits/reserve").json(&json!({ "action": &action })).send().await.unwrap().json().await.unwrap();
+  let reservation_id = res["reservationId"].as_i64().unwrap();
+
+  // Held reservations show up for the owner.
+  let held: Value = m
+    .client
+    .get(&format!("/credits/reservations?walletId={wallet_id}&status=held"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  assert!(held["count"].as_u64().unwrap() >= 1);
+  assert!(
+    held["items"].as_array().unwrap().iter().any(|i| i["id"].as_i64() == Some(reservation_id)),
+    "the held reservation is listed"
+  );
+
+  // An outsider cannot read the wallet's reservations.
+  let other = Mock::new().await;
+  TestUser::create(&db).await.unwrap().login(&other.client).await;
+  let r = other.client.get(&format!("/credits/reservations?walletId={wallet_id}")).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::FORBIDDEN, "cross-owner reservation read is forbidden");
+}
+
+// ---------------------------------------------------------------------------
 // The maintenance job auto-releases reservations past their expiry.
 // ---------------------------------------------------------------------------
 #[tokio::test]

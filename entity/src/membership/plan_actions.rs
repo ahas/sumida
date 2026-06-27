@@ -3,10 +3,9 @@ use serde::{Deserialize, Serialize};
 
 /// Per-plan action configuration:
 ///
-/// - subscription plan: a row means the action is allowed (`credit_cost` null).
+/// - subscription plan: a row means the action is allowed (`credit_cost` null);
+///   `quota_per_period` optionally caps uses per billing period (null = unlimited).
 /// - credit plan: `credit_cost` = number of credit units consumed per action.
-///
-/// `quota_per_period` is reserved for metered subscription entitlements (unused in V1).
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "plan_actions")]
 pub struct Model {

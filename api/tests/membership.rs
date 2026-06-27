@@ -900,4 +900,8 @@ async fn test_membership_purchase_tracked() {
   assert_eq!(item["status"].as_str().unwrap(), "completed");
   assert_eq!(item["planCode"].as_str().unwrap(), code);
   assert!(item["code"].as_str().is_some(), "purchase has a tracking code");
+  // Non-PG subscribe records a coherent breakdown (subtotal == amount, no discount/tax).
+  assert_eq!(item["subtotal"].as_i64().unwrap(), item["amount"].as_i64().unwrap());
+  assert_eq!(item["discountAmount"].as_i64().unwrap(), 0);
+  assert_eq!(item["taxAmount"].as_i64().unwrap(), 0);
 }

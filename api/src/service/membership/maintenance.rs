@@ -278,6 +278,7 @@ pub async fn retry_dunning_subscriptions(db: &DatabaseConnection) -> Result<(usi
         owner_id: Set(row.owner_id),
         status: Set(PurchaseStatus::Completed),
         amount: Set(plan.price),
+        subtotal: Set(plan.price),
         currency: Set(plan.currency.clone()),
         provider: Set(provider.name().to_string()),
         provider_payment_id: Set(txn_id),

@@ -59,6 +59,15 @@ impl<S: SumidaState> CreditController<S> {
     Ok(CreditService::new(state, session).transactions(filter, pagination).await?.into())
   }
 
+  async fn reservations(
+    session: UserSession,
+    State(state): State<S>,
+    Query(filter): Query<ReservationFilter>,
+    Query(pagination): Query<Pagination>,
+  ) -> Result<List<ReservationListItem>, SumidaError> {
+    Ok(CreditService::new(state, session).reservations(filter, pagination).await?.into())
+  }
+
   async fn reserve(
     session: UserSession,
     State(state): State<S>,
@@ -102,6 +111,7 @@ impl<S: SumidaState> ApiController<S> for CreditController<S> {
       .route("/consume", routing::post(Self::consume))
       .route("/refund", routing::post(Self::refund))
       .route("/reserve", routing::post(Self::reserve))
+      .route("/reservations", routing::get(Self::reservations))
       .route("/reservations/{id}/capture", routing::post(Self::capture))
       .route("/reservations/{id}/release", routing::post(Self::release))
       .route("/wallets/{id}/audit", routing::get(Self::audit))

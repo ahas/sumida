@@ -814,6 +814,34 @@ impl<S: SumidaState> CreditService<S> {
     Ok((items, count))
   }
 
+  /// List a wallet's reservations (owner-scoped, like the ledger).
+  pub async fn reservations(
+    &self,
+    filter: ReservationFilter,
+    pagination: Pagination,
+  ) -> Result<(Vec<ReservationListItem>, u64), SumidaError> {
+    let db = self.state.db();
+    let Some(wallet_id) = filter.wallet_id else {
+      return Err(SumidaError::BadRequest("walletId is required".into()));
+    };
+    let Some(wallet) = CreditWallets::find_by_id(wallet_id).one(db).await? else {
+      return Ok((vec![], 0));
+    };
+    self.authorize_use(&wallet.owner_kind, wallet.owner_id, db).await?;
+
+    let mut query = CreditReservations::find()
+      .filter(CreditReservationsColumn::WalletId.eq(wallet_id))
+      .apply_if(filter.status.clone(), |q, v| q.filter(CreditReservationsColumn::Status.eq(v)));
+    let count = query.clone().select_only().column(CreditReservationsColumn::Id).count(db).await?;
+    query = pagination.order_by(query, |col| match col {
+      "createdAt" => CreditReservationsColumn::CreatedAt,
+      _ => CreditReservationsColumn::Id,
+    });
+    query = pagination.paginate(query);
+    let items = query.into_model::<ReservationListItem>().all(db).await?;
+    Ok((items, count))
+  }
+
   /// Consistency audit: compare the cached `balance` against the sum of the
   /// append-only ledger. A divergence is a bug (logged at error level) — the
   /// ledger is authoritative.

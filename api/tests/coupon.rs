@@ -140,6 +140,38 @@ async fn test_coupon_redemption_cap() {
 }
 
 // ---------------------------------------------------------------------------
+// A deactivated coupon is rejected at checkout; delete removes it.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_update_and_delete() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("UPD-{}", rnd());
+  let created = create_coupon(&am.client, json!({ "code": code, "percentOff": 10 })).await;
+  let id = created["id"].as_i64().unwrap();
+
+  // Deactivate → checkout rejects it.
+  let r = am.client.patch(&format!("/coupons/{id}")).json(&json!({ "isActive": false })).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::OK);
+
+  let m = user_mock(&db).await;
+  let co = m
+    .client
+    .post("/payments/checkout")
+    .json(&json!({ "kind": "subscription", "planCode": plan, "couponCode": code }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(co.status(), StatusCode::BAD_REQUEST, "inactive coupon rejected");
+
+  // Delete → gone.
+  let r = am.client.delete(&format!("/coupons/{id}")).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
 // Coupon management is admin-only.
 // ---------------------------------------------------------------------------
 #[tokio::test]
