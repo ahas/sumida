@@ -25,6 +25,9 @@ pub struct Model {
   pub max_redemptions_per_owner: Option<i32>,
   #[sea_orm(default_value = 0)]
   pub redeemed_count: i32,
+  /// When true, only owners the coupon was granted to may redeem it.
+  #[sea_orm(default_value = false)]
+  pub requires_grant: bool,
   #[sea_orm(nullable)]
   pub expires_at: Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = true)]

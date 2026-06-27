@@ -203,6 +203,120 @@ async fn test_coupon_per_owner_limit() {
 }
 
 // ---------------------------------------------------------------------------
+// The per-owner cap can be set via PATCH (not only at creation).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_update_sets_per_owner_cap() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("UPO-{}", rnd());
+  let created = create_coupon(&am.client, json!({ "code": code, "percentOff": 10 })).await;
+  let id = created["id"].as_i64().unwrap();
+
+  // Tighten to once-per-owner via update.
+  let r = am
+    .client
+    .patch(&format!("/coupons/{id}"))
+    .json(&json!({ "maxRedemptionsPerOwner": 1 }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(r.status(), StatusCode::OK);
+
+  let m = user_mock(&db).await;
+  let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
+  assert_eq!(m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::BAD_REQUEST,
+    "update applied the per-owner cap"
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A grant-gated coupon is redeemable only by owners it was issued to.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_requires_grant_targeting() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("EXC-{}", rnd());
+  let created = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await;
+  let coupon_id = created["id"].as_i64().unwrap();
+  let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
+
+  // User A: not granted → rejected.
+  let user_a = TestUser::create(&db).await.unwrap();
+  let ma = Mock::new().await;
+  user_a.login(&ma.client).await;
+  assert_eq!(
+    ma.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::BAD_REQUEST,
+    "ungranted owner cannot redeem a grant-gated coupon"
+  );
+
+  // Admin issues it to A → A can now redeem.
+  let g = am
+    .client
+    .post(&format!("/coupons/{coupon_id}/grant"))
+    .json(&json!({ "ownerKind": "personal", "ownerId": user_a.model.id }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(g.status(), StatusCode::CREATED);
+  assert_eq!(ma.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+
+  // User B: still not granted → rejected.
+  let mb = user_mock(&db).await;
+  assert_eq!(
+    mb.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::BAD_REQUEST,
+    "the grant is per owner"
+  );
+}
+
+// ---------------------------------------------------------------------------
+// "My coupons" lists coupons issued to the caller.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_my_coupons() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let code = format!("MINE-{}", rnd());
+  let created = create_coupon(&am.client, json!({ "code": code, "percentOff": 15 })).await;
+  let coupon_id = created["id"].as_i64().unwrap();
+
+  let user = TestUser::create(&db).await.unwrap();
+  let m = Mock::new().await;
+  user.login(&m.client).await;
+
+  // Before issuance: not in the user's list.
+  let before: Value = m.client.get("/coupons/mine").send().await.unwrap().json().await.unwrap();
+  let has = |v: &Value| v["items"].as_array().unwrap().iter().any(|i| i["code"].as_str() == Some(code.as_str()));
+  assert!(!has(&before), "coupon not yet issued to the user");
+
+  // Issue, then it appears.
+  am.client
+    .post(&format!("/coupons/{coupon_id}/grant"))
+    .json(&json!({ "ownerKind": "personal", "ownerId": user.model.id }))
+    .send()
+    .await
+    .unwrap();
+  let after: Value = m.client.get("/coupons/mine").send().await.unwrap().json().await.unwrap();
+  assert!(has(&after), "issued coupon shows in the user's coupons");
+
+  // Another user does not see it.
+  let other = user_mock(&db).await;
+  let other_list: Value = other.client.get("/coupons/mine").send().await.unwrap().json().await.unwrap();
+  assert!(!has(&other_list), "a different user does not see the coupon");
+}
+
+// ---------------------------------------------------------------------------
 // Coupon management is admin-only.
 // ---------------------------------------------------------------------------
 #[tokio::test]

@@ -79,6 +79,10 @@ pub use super::users::{
   Relation as UsersRelation,
 };
 // Membership / Billing System
+pub use super::membership::coupon_grants::{
+  ActiveModel as CouponGrantsActiveModel, Column as CouponGrantsColumn, Entity as CouponGrants,
+  Model as CouponGrantsModel, Relation as CouponGrantsRelation,
+};
 pub use super::membership::coupons::{
   ActiveModel as CouponsActiveModel, Column as CouponsColumn, Entity as Coupons, Model as CouponsModel,
   Relation as CouponsRelation,

@@ -1,9 +1,14 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use entity::membership::OwnerKind;
 use sea_orm::FromQueryResult;
 use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
+
+fn default_owner_kind() -> OwnerKind {
+  OwnerKind::Personal
+}
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +33,9 @@ pub struct CreateCoupon {
   /// Per-owner cap (e.g. 1 = once per customer).
   #[serde(default)]
   pub max_redemptions_per_owner: Option<i32>,
+  /// When true, only owners the coupon is granted to may redeem it.
+  #[serde(default)]
+  pub requires_grant: bool,
   #[serde(default)]
   pub expires_at: Option<DateTimeWithTimeZone>,
 }
@@ -43,9 +51,40 @@ pub struct CouponItem {
   pub max_redemptions: Option<i32>,
   pub max_redemptions_per_owner: Option<i32>,
   pub redeemed_count: i32,
+  pub requires_grant: bool,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub is_active: bool,
   pub created_at: DateTimeWithTimeZone,
+}
+
+/// Issue a coupon to a specific owner.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantCoupon {
+  #[serde(default = "default_owner_kind")]
+  pub owner_kind: OwnerKind,
+  pub owner_id: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CouponGranted;
+
+impl IntoResponse for CouponGranted {
+  fn into_response(self) -> axum::response::Response {
+    (StatusCode::CREATED, Json(serde_json::json!({}))).into_response()
+  }
+}
+
+/// A coupon available to the calling owner ("my coupons").
+#[derive(Clone, Debug, Serialize, FromQueryResult)]
+#[serde(rename_all = "camelCase")]
+pub struct MyCouponItem {
+  pub id: i32,
+  pub code: String,
+  pub percent_off: Option<i32>,
+  pub amount_off: Option<i64>,
+  pub currency: Option<String>,
+  pub expires_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -70,6 +109,10 @@ pub struct UpdateCoupon {
   pub is_active: Option<bool>,
   #[serde(default)]
   pub max_redemptions: Option<i32>,
+  #[serde(default)]
+  pub max_redemptions_per_owner: Option<i32>,
+  #[serde(default)]
+  pub requires_grant: Option<bool>,
   #[serde(default)]
   pub expires_at: Option<DateTimeWithTimeZone>,
 }

@@ -19,6 +19,7 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::membership_dunning::Migration),
       Box::new(sumida::entity::migration::membership_coupons::Migration),
       Box::new(sumida::entity::migration::membership_coupon_per_owner::Migration),
+      Box::new(sumida::entity::migration::membership_coupon_grants::Migration),
     ]
   }
 }

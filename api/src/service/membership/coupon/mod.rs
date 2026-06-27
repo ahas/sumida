@@ -8,8 +8,8 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter, QuerySelect,
-  QueryTrait, Statement,
+  ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter,
+  QuerySelect, QueryTrait, Statement,
 };
 
 use self::dto::*;
@@ -46,6 +46,7 @@ impl<S: SumidaState> CouponService<S> {
       currency: Set(data.currency),
       max_redemptions: Set(data.max_redemptions),
       max_redemptions_per_owner: Set(data.max_redemptions_per_owner),
+      requires_grant: Set(data.requires_grant),
       expires_at: Set(data.expires_at),
       ..Default::default()
     })
@@ -82,6 +83,12 @@ impl<S: SumidaState> CouponService<S> {
     if let Some(v) = data.max_redemptions {
       am.max_redemptions = Set(Some(v));
     }
+    if let Some(v) = data.max_redemptions_per_owner {
+      am.max_redemptions_per_owner = Set(Some(v));
+    }
+    if let Some(v) = data.requires_grant {
+      am.requires_grant = Set(v);
+    }
     if let Some(v) = data.expires_at {
       am.expires_at = Set(Some(v));
     }
@@ -96,6 +103,70 @@ impl<S: SumidaState> CouponService<S> {
     self.require_admin()?;
     Coupons::delete_by_id(id).exec(self.state.db()).await?;
     Ok(CouponDeleted)
+  }
+
+  /// Issue a coupon to a specific owner ("distribute"). Idempotent per owner. With
+  /// the coupon's `requires_grant` set this also makes the coupon redeemable by
+  /// that owner; either way the owner sees it in their "my coupons" list.
+  pub async fn grant_to(&self, coupon_id: i32, data: GrantCoupon) -> Result<CouponGranted, SumidaError> {
+    self.require_admin()?;
+    let db = self.state.db();
+    if Coupons::find_by_id(coupon_id).one(db).await?.is_none() {
+      return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
+    }
+    db.execute(Statement::from_sql_and_values(
+      db.get_database_backend(),
+      r#"INSERT INTO coupon_grants (coupon_id, owner_kind, owner_id) VALUES ($1, $2, $3)
+         ON CONFLICT (coupon_id, owner_kind, owner_id) DO NOTHING"#,
+      [coupon_id.into(), owner_kind_str(&data.owner_kind).into(), data.owner_id.into()],
+    ))
+    .await?;
+    Ok(CouponGranted)
+  }
+
+  /// Coupons issued to the caller (their personal self or their organization) that
+  /// are still active and unexpired.
+  pub async fn my_coupons(
+    &self,
+    pagination: Pagination,
+  ) -> Result<(Vec<MyCouponItem>, u64), SumidaError> {
+    let db = self.state.db();
+    let grants = CouponGrants::find()
+      .filter(
+        Condition::any()
+          .add(
+            Condition::all()
+              .add(CouponGrantsColumn::OwnerKind.eq(OwnerKind::Personal))
+              .add(CouponGrantsColumn::OwnerId.eq(self.session.profile.id)),
+          )
+          .add(
+            Condition::all()
+              .add(CouponGrantsColumn::OwnerKind.eq(OwnerKind::Organization))
+              .add(CouponGrantsColumn::OwnerId.eq(self.session.profile.organization.id)),
+          ),
+      )
+      .all(db)
+      .await?;
+    let mut ids: Vec<i32> = grants.into_iter().map(|g| g.coupon_id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.is_empty() {
+      return Ok((vec![], 0));
+    }
+
+    let now: DateTimeWithTimeZone = Utc::now().into();
+    let mut query = Coupons::find()
+      .filter(CouponsColumn::Id.is_in(ids))
+      .filter(CouponsColumn::IsActive.eq(true))
+      .filter(Condition::any().add(CouponsColumn::ExpiresAt.is_null()).add(CouponsColumn::ExpiresAt.gt(now)));
+    let count = query.clone().select_only().column(CouponsColumn::Id).count(db).await?;
+    query = pagination.order_by(query, |col| match col {
+      "code" => CouponsColumn::Code,
+      _ => CouponsColumn::Id,
+    });
+    query = pagination.paginate(query);
+    let items = query.into_model::<MyCouponItem>().all(db).await?;
+    Ok((items, count))
   }
 
   /// Validate a coupon and atomically redeem one use, returning the discount (in
@@ -122,6 +193,19 @@ impl<S: SumidaState> CouponService<S> {
       let now: DateTimeWithTimeZone = Utc::now().into();
       if exp <= now {
         return Err(SumidaError::BadRequest("coupon has expired".into()));
+      }
+    }
+
+    // Grant-gated coupons are redeemable only by owners they were issued to.
+    if coupon.requires_grant {
+      let granted = CouponGrants::find()
+        .filter(CouponGrantsColumn::CouponId.eq(coupon.id))
+        .filter(CouponGrantsColumn::OwnerKind.eq(owner_kind.clone()))
+        .filter(CouponGrantsColumn::OwnerId.eq(owner_id))
+        .one(txn)
+        .await?;
+      if granted.is_none() {
+        return Err(SumidaError::BadRequest("coupon is not available to this owner".into()));
       }
     }
 

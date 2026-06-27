@@ -140,6 +140,9 @@ What this domain can and cannot do today.
 - **Coupons & tax**: percent / fixed-amount coupons (currency-matched), global +
   **per-owner** redemption caps, expiry, activate/retire/delete; flat checkout tax;
   full price breakdown recorded.
+- **Coupon distribution**: issue a coupon to specific owners (`POST
+  /coupons/{id}/grant`); `requires_grant` makes it redeemable **only** by granted
+  owners (exclusive coupon); recipients see theirs via `GET /coupons/mine`.
 - **Organizations**: org-admin (ReBAC) management of org subscriptions/credits with
   automatic parent→child hierarchy (single-row *and* lists); org notices reach the
   org's managers.
@@ -158,7 +161,7 @@ What this domain can and cannot do today.
 - **Reserve/capture tied to an external PG authorize-capture** — credit holds are
   internal-ledger only.
 - **Coupons on the free `POST /subscriptions` path** — applied at PG checkout only;
-  no coupon stacking; not scoped to specific plans.
+  no coupon stacking; not scoped to specific plans (only to owners, via grants).
 - **Tax tables** — a single flat basis-point rate (no per-region/exemptions/tax id).
 
 See `TASKS.md` ("멤버십 후속") for the deferred items and rationale.
