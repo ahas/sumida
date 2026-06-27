@@ -84,6 +84,6 @@
 - 비동기 결제(가상계좌 등)와 묶을 때 연동 검토
 
 ### 소소한 항목
-- 조직 owner 알림 채널 없음(만료임박/저잔액 메일은 personal만) — org 연락처 모델 필요 시
+- ~~조직 owner 알림 채널~~ — 완료: org 관리자(org:subscription/org:credit manage 정책 보유자) 이메일로 발송
+- ~~스케줄러 다중 인스턴스 advisory lock~~ — 완료: `run_once`가 Postgres advisory lock으로 단일 러너 보장
 - 쿠폰은 PG checkout 경로에만 적용(무료 subscribe 경로 제외) — 의도된 분리, 필요 시 확장
-- 스케줄러 다중 인스턴스 운영 시 advisory lock/리더 선출(현재 단일 러너 가정, `docs/membership.md` 참고)
