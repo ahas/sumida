@@ -6,6 +6,7 @@ mod dashboard;
 mod entitlement_layer;
 mod maintenance;
 mod membership;
+mod membership_scenarios;
 mod organization;
 mod payment;
 mod quota;
