@@ -13,12 +13,15 @@ use std::time::Duration as StdDuration;
 
 use chrono::{Duration, Utc};
 use entity::membership::subscriptions::Column as SubColumn;
-use entity::membership::{OwnerKind, PlanKind, PurchaseStatus, SubscriptionEventKind, SubscriptionStatus};
+use entity::membership::{
+  OwnerKind, PlanKind, PurchaseStatus, ReservationStatus, SubscriptionEventKind, SubscriptionStatus,
+};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::{payment, settings};
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
   ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
@@ -37,6 +40,7 @@ pub struct MaintenanceReport {
   pub subscriptions_renewed: usize,
   pub subscriptions_renew_failed: usize,
   pub subscriptions_expired: usize,
+  pub reservations_released: usize,
   pub wallets_swept: usize,
   pub expiring_notices: usize,
   pub low_balance_notices: usize,
@@ -259,6 +263,21 @@ pub async fn expire_due_subscriptions(db: &DatabaseConnection) -> Result<usize, 
   Ok(total)
 }
 
+/// Release credit reservations whose `expires_at` has passed (stale holds, e.g.
+/// from a crashed async job). A bulk status flip frees their spendable amount;
+/// lots are untouched. Returns the number released.
+pub async fn release_expired_reservations(db: &DatabaseConnection) -> Result<usize, SumidaError> {
+  let now: DateTimeWithTimeZone = Utc::now().into();
+  let res = CreditReservations::update_many()
+    .col_expr(CreditReservationsColumn::Status, Expr::value("released"))
+    .filter(CreditReservationsColumn::Status.eq(ReservationStatus::Held))
+    .filter(CreditReservationsColumn::ExpiresAt.is_not_null())
+    .filter(CreditReservationsColumn::ExpiresAt.lte(now))
+    .exec(db)
+    .await?;
+  Ok(res.rows_affected as usize)
+}
+
 /// Expire lapsed credit lots across all wallets that have any: zero the lots,
 /// write `expire` ledger rows, and correct the cached balance. Wallets are only
 /// otherwise swept when touched, so inactive wallets need this.
@@ -394,6 +413,10 @@ pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceRep
     Ok(n) => report.subscriptions_expired = n,
     Err(e) => tracing::warn!("membership maintenance: expire subscriptions failed: {e}"),
   }
+  match release_expired_reservations(db).await {
+    Ok(n) => report.reservations_released = n,
+    Err(e) => tracing::warn!("membership maintenance: release reservations failed: {e}"),
+  }
   match sweep_expired_lots::<S>(db).await {
     Ok(n) => report.wallets_swept = n,
     Err(e) => tracing::warn!("membership maintenance: sweep expired lots failed: {e}"),
@@ -422,10 +445,11 @@ pub fn spawn<S: SumidaState>(state: S, interval: StdDuration) -> tokio::task::Jo
       ticker.tick().await;
       let report = run_once::<S>(state.db()).await;
       tracing::debug!(
-        "membership maintenance: {} renewed, {} renew-failed, {} expired, {} wallets swept, {} expiring notices, {} low-balance notices",
+        "membership maintenance: {} renewed, {} renew-failed, {} expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices",
         report.subscriptions_renewed,
         report.subscriptions_renew_failed,
         report.subscriptions_expired,
+        report.reservations_released,
         report.wallets_swept,
         report.expiring_notices,
         report.low_balance_notices,

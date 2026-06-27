@@ -81,7 +81,12 @@ pub struct WalletBalance {
   pub owner_kind: OwnerKind,
   pub owner_id: i32,
   pub currency: String,
+  /// Cached sum of non-expired lots.
   pub balance: i64,
+  /// Credits currently on hold by reservations.
+  pub reserved: i64,
+  /// Immediately spendable = `balance - reserved`.
+  pub spendable: i64,
 }
 
 impl IntoResponse for WalletBalance {
@@ -113,6 +118,43 @@ pub struct ConsumeResult {
 }
 
 impl IntoResponse for ConsumeResult {
+  fn into_response(self) -> axum::response::Response {
+    Json(self).into_response()
+  }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReserveCredit {
+  /// Action whose per-credit cost determines the hold amount.
+  pub action: String,
+  #[serde(default)]
+  pub plan_code: Option<String>,
+  #[serde(default = "default_owner_kind")]
+  pub owner_kind: OwnerKind,
+  #[serde(default)]
+  pub owner_id: Option<i32>,
+  #[serde(default)]
+  pub reference_code: Option<String>,
+  #[serde(default)]
+  pub idempotency_key: Option<String>,
+  /// Auto-release the hold after this many seconds if not captured/released.
+  #[serde(default)]
+  pub expires_in_secs: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReservationResult {
+  pub reservation_id: i32,
+  pub wallet_id: i32,
+  pub amount: i64,
+  pub status: entity::membership::ReservationStatus,
+  /// Spendable = cached balance minus all current holds.
+  pub spendable: i64,
+}
+
+impl IntoResponse for ReservationResult {
   fn into_response(self) -> axum::response::Response {
     Json(self).into_response()
   }

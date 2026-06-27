@@ -1,4 +1,5 @@
 pub mod credit_grants;
+pub mod credit_reservations;
 pub mod credit_transactions;
 pub mod credit_wallets;
 pub mod membership_plans;
@@ -89,4 +90,20 @@ pub enum CreditTxKind {
   Refund,
   Expire,
   Adjust,
+  /// A soft hold placed by `reserve` (no balance change; amount 0).
+  Reserve,
+  /// A reservation confirmed into a real spend (debits lots; amount negative).
+  Capture,
+  /// A reservation cancelled without spending (no balance change; amount 0).
+  Release,
+}
+
+/// Lifecycle of a credit reservation (authorize → capture/release).
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub enum ReservationStatus {
+  Held,
+  Captured,
+  Released,
 }

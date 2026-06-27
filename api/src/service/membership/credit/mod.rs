@@ -1,7 +1,7 @@
 pub mod dto;
 
-use chrono::Utc;
-use entity::membership::{CreditTxKind, OwnerKind};
+use chrono::{Duration, Utc};
+use entity::membership::{CreditTxKind, OwnerKind, ReservationStatus};
 use entity::prelude::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use error::SumidaError;
@@ -114,6 +114,24 @@ impl<S: SumidaState> CreditService<S> {
         .one(db)
         .await?,
     )
+  }
+
+  /// Sum of credits currently on hold (reservations in `held` status) for a wallet.
+  async fn held_reserved<C: ConnectionTrait>(wallet_id: i32, txn: &C) -> Result<i64, SumidaError> {
+    #[derive(FromQueryResult)]
+    struct SumRow {
+      total: i64,
+    }
+    let backend = txn.get_database_backend();
+    let row = SumRow::find_by_statement(Statement::from_sql_and_values(
+      backend,
+      r#"SELECT COALESCE(SUM(amount), 0)::bigint AS total
+         FROM credit_reservations WHERE wallet_id = $1 AND status = 'held'"#,
+      [wallet_id.into()],
+    ))
+    .one(txn)
+    .await?;
+    Ok(row.map(|r| r.total).unwrap_or(0))
   }
 
   /// Idempotent wallet creation: INSERT … ON CONFLICT DO UPDATE … RETURNING id.
@@ -315,9 +333,13 @@ impl<S: SumidaState> CreditService<S> {
       .all(txn)
       .await?;
 
+    // Spendable excludes credits currently on hold by reservations. A capture
+    // marks its own reservation captured before debiting, so it is not counted.
     let available: i64 = lots.iter().map(|l| l.amount_remaining).sum();
-    if available < amount {
-      return Err(SumidaError::InsufficientCredits { required: amount, available });
+    let reserved = Self::held_reserved(wallet.id, txn).await?;
+    let spendable = available - reserved;
+    if spendable < amount {
+      return Err(SumidaError::InsufficientCredits { required: amount, available: spendable.max(0) });
     }
 
     let mut remaining = amount;
@@ -500,12 +522,15 @@ impl<S: SumidaState> CreditService<S> {
           .await?
           .ok_or_else(|| SumidaError::InternalServerError("wallet vanished".into()))?;
         let balance = Self::sweep_expired(wallet.id, wallet.balance, &txn).await?;
+        let reserved = Self::held_reserved(wallet.id, &txn).await?;
         WalletBalance {
           wallet_id: wallet.id,
           owner_kind: wallet.owner_kind,
           owner_id: wallet.owner_id,
           currency: wallet.currency,
           balance,
+          reserved,
+          spendable: balance - reserved,
         }
       }
       None => WalletBalance {
@@ -514,6 +539,8 @@ impl<S: SumidaState> CreditService<S> {
         owner_id,
         currency: settings::get().membership.default_currency.clone(),
         balance: 0,
+        reserved: 0,
+        spendable: 0,
       },
     };
     txn.commit().await?;
@@ -568,6 +595,155 @@ impl<S: SumidaState> CreditService<S> {
     txn.commit().await?;
 
     Ok(ConsumeResult { wallet_id: out.wallet_id, consumed: out.consumed, balance: out.balance })
+  }
+
+  // ---- reservations (authorize → capture / release) ----
+
+  /// Place a soft hold for `action`'s cost without spending lots. Reduces
+  /// spendable balance until captured/released. Idempotent per (wallet, key).
+  pub async fn reserve(&self, data: ReserveCredit) -> Result<ReservationResult, SumidaError> {
+    let (owner_kind, owner_id) = resolve_owner(&self.session, &data.owner_kind, data.owner_id);
+    let txn = self.state.db().begin().await?;
+    self.authorize_use(&owner_kind, owner_id, &txn).await?;
+
+    let Some(wallet0) = Self::find_wallet(&owner_kind, owner_id, &txn).await? else {
+      return Err(SumidaError::InsufficientCredits { required: 0, available: 0 });
+    };
+    let wallet = CreditWallets::find_by_id(wallet0.id)
+      .lock_exclusive()
+      .one(&txn)
+      .await?
+      .ok_or(SumidaError::InsufficientCredits { required: 0, available: 0 })?;
+    let balance = Self::sweep_expired(wallet.id, wallet.balance, &txn).await?;
+
+    // Idempotency: same key on this wallet → return the existing reservation.
+    if let Some(key) = &data.idempotency_key {
+      if let Some(prev) = CreditReservations::find()
+        .filter(CreditReservationsColumn::WalletId.eq(wallet.id))
+        .filter(CreditReservationsColumn::IdempotencyKey.eq(key.clone()))
+        .one(&txn)
+        .await?
+      {
+        let reserved = Self::held_reserved(wallet.id, &txn).await?;
+        txn.commit().await?;
+        return Ok(ReservationResult {
+          reservation_id: prev.id,
+          wallet_id: wallet.id,
+          amount: prev.amount,
+          status: prev.status,
+          spendable: balance - reserved,
+        });
+      }
+    }
+
+    let cost = Self::resolve_cost(&data.action, data.plan_code.as_deref(), &txn)
+      .await?
+      .ok_or_else(|| SumidaError::MembershipActionNotAllowed(data.action.clone()))?;
+
+    let reserved = Self::held_reserved(wallet.id, &txn).await?;
+    let spendable = balance - reserved;
+    if spendable < cost {
+      return Err(SumidaError::InsufficientCredits { required: cost, available: spendable.max(0) });
+    }
+
+    let expires_at = data.expires_in_secs.map(|s| (Utc::now() + Duration::seconds(s)).into());
+    let res = CreditReservations::insert(CreditReservationsActiveModel {
+      wallet_id: Set(wallet.id),
+      amount: Set(cost),
+      status: Set(ReservationStatus::Held),
+      action: Set(Some(data.action.clone())),
+      reference_code: Set(data.reference_code.clone()),
+      idempotency_key: Set(data.idempotency_key.clone()),
+      expires_at: Set(expires_at),
+      ..Default::default()
+    })
+    .exec_with_returning(&txn)
+    .await?;
+
+    txn.commit().await?;
+    Ok(ReservationResult {
+      reservation_id: res.id,
+      wallet_id: wallet.id,
+      amount: cost,
+      status: ReservationStatus::Held,
+      spendable: spendable - cost,
+    })
+  }
+
+  /// Confirm a held reservation into a real spend: debit the lots and mark it
+  /// `captured`. No-op-safe — a non-held reservation is rejected.
+  pub async fn capture(&self, reservation_id: i32) -> Result<ConsumeResult, SumidaError> {
+    let txn = self.state.db().begin().await?;
+    let Some(res) = CreditReservations::find_by_id(reservation_id).one(&txn).await? else {
+      return Err(SumidaError::NoData("CreditReservation".into(), reservation_id.to_string()));
+    };
+    let Some(wallet) = CreditWallets::find_by_id(res.wallet_id).one(&txn).await? else {
+      return Err(SumidaError::NoData("CreditWallet".into(), res.wallet_id.to_string()));
+    };
+    self.authorize_use(&wallet.owner_kind, wallet.owner_id, &txn).await?;
+
+    if res.status != ReservationStatus::Held {
+      return Err(SumidaError::BadRequest("reservation is not held".into()));
+    }
+
+    // Mark captured first so the hold is excluded from the debit's spendable check.
+    CreditReservations::update(CreditReservationsActiveModel {
+      id: Unchanged(res.id),
+      status: Set(ReservationStatus::Captured),
+      ..Default::default()
+    })
+    .exec(&txn)
+    .await?;
+
+    let out = Self::debit_in_txn(
+      CreditTxKind::Capture,
+      &wallet.owner_kind,
+      wallet.owner_id,
+      res.amount,
+      res.action.as_deref(),
+      res.reference_code.as_deref(),
+      None,
+      None,
+      &txn,
+    )
+    .await?;
+
+    txn.commit().await?;
+    Ok(ConsumeResult { wallet_id: out.wallet_id, consumed: out.debited, balance: out.balance })
+  }
+
+  /// Cancel a held reservation without spending. Rejected if not held.
+  pub async fn release(&self, reservation_id: i32) -> Result<ReservationResult, SumidaError> {
+    let txn = self.state.db().begin().await?;
+    let Some(res) = CreditReservations::find_by_id(reservation_id).one(&txn).await? else {
+      return Err(SumidaError::NoData("CreditReservation".into(), reservation_id.to_string()));
+    };
+    let Some(wallet) = CreditWallets::find_by_id(res.wallet_id).one(&txn).await? else {
+      return Err(SumidaError::NoData("CreditWallet".into(), res.wallet_id.to_string()));
+    };
+    self.authorize_use(&wallet.owner_kind, wallet.owner_id, &txn).await?;
+
+    if res.status != ReservationStatus::Held {
+      return Err(SumidaError::BadRequest("reservation is not held".into()));
+    }
+
+    CreditReservations::update(CreditReservationsActiveModel {
+      id: Unchanged(res.id),
+      status: Set(ReservationStatus::Released),
+      ..Default::default()
+    })
+    .exec(&txn)
+    .await?;
+
+    let reserved = Self::held_reserved(wallet.id, &txn).await?;
+    txn.commit().await?;
+    Ok(ReservationResult {
+      reservation_id: res.id,
+      wallet_id: wallet.id,
+      amount: res.amount,
+      status: ReservationStatus::Released,
+      spendable: wallet.balance - reserved,
+    })
   }
 
   pub async fn refund(

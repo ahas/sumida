@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
@@ -58,6 +58,30 @@ impl<S: SumidaState> CreditController<S> {
   ) -> Result<List<CreditTxItem>, SumidaError> {
     Ok(CreditService::new(state, session).transactions(filter, pagination).await?.into())
   }
+
+  async fn reserve(
+    session: UserSession,
+    State(state): State<S>,
+    Json(body): Json<ReserveCredit>,
+  ) -> Result<ReservationResult, SumidaError> {
+    CreditService::new(state, session).reserve(body).await
+  }
+
+  async fn capture(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+  ) -> Result<ConsumeResult, SumidaError> {
+    CreditService::new(state, session).capture(id).await
+  }
+
+  async fn release(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+  ) -> Result<ReservationResult, SumidaError> {
+    CreditService::new(state, session).release(id).await
+  }
 }
 
 impl<S: SumidaState> ApiController<S> for CreditController<S> {
@@ -69,6 +93,9 @@ impl<S: SumidaState> ApiController<S> for CreditController<S> {
       .route("/grant", routing::post(Self::grant))
       .route("/consume", routing::post(Self::consume))
       .route("/refund", routing::post(Self::refund))
+      .route("/reserve", routing::post(Self::reserve))
+      .route("/reservations/{id}/capture", routing::post(Self::capture))
+      .route("/reservations/{id}/release", routing::post(Self::release))
       .route_layer(user_guard!(state))
   }
 }

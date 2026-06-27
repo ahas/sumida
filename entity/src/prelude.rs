@@ -83,6 +83,10 @@ pub use super::membership::credit_grants::{
   ActiveModel as CreditGrantsActiveModel, Column as CreditGrantsColumn, Entity as CreditGrants,
   Model as CreditGrantsModel, Relation as CreditGrantsRelation,
 };
+pub use super::membership::credit_reservations::{
+  ActiveModel as CreditReservationsActiveModel, Column as CreditReservationsColumn,
+  Entity as CreditReservations, Model as CreditReservationsModel, Relation as CreditReservationsRelation,
+};
 pub use super::membership::credit_transactions::{
   ActiveModel as CreditTransactionsActiveModel, Column as CreditTransactionsColumn,
   Entity as CreditTransactions, Model as CreditTransactionsModel, Relation as CreditTransactionsRelation,

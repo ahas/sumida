@@ -13,6 +13,7 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::membership::Migration),
       Box::new(entity::migration::membership_scheduler::Migration),
       Box::new(entity::migration::membership_billing::Migration),
+      Box::new(entity::migration::membership_reservations::Migration),
     ]
   }
 }
