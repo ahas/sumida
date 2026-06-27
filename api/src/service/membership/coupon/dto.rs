@@ -102,6 +102,8 @@ pub struct AppliedCoupon {
   pub code: String,
   pub discount: i64,
   pub stackable: bool,
+  /// The redemption row created — checkout links it to the purchase afterwards.
+  pub redemption_id: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]

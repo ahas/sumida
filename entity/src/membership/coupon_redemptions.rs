@@ -14,6 +14,12 @@ pub struct Model {
   pub coupon_id: i32,
   pub owner_kind: OwnerKind,
   pub owner_id: i32,
+  /// The purchase this redemption belongs to (set once the purchase exists).
+  #[sea_orm(nullable)]
+  pub purchase_code: Option<String>,
+  /// The grant consumed by this redemption, if the coupon is grant-gated.
+  #[sea_orm(nullable)]
+  pub grant_id: Option<i32>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,
 }

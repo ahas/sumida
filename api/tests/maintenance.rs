@@ -110,6 +110,72 @@ async fn test_run_once_skips_when_lock_held() {
 }
 
 // ---------------------------------------------------------------------------
+// An abandoned (stale pending) checkout is expired and its coupon is reversed,
+// freeing the per-owner cap. Requires mock PG + a configured TTL.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_stale_pending_purchase_reverses_coupon() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  if infra::settings::get().membership.payment.provider != "mock"
+    || infra::settings::get().membership.pending_purchase_ttl_hours <= 0
+  {
+    eprintln!("skipping: mock PG / pending_purchase_ttl_hours not configured");
+    return;
+  }
+  let am = admin_mock(&db).await;
+  let plan = create_plan(
+    &am.client,
+    json!({
+      "code": format!("ab-{}", rnd()), "name": "AB", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+  let code = format!("AB1-{}", rnd());
+  am.client
+    .post("/coupons")
+    .json(&json!({ "code": code, "percentOff": 10, "maxRedemptionsPerOwner": 1 }))
+    .send()
+    .await
+    .unwrap();
+
+  let user_mock = Mock::new().await;
+  TestUser::create(&db).await.unwrap().login(&user_mock.client).await;
+  let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
+
+  // First checkout records the redemption (per-owner cap 1); a second is blocked.
+  let co: Value = user_mock.client.post("/payments/checkout").json(&body).send().await.unwrap().json().await.unwrap();
+  let pc = co["purchaseCode"].as_str().unwrap().to_string();
+  assert_eq!(
+    user_mock.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::BAD_REQUEST,
+    "per-owner cap reached while the first checkout is pending"
+  );
+
+  // Age the pending purchase past the TTL, then run the expiry job.
+  let purchase = MembershipPurchases::find()
+    .filter(entity::membership::membership_purchases::Column::Code.eq(pc))
+    .one(&db)
+    .await
+    .unwrap()
+    .unwrap();
+  let mut a = purchase.into_active_model();
+  a.created_at = Set((Utc::now() - Duration::hours(48)).into());
+  a.update(&db).await.unwrap();
+
+  let expired = maintenance::expire_stale_pending_purchases::<MState>(&db).await.unwrap();
+  assert!(expired >= 1, "the stale pending purchase is expired");
+
+  // The coupon was reversed → the owner can redeem again.
+  assert_eq!(
+    user_mock.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::CREATED,
+    "abandoned checkout's coupon was returned, freeing the cap"
+  );
+}
+
+// ---------------------------------------------------------------------------
 // An organization's managers are resolved from its org policies for notices.
 // ---------------------------------------------------------------------------
 #[tokio::test]

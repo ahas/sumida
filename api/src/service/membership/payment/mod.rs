@@ -131,6 +131,7 @@ impl<S: SumidaState> PaymentService<S> {
 
     let mut discount = 0i64;
     let mut applied: Vec<String> = Vec::new();
+    let mut redemption_ids: Vec<i32> = Vec::new();
     let mut all_stackable = true;
     for code in &codes {
       let a = CouponService::<S>::apply_in_txn(
@@ -146,6 +147,7 @@ impl<S: SumidaState> PaymentService<S> {
       discount += a.discount;
       all_stackable &= a.stackable;
       applied.push(a.code);
+      redemption_ids.push(a.redemption_id);
     }
     if codes.len() > 1 && !all_stackable {
       return Err(SumidaError::BadRequest("one or more coupons are not stackable".into()));
@@ -181,6 +183,10 @@ impl<S: SumidaState> PaymentService<S> {
     .exec(&txn)
     .await?;
 
+    // Link the coupon redemptions to this purchase so a failed/abandoned checkout
+    // can be reversed.
+    CouponService::<S>::link_redemptions(&redemption_ids, &code, &txn).await?;
+
     txn.commit().await?;
 
     Ok(CheckoutResult {
@@ -209,9 +215,12 @@ impl<S: SumidaState> PaymentService<S> {
 
     self.authorize(&purchase.kind, &purchase.owner_kind, purchase.owner_id, &txn).await?;
 
-    let result = self.settle(&purchase, &req.payment_id, Some(triggered_by), &txn).await?;
+    // Commit either way: on a declined payment, settle has marked the purchase
+    // failed and reversed its coupons — those writes must persist (a `?` here would
+    // roll them back along with the error).
+    let result = self.settle(&purchase, &req.payment_id, Some(triggered_by), &txn).await;
     txn.commit().await?;
-    Ok(result)
+    result
   }
 
   /// Refund a completed purchase: reverse the entitlement, cancel at the PG,
@@ -395,10 +404,12 @@ impl<S: SumidaState> PaymentService<S> {
 
     if !verification.status.is_paid() {
       MembershipPurchases::update(fail(PurchaseStatus::Failed)).exec(txn).await?;
+      CouponService::<S>::reverse_for_purchase(&purchase.code, txn).await?;
       return Err(SumidaError::PaymentNotCompleted(verification.raw_status));
     }
     if verification.amount != purchase.amount {
       MembershipPurchases::update(fail(PurchaseStatus::Failed)).exec(txn).await?;
+      CouponService::<S>::reverse_for_purchase(&purchase.code, txn).await?;
       return Err(SumidaError::PaymentAmountMismatch {
         expected: purchase.amount,
         actual: verification.amount,

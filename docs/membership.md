@@ -64,6 +64,7 @@ See `settings.example.toml` for the full annotated block. Keys (kebab-case):
 | `grace-days` | `0` | entitlement grace after a failed renewal (0 = none) |
 | `max-dunning-attempts` | `0` | renewal-charge retries during grace (0 = none) |
 | `tax-percent-bp` | `0` | checkout sales tax in basis points (1000 = 10%) |
+| `pending-purchase-ttl-hours` | `0` | expire unconfirmed pending purchases (reversing their coupons) after N hours; 0 = off |
 | `[membership.payment] provider` | `none` | `none` \| `portone` \| `mock` |
 | `[membership.payment] api-secret` / `store-id` / `channel-key` / `webhook-secret` | — | PortOne V2 credentials |
 
@@ -140,7 +141,10 @@ What this domain can and cannot do today.
 - **Coupons & tax**: percent / fixed-amount coupons (currency-matched), global +
   **per-owner** redemption caps, expiry, activate/retire/delete; **plan-scoping**
   (valid only for listed plans); **stacking** (combine `stackable` coupons in one
-  checkout); flat checkout tax; full price breakdown recorded.
+  checkout); flat checkout tax; full price breakdown recorded. A **failed or
+  abandoned checkout reverses** its coupons (the consumed grant/redemption is
+  returned) — on a declined `confirm`, and via the scheduler for stale pending
+  purchases (`pending-purchase-ttl-hours`).
 - **Coupon distribution**: issue a coupon to specific owners (`POST
   /coupons/{id}/grant`, idempotent), **recall** it (`DELETE /coupons/{id}/grant`).
   `requires_grant` makes a coupon redeemable **only** by granted owners and each

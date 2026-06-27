@@ -28,6 +28,7 @@ use sea_orm::{
 };
 use serde_json::json;
 
+use super::coupon::CouponService;
 use super::credit::CreditService;
 use super::{gen_code, notify_all, recipient_emails};
 use crate::SumidaState;
@@ -71,6 +72,7 @@ pub struct MaintenanceReport {
   pub dunning_recovered: usize,
   pub dunning_failed: usize,
   pub subscriptions_expired: usize,
+  pub pending_purchases_expired: usize,
   pub reservations_released: usize,
   pub wallets_swept: usize,
   pub expiring_notices: usize,
@@ -461,6 +463,61 @@ pub async fn expire_due_subscriptions(db: &DatabaseConnection) -> Result<usize, 
   Ok(total)
 }
 
+/// Expire unconfirmed pending purchases older than `pending_purchase_ttl_hours`
+/// and reverse their coupon redemptions (an abandoned checkout shouldn't burn a
+/// coupon). Disabled when the TTL is 0.
+pub async fn expire_stale_pending_purchases<S: SumidaState>(
+  db: &DatabaseConnection,
+) -> Result<usize, SumidaError> {
+  let ttl = settings::get().membership.pending_purchase_ttl_hours;
+  if ttl <= 0 {
+    return Ok(0);
+  }
+  let cutoff: DateTimeWithTimeZone = (Utc::now() - Duration::hours(ttl as i64)).into();
+  let mut total = 0usize;
+
+  loop {
+    let stale = MembershipPurchases::find()
+      .filter(MembershipPurchasesColumn::Status.eq(PurchaseStatus::Pending))
+      .filter(MembershipPurchasesColumn::CreatedAt.lt(cutoff))
+      .order_by_asc(MembershipPurchasesColumn::Id)
+      .limit(BATCH)
+      .all(db)
+      .await?;
+    if stale.is_empty() {
+      break;
+    }
+    let batch_len = stale.len();
+
+    for p in stale {
+      let txn = db.begin().await?;
+      let Some(row) = MembershipPurchases::find_by_id(p.id).lock_exclusive().one(&txn).await? else {
+        txn.rollback().await?;
+        continue;
+      };
+      if row.status != PurchaseStatus::Pending {
+        txn.rollback().await?;
+        continue;
+      }
+      MembershipPurchases::update(MembershipPurchasesActiveModel {
+        id: Unchanged(row.id),
+        status: Set(PurchaseStatus::Failed),
+        ..Default::default()
+      })
+      .exec(&txn)
+      .await?;
+      CouponService::<S>::reverse_for_purchase(&row.code, &txn).await?;
+      txn.commit().await?;
+      total += 1;
+    }
+
+    if (batch_len as u64) < BATCH {
+      break;
+    }
+  }
+  Ok(total)
+}
+
 /// Release credit reservations whose `expires_at` has passed (stale holds, e.g.
 /// from a crashed async job). A bulk status flip frees their spendable amount;
 /// lots are untouched. Returns the number released.
@@ -622,6 +679,10 @@ pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceRep
     Ok(n) => report.subscriptions_expired = n,
     Err(e) => tracing::warn!("membership maintenance: expire subscriptions failed: {e}"),
   }
+  match expire_stale_pending_purchases::<S>(db).await {
+    Ok(n) => report.pending_purchases_expired = n,
+    Err(e) => tracing::warn!("membership maintenance: expire pending purchases failed: {e}"),
+  }
   match release_expired_reservations(db).await {
     Ok(n) => report.reservations_released = n,
     Err(e) => tracing::warn!("membership maintenance: release reservations failed: {e}"),
@@ -659,12 +720,13 @@ pub fn spawn<S: SumidaState>(state: S, interval: StdDuration) -> tokio::task::Jo
       ticker.tick().await;
       let report = run_once::<S>(state.db()).await;
       tracing::debug!(
-        "membership maintenance: {} renewed, {} renew-failed, {} dunning-recovered, {} dunning-failed, {} expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices",
+        "membership maintenance: {} renewed, {} renew-failed, {} dunning-recovered, {} dunning-failed, {} expired, {} pending-purchases expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices",
         report.subscriptions_renewed,
         report.subscriptions_renew_failed,
         report.dunning_recovered,
         report.dunning_failed,
         report.subscriptions_expired,
+        report.pending_purchases_expired,
         report.reservations_released,
         report.wallets_swept,
         report.expiring_notices,

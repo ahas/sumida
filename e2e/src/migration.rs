@@ -22,6 +22,7 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::membership_coupon_grants::Migration),
       Box::new(entity::migration::membership_coupon_grant_lifecycle::Migration),
       Box::new(entity::migration::membership_coupon_ext::Migration),
+      Box::new(entity::migration::membership_coupon_redemption_link::Migration),
     ]
   }
 }

@@ -519,6 +519,54 @@ async fn test_coupon_bulk_grant() {
 }
 
 // ---------------------------------------------------------------------------
+// A failed payment reverses the coupon: the consumed grant is returned.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_failed_payment_reverses_coupon_grant() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  if infra::settings::get().membership.payment.provider != "mock" {
+    eprintln!("skipping: payment provider is not 'mock'");
+    return;
+  }
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("FR-{}", rnd());
+  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await["id"]
+    .as_i64()
+    .unwrap();
+
+  let user = TestUser::create(&db).await.unwrap();
+  let m = Mock::new().await;
+  user.login(&m.client).await;
+  am.client.post(&format!("/coupons/{cid}/grant")).json(&json!({ "ownerId": user.model.id })).send().await.unwrap();
+
+  async fn mine_has(m: &Mock, code: &str) -> bool {
+    let v: Value = m.client.get("/coupons/mine").send().await.unwrap().json().await.unwrap();
+    v["items"].as_array().unwrap().iter().any(|i| i["code"].as_str() == Some(code))
+  }
+  assert!(mine_has(&m, &code).await, "coupon is in the user's wallet before use");
+
+  // Checkout consumes the grant, then the payment FAILS → the grant is restored.
+  let co: Value = m
+    .client
+    .post("/payments/checkout")
+    .json(&json!({ "kind": "subscription", "planCode": plan, "couponCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let pc = co["purchaseCode"].as_str().unwrap();
+  assert!(!mine_has(&m, &code).await, "grant consumed during checkout");
+
+  let cf = m.client.post("/payments/confirm").json(&json!({ "purchaseCode": pc, "paymentId": "mock:failed" })).send().await.unwrap();
+  assert_eq!(cf.status(), StatusCode::PAYMENT_REQUIRED, "payment failed");
+  assert!(mine_has(&m, &code).await, "failed payment returned the coupon to the wallet");
+}
+
+// ---------------------------------------------------------------------------
 // Coupon management is admin-only.
 // ---------------------------------------------------------------------------
 #[tokio::test]

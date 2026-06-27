@@ -65,6 +65,7 @@ expiring-soon-notify-days = 7               # days before period end to send the
 grace-days = 0                              # entitlement grace window after a failed renewal; 0 = none
 max-dunning-attempts = 0                    # renewal-charge retries during grace; 0 = none
 tax-percent-bp = 0                          # sales tax at checkout, in basis points (1000 = 10%); 0 = none
+pending-purchase-ttl-hours = 0              # expire unconfirmed pending purchases (reversing coupons) after N hours; 0 = off
 
 # Payment gateway (PG). provider: "none" (default, disabled) | "portone" | "mock" (tests).
 [membership.payment]

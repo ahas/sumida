@@ -9,6 +9,7 @@ pub mod membership_coupon_ext;
 pub mod membership_coupon_grant_lifecycle;
 pub mod membership_coupon_grants;
 pub mod membership_coupon_per_owner;
+pub mod membership_coupon_redemption_link;
 pub mod membership_coupons;
 pub mod membership_dunning;
 pub mod membership_reservations;

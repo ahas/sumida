@@ -42,6 +42,10 @@ pub struct MembershipSettings {
   /// Sales tax applied at checkout, in basis points (e.g. 1000 = 10%). 0 = none.
   #[serde(default)]
   pub tax_percent_bp: i32,
+  /// Hours after which an unconfirmed pending purchase is expired (and its coupon
+  /// redemptions reversed). 0 = disabled (never auto-expire).
+  #[serde(default)]
+  pub pending_purchase_ttl_hours: i32,
   /// Payment-gateway (PG) configuration.
   #[serde(default)]
   pub payment: PaymentSettings,
@@ -111,6 +115,7 @@ impl Default for MembershipSettings {
       grace_days: 0,
       max_dunning_attempts: 0,
       tax_percent_bp: 0,
+      pending_purchase_ttl_hours: 0,
       payment: PaymentSettings::default(),
     }
   }

@@ -324,6 +324,7 @@ impl<S: SumidaState> CouponService<S> {
       return Err(SumidaError::BadRequest("coupon is not valid for this plan".into()));
     }
 
+    let mut grant_id: Option<i32> = None;
     if coupon.requires_grant {
       // Grant-gated: consume an issued grant (one grant = one use).
       let grant = Self::find_grant(coupon.id, owner_kind, owner_id, txn)
@@ -342,6 +343,7 @@ impl<S: SumidaState> CouponService<S> {
       })
       .exec(txn)
       .await?;
+      grant_id = Some(grant.id);
     } else if let Some(per_owner) = coupon.max_redemptions_per_owner {
       // Public coupon: cap per owner from the redemption ledger.
       let used = CouponRedemptions::find()
@@ -385,16 +387,68 @@ impl<S: SumidaState> CouponService<S> {
       return Err(SumidaError::BadRequest("coupon redemption limit reached".into()));
     }
 
-    // Redemption ledger (per-owner cap source + analytics).
-    CouponRedemptions::insert(CouponRedemptionsActiveModel {
+    // Redemption ledger (per-owner cap source + analytics). `purchase_code` is
+    // linked by the caller once the purchase exists, so a failed checkout reverses.
+    let redemption = CouponRedemptions::insert(CouponRedemptionsActiveModel {
       coupon_id: Set(coupon.id),
       owner_kind: Set(owner_kind.clone()),
       owner_id: Set(owner_id),
+      grant_id: Set(grant_id),
       ..Default::default()
     })
-    .exec(txn)
+    .exec_with_returning(txn)
     .await?;
 
-    Ok(AppliedCoupon { code: coupon.code, discount, stackable: coupon.stackable })
+    Ok(AppliedCoupon { code: coupon.code, discount, stackable: coupon.stackable, redemption_id: redemption.id })
+  }
+
+  /// Link the just-applied redemptions to their purchase.
+  pub(crate) async fn link_redemptions<C: ConnectionTrait>(
+    redemption_ids: &[i32],
+    purchase_code: &str,
+    txn: &C,
+  ) -> Result<(), SumidaError> {
+    for id in redemption_ids {
+      CouponRedemptions::update(CouponRedemptionsActiveModel {
+        id: Unchanged(*id),
+        purchase_code: Set(Some(purchase_code.to_string())),
+        ..Default::default()
+      })
+      .exec(txn)
+      .await?;
+    }
+    Ok(())
+  }
+
+  /// Reverse all coupon redemptions of a purchase (failed / abandoned checkout):
+  /// give back the grant, decrement the global count, and delete the redemption.
+  pub(crate) async fn reverse_for_purchase<C: ConnectionTrait>(
+    purchase_code: &str,
+    txn: &C,
+  ) -> Result<(), SumidaError> {
+    let rows = CouponRedemptions::find()
+      .filter(CouponRedemptionsColumn::PurchaseCode.eq(purchase_code))
+      .all(txn)
+      .await?;
+    for r in rows {
+      if let Some(grant_id) = r.grant_id {
+        CouponGrants::update(CouponGrantsActiveModel {
+          id: Unchanged(grant_id),
+          redeemed_at: Set(None),
+          ..Default::default()
+        })
+        .exec(txn)
+        .await?;
+      }
+      txn
+        .execute(Statement::from_sql_and_values(
+          txn.get_database_backend(),
+          "UPDATE coupons SET redeemed_count = GREATEST(redeemed_count - 1, 0) WHERE id = $1",
+          [r.coupon_id.into()],
+        ))
+        .await?;
+      CouponRedemptions::delete_by_id(r.id).exec(txn).await?;
+    }
+    Ok(())
   }
 }
