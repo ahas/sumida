@@ -280,6 +280,94 @@ async fn test_coupon_requires_grant_targeting() {
 }
 
 // ---------------------------------------------------------------------------
+// Grant lifecycle: one grant = one use; recall blocks; re-issue needs a revoke.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_grant_lifecycle() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("LC-{}", rnd());
+  let created = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await;
+  let cid = created["id"].as_i64().unwrap();
+  let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
+
+  let user = TestUser::create(&db).await.unwrap();
+  let m = Mock::new().await;
+  user.login(&m.client).await;
+  let uid = user.model.id;
+  let grant = || am.client.post(&format!("/coupons/{cid}/grant")).json(&json!({ "ownerKind": "personal", "ownerId": uid }));
+
+  // Issue → one redemption succeeds, then the grant is spent.
+  assert_eq!(grant().send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+  // It also disappears from "my coupons" (redeemed).
+  let mine: Value = m.client.get("/coupons/mine").send().await.unwrap().json().await.unwrap();
+  assert!(!mine["items"].as_array().unwrap().iter().any(|i| i["code"].as_str() == Some(code.as_str())));
+  // Second use blocked; re-grant blocked (must revoke first).
+  assert_eq!(m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::BAD_REQUEST);
+  assert_eq!(grant().send().await.unwrap().status(), StatusCode::CONFLICT, "no silent re-issue of a redeemed grant");
+
+  // Revoke, then re-issue (allowed), then it works again.
+  let rv = am.client.delete(&format!("/coupons/{cid}/grant?ownerKind=personal&ownerId={uid}")).send().await.unwrap();
+  assert_eq!(rv.status(), StatusCode::OK);
+  assert_eq!(grant().send().await.unwrap().status(), StatusCode::CREATED, "re-issue after revoke");
+  assert_eq!(m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+}
+
+// ---------------------------------------------------------------------------
+// A revoked grant blocks redemption immediately.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_revoke_blocks_redemption() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("RV-{}", rnd());
+  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await["id"]
+    .as_i64()
+    .unwrap();
+
+  let user = TestUser::create(&db).await.unwrap();
+  let m = Mock::new().await;
+  user.login(&m.client).await;
+  let uid = user.model.id;
+
+  am.client.post(&format!("/coupons/{cid}/grant")).json(&json!({ "ownerId": uid })).send().await.unwrap();
+  am.client.delete(&format!("/coupons/{cid}/grant?ownerId={uid}")).send().await.unwrap();
+
+  let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
+  assert_eq!(
+    m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::BAD_REQUEST,
+    "revoked grant cannot be redeemed"
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Admin can list a coupon's grants (issued/redeemed/revoked analytics).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_grants_list() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let code = format!("GL-{}", rnd());
+  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10 })).await["id"].as_i64().unwrap();
+
+  let a = TestUser::create(&db).await.unwrap();
+  let b = TestUser::create(&db).await.unwrap();
+  for uid in [a.model.id, b.model.id] {
+    am.client.post(&format!("/coupons/{cid}/grant")).json(&json!({ "ownerId": uid })).send().await.unwrap();
+  }
+
+  let list: Value = am.client.get(&format!("/coupons/{cid}/grants")).send().await.unwrap().json().await.unwrap();
+  assert_eq!(list["count"].as_u64().unwrap(), 2, "both grants are listed");
+}
+
+// ---------------------------------------------------------------------------
 // "My coupons" lists coupons issued to the caller.
 // ---------------------------------------------------------------------------
 #[tokio::test]

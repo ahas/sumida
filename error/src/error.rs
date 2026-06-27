@@ -112,6 +112,8 @@ pub enum SumidaError {
   MembershipPlanScopeMismatch,
   #[error("an active subscription for this plan already exists")]
   DuplicateActiveSubscription,
+  #[error("{0}")]
+  Conflict(String),
   #[error("insufficient credits: required {required}, available {available}")]
   InsufficientCredits { required: i64, available: i64 },
   #[error("refund amount {0} exceeds available balance {1}")]
@@ -217,6 +219,7 @@ impl SumidaError {
       Self::MembershipActionNotAllowed(_) => 8003,
       Self::MembershipPlanScopeMismatch => 8004,
       Self::DuplicateActiveSubscription => 8005,
+      Self::Conflict(_) => 8009,
       Self::InsufficientCredits { .. } => 8006,
       Self::RefundWouldExceedBalance(..) => 8007,
       Self::BalanceDivergence(_) => 8008,
@@ -336,6 +339,7 @@ impl From<SumidaError> for StatusCode {
         Ok(StatusCode::BAD_REQUEST)
       }
       SumidaError::DuplicateActiveSubscription => Ok(StatusCode::CONFLICT),
+      SumidaError::Conflict(_) => Ok(StatusCode::CONFLICT),
       SumidaError::PurchaseNotFound(_) => Ok(StatusCode::NOT_FOUND),
       SumidaError::PaymentNotConfigured => Ok(StatusCode::SERVICE_UNAVAILABLE),
       SumidaError::PaymentProviderError(_) => Ok(StatusCode::BAD_GATEWAY),

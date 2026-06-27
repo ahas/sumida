@@ -75,6 +75,30 @@ impl IntoResponse for CouponGranted {
   }
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct CouponRevoked;
+
+impl IntoResponse for CouponRevoked {
+  fn into_response(self) -> axum::response::Response {
+    Json(serde_json::json!({})).into_response()
+  }
+}
+
+/// A coupon grant with its lifecycle timestamps (admin analytics). Status is
+/// `revoked` if `revokedAt` is set, else `redeemed` if `redeemedAt` is set, else
+/// `issued`.
+#[derive(Clone, Debug, Serialize, FromQueryResult)]
+#[serde(rename_all = "camelCase")]
+pub struct CouponGrantItem {
+  pub id: i32,
+  pub coupon_id: i32,
+  pub owner_kind: OwnerKind,
+  pub owner_id: i32,
+  pub redeemed_at: Option<DateTimeWithTimeZone>,
+  pub revoked_at: Option<DateTimeWithTimeZone>,
+  pub created_at: DateTimeWithTimeZone,
+}
+
 /// A coupon available to the calling owner ("my coupons").
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]

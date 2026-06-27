@@ -5,6 +5,7 @@ pub mod helper;
 pub mod init;
 pub mod membership;
 pub mod membership_billing;
+pub mod membership_coupon_grant_lifecycle;
 pub mod membership_coupon_grants;
 pub mod membership_coupon_per_owner;
 pub mod membership_coupons;

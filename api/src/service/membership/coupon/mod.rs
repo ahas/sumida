@@ -105,23 +105,100 @@ impl<S: SumidaState> CouponService<S> {
     Ok(CouponDeleted)
   }
 
-  /// Issue a coupon to a specific owner ("distribute"). Idempotent per owner. With
-  /// the coupon's `requires_grant` set this also makes the coupon redeemable by
-  /// that owner; either way the owner sees it in their "my coupons" list.
+  async fn find_grant<C: ConnectionTrait>(
+    coupon_id: i32,
+    owner_kind: &OwnerKind,
+    owner_id: i32,
+    db: &C,
+  ) -> Result<Option<entity::membership::coupon_grants::Model>, SumidaError> {
+    Ok(
+      CouponGrants::find()
+        .filter(CouponGrantsColumn::CouponId.eq(coupon_id))
+        .filter(CouponGrantsColumn::OwnerKind.eq(owner_kind.clone()))
+        .filter(CouponGrantsColumn::OwnerId.eq(owner_id))
+        .one(db)
+        .await?,
+    )
+  }
+
+  /// Issue a coupon to a specific owner ("distribute"). Lifecycle-aware:
+  /// - no grant → issue;
+  /// - already issued (unused) → idempotent no-op (safe for campaign retries);
+  /// - revoked → re-issue (the recall enabled it);
+  /// - already redeemed → **409** (revoke first to re-issue — no silent re-grant).
   pub async fn grant_to(&self, coupon_id: i32, data: GrantCoupon) -> Result<CouponGranted, SumidaError> {
     self.require_admin()?;
     let db = self.state.db();
     if Coupons::find_by_id(coupon_id).one(db).await?.is_none() {
       return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
     }
-    db.execute(Statement::from_sql_and_values(
-      db.get_database_backend(),
-      r#"INSERT INTO coupon_grants (coupon_id, owner_kind, owner_id) VALUES ($1, $2, $3)
-         ON CONFLICT (coupon_id, owner_kind, owner_id) DO NOTHING"#,
-      [coupon_id.into(), owner_kind_str(&data.owner_kind).into(), data.owner_id.into()],
-    ))
-    .await?;
+
+    match Self::find_grant(coupon_id, &data.owner_kind, data.owner_id, db).await? {
+      None => {
+        CouponGrants::insert(CouponGrantsActiveModel {
+          coupon_id: Set(coupon_id),
+          owner_kind: Set(data.owner_kind),
+          owner_id: Set(data.owner_id),
+          ..Default::default()
+        })
+        .exec(db)
+        .await?;
+      }
+      Some(g) if g.revoked_at.is_some() => {
+        // Re-issue: the prior recall makes a fresh grant deliberate.
+        CouponGrants::update(CouponGrantsActiveModel {
+          id: Unchanged(g.id),
+          redeemed_at: Set(None),
+          revoked_at: Set(None),
+          ..Default::default()
+        })
+        .exec(db)
+        .await?;
+      }
+      Some(g) if g.redeemed_at.is_some() => {
+        return Err(SumidaError::Conflict(
+          "coupon already redeemed by this owner; revoke it to re-issue".into(),
+        ));
+      }
+      Some(_) => { /* issued & unused → idempotent no-op */ }
+    }
     Ok(CouponGranted)
+  }
+
+  /// Recall a coupon from an owner. A revoked grant can no longer be redeemed;
+  /// re-granting re-issues it. Idempotent.
+  pub async fn revoke(&self, coupon_id: i32, data: GrantCoupon) -> Result<CouponRevoked, SumidaError> {
+    self.require_admin()?;
+    let db = self.state.db();
+    let Some(g) = Self::find_grant(coupon_id, &data.owner_kind, data.owner_id, db).await? else {
+      return Err(SumidaError::NoData("CouponGrant".into(), coupon_id.to_string()));
+    };
+    if g.revoked_at.is_none() {
+      CouponGrants::update(CouponGrantsActiveModel {
+        id: Unchanged(g.id),
+        revoked_at: Set(Some(Utc::now().into())),
+        ..Default::default()
+      })
+      .exec(db)
+      .await?;
+    }
+    Ok(CouponRevoked)
+  }
+
+  /// List a coupon's grants (admin) — for issued/redeemed/revoked analytics.
+  pub async fn grants(
+    &self,
+    coupon_id: i32,
+    pagination: Pagination,
+  ) -> Result<(Vec<CouponGrantItem>, u64), SumidaError> {
+    self.require_admin()?;
+    let db = self.state.db();
+    let mut query = CouponGrants::find().filter(CouponGrantsColumn::CouponId.eq(coupon_id));
+    let count = query.clone().select_only().column(CouponGrantsColumn::Id).count(db).await?;
+    query = pagination.order_by(query, |_| CouponGrantsColumn::Id);
+    query = pagination.paginate(query);
+    let items = query.into_model::<CouponGrantItem>().all(db).await?;
+    Ok((items, count))
   }
 
   /// Coupons issued to the caller (their personal self or their organization) that
@@ -132,6 +209,8 @@ impl<S: SumidaState> CouponService<S> {
   ) -> Result<(Vec<MyCouponItem>, u64), SumidaError> {
     let db = self.state.db();
     let grants = CouponGrants::find()
+      .filter(CouponGrantsColumn::RedeemedAt.is_null())
+      .filter(CouponGrantsColumn::RevokedAt.is_null())
       .filter(
         Condition::any()
           .add(
@@ -196,21 +275,27 @@ impl<S: SumidaState> CouponService<S> {
       }
     }
 
-    // Grant-gated coupons are redeemable only by owners they were issued to.
     if coupon.requires_grant {
-      let granted = CouponGrants::find()
-        .filter(CouponGrantsColumn::CouponId.eq(coupon.id))
-        .filter(CouponGrantsColumn::OwnerKind.eq(owner_kind.clone()))
-        .filter(CouponGrantsColumn::OwnerId.eq(owner_id))
-        .one(txn)
-        .await?;
-      if granted.is_none() {
-        return Err(SumidaError::BadRequest("coupon is not available to this owner".into()));
+      // Grant-gated: must hold an issued (not redeemed/revoked) grant; consume it
+      // (one grant = one use). The grant lifecycle is the per-owner control here.
+      let grant = Self::find_grant(coupon.id, owner_kind, owner_id, txn)
+        .await?
+        .ok_or_else(|| SumidaError::BadRequest("coupon is not available to this owner".into()))?;
+      if grant.revoked_at.is_some() {
+        return Err(SumidaError::BadRequest("coupon grant was revoked".into()));
       }
-    }
-
-    // Per-owner cap: count prior non-failed purchases bearing this coupon code.
-    if let Some(per_owner) = coupon.max_redemptions_per_owner {
+      if grant.redeemed_at.is_some() {
+        return Err(SumidaError::BadRequest("coupon already redeemed by this owner".into()));
+      }
+      CouponGrants::update(CouponGrantsActiveModel {
+        id: Unchanged(grant.id),
+        redeemed_at: Set(Some(Utc::now().into())),
+        ..Default::default()
+      })
+      .exec(txn)
+      .await?;
+    } else if let Some(per_owner) = coupon.max_redemptions_per_owner {
+      // Public coupon: cap per owner by counting prior non-failed purchases.
       #[derive(FromQueryResult)]
       struct CountRow {
         total: i64,

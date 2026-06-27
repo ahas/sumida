@@ -141,8 +141,11 @@ What this domain can and cannot do today.
   **per-owner** redemption caps, expiry, activate/retire/delete; flat checkout tax;
   full price breakdown recorded.
 - **Coupon distribution**: issue a coupon to specific owners (`POST
-  /coupons/{id}/grant`); `requires_grant` makes it redeemable **only** by granted
-  owners (exclusive coupon); recipients see theirs via `GET /coupons/mine`.
+  /coupons/{id}/grant`, idempotent), **recall** it (`DELETE /coupons/{id}/grant`).
+  `requires_grant` makes a coupon redeemable **only** by granted owners and each
+  grant is **single-use** (one grant = one redemption); re-issuing a spent grant
+  requires a revoke first (no silent re-grant). Recipients see theirs via `GET
+  /coupons/mine`; admins audit issued/redeemed/revoked via `GET /coupons/{id}/grants`.
 - **Organizations**: org-admin (ReBAC) management of org subscriptions/credits with
   automatic parent→child hierarchy (single-row *and* lists); org notices reach the
   org's managers.

@@ -59,6 +59,24 @@ impl<S: SumidaState> CouponController<S> {
     CouponService::new(state, session).grant_to(id, body).await
   }
 
+  async fn revoke(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+    Query(owner): Query<GrantCoupon>,
+  ) -> Result<CouponRevoked, SumidaError> {
+    CouponService::new(state, session).revoke(id, owner).await
+  }
+
+  async fn grants(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+    Query(pagination): Query<Pagination>,
+  ) -> Result<List<CouponGrantItem>, SumidaError> {
+    Ok(CouponService::new(state, session).grants(id, pagination).await?.into())
+  }
+
   async fn mine(
     session: UserSession,
     State(state): State<S>,
@@ -75,7 +93,8 @@ impl<S: SumidaState> ApiController<S> for CouponController<S> {
       .route("/", routing::get(Self::list).post(Self::create))
       .route("/mine", routing::get(Self::mine))
       .route("/{id}", routing::patch(Self::update).delete(Self::delete))
-      .route("/{id}/grant", routing::post(Self::grant))
+      .route("/{id}/grant", routing::post(Self::grant).delete(Self::revoke))
+      .route("/{id}/grants", routing::get(Self::grants))
       .route_layer(user_guard!(state))
   }
 }
