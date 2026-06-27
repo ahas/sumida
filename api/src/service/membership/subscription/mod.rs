@@ -244,6 +244,9 @@ impl<S: SumidaState> SubscriptionService<S> {
     if plan.scope != owner_kind {
       return Err(SumidaError::MembershipPlanScopeMismatch);
     }
+    if data.auto_renew && data.billing_key.is_none() {
+      return Err(SumidaError::BadRequest("auto_renew requires a billing_key".into()));
+    }
 
     // At most one active subscription per (owner, plan).
     let existing_active = Subscriptions::find()
@@ -281,6 +284,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       current_period_end: Set(period_end.into()),
       allowed_actions: Set(json!(actions)),
       idempotency_key: Set(data.idempotency_key.clone()),
+      auto_renew: Set(data.auto_renew),
+      billing_key: Set(data.billing_key.clone()),
       ..Default::default()
     })
     .exec_with_returning(&txn)
@@ -393,6 +398,33 @@ impl<S: SumidaState> SubscriptionService<S> {
     self
       .record_event(id, SubscriptionEventKind::Renewed, Some(old), Some("active"), None, &txn)
       .await?;
+
+    txn.commit().await?;
+    Ok(())
+  }
+
+  /// Enable or disable auto-renewal. Enabling requires a billing key — supplied
+  /// here or already stored on the subscription. Disabling keeps the stored key.
+  pub async fn set_auto_renew(&self, id: i32, data: SetAutoRenew) -> Result<(), SumidaError> {
+    let txn = self.state.db().begin().await?;
+    let Some(sub) = Subscriptions::find_by_id(id).one(&txn).await? else {
+      return Err(SumidaError::NoData("Subscription".into(), id.to_string()));
+    };
+    self.authorize(&sub.owner_kind, sub.owner_id, "manage", &txn).await?;
+
+    if data.enabled && data.billing_key.is_none() && sub.billing_key.is_none() {
+      return Err(SumidaError::BadRequest("enabling auto_renew requires a billing_key".into()));
+    }
+
+    let mut update = SubscriptionsActiveModel {
+      id: Unchanged(id),
+      auto_renew: Set(data.enabled),
+      ..Default::default()
+    };
+    if let Some(key) = data.billing_key {
+      update.billing_key = Set(Some(key));
+    }
+    Subscriptions::update(update).exec(&txn).await?;
 
     txn.commit().await?;
     Ok(())

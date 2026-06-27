@@ -13,6 +13,10 @@ use super::{
 /// - `mock:cancelled`                   → CANCELLED
 /// - anything else                      → PAID amount 0 (treated as unverifiable)
 ///
+/// For recurring charges the billing key encodes the outcome:
+/// - `mock:bill:ok`   → PAID with the requested amount
+/// - anything else    → FAILED (a declined recurring charge)
+///
 /// `verify_webhook` skips signature checking and reads `{type, data.paymentId}`
 /// straight from the body so webhook handling can be exercised end-to-end.
 pub struct MockProvider;
@@ -64,6 +68,25 @@ impl PaymentProvider for MockProvider {
       status: PaymentStatus::Cancelled,
       cancelled_amount: amount.unwrap_or(0),
       raw_status: "CANCELLED".to_string(),
+    })
+  }
+
+  async fn charge_recurring(
+    &self,
+    billing_key: &str,
+    amount: i64,
+    currency: &str,
+    order_code: &str,
+  ) -> Result<PaymentVerification, PaymentError> {
+    let status = if billing_key == "mock:bill:ok" { PaymentStatus::Paid } else { PaymentStatus::Failed };
+    Ok(PaymentVerification {
+      payment_id: order_code.to_string(),
+      transaction_id: Some(format!("mockbill-{order_code}")),
+      status,
+      amount,
+      currency: currency.to_string(),
+      paid_at: status.is_paid().then(|| Utc::now().fixed_offset()),
+      raw_status: format!("{status:?}"),
     })
   }
 

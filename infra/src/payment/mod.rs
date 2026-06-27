@@ -131,6 +131,19 @@ pub trait PaymentProvider: Send + Sync {
     reason: &str,
   ) -> Result<RefundResult, PaymentError>;
 
+  /// Charge a previously issued billing key for a recurring payment (정기결제).
+  /// `order_code` becomes the merchant order id. Returns the normalized result;
+  /// callers must check [`PaymentVerification::status`] (a non-paid status is a
+  /// decline, not an error). Providers without billing-key support return
+  /// [`PaymentError::Unsupported`].
+  async fn charge_recurring(
+    &self,
+    billing_key: &str,
+    amount: i64,
+    currency: &str,
+    order_code: &str,
+  ) -> Result<PaymentVerification, PaymentError>;
+
   /// Verify a webhook signature and extract the normalized event.
   fn verify_webhook(&self, headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError>;
 }

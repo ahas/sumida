@@ -167,6 +167,24 @@ impl PaymentProvider for PortOneProvider {
     })
   }
 
+  async fn charge_recurring(
+    &self,
+    _billing_key: &str,
+    _amount: i64,
+    _currency: &str,
+    _order_code: &str,
+  ) -> Result<PaymentVerification, PaymentError> {
+    // TODO(billing-key): implement PortOne V2 billing-key payment.
+    //   PAYMENT: `POST {base}/payments/{order_code}/billing-key`
+    //     body: { billingKey, orderName, customer, amount: { total: amount }, currency }
+    //     auth: `Authorization: PortOne {api_secret}` (or Bearer token), storeId when set.
+    //   The response mirrors GET /payments/{id}; map it the same way as `verify`.
+    //   Issuing a billing key (POST /billing-keys) is a separate client/SDK step.
+    // Until implemented, recurring charges via PortOne are unsupported (the
+    // auto-renew job treats this as a renewal failure → past_due).
+    Err(PaymentError::Unsupported)
+  }
+
   fn verify_webhook(&self, headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError> {
     let secret = self.webhook_secret.as_ref().ok_or(PaymentError::NotConfigured)?;
     verify_standard_webhook(secret, headers, body)?;

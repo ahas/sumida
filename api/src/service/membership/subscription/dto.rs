@@ -33,6 +33,7 @@ pub struct SubscriptionListItem {
   pub current_period_start: DateTimeWithTimeZone,
   pub current_period_end: DateTimeWithTimeZone,
   pub cancel_at_period_end: bool,
+  pub auto_renew: bool,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -51,6 +52,7 @@ pub struct GetSubscription {
   pub current_period_end: DateTimeWithTimeZone,
   pub cancel_at_period_end: bool,
   pub canceled_at: Option<DateTimeWithTimeZone>,
+  pub auto_renew: bool,
   pub allowed_actions: JsonValue,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
@@ -72,6 +74,22 @@ pub struct CreateSubscription {
   pub owner_id: Option<i32>,
   #[serde(default)]
   pub idempotency_key: Option<String>,
+  /// Opt the new subscription into auto-renewal (requires `billing_key`).
+  #[serde(default)]
+  pub auto_renew: bool,
+  /// PG billing key (정기결제) stored for auto-renewal.
+  #[serde(default)]
+  pub billing_key: Option<String>,
+}
+
+/// Toggle auto-renew on an existing subscription. Enabling requires a billing key
+/// (either supplied here or already stored).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAutoRenew {
+  pub enabled: bool,
+  #[serde(default)]
+  pub billing_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

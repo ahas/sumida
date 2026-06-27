@@ -29,6 +29,13 @@ pub struct Model {
   pub allowed_actions: Json,
   #[sea_orm(nullable)]
   pub idempotency_key: Option<String>,
+  /// When true, the maintenance renewal job charges `billing_key` at period end
+  /// and extends the period; on charge failure the subscription goes `past_due`.
+  #[sea_orm(default_value = false)]
+  pub auto_renew: bool,
+  /// PG billing key (정기결제) used by auto-renew. Required for `auto_renew`.
+  #[sea_orm(nullable)]
+  pub billing_key: Option<String>,
   // --- reserved for future payment-provider integration ---
   #[sea_orm(nullable)]
   pub provider_subscription_id: Option<String>,

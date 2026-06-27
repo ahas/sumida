@@ -13,10 +13,10 @@ use std::time::Duration as StdDuration;
 
 use chrono::{Duration, Utc};
 use entity::membership::subscriptions::Column as SubColumn;
-use entity::membership::{OwnerKind, SubscriptionEventKind, SubscriptionStatus};
+use entity::membership::{OwnerKind, PlanKind, PurchaseStatus, SubscriptionEventKind, SubscriptionStatus};
 use entity::prelude::*;
 use error::SumidaError;
-use infra::settings;
+use infra::{payment, settings};
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
@@ -25,7 +25,7 @@ use sea_orm::{
 use serde_json::json;
 
 use super::credit::CreditService;
-use super::notify;
+use super::{gen_code, notify};
 use crate::SumidaState;
 
 /// How many due subscriptions to process per batch (one transaction each).
@@ -34,10 +34,152 @@ const BATCH: u64 = 500;
 /// Counts of work done by one maintenance pass.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MaintenanceReport {
+  pub subscriptions_renewed: usize,
+  pub subscriptions_renew_failed: usize,
   pub subscriptions_expired: usize,
   pub wallets_swept: usize,
   pub expiring_notices: usize,
   pub low_balance_notices: usize,
+}
+
+/// Auto-renew subscriptions whose period has ended: charge the stored billing
+/// key via the configured PG (`charge_recurring`) and, on success, extend the
+/// period (+ canonical purchase + `renewed` event); on a declined/errored charge
+/// move the subscription to `past_due` (+ `status_changed` event). Returns
+/// `(renewed, failed)`.
+///
+/// Runs BEFORE [`expire_due_subscriptions`] in [`run_once`] so a successful renew
+/// pre-empts expiry; failures land in `past_due`, which the expire job ignores.
+/// The provider call happens while the row lock is held — acceptable for a
+/// single-runner background job and it prevents a concurrent double-charge.
+pub async fn renew_due_subscriptions(db: &DatabaseConnection) -> Result<(usize, usize), SumidaError> {
+  let now: DateTimeWithTimeZone = Utc::now().into();
+  let provider = payment::provider();
+  let mut renewed = 0usize;
+  let mut failed = 0usize;
+
+  loop {
+    let due = Subscriptions::find()
+      .filter(SubColumn::Status.eq(SubscriptionStatus::Active))
+      .filter(SubColumn::CurrentPeriodEnd.lte(now))
+      .filter(SubColumn::AutoRenew.eq(true))
+      .filter(SubColumn::CancelAtPeriodEnd.eq(false))
+      .filter(SubColumn::BillingKey.is_not_null())
+      .order_by_asc(SubColumn::Id)
+      .limit(BATCH)
+      .all(db)
+      .await?;
+    if due.is_empty() {
+      break;
+    }
+    let batch_len = due.len();
+
+    for sub in due {
+      let txn = db.begin().await?;
+      let Some(row) = Subscriptions::find_by_id(sub.id).lock_exclusive().one(&txn).await? else {
+        txn.rollback().await?;
+        continue;
+      };
+      // Re-check under lock; bail if no longer eligible.
+      let still_due = row.status == SubscriptionStatus::Active
+        && row.current_period_end <= now
+        && row.auto_renew
+        && !row.cancel_at_period_end;
+      let Some(billing_key) = row.billing_key.clone().filter(|_| still_due) else {
+        txn.rollback().await?;
+        continue;
+      };
+
+      let Some(plan) = MembershipPlans::find_by_id(row.plan_id).one(&txn).await? else {
+        txn.rollback().await?;
+        continue;
+      };
+      let duration = plan.duration_days.unwrap_or(30).max(0);
+      let order_code = gen_code("rnw");
+
+      let charge = provider
+        .charge_recurring(&billing_key, plan.price, &plan.currency, &order_code)
+        .await;
+      let paid = matches!(&charge, Ok(v) if v.status.is_paid());
+
+      if paid {
+        let base = if row.current_period_end > now { row.current_period_end } else { now };
+        let new_end = base + Duration::days(duration as i64);
+
+        Subscriptions::update(SubscriptionsActiveModel {
+          id: Unchanged(row.id),
+          status: Set(SubscriptionStatus::Active),
+          current_period_end: Set(new_end),
+          expiring_notified_at: Set(None),
+          ..Default::default()
+        })
+        .exec(&txn)
+        .await?;
+
+        let txn_id = charge.ok().and_then(|v| v.transaction_id);
+        MembershipPurchases::insert(MembershipPurchasesActiveModel {
+          code: Set(order_code.clone()),
+          kind: Set(PlanKind::Subscription),
+          plan_id: Set(plan.id),
+          plan_code: Set(plan.code.clone()),
+          owner_kind: Set(row.owner_kind.clone()),
+          owner_id: Set(row.owner_id),
+          status: Set(PurchaseStatus::Completed),
+          amount: Set(plan.price),
+          currency: Set(plan.currency.clone()),
+          provider: Set(provider.name().to_string()),
+          provider_payment_id: Set(txn_id),
+          paid_at: Set(Some(now)),
+          ..Default::default()
+        })
+        .exec(&txn)
+        .await?;
+
+        SubscriptionEvents::insert(SubscriptionEventsActiveModel {
+          subscription_id: Set(row.id),
+          event_kind: Set(SubscriptionEventKind::Renewed),
+          old_status: Set(Some("active".to_string())),
+          new_status: Set(Some("active".to_string())),
+          reason: Set(Some("auto-renew".to_string())),
+          reference_code: Set(Some(order_code)),
+          ..Default::default()
+        })
+        .exec(&txn)
+        .await?;
+
+        txn.commit().await?;
+        renewed += 1;
+      } else {
+        Subscriptions::update(SubscriptionsActiveModel {
+          id: Unchanged(row.id),
+          status: Set(SubscriptionStatus::PastDue),
+          ..Default::default()
+        })
+        .exec(&txn)
+        .await?;
+
+        SubscriptionEvents::insert(SubscriptionEventsActiveModel {
+          subscription_id: Set(row.id),
+          event_kind: Set(SubscriptionEventKind::StatusChanged),
+          old_status: Set(Some("active".to_string())),
+          new_status: Set(Some("past-due".to_string())),
+          reason: Set(Some("auto-renew-charge-failed".to_string())),
+          ..Default::default()
+        })
+        .exec(&txn)
+        .await?;
+
+        txn.commit().await?;
+        failed += 1;
+      }
+    }
+
+    if (batch_len as u64) < BATCH {
+      break;
+    }
+  }
+
+  Ok((renewed, failed))
 }
 
 /// Transition subscriptions whose period has ended: those flagged
@@ -235,11 +377,19 @@ pub async fn notify_low_balance_wallets<S: SumidaState>(
 }
 
 /// Run one maintenance pass. Jobs are independent: each failure is logged and the
-/// rest still run. Ordered so balances are corrected (sweep) before the
-/// low-balance check reads them.
+/// rest still run. Ordered so auto-renew runs before expiry (a successful renew
+/// pre-empts expiry) and balances are corrected (sweep) before the low-balance
+/// check reads them.
 pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceReport {
   let mut report = MaintenanceReport::default();
 
+  match renew_due_subscriptions(db).await {
+    Ok((renewed, failed)) => {
+      report.subscriptions_renewed = renewed;
+      report.subscriptions_renew_failed = failed;
+    }
+    Err(e) => tracing::warn!("membership maintenance: renew subscriptions failed: {e}"),
+  }
   match expire_due_subscriptions(db).await {
     Ok(n) => report.subscriptions_expired = n,
     Err(e) => tracing::warn!("membership maintenance: expire subscriptions failed: {e}"),
@@ -272,7 +422,9 @@ pub fn spawn<S: SumidaState>(state: S, interval: StdDuration) -> tokio::task::Jo
       ticker.tick().await;
       let report = run_once::<S>(state.db()).await;
       tracing::debug!(
-        "membership maintenance: {} expired, {} wallets swept, {} expiring notices, {} low-balance notices",
+        "membership maintenance: {} renewed, {} renew-failed, {} expired, {} wallets swept, {} expiring notices, {} low-balance notices",
+        report.subscriptions_renewed,
+        report.subscriptions_renew_failed,
         report.subscriptions_expired,
         report.wallets_swept,
         report.expiring_notices,

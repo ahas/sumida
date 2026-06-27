@@ -340,3 +340,185 @@ async fn test_maintenance_low_balance_alert_dedup_and_topup_rearms() {
   assert!(topped.low_balance_notified_at.is_none(), "top-up above threshold must clear the marker");
   assert!(topped.balance > threshold, "balance must now exceed the threshold");
 }
+
+/// Subscribe `client` as a logged-in user; returns the new subscription id.
+async fn subscribe_user(db: &sea_orm::DatabaseConnection, body: Value) -> (Mock, i32) {
+  let m = Mock::new().await;
+  let user = TestUser::create(db).await.unwrap();
+  user.login(&m.client).await;
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&body)
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let id = created["id"].as_i64().expect("subscription id") as i32;
+  (m, id)
+}
+
+// ---------------------------------------------------------------------------
+// Auto-renew: a due subscription with a good billing key is charged and extended
+// (requires the mock PG provider; otherwise self-skips).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_maintenance_auto_renew_success() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  if infra::settings::get().membership.payment.provider != "mock" {
+    eprintln!("skipping: payment provider is not 'mock'");
+    return;
+  }
+
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("ar-{}", rnd()), "name": "AR", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  // Subscribe with auto-renew + a billing key the mock PG accepts.
+  let (_m, sub_id) =
+    subscribe_user(&db, json!({ "planCode": code, "autoRenew": true, "billingKey": "mock:bill:ok" })).await;
+
+  // Force the period to have ended.
+  let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  let mut a = sub.into_active_model();
+  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.update(&db).await.unwrap();
+
+  let (renewed, failed) = maintenance::renew_due_subscriptions(&db).await.unwrap();
+  assert!(renewed >= 1, "our subscription should be renewed");
+  assert_eq!(failed, 0, "a good billing key must not fail");
+
+  let after = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(after.status, entity::membership::SubscriptionStatus::Active, "renewed → still active");
+  assert!(after.current_period_end > Utc::now(), "renew must push the period into the future");
+
+  let renewed_events = SubscriptionEvents::find()
+    .filter(EventCol::SubscriptionId.eq(sub_id))
+    .filter(EventCol::Reason.eq("auto-renew"))
+    .all(&db)
+    .await
+    .unwrap();
+  assert!(!renewed_events.is_empty(), "an auto-renew event must be recorded");
+}
+
+// ---------------------------------------------------------------------------
+// Auto-renew: a declined billing key moves the subscription to past_due.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_maintenance_auto_renew_failure_past_due() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  if infra::settings::get().membership.payment.provider != "mock" {
+    eprintln!("skipping: payment provider is not 'mock'");
+    return;
+  }
+
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("af-{}", rnd()), "name": "AF", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  // A billing key the mock PG declines.
+  let (_m, sub_id) =
+    subscribe_user(&db, json!({ "planCode": code, "autoRenew": true, "billingKey": "mock:bill:nope" })).await;
+
+  let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  let mut a = sub.into_active_model();
+  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.update(&db).await.unwrap();
+
+  let (renewed, _failed) = maintenance::renew_due_subscriptions(&db).await.unwrap();
+  assert_eq!(renewed, 0, "a declined charge must not renew our subscription");
+
+  let after = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(
+    after.status,
+    entity::membership::SubscriptionStatus::PastDue,
+    "declined auto-renew → past_due"
+  );
+
+  let events = SubscriptionEvents::find()
+    .filter(EventCol::SubscriptionId.eq(sub_id))
+    .filter(EventCol::Reason.eq("auto-renew-charge-failed"))
+    .all(&db)
+    .await
+    .unwrap();
+  assert!(!events.is_empty(), "a charge-failed status_changed event must be recorded");
+}
+
+// ---------------------------------------------------------------------------
+// Enabling auto-renew requires a billing key; subscribe + endpoint both enforce it.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_auto_renew_requires_billing_key() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("ab-{}", rnd()), "name": "AB", "kind": "subscription", "scope": "personal",
+      "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  // Subscribe with auto-renew but no billing key → 400.
+  let m = Mock::new().await;
+  let user = TestUser::create(&db).await.unwrap();
+  user.login(&m.client).await;
+  let resp = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code, "autoRenew": true }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "auto_renew without billing_key must be rejected");
+
+  // Subscribe normally, then toggle auto-renew via the endpoint.
+  let created: Value =
+    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let sub_id = created["id"].as_i64().unwrap() as i32;
+
+  // Enabling without a stored/supplied key → 400.
+  let resp = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/auto-renew"))
+    .json(&json!({ "enabled": true }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "enabling without a billing key must be rejected");
+
+  // Enabling with a key → 200, and it sticks.
+  let resp = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/auto-renew"))
+    .json(&json!({ "enabled": true, "billingKey": "mock:bill:ok" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::OK, "enabling with a billing key must succeed");
+
+  let got: Value =
+    m.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  assert_eq!(got["autoRenew"].as_bool().unwrap(), true, "auto-renew must be enabled");
+}

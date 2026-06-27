@@ -25,6 +25,16 @@ impl PaymentProvider for NoneProvider {
     Err(PaymentError::NotConfigured)
   }
 
+  async fn charge_recurring(
+    &self,
+    _billing_key: &str,
+    _amount: i64,
+    _currency: &str,
+    _order_code: &str,
+  ) -> Result<PaymentVerification, PaymentError> {
+    Err(PaymentError::NotConfigured)
+  }
+
   fn verify_webhook(&self, _headers: &WebhookHeaders, _body: &[u8]) -> Result<WebhookEvent, PaymentError> {
     Err(PaymentError::NotConfigured)
   }
