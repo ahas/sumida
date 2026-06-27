@@ -16,6 +16,10 @@ pub struct Model {
   pub currency: String,
   #[sea_orm(default_value = 0)]
   pub balance: i64,
+  /// When a "low balance" alert was last sent. Cleared on top-up above the
+  /// configured threshold so a later drop can alert again.
+  #[sea_orm(nullable)]
+  pub low_balance_notified_at: Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]

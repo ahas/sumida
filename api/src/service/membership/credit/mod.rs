@@ -234,6 +234,20 @@ impl<S: SumidaState> CreditService<S> {
     Ok(balance)
   }
 
+  /// Background-maintenance entrypoint: lock a wallet and expire its lapsed lots.
+  /// Returns the post-sweep balance. Runs inside the caller's transaction.
+  pub(crate) async fn sweep_wallet_in_txn<C: ConnectionTrait>(
+    wallet_id: i32,
+    txn: &C,
+  ) -> Result<i64, SumidaError> {
+    let wallet = CreditWallets::find_by_id(wallet_id)
+      .lock_exclusive()
+      .one(txn)
+      .await?
+      .ok_or_else(|| SumidaError::InternalServerError("wallet vanished".into()))?;
+    Self::sweep_expired(wallet.id, wallet.balance, txn).await
+  }
+
   // ---- core debit (consume / refund) ----
 
   #[allow(clippy::too_many_arguments)]
@@ -431,13 +445,22 @@ impl<S: SumidaState> CreditService<S> {
     .await?;
 
     let new_balance = balance + amount;
-    CreditWallets::update(CreditWalletsActiveModel {
+    // Clear the low-balance marker once a top-up lifts the balance back above the
+    // configured threshold, so a later drop can alert again.
+    let clear_low_marker = settings::get()
+      .membership
+      .credit_low_balance_threshold
+      .map(|t| new_balance > t)
+      .unwrap_or(false);
+    let mut wallet_update = CreditWalletsActiveModel {
       id: Unchanged(wallet_id),
       balance: Set(new_balance),
       ..Default::default()
-    })
-    .exec(txn)
-    .await?;
+    };
+    if clear_low_marker {
+      wallet_update.low_balance_notified_at = Set(None);
+    }
+    CreditWallets::update(wallet_update).exec(txn).await?;
 
     CreditTransactions::insert(CreditTransactionsActiveModel {
       wallet_id: Set(wallet_id),

@@ -39,6 +39,10 @@ pub struct Model {
   #[sea_orm(nullable)]
   pub prev_plan_id: Option<i32>,
   // ---
+  /// When an "expiring soon" notice was last sent for the current period.
+  /// Cleared on renewal so the next period can notify again.
+  #[sea_orm(nullable)]
+  pub expiring_notified_at: Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]

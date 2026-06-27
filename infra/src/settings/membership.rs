@@ -28,6 +28,9 @@ pub struct MembershipSettings {
   /// How many days before `current_period_end` an "expiring soon" notice is sent.
   #[serde(default = "default_expiring_soon_notify_days")]
   pub expiring_soon_notify_days: i32,
+  /// Balance at or below which a "low balance" alert is sent. `None` = disabled.
+  #[serde(default)]
+  pub credit_low_balance_threshold: Option<i64>,
   /// Payment-gateway (PG) configuration.
   #[serde(default)]
   pub payment: PaymentSettings,
@@ -88,6 +91,7 @@ impl Default for MembershipSettings {
       default_gate_order: GateOrder::default(),
       credit_default_expiry_days: None,
       expiring_soon_notify_days: default_expiring_soon_notify_days(),
+      credit_low_balance_threshold: None,
       payment: PaymentSettings::default(),
     }
   }

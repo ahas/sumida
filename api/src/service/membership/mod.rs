@@ -1,5 +1,6 @@
 pub mod credit;
 pub mod entitlement;
+pub mod maintenance;
 pub mod payment;
 pub mod plan;
 pub mod purchase;

@@ -384,6 +384,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       status: Set(SubscriptionStatus::Active),
       current_period_end: Set(new_end),
       cancel_at_period_end: Set(false),
+      // New period → allow the "expiring soon" notice to fire again.
+      expiring_notified_at: Set(None),
       ..Default::default()
     })
     .exec(&txn)

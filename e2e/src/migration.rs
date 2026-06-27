@@ -11,6 +11,7 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::board_system::Migration),
       Box::new(entity::migration::api_key_hash::Migration),
       Box::new(entity::migration::membership::Migration),
+      Box::new(entity::migration::membership_scheduler::Migration),
     ]
   }
 }
