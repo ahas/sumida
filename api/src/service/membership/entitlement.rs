@@ -77,11 +77,15 @@ impl<S: SumidaState> EntitlementService<S> {
     let backend = db.get_database_backend();
     let Some(sub) = SubRow::find_by_statement(Statement::from_sql_and_values(
       backend,
+      // Entitled while active in-period, OR past_due inside an open grace window.
       r#"SELECT id, current_period_start, (allowed_actions -> $3) AS quota
          FROM subscriptions
          WHERE owner_kind = $1 AND owner_id = $2
-           AND status = 'active' AND current_period_end > now()
            AND jsonb_exists(allowed_actions, $3)
+           AND (
+             (status = 'active' AND current_period_end > now())
+             OR (status = 'past-due' AND grace_ends_at IS NOT NULL AND grace_ends_at > now())
+           )
          ORDER BY current_period_end DESC
          LIMIT 1"#,
       [owner_kind_str(owner_kind).into(), owner_id.into(), action.into()],

@@ -7,4 +7,5 @@ pub mod membership;
 pub mod membership_billing;
 pub mod membership_reservations;
 pub mod membership_scheduler;
+pub mod membership_trial;
 pub mod membership_usage;

@@ -31,6 +31,10 @@ pub struct MembershipSettings {
   /// Balance at or below which a "low balance" alert is sent. `None` = disabled.
   #[serde(default)]
   pub credit_low_balance_threshold: Option<i64>,
+  /// Days a subscription stays entitled after a failed renewal before final
+  /// expiry (dunning grace window). 0 = no grace (immediate loss of entitlement).
+  #[serde(default)]
+  pub grace_days: i32,
   /// Payment-gateway (PG) configuration.
   #[serde(default)]
   pub payment: PaymentSettings,
@@ -92,6 +96,7 @@ impl Default for MembershipSettings {
       credit_default_expiry_days: None,
       expiring_soon_notify_days: default_expiring_soon_notify_days(),
       credit_low_balance_threshold: None,
+      grace_days: 0,
       payment: PaymentSettings::default(),
     }
   }

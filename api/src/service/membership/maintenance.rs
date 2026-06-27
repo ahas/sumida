@@ -156,9 +156,13 @@ pub async fn renew_due_subscriptions(db: &DatabaseConnection) -> Result<(usize, 
         txn.commit().await?;
         renewed += 1;
       } else {
+        // Open a grace window during which entitlement continues (if configured).
+        let grace_days = settings::get().membership.grace_days.max(0);
+        let grace_ends_at = (grace_days > 0).then(|| now + Duration::days(grace_days as i64));
         Subscriptions::update(SubscriptionsActiveModel {
           id: Unchanged(row.id),
           status: Set(SubscriptionStatus::PastDue),
+          grace_ends_at: Set(grace_ends_at),
           ..Default::default()
         })
         .exec(&txn)

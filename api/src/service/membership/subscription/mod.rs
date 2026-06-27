@@ -273,9 +273,21 @@ impl<S: SumidaState> SubscriptionService<S> {
     let allowed = Self::snapshot_allowed_actions(plan.id, &txn).await?;
 
     let now = Utc::now();
-    let duration = plan.duration_days.unwrap_or(30).max(0);
-    let period_end = now + Duration::days(duration as i64);
     let code = gen_code("sub");
+
+    // A plan with a positive trial_days starts a free first period; otherwise the
+    // first period is the paid duration and the canonical purchase records the price.
+    let trial_days = plan.trial_days.filter(|d| *d > 0);
+    let (period_end, trial_ends_at, charge_amount) = match trial_days {
+      Some(td) => {
+        let end = now + Duration::days(td as i64);
+        (end, Some(end.into()), 0)
+      }
+      None => {
+        let duration = plan.duration_days.unwrap_or(30).max(0);
+        (now + Duration::days(duration as i64), None, plan.price)
+      }
+    };
 
     let sub = Subscriptions::insert(SubscriptionsActiveModel {
       code: Set(code.clone()),
@@ -286,6 +298,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       status: Set(SubscriptionStatus::Active),
       current_period_start: Set(now.into()),
       current_period_end: Set(period_end.into()),
+      trial_ends_at: Set(trial_ends_at),
       allowed_actions: Set(allowed),
       idempotency_key: Set(data.idempotency_key.clone()),
       auto_renew: Set(data.auto_renew),
@@ -295,7 +308,7 @@ impl<S: SumidaState> SubscriptionService<S> {
     .exec_with_returning(&txn)
     .await?;
 
-    // Canonical purchase record.
+    // Canonical purchase record (amount 0 during a free trial).
     MembershipPurchases::insert(MembershipPurchasesActiveModel {
       code: Set(gen_code("pur")),
       kind: Set(PlanKind::Subscription),
@@ -304,7 +317,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       owner_kind: Set(owner_kind.clone()),
       owner_id: Set(owner_id),
       status: Set(PurchaseStatus::Completed),
-      amount: Set(plan.price),
+      amount: Set(charge_amount),
       currency: Set(plan.currency.clone()),
       paid_at: Set(Some(now.into())),
       ..Default::default()

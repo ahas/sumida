@@ -27,6 +27,9 @@ pub struct Model {
   /// Authoritative subscription length in days.
   #[sea_orm(nullable)]
   pub duration_days: Option<i32>,
+  /// Free-trial length in days for a new subscription's first period. None = no trial.
+  #[sea_orm(nullable)]
+  pub trial_days: Option<i32>,
   /// Credit units granted when this (credit) plan is purchased.
   #[sea_orm(nullable)]
   pub credit_amount: Option<i64>,

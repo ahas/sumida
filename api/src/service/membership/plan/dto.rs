@@ -57,6 +57,7 @@ pub struct PlanListItem {
   pub currency: String,
   pub billing_interval: Option<BillingInterval>,
   pub duration_days: Option<i32>,
+  pub trial_days: Option<i32>,
   pub credit_amount: Option<i64>,
   pub is_enabled: bool,
   pub created_at: DateTimeWithTimeZone,
@@ -113,6 +114,8 @@ pub struct CreatePlan {
   #[serde(default)]
   pub duration_days: Option<i32>,
   #[serde(default)]
+  pub trial_days: Option<i32>,
+  #[serde(default)]
   pub credit_amount: Option<i64>,
   #[serde(default = "default_true")]
   pub is_enabled: bool,
@@ -148,6 +151,8 @@ pub struct UpdatePlan {
   pub billing_interval: Option<BillingInterval>,
   #[serde(default)]
   pub duration_days: Option<i32>,
+  #[serde(default)]
+  pub trial_days: Option<i32>,
   #[serde(default)]
   pub credit_amount: Option<i64>,
   #[serde(default)]

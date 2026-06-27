@@ -104,6 +104,7 @@ impl<S: SumidaState> PlanService<S> {
       currency: Set(currency),
       billing_interval: Set(data.billing_interval),
       duration_days: Set(data.duration_days),
+      trial_days: Set(data.trial_days),
       credit_amount: Set(data.credit_amount),
       is_enabled: Set(data.is_enabled),
       ..Default::default()
@@ -142,6 +143,9 @@ impl<S: SumidaState> PlanService<S> {
     }
     if let Some(v) = data.duration_days {
       am.duration_days = Set(Some(v));
+    }
+    if let Some(v) = data.trial_days {
+      am.trial_days = Set(Some(v));
     }
     if let Some(v) = data.credit_amount {
       am.credit_amount = Set(Some(v));
