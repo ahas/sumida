@@ -113,7 +113,12 @@ mod tests {
     }));
 
     let service = MonitoringService::with_metrics_provider(DummyState, provider);
-    let snapshot = service.snapshot_only().await.unwrap();
+
+    // Verify the sampled metrics flow into a snapshot. The DB health probe in
+    // `snapshot`/`snapshot_only` needs a live connection, so this unit test
+    // exercises the metrics mapping directly and stays DB-free.
+    let system = service.metrics.sample().await.unwrap();
+    let snapshot = MonitoringSnapshot::new(system, vec![ServiceHealth::new_for_app()]);
 
     assert_eq!(snapshot.uptime_seconds, 42);
     assert_eq!(snapshot.resources.cpu_usage_percent, 12.5);
