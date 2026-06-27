@@ -7,6 +7,7 @@ pub mod membership_purchases;
 pub mod payment_webhook_events;
 pub mod plan_actions;
 pub mod subscription_events;
+pub mod subscription_usage;
 pub mod subscriptions;
 
 use sea_orm::entity::prelude::*;

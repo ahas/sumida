@@ -116,6 +116,10 @@ pub use super::membership::subscription_events::{
   ActiveModel as SubscriptionEventsActiveModel, Column as SubscriptionEventsColumn,
   Entity as SubscriptionEvents, Model as SubscriptionEventsModel, Relation as SubscriptionEventsRelation,
 };
+pub use super::membership::subscription_usage::{
+  ActiveModel as SubscriptionUsageActiveModel, Column as SubscriptionUsageColumn,
+  Entity as SubscriptionUsage, Model as SubscriptionUsageModel, Relation as SubscriptionUsageRelation,
+};
 pub use super::membership::subscriptions::{
   ActiveModel as SubscriptionsActiveModel, Column as SubscriptionsColumn, Entity as Subscriptions,
   Model as SubscriptionsModel, Relation as SubscriptionsRelation,

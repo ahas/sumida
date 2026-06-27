@@ -7,6 +7,7 @@ mod maintenance;
 mod membership;
 mod organization;
 mod payment;
+mod quota;
 mod reservation;
 mod role;
 mod user;

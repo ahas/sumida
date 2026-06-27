@@ -122,6 +122,22 @@ impl<S: SumidaState> SubscriptionService<S> {
     Ok(())
   }
 
+  /// Snapshot a plan's actions as a JSON object `{action: quota_per_period|null}`.
+  /// Key existence = coverage (checked via `jsonb_exists`); the value carries the
+  /// per-period quota (`null` = unlimited). Snapshotted at activation so plan
+  /// edits don't retroactively change a live subscription's coverage.
+  pub(crate) async fn snapshot_allowed_actions<C: ConnectionTrait>(
+    plan_id: i32,
+    txn: &C,
+  ) -> Result<serde_json::Value, SumidaError> {
+    let rows = PlanActions::find().filter(PlanActionsColumn::PlanId.eq(plan_id)).all(txn).await?;
+    let mut map = serde_json::Map::new();
+    for a in rows {
+      map.insert(a.action, a.quota_per_period.map(|q| json!(q)).unwrap_or(serde_json::Value::Null));
+    }
+    Ok(serde_json::Value::Object(map))
+  }
+
   /// Build an active subscription from a plan (snapshot + period + created event),
   /// WITHOUT creating a purchase or checking session authorization. Used by the
   /// payment flow once a purchase is verified (webhooks have no session).
@@ -133,13 +149,7 @@ impl<S: SumidaState> SubscriptionService<S> {
     triggered_by: Option<i32>,
     txn: &C,
   ) -> Result<entity::membership::subscriptions::Model, SumidaError> {
-    let actions: Vec<String> = PlanActions::find()
-      .filter(PlanActionsColumn::PlanId.eq(plan.id))
-      .all(txn)
-      .await?
-      .into_iter()
-      .map(|a| a.action)
-      .collect();
+    let allowed = Self::snapshot_allowed_actions(plan.id, txn).await?;
 
     let now = Utc::now();
     let duration = plan.duration_days.unwrap_or(30).max(0);
@@ -154,7 +164,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       status: Set(SubscriptionStatus::Active),
       current_period_start: Set(now.into()),
       current_period_end: Set(period_end.into()),
-      allowed_actions: Set(json!(actions)),
+      allowed_actions: Set(allowed),
       ..Default::default()
     })
     .exec_with_returning(txn)
@@ -260,13 +270,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       return Err(SumidaError::DuplicateActiveSubscription);
     }
 
-    let actions: Vec<String> = PlanActions::find()
-      .filter(PlanActionsColumn::PlanId.eq(plan.id))
-      .all(&txn)
-      .await?
-      .into_iter()
-      .map(|a| a.action)
-      .collect();
+    let allowed = Self::snapshot_allowed_actions(plan.id, &txn).await?;
 
     let now = Utc::now();
     let duration = plan.duration_days.unwrap_or(30).max(0);
@@ -282,7 +286,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       status: Set(SubscriptionStatus::Active),
       current_period_start: Set(now.into()),
       current_period_end: Set(period_end.into()),
-      allowed_actions: Set(json!(actions)),
+      allowed_actions: Set(allowed),
       idempotency_key: Set(data.idempotency_key.clone()),
       auto_renew: Set(data.auto_renew),
       billing_key: Set(data.billing_key.clone()),
@@ -384,9 +388,12 @@ impl<S: SumidaState> SubscriptionService<S> {
     let new_end = base + Duration::days(duration as i64);
     let old = status_str(&sub.status);
 
+    // A renewal begins a new period: advancing current_period_start resets any
+    // per-period action quota (usage is keyed by period_start).
     Subscriptions::update(SubscriptionsActiveModel {
       id: Unchanged(id),
       status: Set(SubscriptionStatus::Active),
+      current_period_start: Set(base),
       current_period_end: Set(new_end),
       cancel_at_period_end: Set(false),
       // New period → allow the "expiring soon" notice to fire again.

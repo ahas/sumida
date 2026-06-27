@@ -110,9 +110,11 @@ pub async fn renew_due_subscriptions(db: &DatabaseConnection) -> Result<(usize, 
         let base = if row.current_period_end > now { row.current_period_end } else { now };
         let new_end = base + Duration::days(duration as i64);
 
+        // New period (advances period_start → resets per-period action quota).
         Subscriptions::update(SubscriptionsActiveModel {
           id: Unchanged(row.id),
           status: Set(SubscriptionStatus::Active),
+          current_period_start: Set(base),
           current_period_end: Set(new_end),
           expiring_notified_at: Set(None),
           ..Default::default()

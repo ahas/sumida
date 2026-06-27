@@ -14,6 +14,7 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::membership_scheduler::Migration),
       Box::new(sumida::entity::migration::membership_billing::Migration),
       Box::new(sumida::entity::migration::membership_reservations::Migration),
+      Box::new(sumida::entity::migration::membership_usage::Migration),
     ]
   }
 }

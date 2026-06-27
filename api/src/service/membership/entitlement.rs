@@ -52,9 +52,16 @@ impl<S: SumidaState> EntitlementService<S> {
     Self { state, session }
   }
 
-  /// Does an active subscription of this owner cover `action`?
-  /// `current_period_end` is the authoritative gate (status is a denormalization).
-  async fn check_subscription<C: ConnectionTrait>(
+  /// Try to satisfy `action` from an active subscription, enforcing per-period
+  /// quota. `current_period_end` is the authoritative time gate; `allowed_actions`
+  /// is a snapshot object `{action: quota|null}` (key present = covered, value =
+  /// per-period limit, null = unlimited).
+  ///
+  /// Returns `true` (and records one use) when covered and within quota; `false`
+  /// when not covered or the quota for the current period is exhausted (so the
+  /// caller can fall through to credits). The quota check + increment is a single
+  /// atomic upsert, so concurrent calls cannot exceed the limit.
+  async fn try_consume_subscription<C: ConnectionTrait>(
     &self,
     owner_kind: &OwnerKind,
     owner_id: i32,
@@ -62,23 +69,57 @@ impl<S: SumidaState> EntitlementService<S> {
     db: &C,
   ) -> Result<bool, SumidaError> {
     #[derive(FromQueryResult)]
-    struct ExistsRow {
-      ok: bool,
+    struct SubRow {
+      id: i32,
+      current_period_start: sea_orm::prelude::DateTimeWithTimeZone,
+      quota: Option<serde_json::Value>,
     }
     let backend = db.get_database_backend();
-    let row = ExistsRow::find_by_statement(Statement::from_sql_and_values(
+    let Some(sub) = SubRow::find_by_statement(Statement::from_sql_and_values(
       backend,
-      r#"SELECT EXISTS(
-           SELECT 1 FROM subscriptions
-           WHERE owner_kind = $1 AND owner_id = $2
-             AND status = 'active' AND current_period_end > now()
-             AND jsonb_exists(allowed_actions, $3)
-         ) AS ok"#,
+      r#"SELECT id, current_period_start, (allowed_actions -> $3) AS quota
+         FROM subscriptions
+         WHERE owner_kind = $1 AND owner_id = $2
+           AND status = 'active' AND current_period_end > now()
+           AND jsonb_exists(allowed_actions, $3)
+         ORDER BY current_period_end DESC
+         LIMIT 1"#,
       [owner_kind_str(owner_kind).into(), owner_id.into(), action.into()],
     ))
     .one(db)
+    .await?
+    else {
+      return Ok(false);
+    };
+
+    // Unlimited (quota value is JSON null / absent number) → covered, no counting.
+    let quota = match sub.quota.as_ref().and_then(|v| v.as_i64()) {
+      Some(n) => n,
+      None => return Ok(true),
+    };
+    if quota <= 0 {
+      return Ok(false);
+    }
+
+    // Atomic check-and-increment scoped to this subscription's current period.
+    #[derive(FromQueryResult)]
+    struct UsedRow {
+      used: i64,
+    }
+    let row = UsedRow::find_by_statement(Statement::from_sql_and_values(
+      backend,
+      r#"INSERT INTO subscription_usage (subscription_id, action, period_start, used)
+         VALUES ($1, $2, $3, 1)
+         ON CONFLICT (subscription_id, action, period_start)
+         DO UPDATE SET used = subscription_usage.used + 1
+         WHERE subscription_usage.used < $4
+         RETURNING used"#,
+      [sub.id.into(), action.into(), sub.current_period_start.into(), quota.into()],
+    ))
+    .one(db)
     .await?;
-    Ok(row.map(|r| r.ok).unwrap_or(false))
+
+    Ok(row.is_some())
   }
 
   /// Hybrid entitlement gate. Tries the active subscription and credit balance
@@ -99,7 +140,7 @@ impl<S: SumidaState> EntitlementService<S> {
 
     let outcome = match settings::get().membership.default_gate_order {
       GateOrder::SubscriptionFirst => {
-        if self.check_subscription(&owner_kind, owner_id, action, &txn).await? {
+        if self.try_consume_subscription(&owner_kind, owner_id, action, &txn).await? {
           EntitlementOutcome { via: "subscription".into(), consumed: 0 }
         } else {
           let out = credit
@@ -115,7 +156,7 @@ impl<S: SumidaState> EntitlementService<S> {
         {
           Ok(out) => EntitlementOutcome { via: "credit".into(), consumed: out.consumed },
           Err(SumidaError::InsufficientCredits { .. }) | Err(SumidaError::MembershipActionNotAllowed(_)) => {
-            if self.check_subscription(&owner_kind, owner_id, action, &txn).await? {
+            if self.try_consume_subscription(&owner_kind, owner_id, action, &txn).await? {
               EntitlementOutcome { via: "subscription".into(), consumed: 0 }
             } else {
               return Err(SumidaError::NoActiveSubscription);
