@@ -64,3 +64,26 @@
 ### G5b 후속 — token 관련 코멘트/주석 정리
 - `service/auth/token.rs` 상단 doc 보강 (login/refresh/logout 흐름과 token_type 검증 요점)
 - `controller/auth/token.rs`에 OpenAPI 스타일 doc-comment 추가 (다운스트림 클라이언트가 참고)
+
+## P2 — 멤버십 후속 (대형 / 외부·제품 의사결정 필요)
+
+멤버십·결제 도메인의 1차 구현은 완료(`docs/membership.md`). 남은 항목은 외부 의존성
+또는 제품 결정이 필요해 보류함.
+
+### 빌링키 발급(issuance) 서버 연동
+- 현재: `charge_recurring`(빌링키 결제)만 실연동. 빌링키 *발급*은 클라이언트 SDK 단계
+- 필요 작업: PortOne `BillingKey.Issued` 웹훅 처리 → 발급된 billing_key를 대상 구독에 저장
+  (구독-빌링키 연결 플로우/식별자 설계 필요)
+
+### per-currency 크레딧 월렛 / 환율
+- 현재: 크레딧 월렛은 owner당 1개·단일 통화(통화 필드는 정보성). 통화는 plan/purchase/coupon에만 의미
+- 진짜 멀티커런시는 통화별 잔액(스키마 변경) + 환율 정책 필요. (원안에서도 "과설계"로 분류)
+
+### 크레딧 reserve/capture ↔ PG authorize-capture 연결
+- 현재: 내부 원장 기반 hold만. 외부 결제 승인-매입과는 분리
+- 비동기 결제(가상계좌 등)와 묶을 때 연동 검토
+
+### 소소한 항목
+- 조직 owner 알림 채널 없음(만료임박/저잔액 메일은 personal만) — org 연락처 모델 필요 시
+- 쿠폰은 PG checkout 경로에만 적용(무료 subscribe 경로 제외) — 의도된 분리, 필요 시 확장
+- 스케줄러 다중 인스턴스 운영 시 advisory lock/리더 선출(현재 단일 러너 가정, `docs/membership.md` 참고)
