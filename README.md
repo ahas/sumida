@@ -24,6 +24,15 @@ A comprehensive Rust web application framework built with Axum, designed for sca
 - **Rich Interactions**: Like/dislike system, view tracking, file attachments
 - **Content Management**: Draft/published workflows, soft delete support
 
+### 💳 Membership & Billing
+- **Plans**: Subscription and credit plans (personal or organization scope), free trials, soft-delete
+- **Credit Ledger**: FIFO expiring lots, reservations (authorize-capture), idempotent grant/consume, audit
+- **Lifecycle**: Auto-renew, dunning + grace, reactivation, mid-period plan change with proration
+- **Entitlement Gate**: Hybrid subscription/credit gate with per-period quotas (`entitlement_guard!` layer)
+- **Payments**: Pluggable PG abstraction (PortOne V2 first-class), coupons + tax at checkout, Standard-Webhooks
+- **Scheduler**: Background maintenance for expiry, renewal, sweeps, and notifications
+- See [`docs/membership.md`](docs/membership.md) for required policy seeds, settings, and scheduler deployment
+
 ### 🔐 Authentication & Security
 - **Multiple Auth Methods**: Session-based and JWT token authentication
 - **API Key Management**: Service-to-service authentication
