@@ -54,3 +54,22 @@ auth = "LOGIN"
 # access_token = "15m"
 # refresh_token = "7d"
 # remember_me = "30d"
+
+# Membership / billing. All keys are optional; defaults shown.
+[membership]
+default-currency = "KRW"                    # ISO 4217; used when a plan/wallet omits a currency
+default-gate-order = "subscription-first"   # entitlement gate order: "subscription-first" | "credit-first"
+# credit-default-expiry-days = 365          # default expiry for granted credit lots; omit = never expire
+expiring-soon-notify-days = 7               # days before period end to send the "expiring soon" notice
+# credit-low-balance-threshold = 100        # send a low-balance alert at/below this balance; omit = disabled
+grace-days = 0                              # entitlement grace window after a failed renewal; 0 = none
+max-dunning-attempts = 0                    # renewal-charge retries during grace; 0 = none
+tax-percent-bp = 0                          # sales tax at checkout, in basis points (1000 = 10%); 0 = none
+
+# Payment gateway (PG). provider: "none" (default, disabled) | "portone" | "mock" (tests).
+[membership.payment]
+provider = "none"
+# api-base = "https://api.portone.io"
+# api-secret = "REPLACE_WITH_PORTONE_API_SECRET"
+# store-id = "store-..."
+# webhook-secret = "whsec_..."

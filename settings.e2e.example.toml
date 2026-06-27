@@ -49,3 +49,15 @@ secret = "REPLACE_WITH_JWT_SECRET_AT_LEAST_32_BYTES"
 access_token = "15m"
 refresh_token = "7d"
 remember_me = "30d"
+
+# Membership values exercised by the e2e suites. Without these, the dependent
+# tests self-skip (api/tests/{maintenance,subscription_lifecycle,coupon,payment}.rs).
+[membership]
+credit-low-balance-threshold = 100   # maintenance low-balance alert
+grace-days = 3                       # post-renewal grace window
+max-dunning-attempts = 2             # dunning retry cap
+tax-percent-bp = 1000                # 10% checkout tax
+
+[membership.payment]
+# Deterministic mock PG (no real PortOne calls).
+provider = "mock"
