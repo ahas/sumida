@@ -72,4 +72,5 @@ provider = "none"
 # api-base = "https://api.portone.io"
 # api-secret = "REPLACE_WITH_PORTONE_API_SECRET"
 # store-id = "store-..."
+# channel-key = "channel-..."   # for billing-key (recurring) payments on multi-channel stores
 # webhook-secret = "whsec_..."

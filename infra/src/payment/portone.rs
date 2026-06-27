@@ -27,6 +27,7 @@ pub struct PortOneProvider {
   api_base: String,
   api_secret: String,
   store_id: Option<String>,
+  channel_key: Option<String>,
   webhook_secret: Option<String>,
 }
 
@@ -37,7 +38,26 @@ impl PortOneProvider {
       api_base: cfg.api_base.clone().unwrap_or_else(|| DEFAULT_BASE.to_string()),
       api_secret: cfg.api_secret.clone().unwrap_or_default(),
       store_id: cfg.store_id.clone(),
+      channel_key: cfg.channel_key.clone(),
       webhook_secret: cfg.webhook_secret.clone(),
+    }
+  }
+
+  /// Map a PortOne V2 payment JSON object (the body of GET /payments/{id} or the
+  /// `payment` field of a billing-key payment response) into a [`PaymentVerification`].
+  fn payment_from_json(value: &Value, fallback_id: &str, fallback_currency: &str) -> PaymentVerification {
+    let raw_status = value.get("status").and_then(Value::as_str).unwrap_or("").to_string();
+    let amount = value.get("amount").and_then(|a| a.get("total")).and_then(Value::as_i64).unwrap_or(0);
+    let currency = value.get("currency").and_then(Value::as_str).unwrap_or(fallback_currency).to_string();
+    let paid_at = value.get("paidAt").and_then(Value::as_str).and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    PaymentVerification {
+      payment_id: value.get("id").and_then(Value::as_str).unwrap_or(fallback_id).to_string(),
+      transaction_id: value.get("transactionId").and_then(Value::as_str).map(str::to_string),
+      status: PaymentStatus::from_portone(&raw_status),
+      amount,
+      currency,
+      paid_at,
+      raw_status,
     }
   }
 
@@ -88,27 +108,7 @@ impl PaymentProvider for PortOneProvider {
     }
 
     let v: Value = resp.json().await.map_err(|e| PaymentError::Request(e.to_string()))?;
-    let raw_status = v.get("status").and_then(Value::as_str).unwrap_or("").to_string();
-    let amount = v
-      .get("amount")
-      .and_then(|a| a.get("total"))
-      .and_then(Value::as_i64)
-      .unwrap_or(0);
-    let currency = v.get("currency").and_then(Value::as_str).unwrap_or("KRW").to_string();
-    let paid_at = v
-      .get("paidAt")
-      .and_then(Value::as_str)
-      .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
-
-    Ok(PaymentVerification {
-      payment_id: v.get("id").and_then(Value::as_str).unwrap_or(payment_id).to_string(),
-      transaction_id: v.get("transactionId").and_then(Value::as_str).map(str::to_string),
-      status: PaymentStatus::from_portone(&raw_status),
-      amount,
-      currency,
-      paid_at,
-      raw_status,
-    })
+    Ok(Self::payment_from_json(&v, payment_id, "KRW"))
   }
 
   async fn cancel(
@@ -169,20 +169,53 @@ impl PaymentProvider for PortOneProvider {
 
   async fn charge_recurring(
     &self,
-    _billing_key: &str,
-    _amount: i64,
-    _currency: &str,
-    _order_code: &str,
+    billing_key: &str,
+    amount: i64,
+    currency: &str,
+    order_code: &str,
   ) -> Result<PaymentVerification, PaymentError> {
-    // TODO(billing-key): implement PortOne V2 billing-key payment.
-    //   PAYMENT: `POST {base}/payments/{order_code}/billing-key`
-    //     body: { billingKey, orderName, customer, amount: { total: amount }, currency }
-    //     auth: `Authorization: PortOne {api_secret}` (or Bearer token), storeId when set.
-    //   The response mirrors GET /payments/{id}; map it the same way as `verify`.
-    //   Issuing a billing key (POST /billing-keys) is a separate client/SDK step.
-    // Until implemented, recurring charges via PortOne are unsupported (the
-    // auto-renew job treats this as a renewal failure → past_due).
-    Err(PaymentError::Unsupported)
+    // PortOne V2 billing-key (정기결제) payment:
+    //   POST {base}/payments/{paymentId}/billing-key
+    //   body: { storeId?, channelKey?, billingKey, orderName, amount: { total }, currency }
+    //   → PayWithBillingKeyResponse { payment: {…same shape as GET /payments/{id}…} }
+    // Issuing a billing key (POST /billing-keys) is a separate client/SDK step.
+    let token = self.token().await?;
+    let url = format!("{}/payments/{}/billing-key", self.api_base, urlencoding(order_code));
+
+    let mut body = json!({
+      "billingKey": billing_key,
+      "orderName": order_code,
+      "amount": { "total": amount },
+      "currency": currency,
+    });
+    if let Some(store) = &self.store_id {
+      body["storeId"] = json!(store);
+    }
+    if let Some(channel) = &self.channel_key {
+      body["channelKey"] = json!(channel);
+    }
+
+    let resp = self
+      .client
+      .post(url)
+      .bearer_auth(token)
+      .json(&body)
+      .send()
+      .await
+      .map_err(|e| PaymentError::Request(e.to_string()))?;
+
+    // A declined or rejected charge returns a non-2xx error body; surface it as a
+    // request error so the auto-renew/dunning caller treats it as a failed charge.
+    if !resp.status().is_success() {
+      let status = resp.status();
+      let detail = resp.text().await.unwrap_or_default();
+      return Err(PaymentError::Request(format!("billing-key payment failed ({status}): {detail}")));
+    }
+
+    let v: Value = resp.json().await.map_err(|e| PaymentError::Request(e.to_string()))?;
+    // Response wraps the payment object under `payment`; tolerate a bare object too.
+    let payment = v.get("payment").unwrap_or(&v);
+    Ok(Self::payment_from_json(payment, order_code, currency))
   }
 
   fn verify_webhook(&self, headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError> {
@@ -253,4 +286,40 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff |= x ^ y;
   }
   diff == 0
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn maps_paid_payment_json() {
+    let v = serde_json::json!({
+      "id": "pay_123",
+      "status": "PAID",
+      "amount": { "total": 5000, "taxFree": 0, "vat": 0 },
+      "currency": "KRW",
+      "paidAt": "2026-06-27T00:00:00Z",
+      "transactionId": "txn_abc",
+    });
+    let pv = PortOneProvider::payment_from_json(&v, "order_1", "KRW");
+    assert!(pv.status.is_paid());
+    assert_eq!(pv.amount, 5000);
+    assert_eq!(pv.currency, "KRW");
+    assert_eq!(pv.transaction_id.as_deref(), Some("txn_abc"));
+    assert_eq!(pv.payment_id, "pay_123");
+    assert!(pv.paid_at.is_some());
+  }
+
+  #[test]
+  fn falls_back_when_fields_missing() {
+    // A non-paid response with sparse fields uses the supplied fallbacks.
+    let v = serde_json::json!({ "status": "FAILED" });
+    let pv = PortOneProvider::payment_from_json(&v, "order_2", "USD");
+    assert!(!pv.status.is_paid());
+    assert_eq!(pv.amount, 0);
+    assert_eq!(pv.currency, "USD");
+    assert_eq!(pv.payment_id, "order_2");
+    assert!(pv.transaction_id.is_none());
+  }
 }

@@ -66,6 +66,10 @@ pub struct PaymentSettings {
   /// Optional PortOne store id.
   #[serde(default)]
   pub store_id: Option<String>,
+  /// Optional PortOne channel key, used for billing-key (recurring) payments when
+  /// the store has multiple channels.
+  #[serde(default)]
+  pub channel_key: Option<String>,
   /// Webhook signing secret (Standard Webhooks, e.g. `whsec_...`).
   #[serde(default)]
   pub webhook_secret: Option<String>,
@@ -90,6 +94,7 @@ impl Default for PaymentSettings {
       api_base: None,
       api_secret: None,
       store_id: None,
+      channel_key: None,
       webhook_secret: None,
     }
   }
