@@ -25,6 +25,9 @@ pub struct CreateCoupon {
   pub currency: Option<String>,
   #[serde(default)]
   pub max_redemptions: Option<i32>,
+  /// Per-owner cap (e.g. 1 = once per customer).
+  #[serde(default)]
+  pub max_redemptions_per_owner: Option<i32>,
   #[serde(default)]
   pub expires_at: Option<DateTimeWithTimeZone>,
 }
@@ -38,6 +41,7 @@ pub struct CouponItem {
   pub amount_off: Option<i64>,
   pub currency: Option<String>,
   pub max_redemptions: Option<i32>,
+  pub max_redemptions_per_owner: Option<i32>,
   pub redeemed_count: i32,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub is_active: bool,

@@ -20,6 +20,9 @@ pub struct Model {
   pub currency: Option<String>,
   #[sea_orm(nullable)]
   pub max_redemptions: Option<i32>,
+  /// Per-owner redemption cap (e.g. `1` = once per customer). None = unlimited.
+  #[sea_orm(nullable)]
+  pub max_redemptions_per_owner: Option<i32>,
   #[sea_orm(default_value = 0)]
   pub redeemed_count: i32,
   #[sea_orm(nullable)]

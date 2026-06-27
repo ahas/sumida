@@ -1,6 +1,7 @@
 pub mod dto;
 
 use chrono::Utc;
+use entity::membership::OwnerKind;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
@@ -12,6 +13,7 @@ use sea_orm::{
 };
 
 use self::dto::*;
+use super::owner_kind_str;
 use crate::SumidaState;
 use crate::util::pagination::Pagination;
 
@@ -43,6 +45,7 @@ impl<S: SumidaState> CouponService<S> {
       amount_off: Set(data.amount_off),
       currency: Set(data.currency),
       max_redemptions: Set(data.max_redemptions),
+      max_redemptions_per_owner: Set(data.max_redemptions_per_owner),
       expires_at: Set(data.expires_at),
       ..Default::default()
     })
@@ -102,6 +105,8 @@ impl<S: SumidaState> CouponService<S> {
     code: &str,
     currency: &str,
     subtotal: i64,
+    owner_kind: &OwnerKind,
+    owner_id: i32,
     txn: &C,
   ) -> Result<(i64, String), SumidaError> {
     let coupon = Coupons::find()
@@ -117,6 +122,27 @@ impl<S: SumidaState> CouponService<S> {
       let now: DateTimeWithTimeZone = Utc::now().into();
       if exp <= now {
         return Err(SumidaError::BadRequest("coupon has expired".into()));
+      }
+    }
+
+    // Per-owner cap: count prior non-failed purchases bearing this coupon code.
+    if let Some(per_owner) = coupon.max_redemptions_per_owner {
+      #[derive(FromQueryResult)]
+      struct CountRow {
+        total: i64,
+      }
+      let used = CountRow::find_by_statement(Statement::from_sql_and_values(
+        txn.get_database_backend(),
+        r#"SELECT COUNT(*)::bigint AS total FROM membership_purchases
+           WHERE coupon_code = $1 AND owner_kind = $2 AND owner_id = $3 AND status <> 'failed'"#,
+        [code.into(), owner_kind_str(owner_kind).into(), owner_id.into()],
+      ))
+      .one(txn)
+      .await?
+      .map(|r| r.total)
+      .unwrap_or(0);
+      if used >= per_owner as i64 {
+        return Err(SumidaError::BadRequest("coupon redemption limit reached for this owner".into()));
       }
     }
 

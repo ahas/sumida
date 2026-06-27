@@ -5,6 +5,7 @@ pub mod helper;
 pub mod init;
 pub mod membership;
 pub mod membership_billing;
+pub mod membership_coupon_per_owner;
 pub mod membership_coupons;
 pub mod membership_dunning;
 pub mod membership_reservations;

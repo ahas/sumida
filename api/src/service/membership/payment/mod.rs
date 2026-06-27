@@ -121,7 +121,8 @@ impl<S: SumidaState> PaymentService<S> {
     let subtotal = plan.price;
     let (discount, coupon_code) = match &req.coupon_code {
       Some(code) => {
-        let (d, c) = CouponService::<S>::apply_in_txn(code, &plan.currency, subtotal, &txn).await?;
+        let (d, c) =
+          CouponService::<S>::apply_in_txn(code, &plan.currency, subtotal, &owner_kind, owner_id, &txn).await?;
         (d, Some(c))
       }
       None => (0, None),

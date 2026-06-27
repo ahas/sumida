@@ -172,6 +172,37 @@ async fn test_coupon_update_and_delete() {
 }
 
 // ---------------------------------------------------------------------------
+// A per-owner cap (e.g. once-per-customer) blocks the same owner reusing it.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_per_owner_limit() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+  let code = format!("ONCE1-{}", rnd());
+  create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "maxRedemptionsPerOwner": 1 })).await;
+
+  // Same owner: first checkout succeeds, second is blocked.
+  let a = user_mock(&db).await;
+  let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
+  assert_eq!(a.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    a.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::BAD_REQUEST,
+    "same owner cannot redeem past the per-owner cap"
+  );
+
+  // A different owner can still redeem it.
+  let b = user_mock(&db).await;
+  assert_eq!(
+    b.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::CREATED,
+    "the per-owner cap is per owner, not global"
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Coupon management is admin-only.
 // ---------------------------------------------------------------------------
 #[tokio::test]
