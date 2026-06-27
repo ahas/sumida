@@ -84,20 +84,24 @@ expire ended/grace-closed subscriptions → release expired reservations → swe
 expired credit lots → "expiring soon" notices → "low balance" alerts. Each job is
 idempotent and independently fault-isolated.
 
-**Deployment caveat — single runner.** The scheduler holds no distributed lock,
-so running it in N application instances runs every job N times per tick. Run it
-in exactly one instance (a dedicated worker, or a leader-elected node), or wrap
-`run_once` behind a Postgres advisory lock / external scheduler if you must spawn
-it everywhere. The per-row transactions make double-runs *safe* (idempotent) but
-wasteful and noisier in logs.
+**Opt-in, not automatic.** `Sumida::new().router()` does NOT start the scheduler;
+the downstream app must call `spawn(...)` once (see `examples/basic`). Omit the
+call and the maintenance jobs never run.
+
+**Multi-instance safe.** `run_once` is guarded by a Postgres *advisory lock*, so
+running the scheduler in N application instances still runs each tick exactly
+once — the instance that wins the lock runs the pass, the rest skip immediately.
+(The individual job functions are public and lock-free for one-off CLIs.)
 
 ## 4. Mail templates
 
 The `membership` migration seeds four `mail_forms` with English placeholder text:
 `subscription-created-receipt`, `subscription-expiring-soon`,
 `credit-purchased-receipt`, `credit-low-balance-alert`. Replace the
-sender/subject/body for production (notices are best-effort and only sent to
-**personal** owners with an email; organization owners have no mail channel).
+sender/subject/body for production. Notices are best-effort and go to the
+**personal** owner's email, or — for organization owners — to the org's
+**managers** (everyone holding an `org:subscription` / `org:credit` manage policy
+on that org, resolved through their `user:` / `role:` / `org:` identities).
 
 ## 5. Payment flow (PG)
 
@@ -112,3 +116,49 @@ signature-verified and idempotent (deduped by `webhook-id`).
 
 A free trial (`plan.trial_days`) is granted at most once per (owner, plan); a
 later subscribe to the same plan starts a normal paid period.
+
+## 6. Capabilities & limitations
+
+What this domain can and cannot do today.
+
+### ✅ Possible
+- **Catalog**: subscription & credit plans (personal/org scope), free trials,
+  per-action quotas / credit costs, soft-delete (retire) plans.
+- **Subscriptions**: subscribe (free/manual or PG-paid), cancel (now/period-end),
+  manual renew, **auto-renew** (billing key), **grace + dunning** retries,
+  **reactivation**, **mid-period plan change with proration** (upgrade charges the
+  billing key; decline aborts).
+- **Trials**: free first period, **once per (owner, plan)** (re-subscribe is paid).
+- **Credits**: grant (with expiry, FIFO lots), consume (idempotent), **reserve /
+  capture / release** (authorize-capture), refund, balance/spendable, ledger +
+  reservation lists, consistency **audit**.
+- **Entitlement**: hybrid subscription/credit gate with per-period **quota**;
+  route-layer (`entitlement_guard!`) or in-handler (`require_action`).
+- **Payments (PortOne V2)**: checkout → confirm/webhook → verify → activate;
+  refund; recurring billing-key charge (auto-renew, dunning, proration); webhook
+  signature verification + idempotency.
+- **Coupons & tax**: percent / fixed-amount coupons (currency-matched), global +
+  **per-owner** redemption caps, expiry, activate/retire/delete; flat checkout tax;
+  full price breakdown recorded.
+- **Organizations**: org-admin (ReBAC) management of org subscriptions/credits with
+  automatic parent→child hierarchy (single-row *and* lists); org notices reach the
+  org's managers.
+- **Scheduler**: background expiry/renewal/dunning/sweep/notices, **multi-instance
+  safe** (advisory lock), idempotent.
+
+### ❌ Not (yet) possible
+- **Billing-key *issuance* server-side** — keys are issued via the client SDK; the
+  server only stores & charges them. A subscription without a stored billing key
+  cannot auto-renew (it expires).
+- **Downgrade refund / negative-proration payout** — recorded as a breakdown only;
+  actual money-out is left to the operator/PG.
+- **Per-currency credit wallets / FX** — one wallet per owner, single currency
+  (currency travels on plans/purchases/coupons only).
+- **Usage-based / overage billing** — quotas *block*; they do not bill the excess.
+- **Reserve/capture tied to an external PG authorize-capture** — credit holds are
+  internal-ledger only.
+- **Coupons on the free `POST /subscriptions` path** — applied at PG checkout only;
+  no coupon stacking; not scoped to specific plans.
+- **Tax tables** — a single flat basis-point rate (no per-region/exemptions/tax id).
+
+See `TASKS.md` ("멤버십 후속") for the deferred items and rationale.

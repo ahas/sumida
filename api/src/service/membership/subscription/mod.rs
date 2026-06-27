@@ -15,7 +15,7 @@ use sea_orm::{
 use serde_json::json;
 
 use self::dto::*;
-use super::{gen_code, managed_org_ids, notify, resolve_owner};
+use super::{gen_code, managed_org_ids, notify_all, recipient_emails, resolve_owner};
 use crate::SumidaState;
 use crate::util::ap::{self, ApGuard};
 use crate::util::org::organization_ancestors_subquery;
@@ -353,16 +353,11 @@ impl<S: SumidaState> SubscriptionService<S> {
 
     txn.commit().await?;
 
-    // Best-effort receipt (personal owners with an email only).
-    let email = match owner_kind {
-      OwnerKind::Personal => {
-        Users::find_by_id(owner_id).one(self.state.db()).await.ok().flatten().and_then(|u| u.email)
-      }
-      OwnerKind::Organization => None,
-    };
-    notify::<S, _, _>(
+    // Best-effort receipt — personal owner's email, or the org's managers.
+    let emails = recipient_emails(&owner_kind, owner_id, self.state.db()).await;
+    notify_all::<S, _, _>(
       "subscription-created-receipt",
-      email.as_deref(),
+      &emails,
       json!({ "plan_code": plan.code, "current_period_end": period_end.to_rfc3339() }),
       self.state.db(),
     )

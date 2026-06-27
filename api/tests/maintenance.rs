@@ -4,15 +4,19 @@
 //! rows left by other tests too — every assertion here targets the specific row
 //! the test created, never a global count.
 
-use api::service::membership::maintenance;
+use api::service::membership::{maintenance, org_manager_emails};
 use api::util::random::generate_url_safe_string;
 use chrono::{Duration, Utc};
+use e2e::ap_test_utils::create_ap;
 use e2e::prelude::*;
 use entity::membership::credit_transactions::Column as TxCol;
 use entity::membership::subscription_events::Column as EventCol;
 use entity::prelude::*;
 use reqwest::StatusCode;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
+use sea_orm::{
+  ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
+  Statement, TransactionTrait,
+};
 use serde_json::{Value, json};
 
 /// A minimal `SumidaState` so the generic maintenance jobs can be invoked directly.
@@ -42,6 +46,128 @@ async fn create_plan(client: &TestClient, body: Value) -> String {
   let resp = client.post("/membership-plans").json(&body).send().await.expect("create plan");
   assert_eq!(resp.status(), StatusCode::CREATED, "admin should create plan");
   resp.json::<Value>().await.unwrap()["code"].as_str().unwrap().to_string()
+}
+
+// ---------------------------------------------------------------------------
+// run_once is guarded by an advisory lock: while another session holds it, a
+// pass is skipped entirely (multi-instance single-runner guarantee).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_run_once_skips_when_lock_held() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("lk-{}", rnd()), "name": "LK", "kind": "subscription", "scope": "personal",
+      "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+  let user_mock = Mock::new().await;
+  let user = TestUser::create(&db).await.unwrap();
+  user.login(&user_mock.client).await;
+  let created: Value =
+    user_mock.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let sub_id = created["id"].as_i64().unwrap() as i32;
+  // Make it due for expiry.
+  let mut a = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap().into_active_model();
+  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.update(&db).await.unwrap();
+
+  // Hold the maintenance advisory lock on a separate session.
+  let lock_key: i64 = 0x5346_4D49_4D42_4C4B;
+  let guard = db.begin().await.unwrap();
+  guard
+    .execute(Statement::from_sql_and_values(
+      guard.get_database_backend(),
+      "SELECT pg_advisory_xact_lock($1)",
+      [lock_key.into()],
+    ))
+    .await
+    .unwrap();
+
+  // run_once must skip → our due subscription is NOT expired.
+  maintenance::run_once::<MState>(&db).await;
+  let still = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(
+    still.status,
+    entity::membership::SubscriptionStatus::Active,
+    "while the lock is held, the tick is skipped"
+  );
+
+  // Release the lock → the next pass processes it.
+  guard.commit().await.unwrap();
+  maintenance::run_once::<MState>(&db).await;
+  let done = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(
+    done.status,
+    entity::membership::SubscriptionStatus::Expired,
+    "once unlocked, the pass expires the due subscription"
+  );
+}
+
+// ---------------------------------------------------------------------------
+// An organization's managers are resolved from its org policies for notices.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_org_manager_emails_resolution() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  let org = TestOrg::create(&db).await.unwrap();
+  let manager = TestUser::create_in_org(&db, org.model.id).await.unwrap();
+  create_ap(&db, &manager, "org:subscription", &org.model.id.to_string(), vec!["manage".to_string()], "allow")
+    .await
+    .unwrap();
+
+  let emails = org_manager_emails(org.model.id, &db).await.unwrap();
+  assert!(
+    emails.iter().any(|e| Some(e.as_str()) == manager.model.email.as_deref()),
+    "the org manager's email resolves from its org:subscription policy"
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Organization subscriptions are now processed by the expiring-soon job (the
+// notice targets the org's managers, not just personal owners).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_org_subscription_expiring_processed() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  // durationDays=3 puts the first period inside the default 7-day window.
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("oe-{}", rnd()), "name": "OE", "kind": "subscription", "scope": "organization",
+      "durationDays": 3, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+  let org = TestOrg::create(&db).await.unwrap();
+  // The system admin can subscribe on behalf of the org.
+  let created: Value = am
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code, "ownerKind": "organization", "ownerId": org.model.id }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let sub_id = created["id"].as_i64().unwrap() as i32;
+
+  maintenance::notify_expiring_subscriptions::<MState>(&db).await.unwrap();
+  let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert!(
+    sub.expiring_notified_at.is_some(),
+    "org subscriptions are processed by the expiring-soon job"
+  );
 }
 
 // ---------------------------------------------------------------------------

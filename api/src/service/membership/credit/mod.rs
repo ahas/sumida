@@ -15,7 +15,7 @@ use sea_orm::{
 };
 
 use self::dto::*;
-use super::{notify, owner_kind_str, resolve_owner};
+use super::{notify_all, owner_kind_str, recipient_emails, resolve_owner};
 use crate::SumidaState;
 use crate::util::ap::{self, ApGuard};
 use crate::util::org::organization_ancestors_subquery;
@@ -187,14 +187,6 @@ impl<S: SumidaState> CreditService<S> {
     Ok(row.map(|r| r.credit_cost))
   }
 
-  async fn recipient_email<C: ConnectionTrait>(owner_kind: &OwnerKind, owner_id: i32, db: &C) -> Option<String> {
-    match owner_kind {
-      OwnerKind::Personal => {
-        Users::find_by_id(owner_id).one(db).await.ok().flatten().and_then(|u| u.email)
-      }
-      OwnerKind::Organization => None,
-    }
-  }
 
   /// Expire any lapsed lots: zero their remaining, write `expire` ledger rows, and
   /// decrement the cached wallet balance. Returns the post-sweep balance. The caller
@@ -573,10 +565,10 @@ impl<S: SumidaState> CreditService<S> {
       .await?;
     txn.commit().await?;
 
-    let email = Self::recipient_email(&owner_kind, owner_id, self.state.db()).await;
-    notify::<S, _, _>(
+    let emails = recipient_emails(&owner_kind, owner_id, self.state.db()).await;
+    notify_all::<S, _, _>(
       "credit-purchased-receipt",
-      email.as_deref(),
+      &emails,
       serde_json::json!({ "amount": data.amount, "balance": result.balance }),
       self.state.db(),
     )

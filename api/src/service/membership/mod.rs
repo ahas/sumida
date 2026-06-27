@@ -126,6 +126,88 @@ pub async fn managed_org_ids<C: ConnectionTrait>(
   Ok(rows.into_iter().map(|r| r.id).collect())
 }
 
+/// Emails to notify for an owner: the user's own email for a personal owner, or
+/// the organization's managers (holders of an `org:subscription` / `org:credit`
+/// allow policy on the org) for an organization owner.
+pub async fn recipient_emails<C: ConnectionTrait>(
+  owner_kind: &OwnerKind,
+  owner_id: i32,
+  db: &C,
+) -> Vec<String> {
+  match owner_kind {
+    OwnerKind::Personal => Users::find_by_id(owner_id)
+      .one(db)
+      .await
+      .ok()
+      .flatten()
+      .and_then(|u| u.email)
+      .into_iter()
+      .collect(),
+    OwnerKind::Organization => org_manager_emails(owner_id, db).await.unwrap_or_default(),
+  }
+}
+
+/// Emails of the users who manage organization `org_id`'s membership: expanded
+/// from the `user:` / `role:` / `org:` identities on its `org:subscription` /
+/// `org:credit` allow policies (matching `manage` or `*`).
+pub async fn org_manager_emails<C: ConnectionTrait>(
+  org_id: i32,
+  db: &C,
+) -> Result<Vec<String>, SumidaError> {
+  use std::collections::HashSet;
+
+  let policies = AccessPolicies::find()
+    .filter(AccessPoliciesColumn::Effect.eq("allow"))
+    .filter(AccessPoliciesColumn::Object.eq(org_id.to_string()))
+    .filter(AccessPoliciesColumn::Namespace.is_in(["org:subscription".to_string(), "org:credit".to_string()]))
+    .all(db)
+    .await?;
+
+  let (mut user_ids, mut role_ids, mut org_ids) = (HashSet::new(), HashSet::new(), HashSet::new());
+  for p in policies {
+    if !p.action.iter().any(|a| a == "manage" || a == "*") {
+      continue;
+    }
+    let u = p.user.as_str();
+    if let Some(n) = u.strip_prefix("user:").and_then(|x| x.parse::<i32>().ok()) {
+      user_ids.insert(n);
+    } else if let Some(n) = u.strip_prefix("role:").and_then(|x| x.parse::<i32>().ok()) {
+      role_ids.insert(n);
+    } else if let Some(n) = u.strip_prefix("org:").and_then(|x| x.parse::<i32>().ok()) {
+      org_ids.insert(n);
+    }
+  }
+
+  let mut emails: HashSet<String> = HashSet::new();
+  for (col, ids) in [
+    (entity::users::Column::Id, user_ids),
+    (entity::users::Column::RoleId, role_ids),
+    (entity::users::Column::OrganizationId, org_ids),
+  ] {
+    if ids.is_empty() {
+      continue;
+    }
+    for u in Users::find().filter(col.is_in(ids)).all(db).await? {
+      if let Some(e) = u.email {
+        emails.insert(e);
+      }
+    }
+  }
+  Ok(emails.into_iter().collect())
+}
+
+/// Best-effort notification to every recipient (no-op on an empty list).
+pub async fn notify_all<S, Ctx, C>(kind: &str, emails: &[String], context: Ctx, db: &C)
+where
+  S: SumidaState,
+  Ctx: Serialize,
+  C: ConnectionTrait,
+{
+  for email in emails {
+    notify::<S, _, _>(kind, Some(email.as_str()), &context, db).await;
+  }
+}
+
 /// Best-effort membership notification. Never fails the caller: it is skipped
 /// when SMTP is not configured or no recipient is known, and any send error is
 /// logged rather than propagated.

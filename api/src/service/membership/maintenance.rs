@@ -14,7 +14,7 @@ use std::time::Duration as StdDuration;
 use chrono::{Duration, Utc};
 use entity::membership::subscriptions::Column as SubColumn;
 use entity::membership::{
-  OwnerKind, PlanKind, PurchaseStatus, ReservationStatus, SubscriptionEventKind, SubscriptionStatus,
+  PlanKind, PurchaseStatus, ReservationStatus, SubscriptionEventKind, SubscriptionStatus,
 };
 use entity::prelude::*;
 use error::SumidaError;
@@ -23,17 +23,45 @@ use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-  TransactionTrait,
+  ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
+  QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
 use serde_json::json;
 
 use super::credit::CreditService;
-use super::{gen_code, notify};
+use super::{gen_code, notify_all, recipient_emails};
 use crate::SumidaState;
 
 /// How many due subscriptions to process per batch (one transaction each).
 const BATCH: u64 = 500;
+
+/// Fixed key for the maintenance advisory lock — ensures one runner at a time
+/// across application instances. Arbitrary but stable.
+const MAINTENANCE_LOCK_KEY: i64 = 0x5346_4D49_4D42_4C4B; // "SFMIMBLK"
+
+/// Try to acquire the cross-instance maintenance lock. Returns the holding
+/// transaction (a Postgres transaction-scoped advisory lock, released on commit)
+/// when this instance won the tick, or `None` when another instance holds it (or
+/// the lock check errored — then we conservatively skip).
+async fn acquire_maintenance_lock(db: &DatabaseConnection) -> Option<DatabaseTransaction> {
+  let guard = db.begin().await.ok()?;
+  let backend = guard.get_database_backend();
+  let row = guard
+    .query_one(Statement::from_sql_and_values(
+      backend,
+      "SELECT pg_try_advisory_xact_lock($1) AS locked",
+      [MAINTENANCE_LOCK_KEY.into()],
+    ))
+    .await
+    .ok()??;
+  match row.try_get::<bool>("", "locked") {
+    Ok(true) => Some(guard),
+    _ => {
+      let _ = guard.rollback().await;
+      None
+    }
+  }
+}
 
 /// Counts of work done by one maintenance pass.
 #[derive(Debug, Default, Clone, Copy)]
@@ -490,7 +518,6 @@ pub async fn notify_expiring_subscriptions<S: SumidaState>(
 
   let due = Subscriptions::find()
     .filter(SubColumn::Status.eq(SubscriptionStatus::Active))
-    .filter(SubColumn::OwnerKind.eq(OwnerKind::Personal))
     .filter(SubColumn::CancelAtPeriodEnd.eq(false))
     .filter(SubColumn::CurrentPeriodEnd.gt(now_dt))
     .filter(SubColumn::CurrentPeriodEnd.lte(horizon))
@@ -509,10 +536,10 @@ pub async fn notify_expiring_subscriptions<S: SumidaState>(
     .exec(db)
     .await?;
 
-    let email = Users::find_by_id(sub.owner_id).one(db).await?.and_then(|u| u.email);
-    notify::<S, _, _>(
+    let emails = recipient_emails(&sub.owner_kind, sub.owner_id, db).await;
+    notify_all::<S, _, _>(
       "subscription-expiring-soon",
-      email.as_deref(),
+      &emails,
       json!({ "plan_code": sub.plan_code, "current_period_end": sub.current_period_end.to_rfc3339() }),
       db,
     )
@@ -535,7 +562,6 @@ pub async fn notify_low_balance_wallets<S: SumidaState>(
   let now_dt: DateTimeWithTimeZone = Utc::now().into();
 
   let wallets = CreditWallets::find()
-    .filter(CreditWalletsColumn::OwnerKind.eq(OwnerKind::Personal))
     .filter(CreditWalletsColumn::Balance.lte(threshold))
     .filter(CreditWalletsColumn::LowBalanceNotifiedAt.is_null())
     .all(db)
@@ -552,14 +578,9 @@ pub async fn notify_low_balance_wallets<S: SumidaState>(
     .exec(db)
     .await?;
 
-    let email = Users::find_by_id(wallet.owner_id).one(db).await?.and_then(|u| u.email);
-    notify::<S, _, _>(
-      "credit-low-balance-alert",
-      email.as_deref(),
-      json!({ "balance": wallet.balance }),
-      db,
-    )
-    .await;
+    let emails = recipient_emails(&wallet.owner_kind, wallet.owner_id, db).await;
+    notify_all::<S, _, _>("credit-low-balance-alert", &emails, json!({ "balance": wallet.balance }), db)
+      .await;
     sent += 1;
   }
   Ok(sent)
@@ -569,8 +590,19 @@ pub async fn notify_low_balance_wallets<S: SumidaState>(
 /// rest still run. Ordered so auto-renew runs before expiry (a successful renew
 /// pre-empts expiry) and balances are corrected (sweep) before the low-balance
 /// check reads them.
+///
+/// Guarded by a Postgres advisory lock so that only ONE application instance runs
+/// the pass per tick; other instances skip immediately. (The individual job
+/// functions are public and lock-free — call them directly for one-off CLIs.)
 pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceReport {
   let mut report = MaintenanceReport::default();
+
+  // Cross-instance single-runner guard. The lock is held by `_guard`'s
+  // transaction and released when it commits at the end of the pass.
+  let Some(guard) = acquire_maintenance_lock(db).await else {
+    tracing::debug!("membership maintenance: another instance holds the lock; skipping tick");
+    return report;
+  };
 
   match renew_due_subscriptions(db).await {
     Ok((renewed, failed)) => {
@@ -605,6 +637,11 @@ pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceRep
   match notify_low_balance_wallets::<S>(db).await {
     Ok(n) => report.low_balance_notices = n,
     Err(e) => tracing::warn!("membership maintenance: low-balance notices failed: {e}"),
+  }
+
+  // Release the advisory lock.
+  if let Err(e) = guard.commit().await {
+    tracing::warn!("membership maintenance: releasing advisory lock failed: {e}");
   }
 
   report
