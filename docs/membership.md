@@ -104,7 +104,11 @@ sender/subject/body for production (notices are best-effort and only sent to
 `POST /payments/checkout` → pending purchase (coupon + tax applied, total
 recorded with breakdown) → client pays at the PG → `POST /payments/confirm` (or
 the `Transaction.Paid` webhook) → server-side `verify` (PAID + amount match) →
-subscription activated / `plan.credit_amount` credits granted. Auto-renew and
-dunning charge the stored `billing_key` via `charge_recurring`. Refund reverses
-the entitlement and cancels at the PG. Webhooks are Standard-Webhooks
+subscription activated / `plan.credit_amount` credits granted. Auto-renew,
+dunning, and a positive plan-change proration charge the stored `billing_key` via
+`charge_recurring` (a declined proration charge aborts the change). Refund
+reverses the entitlement and cancels at the PG. Webhooks are Standard-Webhooks
 signature-verified and idempotent (deduped by `webhook-id`).
+
+A free trial (`plan.trial_days`) is granted at most once per (owner, plan); a
+later subscribe to the same plan starts a normal paid period.

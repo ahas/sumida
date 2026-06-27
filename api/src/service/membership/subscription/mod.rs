@@ -283,9 +283,22 @@ impl<S: SumidaState> SubscriptionService<S> {
     let now = Utc::now();
     let code = gen_code("sub");
 
-    // A plan with a positive trial_days starts a free first period; otherwise the
-    // first period is the paid duration and the canonical purchase records the price.
-    let trial_days = plan.trial_days.filter(|d| *d > 0);
+    // A plan with a positive trial_days starts a free first period — but only once
+    // per (owner, plan): a prior trialed subscription disqualifies a repeat trial
+    // (abuse prevention), falling back to a normal paid first period.
+    let trial_days = match plan.trial_days.filter(|d| *d > 0) {
+      Some(td) => {
+        let prior_trial = Subscriptions::find()
+          .filter(Column::OwnerKind.eq(owner_kind.clone()))
+          .filter(Column::OwnerId.eq(owner_id))
+          .filter(Column::PlanId.eq(plan.id))
+          .filter(Column::TrialEndsAt.is_not_null())
+          .one(&txn)
+          .await?;
+        if prior_trial.is_some() { None } else { Some(td) }
+      }
+      None => None,
+    };
     let (period_end, trial_ends_at, charge_amount) = match trial_days {
       Some(td) => {
         let end = now + Duration::days(td as i64);
@@ -589,6 +602,29 @@ impl<S: SumidaState> SubscriptionService<S> {
 
     let old_plan_code = old_plan.as_ref().map(|p| p.code.clone()).unwrap_or_else(|| sub.plan_code.clone());
     let allowed = Self::snapshot_allowed_actions(new_plan.id, &txn).await?;
+    let purchase_code = gen_code("pur");
+
+    // Settle an upgrade's positive proration via the stored billing key when present.
+    // A decline aborts the change (the transaction rolls back). A downgrade
+    // (proration_amount <= 0) or a subscription without a billing key records the
+    // breakdown only — actual money movement is then the operator's/PG's concern.
+    let (settle_provider, settle_payment_id) = if proration_amount > 0 {
+      if let Some(billing_key) = sub.billing_key.clone() {
+        let provider = infra::payment::provider();
+        let charge = provider
+          .charge_recurring(&billing_key, proration_amount, &new_plan.currency, &purchase_code)
+          .await
+          .map_err(|e| SumidaError::PaymentProviderError(e.to_string()))?;
+        if !charge.status.is_paid() {
+          return Err(SumidaError::PaymentNotCompleted(charge.raw_status));
+        }
+        (provider.name().to_string(), charge.transaction_id)
+      } else {
+        ("none".to_string(), None)
+      }
+    } else {
+      ("none".to_string(), None)
+    };
 
     Subscriptions::update(SubscriptionsActiveModel {
       id: Unchanged(id),
@@ -601,7 +637,6 @@ impl<S: SumidaState> SubscriptionService<S> {
     .exec(&txn)
     .await?;
 
-    let purchase_code = gen_code("pur");
     MembershipPurchases::insert(MembershipPurchasesActiveModel {
       code: Set(purchase_code.clone()),
       kind: Set(PlanKind::Subscription),
@@ -612,6 +647,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       status: Set(PurchaseStatus::Completed),
       amount: Set(proration_amount.max(0)),
       subtotal: Set(proration_amount.max(0)),
+      provider: Set(settle_provider),
+      provider_payment_id: Set(settle_payment_id),
       currency: Set(new_plan.currency.clone()),
       paid_at: Set(Some(now)),
       metadata: Set(Some(json!({

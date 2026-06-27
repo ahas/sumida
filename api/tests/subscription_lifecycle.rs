@@ -449,3 +449,150 @@ async fn test_change_plan_same_plan_rejected() {
     .unwrap();
   assert_eq!(r.status(), StatusCode::BAD_REQUEST, "changing to the same plan must be rejected");
 }
+
+// ---------------------------------------------------------------------------
+// A free trial is granted only once per (owner, plan); a re-subscribe is paid.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_trial_granted_only_once() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("t1-{}", rnd()), "name": "T1", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "trialDays": 7, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  let (m, _u) = user_mock(&db).await;
+  // First subscribe → trial.
+  let first: Value =
+    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let first_id = first["id"].as_i64().unwrap() as i32;
+  assert!(Subscriptions::find_by_id(first_id).one(&db).await.unwrap().unwrap().trial_ends_at.is_some());
+
+  // Cancel it, then re-subscribe to the same plan → no second trial (paid period).
+  assert_eq!(m.client.post(&format!("/subscriptions/{first_id}/cancel")).send().await.unwrap().status(), StatusCode::OK);
+  let second: Value =
+    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let second_id = second["id"].as_i64().unwrap() as i32;
+  let s = Subscriptions::find_by_id(second_id).one(&db).await.unwrap().unwrap();
+  assert!(s.trial_ends_at.is_none(), "no repeat trial for the same plan");
+  assert!(s.current_period_end > Utc::now() + Duration::days(20), "second period is the full ~30 days");
+}
+
+// ---------------------------------------------------------------------------
+// An upgrade settles its positive proration through the stored billing key.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_change_plan_settles_via_billing_key() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  if infra::settings::get().membership.payment.provider != "mock" {
+    eprintln!("skipping: payment provider is not 'mock'");
+    return;
+  }
+  let am = admin_mock(&db).await;
+  let cheap = create_plan(
+    &am.client,
+    json!({ "code": format!("ps-{}", rnd()), "name": "C", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }] }),
+  )
+  .await;
+  let pricey = create_plan(
+    &am.client,
+    json!({ "code": format!("pp-{}", rnd()), "name": "P", "kind": "subscription", "scope": "personal",
+      "price": 3000, "durationDays": 30, "actions": [{ "action": "b" }] }),
+  )
+  .await;
+
+  let (m, _u) = user_mock(&db).await;
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": cheap, "autoRenew": true, "billingKey": "mock:bill:ok" }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let sub_id = created["id"].as_i64().unwrap() as i32;
+
+  let res: Value = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/change-plan"))
+    .json(&json!({ "planCode": pricey }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let purchase_code = res["purchaseCode"].as_str().unwrap().to_string();
+
+  // The proration purchase was charged at the mock PG.
+  let purchase = MembershipPurchases::find()
+    .filter(PurchaseCol::Code.eq(purchase_code))
+    .one(&db)
+    .await
+    .unwrap()
+    .unwrap();
+  assert_eq!(purchase.provider, "mock", "proration settled via the billing key");
+  assert!(purchase.amount > 0);
+}
+
+// ---------------------------------------------------------------------------
+// A declined proration charge aborts the change (plan unchanged).
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_change_plan_charge_decline_aborts() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  if infra::settings::get().membership.payment.provider != "mock" {
+    eprintln!("skipping: payment provider is not 'mock'");
+    return;
+  }
+  let am = admin_mock(&db).await;
+  let cheap = create_plan(
+    &am.client,
+    json!({ "code": format!("pf-{}", rnd()), "name": "C", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }] }),
+  )
+  .await;
+  let pricey = create_plan(
+    &am.client,
+    json!({ "code": format!("pg-{}", rnd()), "name": "P", "kind": "subscription", "scope": "personal",
+      "price": 3000, "durationDays": 30, "actions": [{ "action": "b" }] }),
+  )
+  .await;
+
+  let (m, _u) = user_mock(&db).await;
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": cheap, "autoRenew": true, "billingKey": "mock:bill:fail" }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let sub_id = created["id"].as_i64().unwrap() as i32;
+
+  let r = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/change-plan"))
+    .json(&json!({ "planCode": pricey }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "declined proration charge → 402");
+
+  // Plan unchanged.
+  let still = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(still.plan_code, cheap, "a declined charge must not switch the plan");
+}
