@@ -6,8 +6,8 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr,
-  PaginatorTrait, QueryFilter, QuerySelect, Select, TransactionTrait,
+  ColumnTrait, ConnectionTrait, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, PaginatorTrait,
+  QueryFilter, QuerySelect, Select, TransactionTrait,
 };
 
 use self::dto::*;
@@ -124,13 +124,23 @@ impl<S: SumidaState> BoardService<S> {
     Ok(item)
   }
 
-  pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
+  pub async fn delete(&self, id: i32) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
     self.try_access("delete", Boards::find_by_id(id), &txn).await?;
-    let result = Boards::delete_by_id(id).exec(&txn).await?;
+
+    // Soft delete: hide the board (and, via the post read filter, its posts) without dropping rows.
+    Boards::update_many()
+      .set(entity::bps::boards::ActiveModel {
+        deleted_at: Set(Some(chrono::Utc::now().fixed_offset())),
+        ..Default::default()
+      })
+      .filter(entity::bps::boards::Column::Id.eq(id))
+      .exec(&txn)
+      .await?;
+
     txn.commit().await?;
 
-    Ok(result)
+    Ok(())
   }
 }
 
@@ -140,6 +150,8 @@ impl<S: SumidaState> ApiService<ApCondition, Boards> for BoardService<S> {
       .select_only()
       .expr(Expr::col((Boards, Asterisk)))
       .left_join(BoardGroups)
+      // Soft-deleted boards are never returned.
+      .filter(entity::bps::boards::Column::DeletedAt.is_null())
   }
 
   fn ap(&self) -> ApCondition {

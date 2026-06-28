@@ -283,6 +283,30 @@ pub async fn unclaim_post_files<C: ConnectionTrait>(
   Ok(())
 }
 
+/// Collect a post id plus all of its descendants (the comment/reply subtree via `parent_id`),
+/// so a soft delete can cascade to replies that the FK cascade no longer removes.
+pub async fn collect_descendant_post_ids<C: ConnectionTrait>(
+  root_id: i32,
+  db: &C,
+) -> Result<Vec<i32>, sea_orm::DbErr> {
+  use sea_orm::{DbBackend, Statement};
+
+  let sql = r#"
+    WITH RECURSIVE descendants AS (
+      SELECT id FROM board_posts WHERE id = $1
+      UNION ALL
+      SELECT bp.id FROM board_posts bp JOIN descendants d ON bp.parent_id = d.id
+    )
+    SELECT id FROM descendants
+  "#;
+
+  let rows = db
+    .query_all(Statement::from_sql_and_values(DbBackend::Postgres, sql, [root_id.into()]))
+    .await?;
+
+  rows.iter().map(|row| row.try_get::<i32>("", "id")).collect()
+}
+
 /// Release every file attached to a post (used before deleting the post) so refs are decremented
 /// and the files become reapable rather than orphaned by the FK cascade.
 pub async fn release_all_post_files<C: ConnectionTrait>(post_id: i32, db: &C) -> Result<(), SumidaError> {

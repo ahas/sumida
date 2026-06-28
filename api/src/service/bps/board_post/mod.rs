@@ -586,8 +586,13 @@ impl<S: SumidaState> BoardPostService<S> {
     // Operator permission (board_group AND board) OR author ownership (board_post)
     self.authorize_post_mutation("delete", id, board.id, board.group_id, &txn).await?;
 
-    // Soft delete: mark deleted (read paths filter on deleted_at IS NULL) but free attached files now.
-    util::release_all_post_files(id, &txn).await?;
+    // Soft delete cascades to the comment/reply subtree (the FK cascade no longer fires on a soft delete).
+    let ids = util::collect_descendant_post_ids(id, &txn).await?;
+
+    // Free each post's attached files, then mark the whole subtree deleted.
+    for post_id in &ids {
+      util::release_all_post_files(*post_id, &txn).await?;
+    }
 
     BoardPosts::update_many()
       .set(BoardPostsActiveModel {
@@ -595,12 +600,15 @@ impl<S: SumidaState> BoardPostService<S> {
         deleted_at: Set(Some(chrono::Utc::now().fixed_offset())),
         ..Default::default()
       })
-      .filter(BoardPostsColumn::Id.eq(id))
+      .filter(BoardPostsColumn::Id.is_in(ids.clone()))
+      .filter(BoardPostsColumn::DeletedAt.is_null())
       .exec(&txn)
       .await?;
 
-    // Revoke the author's ownership policy for the now-deleted post.
-    ap::edit().namespace("board_post").object(id).delete(&txn).await?;
+    // Revoke the author ownership policy for each now-deleted post.
+    for post_id in &ids {
+      ap::edit().namespace("board_post").object(*post_id).delete(&txn).await?;
+    }
 
     txn.commit().await?;
 
@@ -719,8 +727,9 @@ impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
       .join(LeftJoin, BoardPostsRelation::Board.def())
       .join(LeftJoin, BoardPostsRelation::Topic.def())
       .join(LeftJoin, BoardsRelation::Group.def())
-      // Soft-deleted posts are never returned by any AP-filtered read path.
+      // Soft-deleted posts — and posts under a soft-deleted board — are never returned.
       .filter(BoardPostsColumn::DeletedAt.is_null())
+      .filter(BoardsColumn::DeletedAt.is_null())
   }
 
   fn ap(&self) -> ApChain {

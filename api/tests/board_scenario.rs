@@ -876,3 +876,81 @@ async fn scenario_attachment_uri_is_gated() {
   let uri = body["attachedFiles"][0]["uri"].as_str().unwrap();
   assert_eq!(uri, format!("/files/{uuid}/inline"), "attachment uri is the gated inline path");
 }
+
+#[tokio::test]
+async fn scenario_soft_delete_cascades_to_replies() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create", "delete"]).await;
+  author.login(&mock.client).await;
+
+  let post_id = create_published_article(&mock, board.id, "parent").await;
+
+  // a comment under the post (child in the parent_id tree)
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": board.id, "parentId": post_id, "title": "re", "content": "<p>c</p>",
+      "contentType": "text/html", "kind": "comment", "status": "published", "contentVisibility": "public"
+    }),
+  )
+  .await;
+  assert_eq!(resp.status(), StatusCode::CREATED);
+  let child_id = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap() as i32;
+
+  // delete the parent
+  let resp = mock.client.delete(&format!("/board-posts/{post_id}")).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+
+  // both parent and reply are gone from reads
+  assert_eq!(
+    mock.client.get(&format!("/board-posts/{post_id}")).send().await.unwrap().status(),
+    StatusCode::NOT_FOUND
+  );
+  assert_eq!(
+    mock.client.get(&format!("/board-posts/{child_id}")).send().await.unwrap().status(),
+    StatusCode::NOT_FOUND,
+    "reply is hidden when its parent is soft-deleted"
+  );
+
+  // the reply row is soft-deleted in the DB
+  let child = BoardPosts::find_by_id(child_id).one(&db).await.unwrap().unwrap();
+  assert!(child.deleted_at.is_some(), "reply is cascade soft-deleted");
+}
+
+#[tokio::test]
+async fn scenario_board_soft_delete_hides_board_and_posts() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create", "delete"]).await;
+  author.login(&mock.client).await;
+  let post_id = create_published_article(&mock, board.id, "p").await;
+
+  // soft-delete the board
+  let resp = mock.client.delete(&format!("/boards/{}", board.id)).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+
+  // board is hidden, and its posts are hidden too
+  assert_eq!(
+    mock.client.get(&format!("/boards/{}", board.id)).send().await.unwrap().status(),
+    StatusCode::NOT_FOUND,
+    "soft-deleted board is not readable"
+  );
+  assert_eq!(
+    mock.client.get(&format!("/board-posts/{post_id}")).send().await.unwrap().status(),
+    StatusCode::NOT_FOUND,
+    "posts under a soft-deleted board are hidden"
+  );
+
+  // the board row persists, marked deleted
+  let row = Boards::find_by_id(board.id).one(&db).await.unwrap().unwrap();
+  assert!(row.deleted_at.is_some(), "board deleted_at is stamped");
+}

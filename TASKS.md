@@ -156,9 +156,12 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
   board_post_views↔users 관계 추가. (content_visibility=읽기 / reaction_visibility=반응목록 / viewer_visibility=조회자목록 3분리 확인.)
 - **C-1 soft delete**: board_posts `delete()`를 `deleted_at`+status=Deleted 마킹으로 전환(파일은 release).
   모든 read 경로에 `deleted_at IS NULL` 필터 — `default_query_with`(AP read 일괄) + raw find_by_id 6곳(get/view/update/
-  list_viewers/reaction/report/inline). board는 범위 외(컬럼 미사용 유지).
-  알려진 한계: 부모 soft-delete 시 대댓글(자식 post)은 개별 유지 — 필요 시 cascade soft-delete 후속.
-- 테스트: `board_scenario.rs` **15 시나리오**(+신고/뷰어목록/soft-delete/첨부 uri 게이트) 전부 통과.
+  list_viewers/reaction/report/inline).
+- **C-1b 대댓글 cascade soft-delete**: 부모 soft-delete 시 `parent_id` 서브트리(재귀 CTE)를 함께 soft-delete +
+  각 글의 파일 release (`collect_descendant_post_ids`).
+- **C-1c board soft-delete**: `BoardService::delete()`도 soft-delete(`deleted_at`), board read 필터 +
+  글 목록은 `boards.deleted_at IS NULL`로 삭제된 board의 글까지 숨김.
+- 테스트: `board_scenario.rs` **17 시나리오**(+신고/뷰어목록/soft-delete/대댓글 cascade/board soft-delete/첨부 uri 게이트) 전부 통과.
 
 ### 파일 접근 원칙 (확정)
 - 응답·post 본문에 노출되는 파일 경로는 **항상 안정적 앱 경로 `/files/{uuid}/inline`** 하나만 사용.
@@ -169,7 +172,7 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
   응답/콘텐츠에 presigned 객체 URL 노출은 금지.
 
 ### 남은 후속
-- 대댓글 cascade soft-delete, board soft delete(현재 board는 하드 유지).
+- (게시판 도메인 보안/완성도/하드닝 라운드 완료. 추가 일감은 제품 결정 시.)
 
 ## P2 — 정합성 / 정리
 
