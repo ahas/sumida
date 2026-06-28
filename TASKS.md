@@ -9,10 +9,11 @@
 - `infra/src/jwt.rs:52-126`에 `fred` 기반으로 완전 구현됨(`jwt:refresh:{id}`/`jwt:blacklist:{jti}` + TTL).
   `cargo check -p infra --features session-store-redis`(기본 feature) 클린. TASKS 노트가 stale였음.
 
-### G5d. DynamoDB Local 기반 /auth/token e2e 테스트
-- `DynamoJwtStore`(`infra/src/jwt.rs:117-262`)는 production-ready이지만 자동 검증이 없음
-- `e2e/` 또는 `examples/basic/tests/`에 DynamoDB Local(또는 LocalStack) 기반 시나리오 추가
-- 시나리오: login → refresh → 두 번째 refresh 시 첫 refresh 무효 확인 → logout → blacklist 적용 확인
+### G5d. DynamoDB JWT store e2e 테스트 — ✅ 테스트 작성 (실행은 DynamoDB 테이블 필요)
+- `infra/src/jwt.rs`에 `dynamo_jwt_store_roundtrip` 추가(store/get/delete + blacklist 라운드트립).
+  DynamoDB store 빌드(redis off)에서만 컴파일되고, `SUMIDA_TEST_DYNAMO_TABLE`가 실제 테이블을 가리킬 때만 실행.
+- 실행: `cargo test -p infra --no-default-features --features session-store-aws-dynamodb dynamo_jwt_store_roundtrip`
+  (AWS creds/region + pk/sk(string) + `ttl` 속성 테이블 필요). 미설정 시 자동 skip.
 
 ### ~~Access token 블랙리스트~~ — ✅ 완료 (옵션 A, 2026-06 검증)
 - logout이 access 토큰 jti도 블랙리스트(`service/auth/token.rs:121-128`), `user_guard`가 매 인증 요청에서
@@ -215,11 +216,17 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
 - **구현 상태**: `credit_wallets.currency` 드롭 완료(`871c01b`). currency는 `membership_plans`/`membership_purchases`/
   `coupons`에만 존재(확인). 통화별 잔액·환율은 도입하지 않음. (원칙은 `docs/membership.md` "Per-currency credit wallets / FX" 항목.)
 
-### 크레딧 reserve/capture ↔ PG authorize-capture 연결
-- 현재: 내부 원장 기반 hold만. 외부 결제 승인-매입과는 분리
-- 비동기 결제(가상계좌 등)와 묶을 때 연동 검토
+### 크레딧 reserve/capture ↔ PG authorize-capture 연결 — ⚙️ 추상화 완료, 서비스 연동·PortOne 남음
+- ✅ `PaymentProvider`에 `authorize/capture/void`(크레딧 reserve/capture/release의 PG측 대응) 추가.
+  기본 구현 `Unsupported`(기존 구현체 비파괴), **Mock 완전 구현 + 유닛테스트**. None/PortOne은 기본값.
+- (참고) 비동기/가상계좌 결제는 이미 webhook→settle로 연결돼 있음(`handle_webhook`).
+- 남음(제품 결정 + 샌드박스 필요):
+  - **2단계 결제 서비스 흐름** — 언제 authorize→capture할지 정의 + 엔드포인트(`/payments/authorize|capture|void`) +
+    `membership_purchases`에 `provider_auth_code` 컬럼. (즉시결제 기본 흐름은 유지, opt-in 2단계.)
+  - **PortOne V2 manual-capture 구현** — 검증된 V2 엔드포인트로 authorize/capture/void 채우기(샌드박스 필요).
 
 ### 소소한 항목
 - ~~조직 owner 알림 채널~~ — 완료: org 관리자(org:subscription/org:credit manage 정책 보유자) 이메일로 발송
 - ~~스케줄러 다중 인스턴스 advisory lock~~ — 완료: `run_once`가 Postgres advisory lock으로 단일 러너 보장
-- 쿠폰은 PG checkout 경로에만 적용(무료 subscribe 경로 제외) — 의도된 분리, 필요 시 확장
+- ~~쿠폰은 PG checkout 경로에만 적용(무료 subscribe 경로 제외)~~ — ✅ 완료: `POST /subscriptions`도
+  `couponCode`/`couponCodes`를 받아 첫 기간 청구액 할인(무료 trial은 미소비). 테스트 `test_free_subscribe_applies_coupon`.
