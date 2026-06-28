@@ -45,7 +45,9 @@ impl<S: SumidaState> PaymentController<S> {
     State(state): State<S>,
     Json(body): Json<PaymentRefundRequest>,
   ) -> Result<PaymentRefundResult, SumidaError> {
-    PaymentService::new(state, session).refund(&body.purchase_code, body.reason.as_deref()).await
+    PaymentService::new(state, session)
+      .refund(&body.purchase_code, body.reason.as_deref())
+      .await
   }
 
   /// PG webhook — public, authenticated by Standard-Webhooks signature.

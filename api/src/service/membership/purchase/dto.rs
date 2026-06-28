@@ -1,6 +1,6 @@
 use entity::membership::{OwnerKind, PlanKind, PurchaseStatus};
-use sea_orm::prelude::*;
 use sea_orm::FromQueryResult;
+use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Deserialize)]

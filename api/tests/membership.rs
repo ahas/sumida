@@ -21,7 +21,10 @@ async fn create_plan_full(client: &TestClient, body: Value) -> (i32, String) {
   let resp = client.post("/membership-plans").json(&body).send().await.expect("create plan request");
   assert_eq!(resp.status(), StatusCode::CREATED, "admin should create plan");
   let json: Value = resp.json().await.expect("plan json");
-  (json["id"].as_i64().expect("plan id") as i32, json["code"].as_str().expect("plan code").to_string())
+  (
+    json["id"].as_i64().expect("plan id") as i32,
+    json["code"].as_str().expect("plan code").to_string(),
+  )
 }
 
 /// Spawn a fresh server, create a non-admin user, log them in. Returns `(mock, user)`.
@@ -105,7 +108,13 @@ async fn test_personal_subscription_and_entitlement() {
   let user = TestUser::create(&db).await.unwrap();
   user.login(&user_mock.client).await;
 
-  let resp = user_mock.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap();
+  let resp = user_mock
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(resp.status(), StatusCode::CREATED, "user subscribes to personal plan");
 
   // The subscription shows up in their owner-scoped list.
@@ -115,13 +124,25 @@ async fn test_personal_subscription_and_entitlement() {
   assert_eq!(list["count"].as_u64().unwrap(), 1);
 
   // Entitlement gate: covered action passes via subscription.
-  let resp = user_mock.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let resp = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(resp.status(), StatusCode::OK);
   let out: Value = resp.json().await.unwrap();
   assert_eq!(out["via"].as_str().unwrap(), "subscription");
 
   // Uncovered action: no subscription coverage and no credit plan → denied.
-  let resp = user_mock.client.post("/entitlements/check").json(&json!({ "action": "premium-export" })).send().await.unwrap();
+  let resp = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "premium-export" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(resp.status(), StatusCode::FORBIDDEN, "uncovered action must be denied");
 }
 
@@ -190,10 +211,22 @@ async fn test_duplicate_active_subscription() {
   let user = TestUser::create(&db).await.unwrap();
   user.login(&user_mock.client).await;
 
-  let first = user_mock.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap();
+  let first = user_mock
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(first.status(), StatusCode::CREATED);
 
-  let second = user_mock.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap();
+  let second = user_mock
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(second.status(), StatusCode::CONFLICT, "duplicate active subscription must conflict");
 }
 
@@ -298,9 +331,16 @@ async fn test_org_subscription_requires_org_admin() {
   assert_eq!(resp.status(), StatusCode::FORBIDDEN, "non-admin org member must be denied");
 
   // Grant the member an org-admin policy for this org and retry.
-  create_ap(&db, &member, "org:subscription", &org.model.id.to_string(), vec!["manage".to_string()], "allow")
-    .await
-    .unwrap();
+  create_ap(
+    &db,
+    &member,
+    "org:subscription",
+    &org.model.id.to_string(),
+    vec!["manage".to_string()],
+    "allow",
+  )
+  .await
+  .unwrap();
 
   let admin_member_mock = Mock::new().await;
   member.login(&admin_member_mock.client).await;
@@ -379,11 +419,18 @@ async fn test_subscription_cancel_immediate() {
   .await;
 
   let (user_mock, _user) = new_user_mock(&db).await;
-  let created: Value = subscribe(&user_mock.client, json!({ "planCode": code })).await.json().await.unwrap();
+  let created: Value =
+    subscribe(&user_mock.client, json!({ "planCode": code })).await.json().await.unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   // Entitlement works while active.
-  let r = user_mock.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK);
 
   // Cancel immediately.
@@ -391,10 +438,24 @@ async fn test_subscription_cancel_immediate() {
   assert_eq!(r.status(), StatusCode::OK);
 
   // Status is canceled and entitlement no longer passes via subscription.
-  let got: Value = user_mock.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  let got: Value = user_mock
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(got["status"].as_str().unwrap(), "canceled");
 
-  let r = user_mock.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::FORBIDDEN, "canceled subscription must not entitle");
 
   // Audit event recorded.
@@ -428,18 +489,38 @@ async fn test_subscription_cancel_at_period_end() {
   .await;
 
   let (user_mock, _user) = new_user_mock(&db).await;
-  let created: Value = subscribe(&user_mock.client, json!({ "planCode": code })).await.json().await.unwrap();
+  let created: Value =
+    subscribe(&user_mock.client, json!({ "planCode": code })).await.json().await.unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
-  let r = user_mock.client.post(&format!("/subscriptions/{sub_id}/cancel?atPeriodEnd=true")).send().await.unwrap();
+  let r = user_mock
+    .client
+    .post(&format!("/subscriptions/{sub_id}/cancel?atPeriodEnd=true"))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK);
 
-  let got: Value = user_mock.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  let got: Value = user_mock
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(got["status"].as_str().unwrap(), "active", "still active until period end");
   assert_eq!(got["cancelAtPeriodEnd"].as_bool().unwrap(), true);
 
   // Still entitled during the remaining period.
-  let r = user_mock.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK, "still entitled until period end");
 }
 
@@ -464,18 +545,38 @@ async fn test_subscription_renew_extends_period() {
   .await;
 
   let (user_mock, _user) = new_user_mock(&db).await;
-  let created: Value = subscribe(&user_mock.client, json!({ "planCode": code })).await.json().await.unwrap();
+  let created: Value =
+    subscribe(&user_mock.client, json!({ "planCode": code })).await.json().await.unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
-  let before: Value = user_mock.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  let before: Value = user_mock
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let end_before = before["currentPeriodEnd"].as_str().unwrap().to_string();
 
   let r = user_mock.client.post(&format!("/subscriptions/{sub_id}/renew")).send().await.unwrap();
   assert_eq!(r.status(), StatusCode::OK);
 
-  let after: Value = user_mock.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  let after: Value = user_mock
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let end_after = after["currentPeriodEnd"].as_str().unwrap().to_string();
-  assert!(end_after > end_before, "renew must push current_period_end forward ({end_before} -> {end_after})");
+  assert!(
+    end_after > end_before,
+    "renew must push current_period_end forward ({end_before} -> {end_after})"
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -641,10 +742,22 @@ async fn test_credit_expired_lots_excluded() {
 
   // Three consumes (10 each) succeed; the fourth hits insufficient (expired 50 unusable).
   for _ in 0..3 {
-    let r = user_mock.client.post("/credits/consume").json(&json!({ "action": &action })).send().await.unwrap();
+    let r = user_mock
+      .client
+      .post("/credits/consume")
+      .json(&json!({ "action": &action }))
+      .send()
+      .await
+      .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
   }
-  let r = user_mock.client.post("/credits/consume").json(&json!({ "action": &action })).send().await.unwrap();
+  let r = user_mock
+    .client
+    .post("/credits/consume")
+    .json(&json!({ "action": &action }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "expired credits must not be spendable");
 }
 
@@ -669,11 +782,18 @@ async fn test_subscription_expiry_denies_entitlement() {
   .await;
 
   let (user_mock, _user) = new_user_mock(&db).await;
-  let created: Value = subscribe(&user_mock.client, json!({ "planCode": code })).await.json().await.unwrap();
+  let created: Value =
+    subscribe(&user_mock.client, json!({ "planCode": code })).await.json().await.unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   // Entitled now.
-  let r = user_mock.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK);
 
   // Force the period to have ended.
@@ -683,7 +803,13 @@ async fn test_subscription_expiry_denies_entitlement() {
   am.update(&db).await.unwrap();
 
   // No longer entitled (and no credit plan covers it).
-  let r = user_mock.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::FORBIDDEN, "expired period must stop entitlement");
 }
 
@@ -721,7 +847,13 @@ async fn test_entitlement_credit_path() {
   user.login(&user_mock.client).await;
 
   // No subscription → gate falls through to credits and consumes 10.
-  let r = user_mock.client.post("/entitlements/check").json(&json!({ "action": &action })).send().await.unwrap();
+  let r = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": &action }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK);
   let out: Value = r.json().await.unwrap();
   assert_eq!(out["via"].as_str().unwrap(), "credit");
@@ -853,7 +985,13 @@ async fn test_credit_transactions_ledger() {
 
   let user_mock = Mock::new().await;
   user.login(&user_mock.client).await;
-  user_mock.client.post("/credits/consume").json(&json!({ "action": &action })).send().await.unwrap();
+  user_mock
+    .client
+    .post("/credits/consume")
+    .json(&json!({ "action": &action }))
+    .send()
+    .await
+    .unwrap();
 
   // Owner reads their ledger: a grant (+50) and a consume (-10).
   let list: Value = user_mock
@@ -866,7 +1004,8 @@ async fn test_credit_transactions_ledger() {
     .await
     .unwrap();
   assert!(list["count"].as_u64().unwrap() >= 2, "ledger must contain grant + consume");
-  let kinds: Vec<&str> = list["items"].as_array().unwrap().iter().filter_map(|i| i["kind"].as_str()).collect();
+  let kinds: Vec<&str> =
+    list["items"].as_array().unwrap().iter().filter_map(|i| i["kind"].as_str()).collect();
   assert!(kinds.contains(&"grant") && kinds.contains(&"consume"), "ledger kinds: {kinds:?}");
 }
 
@@ -891,9 +1030,20 @@ async fn test_membership_purchase_tracked() {
   .await;
 
   let (user_mock, _user) = new_user_mock(&db).await;
-  assert_eq!(subscribe(&user_mock.client, json!({ "planCode": code })).await.status(), StatusCode::CREATED);
+  assert_eq!(
+    subscribe(&user_mock.client, json!({ "planCode": code })).await.status(),
+    StatusCode::CREATED
+  );
 
-  let list: Value = user_mock.client.get("/membership-purchases").send().await.unwrap().json().await.unwrap();
+  let list: Value = user_mock
+    .client
+    .get("/membership-purchases")
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(list["count"].as_u64().unwrap(), 1, "one purchase tracked");
   let item = &list["items"][0];
   assert_eq!(item["kind"].as_str().unwrap(), "subscription");

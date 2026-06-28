@@ -7,8 +7,8 @@ use sea_orm::ActiveValue::Unchanged;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{
-  DbErr, DeleteResult, EntityTrait, IntoActiveModel, IntoSimpleExpr, JoinType, PaginatorTrait,
-  QuerySelect, RelationTrait, Select, Set, SqlErr, TransactionTrait,
+  DbErr, DeleteResult, EntityTrait, IntoActiveModel, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect,
+  RelationTrait, Select, Set, SqlErr, TransactionTrait,
 };
 
 use self::dto::*;

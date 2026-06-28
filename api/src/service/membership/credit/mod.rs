@@ -3,11 +3,11 @@ pub mod dto;
 use chrono::{Duration, Utc};
 use entity::membership::{CreditTxKind, OwnerKind, ReservationStatus};
 use entity::prelude::*;
-use sea_orm::prelude::DateTimeWithTimeZone;
 use error::SumidaError;
 use infra::session::UserSession;
 use infra::settings;
 use sea_orm::ActiveValue::*;
+use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
   ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, IntoSimpleExpr, PaginatorTrait,
@@ -155,7 +155,9 @@ impl<S: SumidaState> CreditService<S> {
     ))
     .one(db)
     .await?;
-    row.map(|r| r.id).ok_or_else(|| SumidaError::InternalServerError("wallet upsert failed".into()))
+    row
+      .map(|r| r.id)
+      .ok_or_else(|| SumidaError::InternalServerError("wallet upsert failed".into()))
   }
 
   /// Resolve the credit cost of an action from a (optionally specified) credit plan.
@@ -185,7 +187,6 @@ impl<S: SumidaState> CreditService<S> {
     .await?;
     Ok(row.map(|r| r.credit_cost))
   }
-
 
   /// Expire any lapsed lots: zero their remaining, write `expire` ledger rows, and
   /// decrement the cached wallet balance. Returns the post-sweep balance. The caller
@@ -277,17 +278,25 @@ impl<S: SumidaState> CreditService<S> {
 
     let Some(wallet0) = Self::find_wallet(owner_kind, owner_id, txn).await? else {
       if amount == 0 {
-        return Ok(DebitOutcome { wallet_id: 0, debited: 0, balance: 0 });
+        return Ok(DebitOutcome {
+          wallet_id: 0,
+          debited: 0,
+          balance: 0,
+        });
       }
-      return Err(SumidaError::InsufficientCredits { required: amount, available: 0 });
+      return Err(SumidaError::InsufficientCredits {
+        required: amount,
+        available: 0,
+      });
     };
 
     // Lock the wallet row to serialize concurrent debits/grants.
-    let wallet = CreditWallets::find_by_id(wallet0.id)
-      .lock_exclusive()
-      .one(txn)
-      .await?
-      .ok_or(SumidaError::InsufficientCredits { required: amount, available: 0 })?;
+    let wallet = CreditWallets::find_by_id(wallet0.id).lock_exclusive().one(txn).await?.ok_or(
+      SumidaError::InsufficientCredits {
+        required: amount,
+        available: 0,
+      },
+    )?;
 
     // Expire lapsed lots first so balance & availability are accurate.
     let balance = Self::sweep_expired(wallet.id, wallet.balance, txn).await?;
@@ -300,12 +309,20 @@ impl<S: SumidaState> CreditService<S> {
         .one(txn)
         .await?
       {
-        return Ok(DebitOutcome { wallet_id: wallet.id, debited: -prev.amount, balance });
+        return Ok(DebitOutcome {
+          wallet_id: wallet.id,
+          debited: -prev.amount,
+          balance,
+        });
       }
     }
 
     if amount == 0 {
-      return Ok(DebitOutcome { wallet_id: wallet.id, debited: 0, balance });
+      return Ok(DebitOutcome {
+        wallet_id: wallet.id,
+        debited: 0,
+        balance,
+      });
     }
 
     // Lock non-expired lots in FIFO order (expiry NULLS LAST, then created_at).
@@ -330,7 +347,10 @@ impl<S: SumidaState> CreditService<S> {
     let reserved = Self::held_reserved(wallet.id, txn).await?;
     let spendable = available - reserved;
     if spendable < amount {
-      return Err(SumidaError::InsufficientCredits { required: amount, available: spendable.max(0) });
+      return Err(SumidaError::InsufficientCredits {
+        required: amount,
+        available: spendable.max(0),
+      });
     }
 
     let mut remaining = amount;
@@ -373,7 +393,11 @@ impl<S: SumidaState> CreditService<S> {
     .exec(txn)
     .await?;
 
-    Ok(DebitOutcome { wallet_id: wallet.id, debited: amount, balance: new_balance })
+    Ok(DebitOutcome {
+      wallet_id: wallet.id,
+      debited: amount,
+      balance: new_balance,
+    })
   }
 
   /// Consume credits for an action (resolves the per-action cost first).
@@ -406,7 +430,11 @@ impl<S: SumidaState> CreditService<S> {
     )
     .await?;
 
-    Ok(ConsumeOutcome { wallet_id: out.wallet_id, consumed: out.debited, balance: out.balance })
+    Ok(ConsumeOutcome {
+      wallet_id: out.wallet_id,
+      consumed: out.debited,
+      balance: out.balance,
+    })
   }
 
   #[allow(clippy::too_many_arguments)]
@@ -440,7 +468,11 @@ impl<S: SumidaState> CreditService<S> {
         .one(txn)
         .await?
       {
-        return Ok(GrantResult { wallet_id: wallet.id, granted: prev.amount, balance });
+        return Ok(GrantResult {
+          wallet_id: wallet.id,
+          granted: prev.amount,
+          balance,
+        });
       }
     }
 
@@ -489,7 +521,11 @@ impl<S: SumidaState> CreditService<S> {
     .exec(txn)
     .await?;
 
-    Ok(GrantResult { wallet_id, granted: amount, balance: new_balance })
+    Ok(GrantResult {
+      wallet_id,
+      granted: amount,
+      balance: new_balance,
+    })
   }
 
   // ---- public API ----
@@ -547,16 +583,16 @@ impl<S: SumidaState> CreditService<S> {
     let txn = self.state.db().begin().await?;
     self.authorize_manage(&owner_kind, owner_id, &txn).await?;
     let result = Self::grant_in_txn(
-        &owner_kind,
-        owner_id,
-        data.amount,
-        data.plan_code.as_deref(),
-        expiry_at,
-        data.reference_code.as_deref(),
-        data.idempotency_key.as_deref(),
-        &txn,
-      )
-      .await?;
+      &owner_kind,
+      owner_id,
+      data.amount,
+      data.plan_code.as_deref(),
+      expiry_at,
+      data.reference_code.as_deref(),
+      data.idempotency_key.as_deref(),
+      &txn,
+    )
+    .await?;
     txn.commit().await?;
 
     let emails = recipient_emails(&owner_kind, owner_id, self.state.db()).await;
@@ -576,11 +612,23 @@ impl<S: SumidaState> CreditService<S> {
     let txn = self.state.db().begin().await?;
     self.authorize_use(&owner_kind, owner_id, &txn).await?;
     let out = self
-      .consume_in_txn(&owner_kind, owner_id, &data.action, data.plan_code.as_deref(), data.idempotency_key.as_deref(), None, &txn)
+      .consume_in_txn(
+        &owner_kind,
+        owner_id,
+        &data.action,
+        data.plan_code.as_deref(),
+        data.idempotency_key.as_deref(),
+        None,
+        &txn,
+      )
       .await?;
     txn.commit().await?;
 
-    Ok(ConsumeResult { wallet_id: out.wallet_id, consumed: out.consumed, balance: out.balance })
+    Ok(ConsumeResult {
+      wallet_id: out.wallet_id,
+      consumed: out.consumed,
+      balance: out.balance,
+    })
   }
 
   // ---- reservations (authorize → capture / release) ----
@@ -593,13 +641,17 @@ impl<S: SumidaState> CreditService<S> {
     self.authorize_use(&owner_kind, owner_id, &txn).await?;
 
     let Some(wallet0) = Self::find_wallet(&owner_kind, owner_id, &txn).await? else {
-      return Err(SumidaError::InsufficientCredits { required: 0, available: 0 });
+      return Err(SumidaError::InsufficientCredits {
+        required: 0,
+        available: 0,
+      });
     };
-    let wallet = CreditWallets::find_by_id(wallet0.id)
-      .lock_exclusive()
-      .one(&txn)
-      .await?
-      .ok_or(SumidaError::InsufficientCredits { required: 0, available: 0 })?;
+    let wallet = CreditWallets::find_by_id(wallet0.id).lock_exclusive().one(&txn).await?.ok_or(
+      SumidaError::InsufficientCredits {
+        required: 0,
+        available: 0,
+      },
+    )?;
     let balance = Self::sweep_expired(wallet.id, wallet.balance, &txn).await?;
 
     // Idempotency: same key on this wallet → return the existing reservation.
@@ -629,7 +681,10 @@ impl<S: SumidaState> CreditService<S> {
     let reserved = Self::held_reserved(wallet.id, &txn).await?;
     let spendable = balance - reserved;
     if spendable < cost {
-      return Err(SumidaError::InsufficientCredits { required: cost, available: spendable.max(0) });
+      return Err(SumidaError::InsufficientCredits {
+        required: cost,
+        available: spendable.max(0),
+      });
     }
 
     let expires_at = data.expires_in_secs.map(|s| (Utc::now() + Duration::seconds(s)).into());
@@ -695,7 +750,11 @@ impl<S: SumidaState> CreditService<S> {
     .await?;
 
     txn.commit().await?;
-    Ok(ConsumeResult { wallet_id: out.wallet_id, consumed: out.debited, balance: out.balance })
+    Ok(ConsumeResult {
+      wallet_id: out.wallet_id,
+      consumed: out.debited,
+      balance: out.balance,
+    })
   }
 
   /// Cancel a held reservation without spending. Rejected if not held.
@@ -745,26 +804,30 @@ impl<S: SumidaState> CreditService<S> {
     self.authorize_manage(&owner_kind, owner_id, &txn).await?;
 
     let out = Self::debit_in_txn(
-        CreditTxKind::Refund,
-        &owner_kind,
-        owner_id,
-        amount,
-        None,
-        reference_code.as_deref(),
-        idempotency_key.as_deref(),
-        None,
-        &txn,
-      )
-      .await
-      .map_err(|e| match e {
-        SumidaError::InsufficientCredits { available, .. } => {
-          SumidaError::RefundWouldExceedBalance(amount, available)
-        }
-        other => other,
-      })?;
+      CreditTxKind::Refund,
+      &owner_kind,
+      owner_id,
+      amount,
+      None,
+      reference_code.as_deref(),
+      idempotency_key.as_deref(),
+      None,
+      &txn,
+    )
+    .await
+    .map_err(|e| match e {
+      SumidaError::InsufficientCredits { available, .. } => {
+        SumidaError::RefundWouldExceedBalance(amount, available)
+      }
+      other => other,
+    })?;
     txn.commit().await?;
 
-    Ok(ConsumeResult { wallet_id: out.wallet_id, consumed: out.debited, balance: out.balance })
+    Ok(ConsumeResult {
+      wallet_id: out.wallet_id,
+      consumed: out.debited,
+      balance: out.balance,
+    })
   }
 
   pub async fn transactions(
@@ -863,6 +926,11 @@ impl<S: SumidaState> CreditService<S> {
         ledger_sum
       );
     }
-    Ok(WalletAudit { wallet_id, balance: wallet.balance, ledger_sum, diverged })
+    Ok(WalletAudit {
+      wallet_id,
+      balance: wallet.balance,
+      ledger_sum,
+      diverged,
+    })
   }
 }

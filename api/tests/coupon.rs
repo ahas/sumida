@@ -114,7 +114,11 @@ async fn test_coupon_currency_scope() {
     .send()
     .await
     .unwrap();
-  assert_eq!(r.status(), StatusCode::BAD_REQUEST, "currency-scoped coupon rejected for other currency");
+  assert_eq!(
+    r.status(),
+    StatusCode::BAD_REQUEST,
+    "currency-scoped coupon rejected for other currency"
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +174,15 @@ async fn test_redeem_free_plan_coupon() {
   let sub_id = body["subscriptionId"].as_i64().unwrap();
 
   // The granted subscription is active and free.
-  let got: Value = m.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  let got: Value = m
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(got["status"].as_str().unwrap(), "active");
   assert_eq!(got["planCode"].as_str().unwrap(), plan);
 }
@@ -211,7 +223,13 @@ async fn test_coupon_update_and_delete() {
   let id = created["id"].as_i64().unwrap();
 
   // Deactivate → checkout rejects it.
-  let r = am.client.patch(&format!("/coupons/{id}")).json(&json!({ "isActive": false })).send().await.unwrap();
+  let r = am
+    .client
+    .patch(&format!("/coupons/{id}"))
+    .json(&json!({ "isActive": false }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK);
 
   let m = user_mock(&db).await;
@@ -244,7 +262,10 @@ async fn test_coupon_per_owner_limit() {
   // Same owner: first checkout succeeds, second is blocked.
   let a = user_mock(&db).await;
   let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
-  assert_eq!(a.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    a.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::CREATED
+  );
   assert_eq!(
     a.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
     StatusCode::BAD_REQUEST,
@@ -285,7 +306,10 @@ async fn test_coupon_update_sets_per_owner_cap() {
 
   let m = user_mock(&db).await;
   let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
-  assert_eq!(m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::CREATED
+  );
   assert_eq!(
     m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
     StatusCode::BAD_REQUEST,
@@ -303,7 +327,8 @@ async fn test_coupon_requires_grant_targeting() {
   let am = admin_mock(&db).await;
   let plan = create_sub_plan(&am.client, 1000).await;
   let code = format!("EXC-{}", rnd());
-  let created = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await;
+  let created =
+    create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await;
   let coupon_id = created["id"].as_i64().unwrap();
   let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
 
@@ -326,7 +351,10 @@ async fn test_coupon_requires_grant_targeting() {
     .await
     .unwrap();
   assert_eq!(g.status(), StatusCode::CREATED);
-  assert_eq!(ma.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    ma.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::CREATED
+  );
 
   // User B: still not granted → rejected.
   let mb = user_mock(&db).await;
@@ -347,7 +375,8 @@ async fn test_coupon_grant_lifecycle() {
   let am = admin_mock(&db).await;
   let plan = create_sub_plan(&am.client, 1000).await;
   let code = format!("LC-{}", rnd());
-  let created = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await;
+  let created =
+    create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await;
   let cid = created["id"].as_i64().unwrap();
   let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
 
@@ -355,23 +384,51 @@ async fn test_coupon_grant_lifecycle() {
   let m = Mock::new().await;
   user.login(&m.client).await;
   let uid = user.model.id;
-  let grant = || am.client.post(&format!("/coupons/{cid}/grant")).json(&json!({ "ownerKind": "personal", "ownerId": uid }));
+  let grant = || {
+    am.client
+      .post(&format!("/coupons/{cid}/grant"))
+      .json(&json!({ "ownerKind": "personal", "ownerId": uid }))
+  };
 
   // Issue → one redemption succeeds, then the grant is spent.
   assert_eq!(grant().send().await.unwrap().status(), StatusCode::CREATED);
-  assert_eq!(m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::CREATED
+  );
   // It also disappears from "my coupons" (redeemed).
   let mine: Value = m.client.get("/coupons/mine").send().await.unwrap().json().await.unwrap();
-  assert!(!mine["items"].as_array().unwrap().iter().any(|i| i["code"].as_str() == Some(code.as_str())));
+  assert!(
+    !mine["items"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|i| i["code"].as_str() == Some(code.as_str()))
+  );
   // Second use blocked; re-grant blocked (must revoke first).
-  assert_eq!(m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::BAD_REQUEST);
-  assert_eq!(grant().send().await.unwrap().status(), StatusCode::CONFLICT, "no silent re-issue of a redeemed grant");
+  assert_eq!(
+    m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::BAD_REQUEST
+  );
+  assert_eq!(
+    grant().send().await.unwrap().status(),
+    StatusCode::CONFLICT,
+    "no silent re-issue of a redeemed grant"
+  );
 
   // Revoke, then re-issue (allowed), then it works again.
-  let rv = am.client.delete(&format!("/coupons/{cid}/grant?ownerKind=personal&ownerId={uid}")).send().await.unwrap();
+  let rv = am
+    .client
+    .delete(&format!("/coupons/{cid}/grant?ownerKind=personal&ownerId={uid}"))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(rv.status(), StatusCode::OK);
   assert_eq!(grant().send().await.unwrap().status(), StatusCode::CREATED, "re-issue after revoke");
-  assert_eq!(m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    m.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
+    StatusCode::CREATED
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -384,7 +441,8 @@ async fn test_coupon_revoke_blocks_redemption() {
   let am = admin_mock(&db).await;
   let plan = create_sub_plan(&am.client, 1000).await;
   let code = format!("RV-{}", rnd());
-  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await["id"]
+  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true }))
+    .await["id"]
     .as_i64()
     .unwrap();
 
@@ -393,7 +451,12 @@ async fn test_coupon_revoke_blocks_redemption() {
   user.login(&m.client).await;
   let uid = user.model.id;
 
-  am.client.post(&format!("/coupons/{cid}/grant")).json(&json!({ "ownerId": uid })).send().await.unwrap();
+  am.client
+    .post(&format!("/coupons/{cid}/grant"))
+    .json(&json!({ "ownerId": uid }))
+    .send()
+    .await
+    .unwrap();
   am.client.delete(&format!("/coupons/{cid}/grant?ownerId={uid}")).send().await.unwrap();
 
   let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
@@ -413,15 +476,30 @@ async fn test_coupon_grants_list() {
   let db = infra::db::connect().await;
   let am = admin_mock(&db).await;
   let code = format!("GL-{}", rnd());
-  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10 })).await["id"].as_i64().unwrap();
+  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10 })).await["id"]
+    .as_i64()
+    .unwrap();
 
   let a = TestUser::create(&db).await.unwrap();
   let b = TestUser::create(&db).await.unwrap();
   for uid in [a.model.id, b.model.id] {
-    am.client.post(&format!("/coupons/{cid}/grant")).json(&json!({ "ownerId": uid })).send().await.unwrap();
+    am.client
+      .post(&format!("/coupons/{cid}/grant"))
+      .json(&json!({ "ownerId": uid }))
+      .send()
+      .await
+      .unwrap();
   }
 
-  let list: Value = am.client.get(&format!("/coupons/{cid}/grants")).send().await.unwrap().json().await.unwrap();
+  let list: Value = am
+    .client
+    .get(&format!("/coupons/{cid}/grants"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(list["count"].as_u64().unwrap(), 2, "both grants are listed");
 }
 
@@ -443,7 +521,8 @@ async fn test_my_coupons() {
 
   // Before issuance: not in the user's list.
   let before: Value = m.client.get("/coupons/mine").send().await.unwrap().json().await.unwrap();
-  let has = |v: &Value| v["items"].as_array().unwrap().iter().any(|i| i["code"].as_str() == Some(code.as_str()));
+  let has =
+    |v: &Value| v["items"].as_array().unwrap().iter().any(|i| i["code"].as_str() == Some(code.as_str()));
   assert!(!has(&before), "coupon not yet issued to the user");
 
   // Issue, then it appears.
@@ -524,7 +603,11 @@ async fn test_coupon_stacking() {
     .await
     .unwrap();
   assert_eq!(r.status(), StatusCode::CREATED);
-  assert_eq!(r.json::<Value>().await.unwrap()["discountAmount"].as_i64().unwrap(), 300, "stacked discounts sum");
+  assert_eq!(
+    r.json::<Value>().await.unwrap()["discountAmount"].as_i64().unwrap(),
+    300,
+    "stacked discounts sum"
+  );
 
   // Mixing a non-stackable coupon is rejected.
   let r = m
@@ -546,7 +629,8 @@ async fn test_coupon_bulk_grant() {
   let db = infra::db::connect().await;
   let am = admin_mock(&db).await;
   let code = format!("BULK-{}", rnd());
-  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await["id"]
+  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true }))
+    .await["id"]
     .as_i64()
     .unwrap();
 
@@ -570,8 +654,16 @@ async fn test_coupon_bulk_grant() {
   assert_eq!(r["granted"].as_u64().unwrap(), 2);
 
   // Re-running is idempotent: both already issued → skipped.
-  let r2: Value =
-    am.client.post(&format!("/coupons/{cid}/grant-bulk")).json(&owners).send().await.unwrap().json().await.unwrap();
+  let r2: Value = am
+    .client
+    .post(&format!("/coupons/{cid}/grant-bulk"))
+    .json(&owners)
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(r2["skipped"].as_u64().unwrap(), 2, "already-issued owners are skipped");
   assert_eq!(r2["granted"].as_u64().unwrap(), 0);
 }
@@ -590,14 +682,20 @@ async fn test_failed_payment_reverses_coupon_grant() {
   let am = admin_mock(&db).await;
   let plan = create_sub_plan(&am.client, 1000).await;
   let code = format!("FR-{}", rnd());
-  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true })).await["id"]
+  let cid = create_coupon(&am.client, json!({ "code": code, "percentOff": 10, "requiresGrant": true }))
+    .await["id"]
     .as_i64()
     .unwrap();
 
   let user = TestUser::create(&db).await.unwrap();
   let m = Mock::new().await;
   user.login(&m.client).await;
-  am.client.post(&format!("/coupons/{cid}/grant")).json(&json!({ "ownerId": user.model.id })).send().await.unwrap();
+  am.client
+    .post(&format!("/coupons/{cid}/grant"))
+    .json(&json!({ "ownerId": user.model.id }))
+    .send()
+    .await
+    .unwrap();
 
   async fn mine_has(m: &Mock, code: &str) -> bool {
     let v: Value = m.client.get("/coupons/mine").send().await.unwrap().json().await.unwrap();
@@ -619,7 +717,13 @@ async fn test_failed_payment_reverses_coupon_grant() {
   let pc = co["purchaseCode"].as_str().unwrap();
   assert!(!mine_has(&m, &code).await, "grant consumed during checkout");
 
-  let cf = m.client.post("/payments/confirm").json(&json!({ "purchaseCode": pc, "paymentId": "mock:failed" })).send().await.unwrap();
+  let cf = m
+    .client
+    .post("/payments/confirm")
+    .json(&json!({ "purchaseCode": pc, "paymentId": "mock:failed" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(cf.status(), StatusCode::PAYMENT_REQUIRED, "payment failed");
   assert!(mine_has(&m, &code).await, "failed payment returned the coupon to the wallet");
 }

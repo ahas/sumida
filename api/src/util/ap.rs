@@ -169,7 +169,6 @@ impl ApCondition {
     }
   }
 
-
   pub fn alias(mut self, alias: Alias) -> Self {
     self.alias = Some(alias);
     self
@@ -524,7 +523,9 @@ pub struct ApOr {
 
 impl ApOr {
   pub fn new() -> Self {
-    Self { children: Vec::new() }
+    Self {
+      children: Vec::new(),
+    }
   }
 
   pub fn push(mut self, child: ApCondition) -> Self {
@@ -692,10 +693,8 @@ pub fn assert_policy_within_authority(
     return Ok(());
   }
 
-  let has_wildcard = namespace == "*"
-    || user == "*"
-    || objects.iter().any(|o| o == "*")
-    || actions.iter().any(|a| a == "*");
+  let has_wildcard =
+    namespace == "*" || user == "*" || objects.iter().any(|o| o == "*") || actions.iter().any(|a| a == "*");
 
   if has_wildcard {
     return Err(SumidaError::NoAccessPermission);
@@ -1092,7 +1091,8 @@ mod tests {
   #[test]
   fn non_admin_concrete_allow_is_ok() {
     assert!(
-      assert_policy_within_authority(false, "my:ns", &vs(&["obj"]), &vs(&["read"]), "user:1", "allow").is_ok()
+      assert_policy_within_authority(false, "my:ns", &vs(&["obj"]), &vs(&["read"]), "user:1", "allow")
+        .is_ok()
     );
   }
 
@@ -1106,14 +1106,16 @@ mod tests {
   #[test]
   fn non_admin_wildcard_object_allow_rejected() {
     assert!(
-      assert_policy_within_authority(false, "my:ns", &vs(&["*"]), &vs(&["read"]), "user:1", "allow").is_err()
+      assert_policy_within_authority(false, "my:ns", &vs(&["*"]), &vs(&["read"]), "user:1", "allow")
+        .is_err()
     );
   }
 
   #[test]
   fn non_admin_wildcard_action_allow_rejected() {
     assert!(
-      assert_policy_within_authority(false, "my:ns", &vs(&["obj"]), &vs(&["*"]), "user:1", "allow").is_err()
+      assert_policy_within_authority(false, "my:ns", &vs(&["obj"]), &vs(&["*"]), "user:1", "allow")
+        .is_err()
     );
   }
 

@@ -49,7 +49,10 @@ impl PortOneProvider {
     let raw_status = value.get("status").and_then(Value::as_str).unwrap_or("").to_string();
     let amount = value.get("amount").and_then(|a| a.get("total")).and_then(Value::as_i64).unwrap_or(0);
     let currency = value.get("currency").and_then(Value::as_str).unwrap_or(fallback_currency).to_string();
-    let paid_at = value.get("paidAt").and_then(Value::as_str).and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    let paid_at = value
+      .get("paidAt")
+      .and_then(Value::as_str)
+      .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
     PaymentVerification {
       payment_id: value.get("id").and_then(Value::as_str).unwrap_or(fallback_id).to_string(),
       transaction_id: value.get("transactionId").and_then(Value::as_str).map(str::to_string),
@@ -262,7 +265,11 @@ impl PaymentProvider for PortOneProvider {
       .and_then(Value::as_str)
       .map(str::to_string);
 
-    Ok(WebhookEvent { event_type, payment_id, transaction_id })
+    Ok(WebhookEvent {
+      event_type,
+      payment_id,
+      transaction_id,
+    })
   }
 }
 

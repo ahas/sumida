@@ -145,12 +145,18 @@ impl<S: SumidaState> EntitlementService<S> {
     let outcome = match settings::get().membership.default_gate_order {
       GateOrder::SubscriptionFirst => {
         if self.try_consume_subscription(&owner_kind, owner_id, action, &txn).await? {
-          EntitlementOutcome { via: "subscription".into(), consumed: 0 }
+          EntitlementOutcome {
+            via: "subscription".into(),
+            consumed: 0,
+          }
         } else {
           let out = credit
             .consume_in_txn(&owner_kind, owner_id, action, None, idempotency_key, None, &txn)
             .await?;
-          EntitlementOutcome { via: "credit".into(), consumed: out.consumed }
+          EntitlementOutcome {
+            via: "credit".into(),
+            consumed: out.consumed,
+          }
         }
       }
       GateOrder::CreditFirst => {
@@ -158,10 +164,17 @@ impl<S: SumidaState> EntitlementService<S> {
           .consume_in_txn(&owner_kind, owner_id, action, None, idempotency_key, None, &txn)
           .await
         {
-          Ok(out) => EntitlementOutcome { via: "credit".into(), consumed: out.consumed },
-          Err(SumidaError::InsufficientCredits { .. }) | Err(SumidaError::MembershipActionNotAllowed(_)) => {
+          Ok(out) => EntitlementOutcome {
+            via: "credit".into(),
+            consumed: out.consumed,
+          },
+          Err(SumidaError::InsufficientCredits { .. })
+          | Err(SumidaError::MembershipActionNotAllowed(_)) => {
             if self.try_consume_subscription(&owner_kind, owner_id, action, &txn).await? {
-              EntitlementOutcome { via: "subscription".into(), consumed: 0 }
+              EntitlementOutcome {
+                via: "subscription".into(),
+                consumed: 0,
+              }
             } else {
               return Err(SumidaError::NoActiveSubscription);
             }

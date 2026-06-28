@@ -42,7 +42,10 @@ impl<S: SumidaState> PlanController<S> {
     Json(body): Json<CreatePlan>,
   ) -> Result<PlanCreated, SumidaError> {
     let model = PlanService::new(state, session).create(body).await?;
-    Ok(PlanCreated { id: model.id, code: model.code })
+    Ok(PlanCreated {
+      id: model.id,
+      code: model.code,
+    })
   }
 
   async fn update(
@@ -71,15 +74,21 @@ impl<S: SumidaState> ApiController<S> for PlanController<S> {
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(state, "membership_plan", read));
-    let create = Router::new()
-      .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(state, "membership_plan", create));
-    let update = Router::new()
-      .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(state, "membership_plan", update));
-    let delete = Router::new()
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "membership_plan", delete));
+    let create = Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!(
+      state,
+      "membership_plan",
+      create
+    ));
+    let update = Router::new().route("/{id}", routing::patch(Self::update)).route_layer(service_ap!(
+      state,
+      "membership_plan",
+      update
+    ));
+    let delete = Router::new().route("/{id}", routing::delete(Self::delete)).route_layer(service_ap!(
+      state,
+      "membership_plan",
+      delete
+    ));
 
     Router::new()
       .merge(read)

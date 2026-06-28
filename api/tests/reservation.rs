@@ -127,16 +127,36 @@ async fn test_reservation_blocks_overspend() {
   let (_user, action, _wallet, m) = setup_wallet(&db, 20, 10).await;
 
   // Hold 10 → spendable 10.
-  let res: Value =
-    m.client.post("/credits/reserve").json(&json!({ "action": &action })).send().await.unwrap().json().await.unwrap();
+  let res: Value = m
+    .client
+    .post("/credits/reserve")
+    .json(&json!({ "action": &action }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let reservation_id = res["reservationId"].as_i64().unwrap();
 
   // One consume (10) fits within spendable.
-  let r = m.client.post("/credits/consume").json(&json!({ "action": &action })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/credits/consume")
+    .json(&json!({ "action": &action }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK);
 
   // Now balance 10 but all of it is held → consume is refused (402).
-  let r = m.client.post("/credits/consume").json(&json!({ "action": &action })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/credits/consume")
+    .json(&json!({ "action": &action }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "held credits are not spendable by consume");
 
   // Capturing the hold spends the last 10 → balance 0.
@@ -161,8 +181,16 @@ async fn test_release_and_invalid_transitions() {
   let db = infra::db::connect().await;
   let (_user, action, _wallet, m) = setup_wallet(&db, 20, 10).await;
 
-  let res: Value =
-    m.client.post("/credits/reserve").json(&json!({ "action": &action })).send().await.unwrap().json().await.unwrap();
+  let res: Value = m
+    .client
+    .post("/credits/reserve")
+    .json(&json!({ "action": &action }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let reservation_id = res["reservationId"].as_i64().unwrap();
 
   // Release → spendable back to full 20.
@@ -179,12 +207,23 @@ async fn test_release_and_invalid_transitions() {
   assert_eq!(rel["spendable"].as_i64().unwrap(), 20);
 
   // Capturing a released reservation is rejected.
-  let r = m.client.post(&format!("/credits/reservations/{reservation_id}/capture")).send().await.unwrap();
+  let r = m
+    .client
+    .post(&format!("/credits/reservations/{reservation_id}/capture"))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::BAD_REQUEST, "cannot capture a released reservation");
 
   // Both lots are now freely spendable.
   for _ in 0..2 {
-    let r = m.client.post("/credits/consume").json(&json!({ "action": &action })).send().await.unwrap();
+    let r = m
+      .client
+      .post("/credits/consume")
+      .json(&json!({ "action": &action }))
+      .send()
+      .await
+      .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
   }
 }
@@ -236,8 +275,16 @@ async fn test_reservation_list() {
   let db = infra::db::connect().await;
   let (_user, action, wallet_id, m) = setup_wallet(&db, 100, 10).await;
 
-  let res: Value =
-    m.client.post("/credits/reserve").json(&json!({ "action": &action })).send().await.unwrap().json().await.unwrap();
+  let res: Value = m
+    .client
+    .post("/credits/reserve")
+    .json(&json!({ "action": &action }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let reservation_id = res["reservationId"].as_i64().unwrap();
 
   // Held reservations show up for the owner.
@@ -252,14 +299,23 @@ async fn test_reservation_list() {
     .unwrap();
   assert!(held["count"].as_u64().unwrap() >= 1);
   assert!(
-    held["items"].as_array().unwrap().iter().any(|i| i["id"].as_i64() == Some(reservation_id)),
+    held["items"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|i| i["id"].as_i64() == Some(reservation_id)),
     "the held reservation is listed"
   );
 
   // An outsider cannot read the wallet's reservations.
   let other = Mock::new().await;
   TestUser::create(&db).await.unwrap().login(&other.client).await;
-  let r = other.client.get(&format!("/credits/reservations?walletId={wallet_id}")).send().await.unwrap();
+  let r = other
+    .client
+    .get(&format!("/credits/reservations?walletId={wallet_id}"))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::FORBIDDEN, "cross-owner reservation read is forbidden");
 }
 

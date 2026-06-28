@@ -37,10 +37,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
   // Membership background maintenance: expire due subscriptions, sweep lapsed
   // credit lots, and send expiring-soon / low-balance notices on a fixed cadence.
-  sumida::api::service::membership::maintenance::spawn(
-    state.clone(),
-    std::time::Duration::from_secs(3600),
-  );
+  sumida::api::service::membership::maintenance::spawn(state.clone(), std::time::Duration::from_secs(3600));
 
   let (messenger_layer, messenger) = sumida::infra::messenger::new_layer();
   let redis_settings = settings

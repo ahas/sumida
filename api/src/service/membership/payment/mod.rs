@@ -46,12 +46,18 @@ pub struct PaymentService<S: SumidaState> {
 
 impl<S: SumidaState> PaymentService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
-    Self { state, session: Some(session) }
+    Self {
+      state,
+      session: Some(session),
+    }
   }
 
   /// System context (no session) — used by the webhook handler.
   pub fn system(state: S) -> Self {
-    Self { state, session: None }
+    Self {
+      state,
+      session: None,
+    }
   }
 
   fn session(&self) -> Result<&UserSession, SumidaError> {
@@ -334,7 +340,12 @@ impl<S: SumidaState> PaymentService<S> {
 
     // Idempotent: dedup by Standard-Webhooks id.
     if !headers.id.is_empty() {
-      if PaymentWebhookEvents::find().filter(WhCol::WebhookId.eq(headers.id.clone())).one(&txn).await?.is_some() {
+      if PaymentWebhookEvents::find()
+        .filter(WhCol::WebhookId.eq(headers.id.clone()))
+        .one(&txn)
+        .await?
+        .is_some()
+      {
         txn.commit().await?;
         return Ok(());
       }
@@ -419,7 +430,9 @@ impl<S: SumidaState> PaymentService<S> {
     MembershipPurchases::update(MembershipPurchasesActiveModel {
       id: Unchanged(purchase.id),
       status: Set(PurchaseStatus::Completed),
-      provider_payment_id: Set(verification.transaction_id.clone().or_else(|| Some(payment_id.to_string()))),
+      provider_payment_id: Set(
+        verification.transaction_id.clone().or_else(|| Some(payment_id.to_string())),
+      ),
       paid_at: Set(Some(Utc::now().fixed_offset())),
       ..Default::default()
     })

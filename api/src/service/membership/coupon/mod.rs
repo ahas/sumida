@@ -72,17 +72,28 @@ impl<S: SumidaState> CouponService<S> {
       }
     }
     txn.commit().await?;
-    Ok(CouponCreated { id: model.id, code: model.code })
+    Ok(CouponCreated {
+      id: model.id,
+      code: model.code,
+    })
   }
 
   /// Issue a coupon to many owners at once (campaign distribution). Each owner
   /// follows the single-grant lifecycle; the summary counts the outcomes.
-  pub async fn grant_bulk(&self, coupon_id: i32, data: BulkGrantCoupon) -> Result<BulkGrantResult, SumidaError> {
+  pub async fn grant_bulk(
+    &self,
+    coupon_id: i32,
+    data: BulkGrantCoupon,
+  ) -> Result<BulkGrantResult, SumidaError> {
     self.require_admin()?;
     if Coupons::find_by_id(coupon_id).one(self.state.db()).await?.is_none() {
       return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
     }
-    let mut result = BulkGrantResult { granted: 0, skipped: 0, conflicts: 0 };
+    let mut result = BulkGrantResult {
+      granted: 0,
+      skipped: 0,
+      conflicts: 0,
+    };
     for owner in &data.owners {
       match self.grant_once(coupon_id, owner).await {
         Ok(true) => result.granted += 1,
@@ -101,8 +112,8 @@ impl<S: SumidaState> CouponService<S> {
   ) -> Result<(Vec<CouponItem>, u64), SumidaError> {
     self.require_admin()?;
     let db = self.state.db();
-    let mut query = Coupons::find()
-      .apply_if(filter.is_active, |q, v| q.filter(CouponsColumn::IsActive.eq(v)));
+    let mut query =
+      Coupons::find().apply_if(filter.is_active, |q, v| q.filter(CouponsColumn::IsActive.eq(v)));
     let count = query.clone().select_only().column(CouponsColumn::Id).count(db).await?;
     query = pagination.order_by(query, |col| match col {
       "code" => CouponsColumn::Code,
@@ -115,7 +126,10 @@ impl<S: SumidaState> CouponService<S> {
 
   pub async fn update(&self, id: i32, data: UpdateCoupon) -> Result<CouponUpdated, SumidaError> {
     self.require_admin()?;
-    let mut am = CouponsActiveModel { id: Unchanged(id), ..Default::default() };
+    let mut am = CouponsActiveModel {
+      id: Unchanged(id),
+      ..Default::default()
+    };
     if let Some(v) = data.is_active {
       am.is_active = Set(v);
     }
@@ -250,10 +264,7 @@ impl<S: SumidaState> CouponService<S> {
 
   /// Coupons issued to the caller (their personal self or their organization) that
   /// are still active and unexpired.
-  pub async fn my_coupons(
-    &self,
-    pagination: Pagination,
-  ) -> Result<(Vec<MyCouponItem>, u64), SumidaError> {
+  pub async fn my_coupons(&self, pagination: Pagination) -> Result<(Vec<MyCouponItem>, u64), SumidaError> {
     let db = self.state.db();
     let grants = CouponGrants::find()
       .filter(CouponGrantsColumn::RedeemedAt.is_null())
@@ -284,7 +295,11 @@ impl<S: SumidaState> CouponService<S> {
     let mut query = Coupons::find()
       .filter(CouponsColumn::Id.is_in(ids))
       .filter(CouponsColumn::IsActive.eq(true))
-      .filter(Condition::any().add(CouponsColumn::ExpiresAt.is_null()).add(CouponsColumn::ExpiresAt.gt(now)));
+      .filter(
+        Condition::any()
+          .add(CouponsColumn::ExpiresAt.is_null())
+          .add(CouponsColumn::ExpiresAt.gt(now)),
+      );
     let count = query.clone().select_only().column(CouponsColumn::Id).count(db).await?;
     query = pagination.order_by(query, |col| match col {
       "code" => CouponsColumn::Code,
@@ -407,7 +422,12 @@ impl<S: SumidaState> CouponService<S> {
 
     let discount = ((subtotal as i128 * pct.clamp(0, 100) as i128 / 100) as i64).clamp(0, subtotal);
     let redemption_id = Self::consume_coupon(&coupon, owner_kind, owner_id, txn).await?;
-    Ok(AppliedCoupon { code: coupon.code, discount, stackable: coupon.stackable, redemption_id })
+    Ok(AppliedCoupon {
+      code: coupon.code,
+      discount,
+      stackable: coupon.stackable,
+      redemption_id,
+    })
   }
 
   /// Redeem a **reward** coupon (credits / free plan) for the calling user.
@@ -436,7 +456,11 @@ impl<S: SumidaState> CouponService<S> {
 
     Self::consume_coupon(&coupon, &owner_kind, owner_id, &txn).await?;
 
-    let mut result = RedeemResult { reward: String::new(), credits_granted: None, subscription_id: None };
+    let mut result = RedeemResult {
+      reward: String::new(),
+      credits_granted: None,
+      subscription_id: None,
+    };
     if let Some(credits) = coupon.grant_credits {
       let expiry_at = settings::get()
         .membership
@@ -471,7 +495,10 @@ impl<S: SumidaState> CouponService<S> {
         .filter(entity::membership::subscriptions::Column::OwnerKind.eq(owner_kind.clone()))
         .filter(entity::membership::subscriptions::Column::OwnerId.eq(owner_id))
         .filter(entity::membership::subscriptions::Column::PlanId.eq(plan.id))
-        .filter(entity::membership::subscriptions::Column::Status.eq(entity::membership::SubscriptionStatus::Active))
+        .filter(
+          entity::membership::subscriptions::Column::Status
+            .eq(entity::membership::SubscriptionStatus::Active),
+        )
         .one(&txn)
         .await?;
       if existing.is_some() {

@@ -1,7 +1,7 @@
 pub mod dto;
 
-use entity::membership::membership_purchases::Column;
 use entity::membership::OwnerKind;
+use entity::membership::membership_purchases::Column;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;

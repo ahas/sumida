@@ -52,7 +52,11 @@ impl<S: SumidaState> PlanService<S> {
 
   pub async fn get(&self, id: i32) -> Result<Option<GetPlan>, SumidaError> {
     let db = self.state.db();
-    let Some(plan) = self.select(MembershipPlans::find_by_id(id)).into_model::<PlanListItem>().one(db).await?
+    let Some(plan) = self
+      .select(MembershipPlans::find_by_id(id))
+      .into_model::<PlanListItem>()
+      .one(db)
+      .await?
     else {
       return Ok(None);
     };
@@ -71,7 +75,10 @@ impl<S: SumidaState> PlanService<S> {
     actions: Vec<PlanActionInput>,
     db: &C,
   ) -> Result<(), SumidaError> {
-    PlanActions::delete_many().filter(PlanActionsColumn::PlanId.eq(plan_id)).exec(db).await?;
+    PlanActions::delete_many()
+      .filter(PlanActionsColumn::PlanId.eq(plan_id))
+      .exec(db)
+      .await?;
     for action in actions {
       PlanActions::insert(PlanActionsActiveModel {
         plan_id: Set(plan_id),
@@ -86,12 +93,13 @@ impl<S: SumidaState> PlanService<S> {
     Ok(())
   }
 
-  pub async fn create(&self, data: CreatePlan) -> Result<entity::membership::membership_plans::Model, SumidaError> {
+  pub async fn create(
+    &self,
+    data: CreatePlan,
+  ) -> Result<entity::membership::membership_plans::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    let currency = data
-      .currency
-      .unwrap_or_else(|| settings::get().membership.default_currency.clone());
+    let currency = data.currency.unwrap_or_else(|| settings::get().membership.default_currency.clone());
     let actions = data.actions;
 
     let model = MembershipPlans::insert(MembershipPlansActiveModel {

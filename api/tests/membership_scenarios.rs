@@ -38,7 +38,12 @@ async fn create_plan(client: &TestClient, body: Value) -> String {
 }
 
 async fn check(client: &TestClient, action: &str) -> reqwest::Response {
-  client.post("/entitlements/check").json(&json!({ "action": action })).send().await.unwrap()
+  client
+    .post("/entitlements/check")
+    .json(&json!({ "action": action }))
+    .send()
+    .await
+    .unwrap()
 }
 
 // ===========================================================================
@@ -117,7 +122,13 @@ async fn scenario_saas_customer_lifecycle() {
     .await
     .unwrap();
   let pc = co["purchaseCode"].as_str().unwrap();
-  let cf = m.client.post("/payments/confirm").json(&json!({ "purchaseCode": pc, "paymentId": pc })).send().await.unwrap();
+  let cf = m
+    .client
+    .post("/payments/confirm")
+    .json(&json!({ "purchaseCode": pc, "paymentId": pc }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(cf.status(), StatusCode::OK, "credit purchase confirmed");
 
   let r = check(&m.client, &action).await;
@@ -148,10 +159,27 @@ async fn scenario_saas_customer_lifecycle() {
     }),
   )
   .await;
-  let pr = m.client.post(&format!("/subscriptions/{sub_id}/change-plan")).json(&json!({ "planCode": pro_plus })).send().await.unwrap();
+  let pr = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/change-plan"))
+    .json(&json!({ "planCode": pro_plus }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(pr.status(), StatusCode::OK);
-  assert!(pr.json::<Value>().await.unwrap()["prorationAmount"].as_i64().unwrap() > 0, "upgrade prorated");
-  let got: Value = m.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  assert!(
+    pr.json::<Value>().await.unwrap()["prorationAmount"].as_i64().unwrap() > 0,
+    "upgrade prorated"
+  );
+  let got: Value = m
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(got["planCode"].as_str().unwrap(), pro_plus, "now on the upgraded plan");
 }
 
@@ -197,8 +225,26 @@ async fn scenario_org_admin_hierarchy() {
 
   // Manager in the parent org, with org policies on the PARENT only.
   let manager = TestUser::create_in_org(&db, parent.model.id).await.unwrap();
-  create_ap(&db, &manager, "org:subscription", &parent.model.id.to_string(), vec!["read".into(), "manage".into()], "allow").await.unwrap();
-  create_ap(&db, &manager, "org:credit", &parent.model.id.to_string(), vec!["use".into(), "manage".into()], "allow").await.unwrap();
+  create_ap(
+    &db,
+    &manager,
+    "org:subscription",
+    &parent.model.id.to_string(),
+    vec!["read".into(), "manage".into()],
+    "allow",
+  )
+  .await
+  .unwrap();
+  create_ap(
+    &db,
+    &manager,
+    "org:credit",
+    &parent.model.id.to_string(),
+    vec!["use".into(), "manage".into()],
+    "allow",
+  )
+  .await
+  .unwrap();
   let mm = Mock::new().await;
   manager.login(&mm.client).await;
 
@@ -216,7 +262,9 @@ async fn scenario_org_admin_hierarchy() {
   let grant = mm
     .client
     .post("/credits/grant")
-    .json(&json!({ "ownerKind": "organization", "ownerId": child_id, "amount": 50, "planCode": org_credits }))
+    .json(
+      &json!({ "ownerKind": "organization", "ownerId": child_id, "amount": 50, "planCode": org_credits }),
+    )
     .send()
     .await
     .unwrap();
@@ -237,11 +285,9 @@ async fn scenario_org_admin_hierarchy() {
 
   // The manager's subscription list surfaces the child org's subscription.
   let list: Value = mm.client.get("/subscriptions").send().await.unwrap().json().await.unwrap();
-  let sees_child = list["items"]
-    .as_array()
-    .unwrap()
-    .iter()
-    .any(|i| i["ownerKind"].as_str() == Some("organization") && i["ownerId"].as_i64() == Some(child_id as i64));
+  let sees_child = list["items"].as_array().unwrap().iter().any(|i| {
+    i["ownerKind"].as_str() == Some("organization") && i["ownerId"].as_i64() == Some(child_id as i64)
+  });
   assert!(sees_child, "parent manager sees the child org subscription (list hierarchy scoping)");
 }
 
@@ -305,15 +351,32 @@ async fn scenario_marketing_campaign() {
   assert_eq!(ra.json::<Value>().await.unwrap()["discountAmount"].as_i64().unwrap(), 300);
 
   // B is recalled before using it → B can no longer redeem.
-  let rv = am.client.delete(&format!("/coupons/{cid}/grant?ownerId={}", b.model.id)).send().await.unwrap();
+  let rv = am
+    .client
+    .delete(&format!("/coupons/{cid}/grant?ownerId={}", b.model.id))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(rv.status(), StatusCode::OK);
-  assert_eq!(buy(&mb).send().await.unwrap().status(), StatusCode::BAD_REQUEST, "revoked recipient cannot redeem");
+  assert_eq!(
+    buy(&mb).send().await.unwrap().status(),
+    StatusCode::BAD_REQUEST,
+    "revoked recipient cannot redeem"
+  );
 
   // C redeems normally.
   assert_eq!(buy(&mc).send().await.unwrap().status(), StatusCode::CREATED);
 
   // Analytics: 3 grants, ≥2 redeemed (A, C), ≥1 revoked (B).
-  let grants: Value = am.client.get(&format!("/coupons/{cid}/grants")).send().await.unwrap().json().await.unwrap();
+  let grants: Value = am
+    .client
+    .get(&format!("/coupons/{cid}/grants"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(grants["count"].as_u64().unwrap(), 3);
   let items = grants["items"].as_array().unwrap();
   let redeemed = items.iter().filter(|i| !i["redeemedAt"].is_null()).count();

@@ -33,7 +33,12 @@ async fn user_mock(db: &sea_orm::DatabaseConnection) -> (Mock, TestUser) {
 }
 
 async fn check(client: &TestClient, action: &str) -> reqwest::Response {
-  client.post("/entitlements/check").json(&json!({ "action": action })).send().await.unwrap()
+  client
+    .post("/entitlements/check")
+    .json(&json!({ "action": action }))
+    .send()
+    .await
+    .unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +60,16 @@ async fn test_quota_limits_then_denies() {
   .await;
 
   let (m, _u) = user_mock(&db).await;
-  assert_eq!(m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    m.client
+      .post("/subscriptions")
+      .json(&json!({ "planCode": code }))
+      .send()
+      .await
+      .unwrap()
+      .status(),
+    StatusCode::CREATED
+  );
 
   // Two uses within quota go via the subscription.
   for _ in 0..2 {
@@ -98,10 +112,21 @@ async fn test_quota_falls_through_to_credit() {
   .await;
 
   let (m, u) = user_mock(&db).await;
-  assert_eq!(m.client.post("/subscriptions").json(&json!({ "planCode": sub_code })).send().await.unwrap().status(), StatusCode::CREATED);
+  assert_eq!(
+    m.client
+      .post("/subscriptions")
+      .json(&json!({ "planCode": sub_code }))
+      .send()
+      .await
+      .unwrap()
+      .status(),
+    StatusCode::CREATED
+  );
   am.client
     .post("/credits/grant")
-    .json(&json!({ "ownerKind": "personal", "ownerId": u.model.id, "amount": 100, "planCode": credit_code }))
+    .json(
+      &json!({ "ownerKind": "personal", "ownerId": u.model.id, "amount": 100, "planCode": credit_code }),
+    )
     .send()
     .await
     .unwrap();
@@ -164,8 +189,16 @@ async fn test_quota_resets_on_renewal() {
   .await;
 
   let (m, _u) = user_mock(&db).await;
-  let created: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   // Spend the single allowed use.

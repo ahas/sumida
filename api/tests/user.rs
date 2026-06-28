@@ -113,7 +113,11 @@ async fn test_user_update_permissions_comprehensive() {
     .send()
     .await
     .expect("Failed to send PATCH request");
-  assert_eq!(resp.status(), reqwest::StatusCode::OK, "Should be able to update with org:user permission");
+  assert_eq!(
+    resp.status(),
+    reqwest::StatusCode::OK,
+    "Should be able to update with org:user permission"
+  );
 
   // Without permission: a fresh operator with no policy is forbidden.
   let mock2 = Mock::new().await;

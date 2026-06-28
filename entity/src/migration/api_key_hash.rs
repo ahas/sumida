@@ -71,8 +71,6 @@ impl MigrationTrait for Migration {
   }
 
   async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
-    Err(DbErr::Migration(
-      "api_key hashing is one-way and cannot be reverted".to_owned(),
-    ))
+    Err(DbErr::Migration("api_key hashing is one-way and cannot be reverted".to_owned()))
   }
 }

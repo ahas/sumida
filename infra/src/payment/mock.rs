@@ -114,6 +114,10 @@ impl PaymentProvider for MockProvider {
       .and_then(|d| d.get("transactionId"))
       .and_then(Value::as_str)
       .map(str::to_string);
-    Ok(WebhookEvent { event_type, payment_id, transaction_id })
+    Ok(WebhookEvent {
+      event_type,
+      payment_id,
+      transaction_id,
+    })
   }
 }

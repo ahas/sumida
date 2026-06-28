@@ -56,19 +56,21 @@ impl<S: SumidaState> SubscriptionService<S> {
     }
     let mut org_ids = managed_org_ids(&self.session, "org:subscription", "read", db).await?;
     org_ids.push(self.session.profile.organization.id);
-    Ok(query.filter(
-      Condition::any()
-        .add(
-          Condition::all()
-            .add(Column::OwnerKind.eq(OwnerKind::Personal))
-            .add(Column::OwnerId.eq(self.session.profile.id)),
-        )
-        .add(
-          Condition::all()
-            .add(Column::OwnerKind.eq(OwnerKind::Organization))
-            .add(Column::OwnerId.is_in(org_ids)),
-        ),
-    ))
+    Ok(
+      query.filter(
+        Condition::any()
+          .add(
+            Condition::all()
+              .add(Column::OwnerKind.eq(OwnerKind::Personal))
+              .add(Column::OwnerId.eq(self.session.profile.id)),
+          )
+          .add(
+            Condition::all()
+              .add(Column::OwnerKind.eq(OwnerKind::Organization))
+              .add(Column::OwnerId.is_in(org_ids)),
+          ),
+      ),
+    )
   }
 
   async fn authorize<C: ConnectionTrait>(
@@ -91,11 +93,8 @@ impl<S: SumidaState> SubscriptionService<S> {
         // Mirror UserService::update org-scoping: evaluate the org-ancestors subquery
         // against the target organization row (the `"ap"` alias only exists in the
         // lateral-join path, so this must go through `try_access`, not `check_allowed`).
-        let start = Expr::col((
-          entity::organizations::Entity,
-          entity::organizations::Column::Id,
-        ))
-        .into_simple_expr();
+        let start =
+          Expr::col((entity::organizations::Entity, entity::organizations::Column::Id)).into_simple_expr();
         ap::ns("org:subscription")
           .who(&self.session)
           .action(action)
@@ -256,13 +255,14 @@ impl<S: SumidaState> SubscriptionService<S> {
 
     // Idempotency: same key already created a subscription → return it.
     if let Some(key) = &data.idempotency_key {
-      if let Some(existing) = Subscriptions::find()
-        .filter(Column::IdempotencyKey.eq(key.clone()))
-        .one(&txn)
-        .await?
+      if let Some(existing) =
+        Subscriptions::find().filter(Column::IdempotencyKey.eq(key.clone())).one(&txn).await?
       {
         txn.commit().await?;
-        return Ok(SubscriptionCreated { id: existing.id, code: existing.code });
+        return Ok(SubscriptionCreated {
+          id: existing.id,
+          code: existing.code,
+        });
       }
     }
 
@@ -400,7 +400,14 @@ impl<S: SumidaState> SubscriptionService<S> {
       .exec(&txn)
       .await?;
       self
-        .record_event(id, SubscriptionEventKind::Canceled, Some(old), Some(old), Some("cancel-at-period-end"), &txn)
+        .record_event(
+          id,
+          SubscriptionEventKind::Canceled,
+          Some(old),
+          Some(old),
+          Some("cancel-at-period-end"),
+          &txn,
+        )
         .await?;
     } else {
       Subscriptions::update(SubscriptionsActiveModel {

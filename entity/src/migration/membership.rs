@@ -288,7 +288,12 @@ impl MigrationTrait for Migration {
       )
       .await?;
     manager
-      .create_index(idx("uq_membership_plans__code", MembershipPlans::Table).col(MembershipPlans::Code).unique().to_owned())
+      .create_index(
+        idx("uq_membership_plans__code", MembershipPlans::Table)
+          .col(MembershipPlans::Code)
+          .unique()
+          .to_owned(),
+      )
       .await?;
     attach_timestamp_auto_update(db, "membership_plans").await?;
 
@@ -304,12 +309,25 @@ impl MigrationTrait for Migration {
           .col(big_integer_null(PlanActions::CreditCost))
           .col(integer_null(PlanActions::QuotaPerPeriod))
           .primary_key(Index::create().name("pk_plan_actions__id").col(PlanActions::Id))
-          .foreign_key(&mut fk("fk_plan_actions__plan_id", PlanActions::Table, PlanActions::PlanId, MembershipPlans::Table, MembershipPlans::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_plan_actions__plan_id",
+            PlanActions::Table,
+            PlanActions::PlanId,
+            MembershipPlans::Table,
+            MembershipPlans::Id,
+            Cascade,
+          ))
           .to_owned(),
       )
       .await?;
     manager
-      .create_index(idx("uq_plan_actions__plan_id__action", PlanActions::Table).col(PlanActions::PlanId).col(PlanActions::Action).unique().to_owned())
+      .create_index(
+        idx("uq_plan_actions__plan_id__action", PlanActions::Table)
+          .col(PlanActions::PlanId)
+          .col(PlanActions::Action)
+          .unique()
+          .to_owned(),
+      )
       .await?;
 
     // ---- subscriptions ----
@@ -342,13 +360,42 @@ impl MigrationTrait for Migration {
           .col(timestamp_with_time_zone(Subscriptions::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(Subscriptions::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_subscriptions__id").col(Subscriptions::Id))
-          .foreign_key(&mut fk("fk_subscriptions__plan_id", Subscriptions::Table, Subscriptions::PlanId, MembershipPlans::Table, MembershipPlans::Id, Restrict))
+          .foreign_key(&mut fk(
+            "fk_subscriptions__plan_id",
+            Subscriptions::Table,
+            Subscriptions::PlanId,
+            MembershipPlans::Table,
+            MembershipPlans::Id,
+            Restrict,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("uq_subscriptions__code", Subscriptions::Table).col(Subscriptions::Code).unique().to_owned()).await?;
-    manager.create_index(idx("uq_subscriptions__idempotency_key", Subscriptions::Table).col(Subscriptions::IdempotencyKey).unique().to_owned()).await?;
-    manager.create_index(idx("idx_subscriptions__owner__status", Subscriptions::Table).col(Subscriptions::OwnerKind).col(Subscriptions::OwnerId).col(Subscriptions::Status).to_owned()).await?;
+    manager
+      .create_index(
+        idx("uq_subscriptions__code", Subscriptions::Table)
+          .col(Subscriptions::Code)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        idx("uq_subscriptions__idempotency_key", Subscriptions::Table)
+          .col(Subscriptions::IdempotencyKey)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        idx("idx_subscriptions__owner__status", Subscriptions::Table)
+          .col(Subscriptions::OwnerKind)
+          .col(Subscriptions::OwnerId)
+          .col(Subscriptions::Status)
+          .to_owned(),
+      )
+      .await?;
     db.execute(Statement::from_string(
       backend,
       r#"CREATE UNIQUE INDEX IF NOT EXISTS "uq_subscriptions__active_owner_plan"
@@ -374,12 +421,33 @@ impl MigrationTrait for Migration {
           .col(string_null(SubscriptionEvents::IdempotencyKey))
           .col(timestamp_with_time_zone(SubscriptionEvents::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_subscription_events__id").col(SubscriptionEvents::Id))
-          .foreign_key(&mut fk("fk_subscription_events__subscription_id", SubscriptionEvents::Table, SubscriptionEvents::SubscriptionId, Subscriptions::Table, Subscriptions::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_subscription_events__subscription_id",
+            SubscriptionEvents::Table,
+            SubscriptionEvents::SubscriptionId,
+            Subscriptions::Table,
+            Subscriptions::Id,
+            Cascade,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("idx_subscription_events__subscription_id__created_at", SubscriptionEvents::Table).col(SubscriptionEvents::SubscriptionId).col(SubscriptionEvents::CreatedAt).to_owned()).await?;
-    manager.create_index(idx("uq_subscription_events__idempotency_key", SubscriptionEvents::Table).col(SubscriptionEvents::IdempotencyKey).unique().to_owned()).await?;
+    manager
+      .create_index(
+        idx("idx_subscription_events__subscription_id__created_at", SubscriptionEvents::Table)
+          .col(SubscriptionEvents::SubscriptionId)
+          .col(SubscriptionEvents::CreatedAt)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        idx("uq_subscription_events__idempotency_key", SubscriptionEvents::Table)
+          .col(SubscriptionEvents::IdempotencyKey)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
 
     // ---- subscription_usage ----
     manager
@@ -395,11 +463,27 @@ impl MigrationTrait for Migration {
           .col(timestamp_with_time_zone(SubscriptionUsage::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(SubscriptionUsage::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_subscription_usage__id").col(SubscriptionUsage::Id))
-          .foreign_key(&mut fk("fk_subscription_usage__subscription_id", SubscriptionUsage::Table, SubscriptionUsage::SubscriptionId, Subscriptions::Table, Subscriptions::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_subscription_usage__subscription_id",
+            SubscriptionUsage::Table,
+            SubscriptionUsage::SubscriptionId,
+            Subscriptions::Table,
+            Subscriptions::Id,
+            Cascade,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("uq_subscription_usage__sub__action__period", SubscriptionUsage::Table).col(SubscriptionUsage::SubscriptionId).col(SubscriptionUsage::Action).col(SubscriptionUsage::PeriodStart).unique().to_owned()).await?;
+    manager
+      .create_index(
+        idx("uq_subscription_usage__sub__action__period", SubscriptionUsage::Table)
+          .col(SubscriptionUsage::SubscriptionId)
+          .col(SubscriptionUsage::Action)
+          .col(SubscriptionUsage::PeriodStart)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
     attach_timestamp_auto_update(db, "subscription_usage").await?;
 
     // ---- membership_purchases ----
@@ -431,13 +515,41 @@ impl MigrationTrait for Migration {
           .col(timestamp_with_time_zone(MembershipPurchases::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(MembershipPurchases::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_membership_purchases__id").col(MembershipPurchases::Id))
-          .foreign_key(&mut fk("fk_membership_purchases__plan_id", MembershipPurchases::Table, MembershipPurchases::PlanId, MembershipPlans::Table, MembershipPlans::Id, Restrict))
+          .foreign_key(&mut fk(
+            "fk_membership_purchases__plan_id",
+            MembershipPurchases::Table,
+            MembershipPurchases::PlanId,
+            MembershipPlans::Table,
+            MembershipPlans::Id,
+            Restrict,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("uq_membership_purchases__code", MembershipPurchases::Table).col(MembershipPurchases::Code).unique().to_owned()).await?;
-    manager.create_index(idx("uq_membership_purchases__idempotency_key", MembershipPurchases::Table).col(MembershipPurchases::IdempotencyKey).unique().to_owned()).await?;
-    manager.create_index(idx("idx_membership_purchases__owner", MembershipPurchases::Table).col(MembershipPurchases::OwnerKind).col(MembershipPurchases::OwnerId).to_owned()).await?;
+    manager
+      .create_index(
+        idx("uq_membership_purchases__code", MembershipPurchases::Table)
+          .col(MembershipPurchases::Code)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        idx("uq_membership_purchases__idempotency_key", MembershipPurchases::Table)
+          .col(MembershipPurchases::IdempotencyKey)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        idx("idx_membership_purchases__owner", MembershipPurchases::Table)
+          .col(MembershipPurchases::OwnerKind)
+          .col(MembershipPurchases::OwnerId)
+          .to_owned(),
+      )
+      .await?;
     attach_timestamp_auto_update(db, "membership_purchases").await?;
 
     // ---- payment_webhook_events ----
@@ -457,7 +569,14 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("uq_payment_webhook_events__webhook_id", PaymentWebhookEvents::Table).col(PaymentWebhookEvents::WebhookId).unique().to_owned()).await?;
+    manager
+      .create_index(
+        idx("uq_payment_webhook_events__webhook_id", PaymentWebhookEvents::Table)
+          .col(PaymentWebhookEvents::WebhookId)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
 
     // ---- credit_wallets ----
     manager
@@ -476,7 +595,15 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("uq_credit_wallets__owner", CreditWallets::Table).col(CreditWallets::OwnerKind).col(CreditWallets::OwnerId).unique().to_owned()).await?;
+    manager
+      .create_index(
+        idx("uq_credit_wallets__owner", CreditWallets::Table)
+          .col(CreditWallets::OwnerKind)
+          .col(CreditWallets::OwnerId)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
     attach_timestamp_auto_update(db, "credit_wallets").await?;
 
     // ---- credit_grants ----
@@ -494,11 +621,26 @@ impl MigrationTrait for Migration {
           .col(string_null(CreditGrants::ReferenceCode))
           .col(timestamp_with_time_zone(CreditGrants::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_credit_grants__id").col(CreditGrants::Id))
-          .foreign_key(&mut fk("fk_credit_grants__wallet_id", CreditGrants::Table, CreditGrants::WalletId, CreditWallets::Table, CreditWallets::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_credit_grants__wallet_id",
+            CreditGrants::Table,
+            CreditGrants::WalletId,
+            CreditWallets::Table,
+            CreditWallets::Id,
+            Cascade,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("idx_credit_grants__wallet__expiry__created", CreditGrants::Table).col(CreditGrants::WalletId).col(CreditGrants::ExpiryAt).col(CreditGrants::CreatedAt).to_owned()).await?;
+    manager
+      .create_index(
+        idx("idx_credit_grants__wallet__expiry__created", CreditGrants::Table)
+          .col(CreditGrants::WalletId)
+          .col(CreditGrants::ExpiryAt)
+          .col(CreditGrants::CreatedAt)
+          .to_owned(),
+      )
+      .await?;
 
     // ---- credit_transactions ----
     manager
@@ -518,7 +660,14 @@ impl MigrationTrait for Migration {
           .col(big_integer(CreditTransactions::BalanceAfter))
           .col(timestamp_with_time_zone(CreditTransactions::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_credit_transactions__id").col(CreditTransactions::Id))
-          .foreign_key(&mut fk("fk_credit_transactions__wallet_id", CreditTransactions::Table, CreditTransactions::WalletId, CreditWallets::Table, CreditWallets::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_credit_transactions__wallet_id",
+            CreditTransactions::Table,
+            CreditTransactions::WalletId,
+            CreditWallets::Table,
+            CreditWallets::Id,
+            Cascade,
+          ))
           .foreign_key(
             ForeignKey::create()
               .name("fk_credit_transactions__grant_id")
@@ -530,8 +679,23 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("idx_credit_transactions__wallet__created", CreditTransactions::Table).col(CreditTransactions::WalletId).col(CreditTransactions::CreatedAt).to_owned()).await?;
-    manager.create_index(idx("uq_credit_transactions__wallet__idempotency_key", CreditTransactions::Table).col(CreditTransactions::WalletId).col(CreditTransactions::IdempotencyKey).unique().to_owned()).await?;
+    manager
+      .create_index(
+        idx("idx_credit_transactions__wallet__created", CreditTransactions::Table)
+          .col(CreditTransactions::WalletId)
+          .col(CreditTransactions::CreatedAt)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        idx("uq_credit_transactions__wallet__idempotency_key", CreditTransactions::Table)
+          .col(CreditTransactions::WalletId)
+          .col(CreditTransactions::IdempotencyKey)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
 
     // ---- credit_reservations ----
     manager
@@ -550,12 +714,34 @@ impl MigrationTrait for Migration {
           .col(timestamp_with_time_zone(CreditReservations::CreatedAt).default(Expr::current_timestamp()))
           .col(timestamp_with_time_zone(CreditReservations::UpdatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_credit_reservations__id").col(CreditReservations::Id))
-          .foreign_key(&mut fk("fk_credit_reservations__wallet_id", CreditReservations::Table, CreditReservations::WalletId, CreditWallets::Table, CreditWallets::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_credit_reservations__wallet_id",
+            CreditReservations::Table,
+            CreditReservations::WalletId,
+            CreditWallets::Table,
+            CreditWallets::Id,
+            Cascade,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("idx_credit_reservations__wallet__status", CreditReservations::Table).col(CreditReservations::WalletId).col(CreditReservations::Status).to_owned()).await?;
-    manager.create_index(idx("uq_credit_reservations__wallet__idempotency_key", CreditReservations::Table).col(CreditReservations::WalletId).col(CreditReservations::IdempotencyKey).unique().to_owned()).await?;
+    manager
+      .create_index(
+        idx("idx_credit_reservations__wallet__status", CreditReservations::Table)
+          .col(CreditReservations::WalletId)
+          .col(CreditReservations::Status)
+          .to_owned(),
+      )
+      .await?;
+    manager
+      .create_index(
+        idx("uq_credit_reservations__wallet__idempotency_key", CreditReservations::Table)
+          .col(CreditReservations::WalletId)
+          .col(CreditReservations::IdempotencyKey)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
     attach_timestamp_auto_update(db, "credit_reservations").await?;
 
     // ---- coupons ----
@@ -583,7 +769,9 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("uq_coupons__code", Coupons::Table).col(Coupons::Code).unique().to_owned()).await?;
+    manager
+      .create_index(idx("uq_coupons__code", Coupons::Table).col(Coupons::Code).unique().to_owned())
+      .await?;
     attach_timestamp_auto_update(db, "coupons").await?;
 
     // ---- coupon_plans ----
@@ -596,11 +784,26 @@ impl MigrationTrait for Migration {
           .col(integer(CouponPlans::CouponId))
           .col(string(CouponPlans::PlanCode))
           .primary_key(Index::create().name("pk_coupon_plans__id").col(CouponPlans::Id))
-          .foreign_key(&mut fk("fk_coupon_plans__coupon_id", CouponPlans::Table, CouponPlans::CouponId, Coupons::Table, Coupons::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_coupon_plans__coupon_id",
+            CouponPlans::Table,
+            CouponPlans::CouponId,
+            Coupons::Table,
+            Coupons::Id,
+            Cascade,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("uq_coupon_plans__coupon__plan", CouponPlans::Table).col(CouponPlans::CouponId).col(CouponPlans::PlanCode).unique().to_owned()).await?;
+    manager
+      .create_index(
+        idx("uq_coupon_plans__coupon__plan", CouponPlans::Table)
+          .col(CouponPlans::CouponId)
+          .col(CouponPlans::PlanCode)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
 
     // ---- coupon_grants ----
     manager
@@ -616,11 +819,27 @@ impl MigrationTrait for Migration {
           .col(timestamp_with_time_zone_null(CouponGrants::RevokedAt))
           .col(timestamp_with_time_zone(CouponGrants::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_coupon_grants__id").col(CouponGrants::Id))
-          .foreign_key(&mut fk("fk_coupon_grants__coupon_id", CouponGrants::Table, CouponGrants::CouponId, Coupons::Table, Coupons::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_coupon_grants__coupon_id",
+            CouponGrants::Table,
+            CouponGrants::CouponId,
+            Coupons::Table,
+            Coupons::Id,
+            Cascade,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("uq_coupon_grants__coupon__owner", CouponGrants::Table).col(CouponGrants::CouponId).col(CouponGrants::OwnerKind).col(CouponGrants::OwnerId).unique().to_owned()).await?;
+    manager
+      .create_index(
+        idx("uq_coupon_grants__coupon__owner", CouponGrants::Table)
+          .col(CouponGrants::CouponId)
+          .col(CouponGrants::OwnerKind)
+          .col(CouponGrants::OwnerId)
+          .unique()
+          .to_owned(),
+      )
+      .await?;
 
     // ---- coupon_redemptions ----
     manager
@@ -636,11 +855,26 @@ impl MigrationTrait for Migration {
           .col(integer_null(CouponRedemptions::GrantId))
           .col(timestamp_with_time_zone(CouponRedemptions::CreatedAt).default(Expr::current_timestamp()))
           .primary_key(Index::create().name("pk_coupon_redemptions__id").col(CouponRedemptions::Id))
-          .foreign_key(&mut fk("fk_coupon_redemptions__coupon_id", CouponRedemptions::Table, CouponRedemptions::CouponId, Coupons::Table, Coupons::Id, Cascade))
+          .foreign_key(&mut fk(
+            "fk_coupon_redemptions__coupon_id",
+            CouponRedemptions::Table,
+            CouponRedemptions::CouponId,
+            Coupons::Table,
+            Coupons::Id,
+            Cascade,
+          ))
           .to_owned(),
       )
       .await?;
-    manager.create_index(idx("idx_coupon_redemptions__coupon__owner", CouponRedemptions::Table).col(CouponRedemptions::CouponId).col(CouponRedemptions::OwnerKind).col(CouponRedemptions::OwnerId).to_owned()).await?;
+    manager
+      .create_index(
+        idx("idx_coupon_redemptions__coupon__owner", CouponRedemptions::Table)
+          .col(CouponRedemptions::CouponId)
+          .col(CouponRedemptions::OwnerKind)
+          .col(CouponRedemptions::OwnerId)
+          .to_owned(),
+      )
+      .await?;
 
     // ---- seed default mail templates (apps may override the sender/subject/body) ----
     let _ = MailForms::Table; // silence unused-variant lint
@@ -692,5 +926,11 @@ fn fk<T: IntoIden + 'static, F: IntoIden + 'static, RT: IntoIden + 'static, RC: 
   to_col: RC,
   on_delete: ForeignKeyAction,
 ) -> ForeignKeyCreateStatement {
-  ForeignKey::create().name(name).from(from_tbl, from_col).to(to_tbl, to_col).on_delete(on_delete).on_update(Cascade).to_owned()
+  ForeignKey::create()
+    .name(name)
+    .from(from_tbl, from_col)
+    .to(to_tbl, to_col)
+    .on_delete(on_delete)
+    .on_update(Cascade)
+    .to_owned()
 }

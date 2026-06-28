@@ -69,8 +69,16 @@ async fn test_run_once_skips_when_lock_held() {
   let user_mock = Mock::new().await;
   let user = TestUser::create(&db).await.unwrap();
   user.login(&user_mock.client).await;
-  let created: Value =
-    user_mock.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let created: Value = user_mock
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
   // Make it due for expiry.
   let mut a = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap().into_active_model();
@@ -145,7 +153,16 @@ async fn test_stale_pending_purchase_reverses_coupon() {
   let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
 
   // First checkout records the redemption (per-owner cap 1); a second is blocked.
-  let co: Value = user_mock.client.post("/payments/checkout").json(&body).send().await.unwrap().json().await.unwrap();
+  let co: Value = user_mock
+    .client
+    .post("/payments/checkout")
+    .json(&body)
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let pc = co["purchaseCode"].as_str().unwrap().to_string();
   assert_eq!(
     user_mock.client.post("/payments/checkout").json(&body).send().await.unwrap().status(),
@@ -185,9 +202,16 @@ async fn test_org_manager_emails_resolution() {
 
   let org = TestOrg::create(&db).await.unwrap();
   let manager = TestUser::create_in_org(&db, org.model.id).await.unwrap();
-  create_ap(&db, &manager, "org:subscription", &org.model.id.to_string(), vec!["manage".to_string()], "allow")
-    .await
-    .unwrap();
+  create_ap(
+    &db,
+    &manager,
+    "org:subscription",
+    &org.model.id.to_string(),
+    vec!["manage".to_string()],
+    "allow",
+  )
+  .await
+  .unwrap();
 
   let emails = org_manager_emails(org.model.id, &db).await.unwrap();
   assert!(
@@ -538,16 +562,8 @@ async fn subscribe_user(db: &sea_orm::DatabaseConnection, body: Value) -> (Mock,
   let m = Mock::new().await;
   let user = TestUser::create(db).await.unwrap();
   user.login(&m.client).await;
-  let created: Value = m
-    .client
-    .post("/subscriptions")
-    .json(&body)
-    .send()
-    .await
-    .unwrap()
-    .json()
-    .await
-    .unwrap();
+  let created: Value =
+    m.client.post("/subscriptions").json(&body).send().await.unwrap().json().await.unwrap();
   let id = created["id"].as_i64().expect("subscription id") as i32;
   (m, id)
 }
@@ -628,7 +644,8 @@ async fn test_maintenance_auto_renew_failure_past_due() {
 
   // A billing key the mock PG declines.
   let (_m, sub_id) =
-    subscribe_user(&db, json!({ "planCode": code, "autoRenew": true, "billingKey": "mock:bill:nope" })).await;
+    subscribe_user(&db, json!({ "planCode": code, "autoRenew": true, "billingKey": "mock:bill:nope" }))
+      .await;
 
   let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut a = sub.into_active_model();
@@ -683,11 +700,23 @@ async fn test_auto_renew_requires_billing_key() {
     .send()
     .await
     .unwrap();
-  assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "auto_renew without billing_key must be rejected");
+  assert_eq!(
+    resp.status(),
+    StatusCode::BAD_REQUEST,
+    "auto_renew without billing_key must be rejected"
+  );
 
   // Subscribe normally, then toggle auto-renew via the endpoint.
-  let created: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   // Enabling without a stored/supplied key → 400.
@@ -698,7 +727,11 @@ async fn test_auto_renew_requires_billing_key() {
     .send()
     .await
     .unwrap();
-  assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "enabling without a billing key must be rejected");
+  assert_eq!(
+    resp.status(),
+    StatusCode::BAD_REQUEST,
+    "enabling without a billing key must be rejected"
+  );
 
   // Enabling with a key → 200, and it sticks.
   let resp = m
@@ -710,7 +743,14 @@ async fn test_auto_renew_requires_billing_key() {
     .unwrap();
   assert_eq!(resp.status(), StatusCode::OK, "enabling with a billing key must succeed");
 
-  let got: Value =
-    m.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  let got: Value = m
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(got["autoRenew"].as_bool().unwrap(), true, "auto-renew must be enabled");
 }

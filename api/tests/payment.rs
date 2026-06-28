@@ -80,7 +80,13 @@ async fn test_payment_subscription_checkout_confirm() {
   assert_eq!(subs["count"].as_u64().unwrap(), 1);
   assert_eq!(subs["items"][0]["status"].as_str().unwrap(), "active");
 
-  let ent = user_mock.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let ent = user_mock
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(ent.status(), StatusCode::OK);
 }
 
@@ -265,7 +271,10 @@ async fn test_payment_refund_subscription() {
 
   let co = checkout(&user_mock.client, json!({ "kind": "subscription", "planCode": code })).await;
   let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
-  assert_eq!(confirm(&user_mock.client, &purchase_code, &purchase_code).await.status(), StatusCode::OK);
+  assert_eq!(
+    confirm(&user_mock.client, &purchase_code, &purchase_code).await.status(),
+    StatusCode::OK
+  );
 
   // Refund.
   let rf = user_mock
@@ -317,7 +326,10 @@ async fn test_payment_refund_credit_clawback() {
 
   let co = checkout(&user_mock.client, json!({ "kind": "credit", "planCode": code })).await;
   let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
-  assert_eq!(confirm(&user_mock.client, &purchase_code, &purchase_code).await.status(), StatusCode::OK);
+  assert_eq!(
+    confirm(&user_mock.client, &purchase_code, &purchase_code).await.status(),
+    StatusCode::OK
+  );
 
   let bal: Value = user_mock.client.get("/credits/balance").send().await.unwrap().json().await.unwrap();
   assert_eq!(bal["balance"].as_i64().unwrap(), 100);

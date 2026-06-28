@@ -159,7 +159,9 @@ pub async fn org_manager_emails<C: ConnectionTrait>(
   let policies = AccessPolicies::find()
     .filter(AccessPoliciesColumn::Effect.eq("allow"))
     .filter(AccessPoliciesColumn::Object.eq(org_id.to_string()))
-    .filter(AccessPoliciesColumn::Namespace.is_in(["org:subscription".to_string(), "org:credit".to_string()]))
+    .filter(
+      AccessPoliciesColumn::Namespace.is_in(["org:subscription".to_string(), "org:credit".to_string()]),
+    )
     .all(db)
     .await?;
 

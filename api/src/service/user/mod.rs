@@ -105,8 +105,8 @@ impl<S: SumidaState> UserService<S> {
     let allow_security_fields = if self.session.profile.is_admin {
       true
     } else {
-      let start_org_col = Expr::col((entity::users::Entity, entity::users::Column::OrganizationId))
-        .into_simple_expr();
+      let start_org_col =
+        Expr::col((entity::users::Entity, entity::users::Column::OrganizationId)).into_simple_expr();
       ap::ns("org:user")
         .who(&self.session)
         .join(Users, entity::users::Column::Id)

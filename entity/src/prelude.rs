@@ -117,7 +117,8 @@ pub use super::membership::membership_plans::{
 };
 pub use super::membership::membership_purchases::{
   ActiveModel as MembershipPurchasesActiveModel, Column as MembershipPurchasesColumn,
-  Entity as MembershipPurchases, Model as MembershipPurchasesModel, Relation as MembershipPurchasesRelation,
+  Entity as MembershipPurchases, Model as MembershipPurchasesModel,
+  Relation as MembershipPurchasesRelation,
 };
 pub use super::membership::payment_webhook_events::{
   ActiveModel as PaymentWebhookEventsActiveModel, Column as PaymentWebhookEventsColumn,

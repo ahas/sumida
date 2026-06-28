@@ -50,9 +50,7 @@ pub async fn get_jwt_secret() -> Result<String, SumidaError> {
 
   // HS256 key strength: shorter than 256 bits (32 bytes) is vulnerable to key brute-forcing.
   if secret.len() < 32 {
-    return Err(SumidaError::Unsupported(
-      "JWT secret must be at least 32 bytes (256 bits)".to_string(),
-    ));
+    return Err(SumidaError::Unsupported("JWT secret must be at least 32 bytes (256 bits)".to_string()));
   }
 
   Ok(secret)

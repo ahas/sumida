@@ -54,25 +54,55 @@ async fn test_reactivate_canceled_subscription() {
   .await;
 
   let (m, _u) = user_mock(&db).await;
-  let created: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   // Cancel immediately → canceled, entitlement stops.
-  assert_eq!(m.client.post(&format!("/subscriptions/{sub_id}/cancel")).send().await.unwrap().status(), StatusCode::OK);
-  let r = m.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  assert_eq!(
+    m.client.post(&format!("/subscriptions/{sub_id}/cancel")).send().await.unwrap().status(),
+    StatusCode::OK
+  );
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::FORBIDDEN);
 
   // Reactivate → active again, entitlement restored.
   let r = m.client.post(&format!("/subscriptions/{sub_id}/reactivate")).send().await.unwrap();
   assert_eq!(r.status(), StatusCode::OK, "canceled subscription must reactivate");
 
-  let got: Value =
-    m.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  let got: Value = m
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(got["status"].as_str().unwrap(), "active");
   assert!(got["canceledAt"].is_null(), "reactivation clears canceled_at");
 
-  let r = m.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK, "reactivated subscription must entitle again");
 
   let events = SubscriptionEvents::find()
@@ -102,8 +132,16 @@ async fn test_reactivate_active_rejected() {
   .await;
 
   let (m, _u) = user_mock(&db).await;
-  let created: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   let r = m.client.post(&format!("/subscriptions/{sub_id}/reactivate")).send().await.unwrap();
@@ -128,17 +166,34 @@ async fn test_trial_period_is_free_and_short() {
   .await;
 
   let (m, _u) = user_mock(&db).await;
-  let created: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   // Trial: entitled now, first period ≈ 7 days (not 30), trial_ends_at set.
-  let r = m.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK, "trial subscription is entitled");
 
   let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   assert!(sub.trial_ends_at.is_some(), "trial_ends_at must be set");
-  assert!(sub.current_period_end < Utc::now() + Duration::days(8), "trial first period is ~7 days, not 30");
+  assert!(
+    sub.current_period_end < Utc::now() + Duration::days(8),
+    "trial first period is ~7 days, not 30"
+  );
 
   // The trial purchase recorded amount 0 (no charge taken).
   let purchase = MembershipPurchases::find()
@@ -206,7 +261,13 @@ async fn test_grace_window_keeps_entitlement_then_expires() {
   assert!(after.grace_ends_at.is_some(), "a grace window must open");
 
   // Still entitled during grace.
-  let r = m.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK, "entitlement continues during grace");
 
   // Push grace into the past → entitlement stops.
@@ -215,7 +276,13 @@ async fn test_grace_window_keeps_entitlement_then_expires() {
   a.grace_ends_at = Set(Some((Utc::now() - Duration::hours(1)).into()));
   a.update(&db).await.unwrap();
 
-  let r = m.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::FORBIDDEN, "entitlement stops once grace ends");
 }
 
@@ -288,7 +355,13 @@ async fn test_dunning_recovers_subscription() {
   assert!(after.grace_ends_at.is_none(), "grace cleared on recovery");
   assert_eq!(after.dunning_attempts, 0, "attempts reset on recovery");
 
-  let r = m.client.post("/entitlements/check").json(&json!({ "action": "read-article" })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "read-article" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK, "recovered subscription entitles again");
 }
 
@@ -384,8 +457,16 @@ async fn test_change_plan_prorates_and_switches_coverage() {
   .await;
 
   let (m, _u) = user_mock(&db).await;
-  let created: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": cheap })).send().await.unwrap().json().await.unwrap();
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": cheap }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   // Upgrade immediately (≈ full period remaining): net ≈ 3000 - 1000 = 2000.
@@ -405,16 +486,36 @@ async fn test_change_plan_prorates_and_switches_coverage() {
   assert_eq!(res["oldPlanCode"].as_str().unwrap(), cheap);
 
   // The subscription is now on the new plan (period preserved, prev_plan_id set).
-  let got: Value = m.client.get(&format!("/subscriptions/{sub_id}")).send().await.unwrap().json().await.unwrap();
+  let got: Value = m
+    .client
+    .get(&format!("/subscriptions/{sub_id}"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   assert_eq!(got["status"].as_str().unwrap(), "active");
   assert_eq!(got["planCode"].as_str().unwrap(), pricey);
   let row = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   assert!(row.prev_plan_id.is_some(), "prev_plan_id records the prior plan");
 
   // Coverage switched: the new action is entitled, the old one is not.
-  let r = m.client.post("/entitlements/check").json(&json!({ "action": "new-act" })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "new-act" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::OK, "new plan action is entitled");
-  let r = m.client.post("/entitlements/check").json(&json!({ "action": "old-act" })).send().await.unwrap();
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "old-act" }))
+    .send()
+    .await
+    .unwrap();
   assert_eq!(r.status(), StatusCode::FORBIDDEN, "old plan action no longer covered");
 }
 
@@ -436,8 +537,16 @@ async fn test_change_plan_same_plan_rejected() {
   .await;
 
   let (m, _u) = user_mock(&db).await;
-  let created: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let created: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
   let r = m
@@ -523,19 +632,54 @@ async fn test_trial_granted_only_once() {
 
   let (m, _u) = user_mock(&db).await;
   // First subscribe → trial.
-  let first: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  let first: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let first_id = first["id"].as_i64().unwrap() as i32;
-  assert!(Subscriptions::find_by_id(first_id).one(&db).await.unwrap().unwrap().trial_ends_at.is_some());
+  assert!(
+    Subscriptions::find_by_id(first_id)
+      .one(&db)
+      .await
+      .unwrap()
+      .unwrap()
+      .trial_ends_at
+      .is_some()
+  );
 
   // Cancel it, then re-subscribe to the same plan → no second trial (paid period).
-  assert_eq!(m.client.post(&format!("/subscriptions/{first_id}/cancel")).send().await.unwrap().status(), StatusCode::OK);
-  let second: Value =
-    m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap().json().await.unwrap();
+  assert_eq!(
+    m.client
+      .post(&format!("/subscriptions/{first_id}/cancel"))
+      .send()
+      .await
+      .unwrap()
+      .status(),
+    StatusCode::OK
+  );
+  let second: Value = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": code }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let second_id = second["id"].as_i64().unwrap() as i32;
   let s = Subscriptions::find_by_id(second_id).one(&db).await.unwrap().unwrap();
   assert!(s.trial_ends_at.is_none(), "no repeat trial for the same plan");
-  assert!(s.current_period_end > Utc::now() + Duration::days(20), "second period is the full ~30 days");
+  assert!(
+    s.current_period_end > Utc::now() + Duration::days(20),
+    "second period is the full ~30 days"
+  );
 }
 
 // ---------------------------------------------------------------------------

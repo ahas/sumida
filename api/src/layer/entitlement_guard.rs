@@ -30,7 +30,10 @@ pub struct EntitlementLayer<S> {
 
 impl<S> EntitlementLayer<S> {
   pub fn new(state: S, action: impl Into<String>) -> Self {
-    Self { state, action: action.into() }
+    Self {
+      state,
+      action: action.into(),
+    }
   }
 }
 

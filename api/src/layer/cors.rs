@@ -12,7 +12,9 @@ pub fn new() -> CorsLayer {
         // allow_credentials(true) combined with a wildcard '*' origin is an invalid combination that browsers reject.
         // Ignore it explicitly to avoid the misconception that a misconfiguration opens up all origins.
         if v == "*" {
-          tracing::warn!("CORS allow_origins '*' is ignored: it cannot be combined with allow_credentials=true");
+          tracing::warn!(
+            "CORS allow_origins '*' is ignored: it cannot be combined with allow_credentials=true"
+          );
           false
         } else {
           true
