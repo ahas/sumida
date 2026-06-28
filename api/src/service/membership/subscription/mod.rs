@@ -15,6 +15,7 @@ use sea_orm::{
 use serde_json::json;
 
 use self::dto::*;
+use super::coupon::CouponService;
 use super::{gen_code, managed_org_ids, notify_all, recipient_emails, resolve_owner};
 use crate::SumidaState;
 use crate::util::ap::{self, ApGuard};
@@ -327,6 +328,43 @@ impl<S: SumidaState> SubscriptionService<S> {
       }
     };
 
+    // Optional discount coupons (parity with the paid checkout path). Only when the first period is
+    // actually charged — a free trial has nothing to discount, so coupons are left unconsumed.
+    let mut coupon_codes: Vec<String> = Vec::new();
+    if let Some(code) = &data.coupon_code {
+      coupon_codes.push(code.clone());
+    }
+    if let Some(list) = &data.coupon_codes {
+      coupon_codes.extend(list.iter().cloned());
+    }
+    coupon_codes.sort();
+    coupon_codes.dedup();
+
+    let mut discount = 0i64;
+    let mut redemption_ids: Vec<i32> = Vec::new();
+    let mut all_stackable = true;
+    if charge_amount > 0 {
+      for code in &coupon_codes {
+        let applied = CouponService::<S>::apply_in_txn(
+          code,
+          &plan.currency,
+          charge_amount,
+          &owner_kind,
+          owner_id,
+          &plan.code,
+          &txn,
+        )
+        .await?;
+        discount += applied.discount;
+        all_stackable &= applied.stackable;
+        redemption_ids.push(applied.redemption_id);
+      }
+      if coupon_codes.len() > 1 && !all_stackable {
+        return Err(SumidaError::BadRequest("one or more coupons are not stackable".into()));
+      }
+    }
+    let amount = (charge_amount - discount).max(0);
+
     let sub = Subscriptions::insert(SubscriptionsActiveModel {
       code: Set(code.clone()),
       plan_id: Set(plan.id),
@@ -346,16 +384,17 @@ impl<S: SumidaState> SubscriptionService<S> {
     .exec_with_returning(&txn)
     .await?;
 
-    // Canonical purchase record (amount 0 during a free trial).
+    // Canonical purchase record (amount 0 during a free trial; coupon discount applied otherwise).
+    let purchase_code = gen_code("pur");
     MembershipPurchases::insert(MembershipPurchasesActiveModel {
-      code: Set(gen_code("pur")),
+      code: Set(purchase_code.clone()),
       kind: Set(PlanKind::Subscription),
       plan_id: Set(plan.id),
       plan_code: Set(plan.code.clone()),
       owner_kind: Set(owner_kind.clone()),
       owner_id: Set(owner_id),
       status: Set(PurchaseStatus::Completed),
-      amount: Set(charge_amount),
+      amount: Set(amount),
       subtotal: Set(charge_amount),
       currency: Set(plan.currency.clone()),
       paid_at: Set(Some(now.into())),
@@ -363,6 +402,10 @@ impl<S: SumidaState> SubscriptionService<S> {
     })
     .exec(&txn)
     .await?;
+
+    if !redemption_ids.is_empty() {
+      CouponService::<S>::link_redemptions(&redemption_ids, &purchase_code, &txn).await?;
+    }
 
     self
       .record_event(sub.id, SubscriptionEventKind::Created, None, Some("active"), Some(&code), &txn)

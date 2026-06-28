@@ -80,6 +80,12 @@ pub struct CreateSubscription {
   /// PG billing key (정기결제) stored for auto-renewal.
   #[serde(default)]
   pub billing_key: Option<String>,
+  /// Optional discount coupon(s) applied to the first period's recorded amount (parity with the paid
+  /// checkout path). Only meaningful when the first period is charged (i.e. not a free trial).
+  #[serde(default)]
+  pub coupon_code: Option<String>,
+  #[serde(default)]
+  pub coupon_codes: Option<Vec<String>>,
 }
 
 /// Toggle auto-renew on an existing subscription. Enabling requires a billing key

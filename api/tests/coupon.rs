@@ -793,3 +793,43 @@ async fn test_checkout_confirm_with_coupon() {
   assert!(confirm["subscriptionId"].as_i64().is_some(), "subscription activated");
   assert!(total < 1000, "charged the discounted total");
 }
+
+// ---------------------------------------------------------------------------
+// Free-subscribe path (POST /subscriptions) also applies discount coupons,
+// discounting the recorded first-period purchase amount.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_free_subscribe_applies_coupon() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+
+  let code = format!("SUBPCT-{}", rnd());
+  create_coupon(&am.client, json!({ "code": code, "percentOff": 25 })).await;
+  let plan = create_sub_plan(&am.client, 1000).await; // paid first period (no trial)
+
+  // a user subscribes with the coupon (no PG checkout)
+  let m = Mock::new().await;
+  let user = TestUser::create(&db).await.unwrap();
+  user.login(&m.client).await;
+  let resp = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": plan, "couponCode": code }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::CREATED);
+
+  // the recorded purchase reflects the discount: subtotal 1000, amount 750
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+  let purchase = entity::prelude::MembershipPurchases::find()
+    .filter(entity::membership::membership_purchases::Column::OwnerId.eq(user.model.id))
+    .order_by_desc(entity::membership::membership_purchases::Column::Id)
+    .one(&db)
+    .await
+    .unwrap()
+    .expect("purchase recorded");
+  assert_eq!(purchase.subtotal, 1000);
+  assert_eq!(purchase.amount, 750, "25% off 1000");
+}
