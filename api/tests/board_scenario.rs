@@ -954,3 +954,89 @@ async fn scenario_board_soft_delete_hides_board_and_posts() {
   let row = Boards::find_by_id(board.id).one(&db).await.unwrap().unwrap();
   assert!(row.deleted_at.is_some(), "board deleted_at is stamped");
 }
+
+async fn deny(db: &DatabaseConnection, user: &TestUser, ns: &str, object: &str, actions: &[&str]) {
+  create_ap(db, user, ns, object, actions.iter().map(|s| s.to_string()).collect(), "deny")
+    .await
+    .expect("create deny policy");
+}
+
+#[tokio::test]
+async fn scenario_global_deny_blocks_owner() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  // board_post:update service to reach the PATCH handler; the per-post owner grant is auto-created on create.
+  allow(&db, &author, "board_post", "service", &["update"]).await;
+  author.login(&mock.client).await;
+  let post_id = create_published_article(&mock, board.id, "mine").await;
+
+  // baseline: the author can update their own post (owner branch allows, no deny)
+  let resp = mock
+    .client
+    .patch(&format!("/board-posts/{post_id}"))
+    .json(&json!({ "title": "v2" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+
+  // a board:update DENY blocks even the author (global-deny: a deny on any branch is absolute)
+  deny(&db, &author, "board", &board.id.to_string(), &["update"]).await;
+  let resp = mock
+    .client
+    .patch(&format!("/board-posts/{post_id}"))
+    .json(&json!({ "title": "v3" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::FORBIDDEN, "global deny blocks the owner too");
+}
+
+#[tokio::test]
+async fn scenario_operator_moderates_then_global_deny() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  author.login(&mock.client).await;
+  let post_id = create_published_article(&mock, board.id, "authored").await;
+
+  // moderator (not the author) with operator perms: board_group + board update on this board
+  let mock_m = Mock::new().await;
+  let moderator = TestUser::create(&db).await.unwrap();
+  allow(&db, &moderator, "board_post", "service", &["update"]).await;
+  allow(&db, &moderator, "board", &board.id.to_string(), &["update"]).await;
+  if let Some(group_id) = board.group_id {
+    allow(&db, &moderator, "board_group", &group_id.to_string(), &["update"]).await;
+  }
+  moderator.login(&mock_m.client).await;
+
+  // operator can moderate someone else's post
+  let resp = mock_m
+    .client
+    .patch(&format!("/board-posts/{post_id}"))
+    .json(&json!({ "title": "moderated" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::OK, "operator moderates others' posts");
+
+  // a board:update DENY on the moderator blocks the operator path too (global-deny)
+  deny(&db, &moderator, "board", &board.id.to_string(), &["update"]).await;
+  let resp = mock_m
+    .client
+    .patch(&format!("/board-posts/{post_id}"))
+    .json(&json!({ "title": "x" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::FORBIDDEN, "global deny blocks the operator too");
+}

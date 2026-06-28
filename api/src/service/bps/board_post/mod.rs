@@ -470,30 +470,33 @@ impl<S: SumidaState> BoardPostService<S> {
     board_group_id: Option<i32>,
     txn: &C,
   ) -> Result<(), SumidaError> {
-    // Operator permission: board_group (if present) AND board
-    let operator = ap::chain()
-      .push_if(board_group_id, |x| ap::ns("board_group").object(x))
-      .push(ap::ns("board").object(board_id))
-      .who(&self.session)
-      .action(action)
-      .check_allowed(txn)
-      .await;
-    if operator {
-      return Ok(());
-    }
-
-    // Author ownership: board_post namespace, object=post_id
-    let owner = ap::ns("board_post")
+    // Allow if operator (board_group AND board) OR author (board_post). Global-deny (policy B):
+    // a matching `deny` on ANY of these namespaces blocks regardless of branch — a deny is absolute
+    // and cannot be circumvented via ownership. `effects()` returns (has_allow, has_deny) per branch.
+    let (group_allow, group_deny) = match board_group_id {
+      Some(group_id) => {
+        ap::ns("board_group")
+          .object(group_id)
+          .who(&self.session)
+          .action(action)
+          .effects(txn)
+          .await
+      }
+      None => (true, false),
+    };
+    let (board_allow, board_deny) =
+      ap::ns("board").object(board_id).who(&self.session).action(action).effects(txn).await;
+    let (owner_allow, owner_deny) = ap::ns("board_post")
       .object(post_id)
       .who(&self.session)
       .action(action)
-      .check_allowed(txn)
+      .effects(txn)
       .await;
-    if owner {
-      return Ok(());
-    }
 
-    Err(SumidaError::NoAccessPermission)
+    let allowed = (group_allow && board_allow) || owner_allow;
+    let denied = group_deny || board_deny || owner_deny;
+
+    if allowed && !denied { Ok(()) } else { Err(SumidaError::NoAccessPermission) }
   }
 
   pub async fn update(&self, id: i32, data: UpdateBoardPost) -> Result<BoardPostsModel, SumidaError> {

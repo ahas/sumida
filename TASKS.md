@@ -186,10 +186,13 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
   `detail`은 debug 빌드에서만 노출(릴리스 프라이버시 유지). 다운스트림은 `to_response` 한 곳만 영향.
 - ⚠️ **breaking**: 기존 `statusCode`→`status`, `reason`→`detail`(+ `type`/`title` 추가). 클라이언트 에러 파싱 갱신 필요.
 
-### ReBAC ApOr / object_in_subquery 사용처 확대
-- 현재 `ApOr`와 `object_in_subquery`는 `UserService`만 사용
-- 게시판 등 "owner OR moderator" 같은 OR 정책이 필요한 곳에 점진 적용
-- 적용 전 deny 시멘틱(OR 분기 시 자식 간 deny 전파 없음) 운영 정책 명문화
+### ~~ReBAC ApOr 확대 + deny 시멘틱~~ — ✅ 완료 (정책 B, 2026-06)
+- **결정: (B) 글로벌 deny 우선** — 어느 OR 분기든 매칭되는 `deny`가 있으면 전체 거부(deny는 절대적, 소유권으로 우회 불가).
+- `ApCondition.effects()`(has_allow/has_deny 분리) 추가 → 빌딩블록. `ApOr`을 `(allow₀||…) AND NOT (deny₀||…)`로 재작성
+  (apply/check_allowed/can_access). 게시판 변경권한 `authorize_post_mutation`을 effects() 기반 글로벌-deny로 전환
+  ("운영자(board_group AND board) OR 작성자(board_post)" + 전역 deny).
+- 테스트: 작성자/운영자 각각 baseline 허용 → board:update deny 추가 시 403(글로벌 deny) 검증.
+  (`ApOr` 자체는 condition들의 OR 전용; 게시판의 chain-OR-condition은 effects()로 직접 조합.)
 
 ### G5b 후속 — token 관련 코멘트/주석 정리
 - `service/auth/token.rs` 상단 doc 보강 (login/refresh/logout 흐름과 token_type 검증 요점)

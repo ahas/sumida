@@ -6,7 +6,7 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::NotSet;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{
-  Alias, Expr, ExprTrait, Func, IntoColumnRef, IntoIden, IntoTableRef, Query, SelectStatement, SimpleExpr,
+  Alias, Expr, Func, IntoColumnRef, IntoIden, IntoTableRef, Query, SelectStatement, SimpleExpr,
 };
 use sea_orm::{
   ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbErr, DeleteResult, DerivePartialModel,
@@ -178,19 +178,51 @@ impl ApCondition {
     self.alias.clone().unwrap_or_else(|| Alias::new("ap"))
   }
 
-  fn condition(&self, alias: Alias) -> Condition {
-    let arg0 = Func::coalesce([
+  /// `coalesce(<alias>.has_allow, false)` — a boolean expr usable in a WHERE/condition.
+  fn has_allow_expr(&self, alias: &Alias) -> SimpleExpr {
+    Expr::expr(Func::coalesce([
       Expr::col((alias.clone(), Alias::new("has_allow"))).into_simple_expr(),
       Expr::val(false).into_simple_expr(),
-    ]);
-    let arg1 = Func::coalesce([
-      Expr::col((alias, Alias::new("has_deny"))).into_simple_expr(),
-      Expr::val(false).into_simple_expr(),
-    ]);
+    ]))
+    .into_simple_expr()
+  }
 
+  /// `coalesce(<alias>.has_deny, false)` — a boolean expr usable in a WHERE/condition.
+  fn has_deny_expr(&self, alias: &Alias) -> SimpleExpr {
+    Expr::expr(Func::coalesce([
+      Expr::col((alias.clone(), Alias::new("has_deny"))).into_simple_expr(),
+      Expr::val(false).into_simple_expr(),
+    ]))
+    .into_simple_expr()
+  }
+
+  fn condition(&self, alias: Alias) -> Condition {
     Condition::all() //
-      .add(Expr::expr(arg0).into_simple_expr())
-      .add(arg1.not())
+      .add(self.has_allow_expr(&alias))
+      .add(self.has_deny_expr(&alias).not())
+  }
+
+  /// `(has_allow, has_deny)` — presence of allow/deny policies matching this condition, evaluated
+  /// separately so callers (e.g. `ApOr` global-deny) can combine them across branches.
+  pub async fn effects<C: ConnectionTrait>(&self, db: &C) -> (bool, bool) {
+    let ap_alias = Alias::new(ApEntity.table_name());
+    let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
+    let condition = Condition::all()
+      .add(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)))
+      .add(_build_object_condition(
+        &self.objects,
+        &self.exprs,
+        &self.object_in_subqueries,
+        (ap_alias.clone(), ApCol::Object),
+      ))
+      .add(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)))
+      .add(_build_user_conditions(&self.users, (ap_alias.clone(), ApCol::User)));
+
+    let query = ApEntity::find().filter(condition);
+    let allowed = query.clone().filter(col_effect.clone().eq("allow")).count(db).await.unwrap_or(0) > 0;
+    let denied = query.filter(col_effect.eq("deny")).count(db).await.unwrap_or(0) > 0;
+
+    (allowed, denied)
   }
 
   pub fn with_lateral_join<E: EntityTrait, A: IntoIden>(
@@ -292,24 +324,8 @@ impl ApGuard for ApCondition {
   where
     C: ConnectionTrait,
   {
-    let ap_alias = Alias::new(ApEntity.table_name());
-    let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
-    let condition = Condition::all()
-      .add(_build_namespace_condition(&self.namespace, (ap_alias.clone(), ApCol::Namespace)))
-      .add(_build_object_condition(
-        &self.objects,
-        &self.exprs,
-        &self.object_in_subqueries,
-        (ap_alias.clone(), ApCol::Object),
-      ))
-      .add(_build_action_condition(&self.actions, (ap_alias.clone(), ApCol::Action)))
-      .add(_build_user_conditions(&self.users, (ap_alias.clone(), ApCol::User)));
-
-    let query = ApEntity::find().filter(condition);
-    let allowed_count = query.clone().filter(col_effect.clone().eq("allow")).count(db).await.unwrap_or(0);
-    let denied_count = query.clone().filter(col_effect.eq("deny")).count(db).await.unwrap_or(0);
-
-    allowed_count > 0 && denied_count == 0
+    let (allow, deny) = self.effects(db).await;
+    allow && !deny
   }
 
   async fn try_check_allowed<C: ConnectionTrait>(self, db: &C) -> Result<(), SumidaError> {
@@ -509,13 +525,13 @@ impl ApGuard for ApChain {
   }
 }
 
-/// OR-combined version of `ApChain`. Matches if any child passes.
+/// OR-combined conditions with **global-deny** semantics: allowed iff some branch has an `allow`
+/// AND no branch has a `deny`. A `deny` matched by any branch blocks the whole check — a deny is
+/// absolute and cannot be circumvented through another (e.g. ownership) branch.
 ///
-/// Semantics:
-/// - `apply(query)` — combines the children's `condition()` with `Condition::any()` as a filter.
-///   Each child lays down its own LATERAL JOIN (`ap_or_<i>`) in its own scope.
-/// - `can_access/check_allowed` — true if any child is true.
-/// - deny semantics: inside each child it stays `has_allow AND NOT has_deny` as before. There is no deny propagation across children.
+/// Concretely the predicate is `(allow₀ OR allow₁ OR …) AND NOT (deny₀ OR deny₁ OR …)`:
+/// - `apply(query)` lays down each child's LATERAL JOIN (`ap_or_<i>`) and filters on that predicate.
+/// - `check_allowed`/`can_access` evaluate the same predicate.
 #[derive(Clone, Debug, Default)]
 pub struct ApOr {
   children: Vec<ApCondition>,
@@ -608,26 +624,40 @@ impl ApGuard for ApOr {
   }
 
   fn apply<E: EntityTrait>(self, mut query: Select<E>) -> Select<E> {
-    let mut any_cond = Condition::any();
+    // Global deny: (any branch allows) AND NOT (any branch denies).
+    let mut allow_any: Option<SimpleExpr> = None;
+    let mut deny_any: Option<SimpleExpr> = None;
+
     for (i, child) in self.children.iter().enumerate() {
       let alias = Alias::new(format!("ap_or_{i}"));
       query = child.with_lateral_join(query, alias.clone());
-      any_cond = any_cond.add(child.condition(alias));
+      let allow = child.has_allow_expr(&alias);
+      let deny = child.has_deny_expr(&alias);
+      allow_any = Some(allow_any.map_or(allow.clone(), |acc| acc.or(allow)));
+      deny_any = Some(deny_any.map_or(deny.clone(), |acc| acc.or(deny)));
     }
 
-    QueryFilter::filter(query, any_cond)
+    let allow_any = allow_any.unwrap_or_else(|| Expr::val(false).into());
+    let mut cond = Condition::all().add(allow_any);
+    if let Some(deny_any) = deny_any {
+      cond = cond.add(deny_any.not());
+    }
+
+    QueryFilter::filter(query, cond)
   }
 
   async fn check_allowed<C>(self, db: &C) -> bool
   where
     C: ConnectionTrait,
   {
-    for child in self.children {
-      if child.check_allowed(db).await {
-        return true;
-      }
+    let mut any_allow = false;
+    let mut any_deny = false;
+    for child in &self.children {
+      let (allow, deny) = child.effects(db).await;
+      any_allow |= allow;
+      any_deny |= deny;
     }
-    false
+    any_allow && !any_deny
   }
 
   async fn try_check_allowed<C: ConnectionTrait>(self, db: &C) -> Result<(), SumidaError> {
@@ -639,12 +669,23 @@ impl ApGuard for ApOr {
     E: EntityTrait,
     C: ConnectionTrait,
   {
-    for child in self.children {
-      if child.can_access(query.clone(), db).await {
-        return true;
-      }
+    #[derive(FromQueryResult)]
+    struct CanAccess {
+      exists: bool,
     }
-    false
+
+    // EXISTS over the row(s) passing the global-deny OR predicate (built by `apply`).
+    let filtered = self.apply(query.select_only().expr(Expr::val(1)));
+    let stmt = Query::select().expr(Expr::exists(filtered.into_query())).take();
+    let stmt = db.get_database_backend().build(&stmt);
+
+    CanAccess::find_by_statement(stmt)
+      .one(db)
+      .await
+      .ok()
+      .flatten()
+      .map(|r| r.exists)
+      .unwrap_or(false)
   }
 
   async fn try_access<E, C>(self, query: Select<E>, db: &C) -> Result<(), SumidaError>
