@@ -345,6 +345,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let attached_file_uuids = data.attached_file_uuids.clone();
     let content_type = data.content_type.clone();
     let content_for_files: Option<String> = data.content.clone().into();
+    util::validate_lengths(Some(&data.title), content_for_files.as_deref())?;
     let plain_text = data.parse_plain_text()?;
     let password = data.password.clone();
 
@@ -465,6 +466,7 @@ impl<S: SumidaState> BoardPostService<S> {
     };
     let attached_file_uuids = data.attached_file_uuids.clone();
     let detached_file_uuids = data.detached_file_uuids.clone();
+    util::validate_lengths(data.title.0.as_deref(), parse_content.as_deref())?;
     let plain_text = data.parse_plain_text(content_type.clone())?;
     let password = data.password.clone();
 

@@ -57,9 +57,9 @@ pub struct Model {
   pub viewer_visibility: BoardPostRecordVisibility,
   #[sea_orm(default_value = "'private'")]
   pub content_visibility: BoardPostContentVisibility,
-  #[sea_orm(defaultvalue = "false")]
+  #[sea_orm(default_value = "false")]
   pub is_versioned: bool,
-  #[sea_orm(defaultvalue = "false")]
+  #[sea_orm(default_value = "false")]
   pub is_enabled: bool,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,

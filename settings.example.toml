@@ -26,6 +26,7 @@ url = "redis://0.0.0.0:6379/0"
 
 [storage]
 directory = "/static/upload"
+orphan-grace-hours = 24            # hours an unattached uploaded file is kept before the orphan reaper removes it
 
 # Global limits for the generic /files upload (board uploads follow per-board settings).
 # When omitted, size/extension are unlimited but dangerous MIME types are always blocked.

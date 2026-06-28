@@ -503,6 +503,19 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
+    // One view marker per (post, user): makes "view once" race-safe (anonymous user_id NULLs stay distinct).
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .unique()
+          .name("uq_board_post_views__post_user")
+          .table(BoardPostViews::Table)
+          .col(BoardPostViews::PostId)
+          .col(BoardPostViews::UserId)
+          .to_owned(),
+      )
+      .await?;
 
     // board_post_reports
     manager

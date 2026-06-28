@@ -79,7 +79,8 @@ impl<S: SumidaState> FileService<S> {
     })
     .validate_size(data.file.bytes.len())?
     .validate_extension(data.file.get_extension().as_deref())?
-    .validate_mime_type(&data.file.mime_type)?;
+    .validate_mime_type(&data.file.mime_type)?
+    .validate_content(&data.file.bytes)?;
 
     let file_dir = data.options.dir.clone();
     let file_hash = data.file.hash();

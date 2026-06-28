@@ -21,12 +21,10 @@ use sea_orm::sea_query::Expr;
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set};
 use uuid::Uuid;
 
-/// Grace window (hours) before an unattached temporary file becomes reapable.
-pub const ORPHAN_GRACE_HOURS: i64 = 24;
-
-/// `now + grace`, the TTL stamped on temporary/unattached files.
+/// `now + grace`, the TTL stamped on temporary/unattached files (grace from `storage.orphan_grace_hours`).
 pub fn grace_expiry() -> DateTimeWithTimeZone {
-  (Utc::now() + Duration::hours(ORPHAN_GRACE_HOURS)).fixed_offset()
+  let hours = infra::settings::get().storage.orphan_grace_hours;
+  (Utc::now() + Duration::hours(hours)).fixed_offset()
 }
 
 /// Mark a file as temporary and put it on the orphan TTL.

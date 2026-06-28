@@ -78,6 +78,7 @@ pub struct MaintenanceReport {
   pub expiring_notices: usize,
   pub low_balance_notices: usize,
   pub orphan_files_reaped: usize,
+  pub scheduled_posts_published: usize,
 }
 
 /// Auto-renew subscriptions whose period has ended: charge the stored billing
@@ -707,6 +708,10 @@ pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceRep
     Ok(n) => report.orphan_files_reaped = n,
     Err(e) => tracing::warn!("membership maintenance: orphan file reap failed: {e}"),
   }
+  match crate::service::bps::maintenance::publish_scheduled_posts(db).await {
+    Ok(n) => report.scheduled_posts_published = n,
+    Err(e) => tracing::warn!("membership maintenance: publish scheduled posts failed: {e}"),
+  }
 
   // Release the advisory lock.
   if let Err(e) = guard.commit().await {
@@ -728,7 +733,7 @@ pub fn spawn<S: SumidaState>(state: S, interval: StdDuration) -> tokio::task::Jo
       ticker.tick().await;
       let report = run_once::<S>(state.db()).await;
       tracing::debug!(
-        "membership maintenance: {} renewed, {} renew-failed, {} dunning-recovered, {} dunning-failed, {} expired, {} pending-purchases expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices, {} orphan files reaped",
+        "membership maintenance: {} renewed, {} renew-failed, {} dunning-recovered, {} dunning-failed, {} expired, {} pending-purchases expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices, {} orphan files reaped, {} scheduled posts published",
         report.subscriptions_renewed,
         report.subscriptions_renew_failed,
         report.dunning_recovered,
@@ -740,6 +745,7 @@ pub fn spawn<S: SumidaState>(state: S, interval: StdDuration) -> tokio::task::Jo
         report.expiring_notices,
         report.low_balance_notices,
         report.orphan_files_reaped,
+        report.scheduled_posts_published,
       );
     }
   })

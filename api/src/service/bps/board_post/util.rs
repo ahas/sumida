@@ -2,7 +2,6 @@ use entity::bps::board_posts::BoardPostContentType;
 use entity::bps::boards::BoardPostContentVisibility;
 use entity::prelude::*;
 use error::SumidaError;
-use sea_orm::ActiveValue::Unchanged;
 use sea_orm::sea_query::{Alias, Expr, Func};
 use sea_orm::{
   ColumnTrait, ConnectionTrait, DbErr, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
@@ -15,6 +14,25 @@ use crate::service::prelude::{BoardFileListItem, BoardPostFilter, GetBoardPost};
 use crate::util::board::{HtmlContent, MarkdownContent};
 use crate::util::file_lifecycle;
 use crate::util::file_validation::FileValidator;
+
+/// Max post title length (varchar bound) and max content body size (guards against unbounded bodies / DoS).
+pub const MAX_TITLE_LEN: usize = 255;
+pub const MAX_CONTENT_BYTES: usize = 1_000_000;
+
+/// Reject over-long title/content before persisting.
+pub fn validate_lengths(title: Option<&str>, content: Option<&str>) -> Result<(), SumidaError> {
+  if let Some(title) = title
+    && title.chars().count() > MAX_TITLE_LEN
+  {
+    return Err(SumidaError::BadRequest(format!("title exceeds {MAX_TITLE_LEN} characters")));
+  }
+  if let Some(content) = content
+    && content.len() > MAX_CONTENT_BYTES
+  {
+    return Err(SumidaError::BadRequest(format!("content exceeds {MAX_CONTENT_BYTES} bytes")));
+  }
+  Ok(())
+}
 
 pub fn parse_plain_text(
   content_type: BoardPostContentType,
@@ -284,33 +302,37 @@ pub async fn increase_view_count_if_not_viewed<C: ConnectionTrait>(
   user_id: i32,
   db: &C,
 ) -> Result<i32, DbErr> {
-  let not_viewed = BoardPostViews::find()
-    .filter(BoardPostViewsColumn::PostId.eq(post_id))
-    .filter(BoardPostViewsColumn::UserId.eq(user_id))
-    .one(db)
-    .await?
-    .is_none();
-  // Increment the view count by 1 only on first view (actually applied in the not_viewed block below).
-  let next_views = if not_viewed { last_views + 1 } else { last_views };
+  use sea_orm::sea_query::OnConflict;
 
-  if not_viewed {
-    let view_am = BoardPostViewsActiveModel {
-      post_id: Set(post_id),
-      user_id: Set(Some(user_id)),
-      ..Default::default()
-    };
+  // Race-safe "view once per user": rely on the unique (post_id, user_id) index. The marker insert
+  // does nothing on conflict; only a freshly inserted row bumps the count (atomically, no lost update).
+  let inserted = match BoardPostViews::insert(BoardPostViewsActiveModel {
+    post_id: Set(post_id),
+    user_id: Set(Some(user_id)),
+    ..Default::default()
+  })
+  .on_conflict(
+    OnConflict::columns([BoardPostViewsColumn::PostId, BoardPostViewsColumn::UserId])
+      .do_nothing()
+      .to_owned(),
+  )
+  .exec(db)
+  .await
+  {
+    Ok(_) => true,
+    Err(DbErr::RecordNotInserted) => false,
+    Err(err) => return Err(err),
+  };
 
-    BoardPostViews::insert(view_am).exec(db).await?;
-    BoardPosts::update(BoardPostsActiveModel {
-      id: Unchanged(post_id),
-      views: Set(next_views),
-      ..Default::default()
-    })
-    .exec(db)
-    .await?;
+  if inserted {
+    BoardPosts::update_many()
+      .col_expr(BoardPostsColumn::Views, Expr::col(BoardPostsColumn::Views).add(1))
+      .filter(BoardPostsColumn::Id.eq(post_id))
+      .exec(db)
+      .await?;
   }
 
-  Ok(next_views)
+  Ok(last_views + i32::from(inserted))
 }
 
 #[cfg(test)]

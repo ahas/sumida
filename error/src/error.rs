@@ -355,6 +355,16 @@ impl From<SumidaError> for StatusCode {
       // validation errors
       SumidaError::BadRequest(_) => Ok(StatusCode::BAD_REQUEST),
 
+      // file upload validation (client errors, not 500)
+      SumidaError::FileUploadNotAllowed
+      | SumidaError::FileReuseNotAllowed
+      | SumidaError::TooManyFiles { .. }
+      | SumidaError::FieldNotProvided(_) => Ok(StatusCode::BAD_REQUEST),
+      SumidaError::InvalidFileType { .. } | SumidaError::UnsupportedMimeType(_) => {
+        Ok(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+      }
+      SumidaError::FileTooLarge { .. } => Ok(StatusCode::PAYLOAD_TOO_LARGE),
+
       // external crate errors
       SumidaError::DatabaseError(v, _) => StatusCode::from_u16(v),
       #[cfg(feature = "aws-s3")]

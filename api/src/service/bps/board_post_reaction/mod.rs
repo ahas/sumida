@@ -190,6 +190,7 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     };
 
     let result = ReactionEntity::insert(am).exec(&txn).await?;
+    refresh_reactions_aggregate(data.post_id, &txn).await?;
     txn.commit().await?;
 
     Ok(result)
@@ -203,6 +204,7 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     let txn = self.state.db().begin().await?;
 
     let reaction = self.owned_reaction(id, &txn).await?;
+    let post_id = reaction.post_id;
 
     // Only the reaction's own `value` is mutable; post_id/user_id are immutable.
     let mut am = reaction.into_active_model();
@@ -211,6 +213,7 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     }
 
     let result = ReactionEntity::update(am).exec(&txn).await?;
+    refresh_reactions_aggregate(post_id, &txn).await?;
     txn.commit().await?;
 
     Ok(result)
@@ -219,9 +222,10 @@ impl<S: SumidaState> BoardPostReactionService<S> {
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    self.owned_reaction(id, &txn).await?;
+    let reaction = self.owned_reaction(id, &txn).await?;
 
     let result = ReactionEntity::delete_by_id(id).exec(&txn).await?;
+    refresh_reactions_aggregate(reaction.post_id, &txn).await?;
     txn.commit().await?;
 
     Ok(result)
@@ -245,4 +249,38 @@ impl<S: SumidaState> BoardPostReactionService<S> {
 
     Ok(reaction)
   }
+}
+
+/// Recompute and persist `board_posts.reactions` as a `{ value: count }` map for the given post,
+/// so the post payload reflects current reactions without a separate aggregation query on read.
+async fn refresh_reactions_aggregate<C: sea_orm::ConnectionTrait>(
+  post_id: i32,
+  db: &C,
+) -> Result<(), SumidaError> {
+  use sea_orm::sea_query::{Expr, Func};
+
+  let rows = ReactionEntity::find()
+    .select_only()
+    .column(ReactionColumn::Value)
+    .expr_as(Func::count(Expr::col(ReactionColumn::Id)), "count")
+    .filter(ReactionColumn::PostId.eq(post_id))
+    .group_by(ReactionColumn::Value)
+    .into_tuple::<(String, i64)>()
+    .all(db)
+    .await?;
+
+  let map: serde_json::Map<String, serde_json::Value> =
+    rows.into_iter().map(|(value, count)| (value, serde_json::Value::from(count))).collect();
+  let reactions = if map.is_empty() { None } else { Some(serde_json::Value::Object(map)) };
+
+  BoardPosts::update_many()
+    .set(entity::bps::board_posts::ActiveModel {
+      reactions: Set(reactions),
+      ..Default::default()
+    })
+    .filter(BoardPostsColumn::Id.eq(post_id))
+    .exec(db)
+    .await?;
+
+  Ok(())
 }

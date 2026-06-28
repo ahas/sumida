@@ -8,6 +8,13 @@ pub struct StorageSettings {
   /// Global limits applied to general-purpose `/files` uploads (board uploads follow per-board settings).
   #[serde(default)]
   pub upload: UploadSettings,
+  /// Hours an uploaded-but-unattached file is retained before the orphan reaper removes it.
+  #[serde(default = "default_orphan_grace_hours")]
+  pub orphan_grace_hours: i64,
+}
+
+fn default_orphan_grace_hours() -> i64 {
+  24
 }
 
 impl Default for StorageSettings {
@@ -16,6 +23,7 @@ impl Default for StorageSettings {
       local: Some(LocalStorageSettings::default()),
       s3: None,
       upload: UploadSettings::default(),
+      orphan_grace_hours: default_orphan_grace_hours(),
     }
   }
 }

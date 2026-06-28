@@ -105,7 +105,8 @@ impl<S: SumidaState> BoardFileService<S> {
       .validate_upload_enabled()?
       .validate_extension(data.file.get_extension().as_deref())?
       .validate_size(data.file.bytes.len())?
-      .validate_mime_type(&data.file.mime_type)?;
+      .validate_mime_type(&data.file.mime_type)?
+      .validate_content(&data.file.bytes)?;
 
     // Persist the file, then register it as a *pending* board claim (post_id = NULL) with a TTL.
     // An upload never attached to a post is later collected by the orphan reaper.

@@ -179,6 +179,28 @@ impl FileValidator {
     Ok(self)
   }
 
+  /// Defense-in-depth content sniff: reject uploads whose leading bytes look like a native
+  /// executable or a shebang script, regardless of the declared MIME/extension (a file claiming
+  /// `image/png` that is actually an ELF/PE binary, etc.). Not a full content-type sniffer.
+  pub fn validate_content(self, bytes: &[u8]) -> Result<Self, SumidaError> {
+    const DANGEROUS: &[(&[u8], &str)] = &[
+      (b"\x7fELF", "ELF executable"),
+      (b"MZ", "DOS/PE executable"),
+      (b"\xca\xfe\xba\xbe", "Mach-O / Java class"),
+      (b"\xcf\xfa\xed\xfe", "Mach-O executable"),
+      (b"\xfe\xed\xfa\xce", "Mach-O executable"),
+      (b"#!", "script with shebang"),
+    ];
+
+    for (signature, label) in DANGEROUS {
+      if bytes.starts_with(signature) {
+        return Err(SumidaError::UnsupportedMimeType(format!("rejected executable content: {label}")));
+      }
+    }
+
+    Ok(self)
+  }
+
   pub fn validate_file(self, file: &FileInfo) -> Result<Self, SumidaError> {
     self
       .validate_upload_enabled()?

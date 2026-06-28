@@ -579,3 +579,114 @@ async fn scenario_inline_file_serving() {
     "a private post's inline image is hidden from others"
   );
 }
+
+#[tokio::test]
+async fn scenario_reaction_aggregate_on_post() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  author.login(&mock.client).await;
+  let post_id = create_published_article(&mock, board.id, "react-agg").await;
+
+  // reactor adds a "like"
+  let mock_r = Mock::new().await;
+  let reactor = TestUser::create(&db).await.unwrap();
+  allow(&db, &reactor, "board_post_reaction", "service", &["read", "create", "delete"]).await;
+  reactor.login(&mock_r.client).await;
+  let resp = mock_r
+    .client
+    .post("/board-post-reactions")
+    .json(&json!({ "postId": post_id, "value": "like" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::CREATED);
+  let reaction_id = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+  // the post's reactions aggregate now reflects the like (author/owner sees the reaction columns)
+  let resp = mock.client.get(&format!("/board-posts/{post_id}")).send().await.unwrap();
+  let body: Value = resp.json().await.unwrap();
+  assert_eq!(body["reactions"]["like"].as_i64(), Some(1), "aggregate reflects the new reaction");
+
+  // removing it clears the aggregate
+  mock_r
+    .client
+    .delete(&format!("/board-post-reactions/{reaction_id}"))
+    .send()
+    .await
+    .unwrap();
+  let resp = mock.client.get(&format!("/board-posts/{post_id}")).send().await.unwrap();
+  let body: Value = resp.json().await.unwrap();
+  assert!(
+    body["reactions"].is_null() || body["reactions"]["like"].is_null(),
+    "aggregate cleared after the reaction is removed"
+  );
+}
+
+#[tokio::test]
+async fn scenario_reject_executable_upload() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, true).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  allow(&db, &author, "board_file", "service", &["create"]).await;
+  author.login(&mock.client).await;
+
+  // a DOS/PE executable masquerading as a .png must be rejected by the content sniff
+  let part = reqwest::multipart::Part::bytes(b"MZ\x90\x00\x03".to_vec())
+    .file_name("evil.png".to_string())
+    .mime_str("image/png")
+    .unwrap();
+  let form = reqwest::multipart::Form::new()
+    .text("board_id", board.id.to_string())
+    .text("metadata", "{}")
+    .part("file", part);
+  let resp = mock.client.post("/board-files").multipart(form).send().await.unwrap();
+  assert!(
+    resp.status().is_client_error(),
+    "executable content must be rejected: {}",
+    resp.status()
+  );
+}
+
+#[tokio::test]
+async fn scenario_scheduled_post_autopublish() {
+  use entity::bps::board_posts::{BoardPostContentType, BoardPostKind, BoardPostStatus};
+
+  let _mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+  let author = TestUser::create(&db).await.unwrap();
+
+  // a scheduled post whose time has already passed
+  let post_id = BoardPosts::insert(entity::bps::board_posts::ActiveModel {
+    board_id: Set(board.id),
+    user_id: Set(Some(author.model.id)),
+    kind: Set(BoardPostKind::Article),
+    status: Set(BoardPostStatus::Scheduled),
+    title: Set("scheduled".into()),
+    content_type: Set(BoardPostContentType::Html),
+    content_visibility: Set(BoardPostContentVisibility::Public),
+    scheduled_at: Set(Some((Utc::now() - Duration::hours(1)).fixed_offset())),
+    ..Default::default()
+  })
+  .exec(&db)
+  .await
+  .unwrap()
+  .last_insert_id;
+
+  let published = api::service::bps::maintenance::publish_scheduled_posts(&db).await.unwrap();
+  assert!(published >= 1, "the due scheduled post is published");
+
+  let post = BoardPosts::find_by_id(post_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(post.status, BoardPostStatus::Published);
+  assert!(post.published_at.is_some(), "published_at is stamped");
+}

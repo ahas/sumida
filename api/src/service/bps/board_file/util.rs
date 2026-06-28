@@ -12,5 +12,5 @@ pub fn with_file_columns(query: Select<BoardFiles>) -> Select<BoardFiles> {
     .column_as(FilesColumn::ExpiresAt, "expires_at")
     .column_as(FilesColumn::CreatedAt, "created_at")
     .column_as(FilesColumn::UpdatedAt, "updated_at")
-    .column_as(FilesColumn::UpdatedAt, "deleted_at")
+    .column_as(FilesColumn::DeletedAt, "deleted_at")
 }

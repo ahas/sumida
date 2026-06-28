@@ -130,8 +130,27 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
   set하지 않아** 모든 글이 DB기본값 `private`로 저장(요청 필드 무시)되던 문제 — DTO에 추가. (min→max 수정이 노출시킴.)
 - 테스트: `board_scenario.rs` 8 시나리오(가시성 list 제외·인라인 서빙 공개/비공개 포함) 전부 통과.
 
-### 추가 발견 (미수정, 후속 필요)
-- S3 `get_uri`는 여전히 공개 URL 반환(서명 URL 아님) — inline 엔드포인트로 서빙하도록 클라이언트 유도 필요.
+### 추천 후속 2차 진행 (2026-06) ✅
+완성도/하드닝 묶음 + 그 과정에서 드러난 기존 버그.
+- **C-3** `with_file_columns`가 `deleted_at`을 `UpdatedAt`에 매핑하던 오타 → `DeletedAt`.
+- **C-4** `boards` 엔티티 `defaultvalue` 오타(is_versioned/is_enabled) → `default_value`.
+- **C-2** `board_post_views`에 `(post_id,user_id)` 유니크 인덱스 + 조회수 증가를 ON CONFLICT DO NOTHING으로
+  경쟁 안전 처리(원자적 +1, lost update 제거).
+- **C-5** reaper grace(24h) 하드코딩 → `storage.orphan_grace_hours` 설정으로 외출(예제 toml 문서화).
+- **B-1** 예약 발행 잡: `bps::maintenance::publish_scheduled_posts`(scheduled+scheduled_at 경과 → published,
+  published_at 스탬프)를 maintenance pass에 연결.
+- **B-2** 반응 집계: 반응 create/update/delete 시 `board_posts.reactions`를 `{value: count}` 맵으로 갱신.
+- **A-1** 파일/콘텐츠 하드닝: 업로드 매직넘버 검사(ELF/PE/Mach-O/shebang 차단), post `title`(255자)/`content`(1MB) 길이 제한.
+- **추가로 드러난 기존 버그**: 파일 검증 에러(`UnsupportedMimeType`/`FileTooLarge`/`TooManyFiles`/`InvalidFileType`/
+  `FileUploadNotAllowed`/`FileReuseNotAllowed`/`FieldNotProvided`)가 status 매핑 누락으로 **500**으로 떨어지던 것
+  → 415/413/400으로 매핑(`error/src/error.rs`).
+- 테스트: `board_scenario.rs` **11 시나리오**(+ 반응집계/실행파일거부/예약발행), board 권한 9건, 유닛 5건 모두 통과.
+
+### 추가 발견 (미수정, 후속 필요 — 제품/협의 결정)
+- **A-2** S3 `get_uri`는 여전히 공개 URL 반환(서명 URL 아님) — inline 엔드포인트로 서빙하도록 클라이언트 유도 또는 비공개 버킷+서명 URL.
+- **B-3** 신고(`board_post_reports`) 테이블만 존재 — 구현 vs 제거 결정 필요.
+- **B-4** `boards.viewer_visibility` 연동 읽기 전용 뷰어 목록(누가 봤나) — 신규 설계 필요.
+- **C-1** soft delete: `deleted_at`/status `Deleted` 컬럼 존재하나 하드삭제만. soft-everywhere(모든 read 쿼리 필터) vs 컬럼 제거 결정 필요(영향 광범).
 
 ## P2 — 정합성 / 정리
 
