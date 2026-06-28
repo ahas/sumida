@@ -103,6 +103,22 @@ pub struct VoidResult {
   pub raw_status: String,
 }
 
+/// Raw card credential for **server-side (keyin) billing-key issuance**. The PG (not our server)
+/// retains the card; this only transits to the PG via the provider. Production keyin needs PCI scope
+/// + PG enablement — primarily used to automate recurring tests with a test card.
+#[derive(Debug, Clone)]
+pub struct CardCredential {
+  pub number: String,
+  /// Two-digit year, e.g. "29".
+  pub expiry_year: String,
+  /// Two-digit month, e.g. "12".
+  pub expiry_month: String,
+  /// Birthdate (YYMMDD) for personal cards, or the business registration number.
+  pub birth_or_business_registration_number: String,
+  /// First two digits of the card password.
+  pub password_two_digits: String,
+}
+
 /// Standard-Webhooks signature headers.
 #[derive(Debug, Clone, Default)]
 pub struct WebhookHeaders {
@@ -206,6 +222,17 @@ pub trait PaymentProvider: Send + Sync {
   /// Void a prior [`Self::authorize`] without capturing — like a credit `release`.
   async fn void(&self, payment_id: &str) -> Result<VoidResult, PaymentError> {
     let _ = payment_id;
+    Err(PaymentError::Unsupported)
+  }
+
+  /// Issue a billing key server-side (keyin) from raw card credentials. Normally billing keys come
+  /// from the browser SDK; this is the API path (PG must allow keyin). Returns the billing key.
+  async fn issue_billing_key(
+    &self,
+    card: &CardCredential,
+    customer_id: &str,
+  ) -> Result<String, PaymentError> {
+    let _ = (card, customer_id);
     Err(PaymentError::Unsupported)
   }
 }

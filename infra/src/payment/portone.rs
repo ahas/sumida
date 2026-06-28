@@ -15,8 +15,8 @@ use serde_json::{Value, json};
 use sha2::Sha256;
 
 use super::{
-  PaymentError, PaymentProvider, PaymentStatus, PaymentVerification, RefundResult, WebhookEvent,
-  WebhookHeaders,
+  CardCredential, PaymentError, PaymentProvider, PaymentStatus, PaymentVerification, RefundResult,
+  WebhookEvent, WebhookHeaders,
 };
 use crate::settings::membership::PaymentSettings;
 
@@ -247,6 +247,54 @@ impl PaymentProvider for PortOneProvider {
     Ok(())
   }
 
+  async fn issue_billing_key(
+    &self,
+    card: &CardCredential,
+    customer_id: &str,
+  ) -> Result<String, PaymentError> {
+    // PortOne V2: POST {base}/billing-keys with keyin card credential. The PG must allow keyin.
+    let channel_key = self.channel_key.as_ref().ok_or(PaymentError::NotConfigured)?;
+    let token = self.token().await?;
+
+    let mut body = json!({
+      "channelKey": channel_key,
+      "method": { "card": { "credential": {
+        "number": card.number,
+        "expiryYear": card.expiry_year,
+        "expiryMonth": card.expiry_month,
+        "birthOrBusinessRegistrationNumber": card.birth_or_business_registration_number,
+        "passwordTwoDigits": card.password_two_digits,
+      } } },
+      "customer": { "id": customer_id },
+    });
+    if let Some(store) = &self.store_id {
+      body["storeId"] = json!(store);
+    }
+
+    let resp = self
+      .client
+      .post(format!("{}/billing-keys", self.api_base))
+      .bearer_auth(token)
+      .json(&body)
+      .send()
+      .await
+      .map_err(|e| PaymentError::Request(e.to_string()))?;
+
+    let status = resp.status();
+    let v: Value = resp.json().await.map_err(|e| PaymentError::Request(e.to_string()))?;
+    if !status.is_success() {
+      return Err(PaymentError::Request(format!("billing-key issue failed: {status} {v}")));
+    }
+
+    // V2 response: { billingKeyInfo: { billingKey, ... } } (fall back to a top-level billingKey).
+    v.get("billingKeyInfo")
+      .and_then(|b| b.get("billingKey"))
+      .and_then(Value::as_str)
+      .or_else(|| v.get("billingKey").and_then(Value::as_str))
+      .map(str::to_string)
+      .ok_or_else(|| PaymentError::Other(format!("issue response missing billingKey: {v}")))
+  }
+
   fn verify_webhook(&self, headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError> {
     let secret = self.webhook_secret.as_ref().ok_or(PaymentError::NotConfigured)?;
     verify_standard_webhook(secret, headers, body)?;
@@ -389,5 +437,59 @@ mod live_tests {
       Ok(()) => panic!("unexpected: a nonexistent billing key reported valid"),
       Err(e) => panic!("PortOne auth/request failed — check the API secret: {e}"),
     }
+  }
+
+  // Full recurring flow against real PortOne+PG: keyin billing-key issuance -> verify -> charge.
+  // Needs a recurring channel and a test card (Toss test mode only validates the BIN/first 6 digits).
+  // Env: SUMIDA_TEST_PORTONE_SECRET, SUMIDA_TEST_PORTONE_STORE, SUMIDA_TEST_PORTONE_CHANNEL,
+  //      SUMIDA_TEST_CARD_NUMBER, _EXP_YEAR (YY), _EXP_MONTH (MM), _BIRTH (YYMMDD), _PW2.
+  // Skipped unless SUMIDA_TEST_CARD_NUMBER is set.
+  #[tokio::test]
+  async fn portone_keyin_billing_and_recurring() {
+    use super::super::CardCredential;
+
+    let Ok(number) = std::env::var("SUMIDA_TEST_CARD_NUMBER") else {
+      eprintln!("skipping: set SUMIDA_TEST_CARD_NUMBER (+ PortOne secret/store/channel) to run");
+      return;
+    };
+    let env = |k: &str| std::env::var(k).unwrap_or_default();
+
+    let cfg = PaymentSettings {
+      provider: "portone".to_string(),
+      api_base: None,
+      api_secret: std::env::var("SUMIDA_TEST_PORTONE_SECRET").ok(),
+      store_id: std::env::var("SUMIDA_TEST_PORTONE_STORE").ok(),
+      channel_key: std::env::var("SUMIDA_TEST_PORTONE_CHANNEL").ok(),
+      webhook_secret: None,
+    };
+    let provider = PortOneProvider::from_settings(&cfg);
+
+    let card = CardCredential {
+      number,
+      expiry_year: env("SUMIDA_TEST_CARD_EXP_YEAR"),
+      expiry_month: env("SUMIDA_TEST_CARD_EXP_MONTH"),
+      birth_or_business_registration_number: env("SUMIDA_TEST_CARD_BIRTH"),
+      password_two_digits: env("SUMIDA_TEST_CARD_PW2"),
+    };
+
+    // 1) issue a billing key (server-side keyin)
+    let billing_key = provider
+      .issue_billing_key(&card, "test-customer-1")
+      .await
+      .expect("billing-key issuance should succeed");
+
+    // 2) verify it's active
+    provider
+      .verify_billing_key(&billing_key)
+      .await
+      .expect("issued key should verify as active");
+
+    // 3) charge it (1000 KRW test charge)
+    let order = format!("test-recur-{}", std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_millis());
+    let result = provider
+      .charge_recurring(&billing_key, 1000, "KRW", &order)
+      .await
+      .expect("recurring charge request should succeed");
+    assert!(result.status.is_paid(), "recurring charge should be paid, got {:?}", result.status);
   }
 }

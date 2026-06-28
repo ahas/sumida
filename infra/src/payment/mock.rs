@@ -2,8 +2,8 @@ use chrono::Utc;
 use serde_json::Value;
 
 use super::{
-  AuthorizeResult, CaptureResult, PaymentError, PaymentProvider, PaymentStatus, PaymentVerification,
-  RefundResult, VoidResult, WebhookEvent, WebhookHeaders,
+  AuthorizeResult, CaptureResult, CardCredential, PaymentError, PaymentProvider, PaymentStatus,
+  PaymentVerification, RefundResult, VoidResult, WebhookEvent, WebhookHeaders,
 };
 
 /// Deterministic provider for tests. The merchant order id encodes the outcome:
@@ -131,6 +131,15 @@ impl PaymentProvider for MockProvider {
       status: PaymentStatus::Cancelled,
       raw_status: "CANCELLED".to_string(),
     })
+  }
+
+  async fn issue_billing_key(
+    &self,
+    _card: &CardCredential,
+    _customer_id: &str,
+  ) -> Result<String, PaymentError> {
+    // A "real" issued key in the mock world (charge outcome is decided by `charge_recurring`).
+    Ok("mock:bill:ok".to_string())
   }
 
   fn verify_webhook(&self, _headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError> {
