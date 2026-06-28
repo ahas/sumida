@@ -224,6 +224,8 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
   - **2단계 결제 서비스 흐름** — 언제 authorize→capture할지 정의 + 엔드포인트(`/payments/authorize|capture|void`) +
     `membership_purchases`에 `provider_auth_code` 컬럼. (즉시결제 기본 흐름은 유지, opt-in 2단계.)
   - **PortOne V2 manual-capture 구현** — 검증된 V2 엔드포인트로 authorize/capture/void 채우기(샌드박스 필요).
+- ✅ PortOne V2 API Secret **인증 검증 완료**(`portone_api_secret_authenticates` 스모크 테스트, 실 API로 토큰 발급 확인).
+  남은 실연동 e2e: 실 결제 paymentId(SDK 결제 흐름) 기반 verify/charge_recurring/webhook + 2단계.
 
 ### 소소한 항목
 - ~~조직 owner 알림 채널~~ — 완료: org 관리자(org:subscription/org:credit manage 정책 보유자) 이메일로 발송
