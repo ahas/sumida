@@ -225,7 +225,11 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
     `membership_purchases`에 `provider_auth_code` 컬럼. (즉시결제 기본 흐름은 유지, opt-in 2단계.)
   - **PortOne V2 manual-capture 구현** — 검증된 V2 엔드포인트로 authorize/capture/void 채우기(샌드박스 필요).
 - ✅ PortOne V2 API Secret **인증 검증 완료**(`portone_api_secret_authenticates` 스모크 테스트, 실 API로 토큰 발급 확인).
-  남은 실연동 e2e: 실 결제 paymentId(SDK 결제 흐름) 기반 verify/charge_recurring/webhook + 2단계.
+- ✅ **실 PortOne(토스 테스트 채널) 정기결제 풀체인 라이브 검증**(`portone_keyin_billing_and_recurring`):
+  keyin 빌링키 발급 → 빌링키 검증 → 정기결제 → 결제조회(verify) → 부분환불(400, PARTIAL_CANCELLED) → 잔액환불(CANCELLED).
+  - 라이브 테스트가 실 버그 2건 발견·수정: ① `charge_recurring`이 V2 성공응답(`{paidAt,pgTxId}`)을 Unknown으로 오인 → Paid로 수정,
+    ② `cancel`의 partial 분기가 죽은 코드(cancellation.status는 항상 SUCCEEDED) → 정리, partial 여부는 verify로 판별.
+  - 남은 것(결제창 카드입력 필요 → 서버 자동화 불가): 일회성/크레딧 checkout의 실 paymentId 기반 verify(동일 파서라 위에서 간접 검증됨), webhook 실발송.
 
 ### 소소한 항목
 - ~~조직 owner 알림 채널~~ — 완료: org 관리자(org:subscription/org:credit manage 정책 보유자) 이메일로 발송
