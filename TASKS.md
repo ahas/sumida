@@ -179,10 +179,11 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
 - 마이그레이션 시 환경변수 override / SSM provider 통합 / 부팅 시 오류 누적 가능
 - 전제: e2e 회귀 테스트가 동일 settings.toml에 대해 같은 deserialize 결과를 확인
 
-### RFC 7807 Problem Details 응답 전환
-- 현재 응답: `{ code, statusCode, reason? }` (sumida 자체 스키마)
-- 표준 전환 시 클라이언트 호환성 영향 — major 버전 변경 등 협의 필요
-- 전환 위치: `error/src/error.rs::SumidaApiError::to_response` 한 곳
+### ~~RFC 7807 Problem Details 응답 전환~~ — ✅ 완료 (2026-06)
+- `SumidaApiError::to_response`를 `application/problem+json`으로 전환:
+  `{ type: "urn:sumida:error:<code>", title, status, detail?, code }`. `code`는 확장 멤버로 유지(다운스트림 머신 매칭),
+  `detail`은 debug 빌드에서만 노출(릴리스 프라이버시 유지). 다운스트림은 `to_response` 한 곳만 영향.
+- ⚠️ **breaking**: 기존 `statusCode`→`status`, `reason`→`detail`(+ `type`/`title` 추가). 클라이언트 에러 파싱 갱신 필요.
 
 ### ReBAC ApOr / object_in_subquery 사용처 확대
 - 현재 `ApOr`와 `object_in_subquery`는 `UserService`만 사용
@@ -204,9 +205,11 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
 - 주입 시 `PaymentProvider::verify_billing_key`로 PG 검증(PortOne `GET /billing-keys/{key}`,
   Mock/None 대응) → 잘못된 키는 즉시 400. `BillingKey.Issued` 웹훅은 불필요로 폐기.
 
-### ~~per-currency 크레딧 월렛 / 환율~~ — 결정: 안 함 (2026-06)
-- 크레딧은 단일·정보성 통화로 유지. 통화별 잔액/환율은 과설계로 판단해 도입하지 않음.
-- (크레딧은 unitless 내부 잔액이고, 통화는 plan/purchase/coupon에만 의미.)
+### ~~per-currency 크레딧 월렛 / 환율~~ — 결정 확정 + 구현 반영
+- **합의 원칙**: 결제 후 사용 가능한 재화는 전부 **credit(unitless 내부 잔액)**. 따라서 **currency는 결제 단계
+  (plan 가격 / purchase 트랜잭션 / coupon 할인 스코프)에만 저장**되고, 월렛/크레딧 측엔 저장하지 않는다.
+- **구현 상태**: `credit_wallets.currency` 드롭 완료(`871c01b`). currency는 `membership_plans`/`membership_purchases`/
+  `coupons`에만 존재(확인). 통화별 잔액·환율은 도입하지 않음. (원칙은 `docs/membership.md` "Per-currency credit wallets / FX" 항목.)
 
 ### 크레딧 reserve/capture ↔ PG authorize-capture 연결
 - 현재: 내부 원장 기반 hold만. 외부 결제 승인-매입과는 분리

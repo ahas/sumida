@@ -245,7 +245,8 @@ impl SumidaError {
 ///
 /// A downstream service implements this trait on its own enum and calls
 /// `SumidaApiError::to_response(&self)` in `into_response`, producing the same
-/// JSON format (`{ code, statusCode, reason? }`) as sumida's `SumidaError`.
+/// RFC 7807 `application/problem+json` body (`{ type, title, status, detail?, code }`)
+/// as sumida's `SumidaError`.
 ///
 /// ```ignore
 /// impl SumidaApiError for DaqsError {
@@ -264,28 +265,32 @@ pub trait SumidaApiError: std::error::Error {
     "E-1".to_owned()
   }
 
+  /// RFC 7807 Problem Details (`application/problem+json`). `code` is kept as an extension member so
+  /// machine matching downstream still works; `detail` (may carry internal info) is exposed only in
+  /// debug builds, preserving the previous release-build privacy posture.
   fn to_response(&self) -> axum::response::Response {
+    use axum::http::header;
+
     let status_code = self.status_code();
     let code = self.error_code();
-    let reason = self.to_string();
-    tracing::error!("ApiError: {}, {}", status_code, reason);
+    let detail = self.to_string();
+    tracing::error!("ApiError: {}, {}", status_code, detail);
 
-    (
-      status_code,
-      if cfg!(debug_assertions) {
-        Json(json!({
-          "code": code,
-          "statusCode": status_code.as_u16(),
-          "reason": reason,
-        }))
-      } else {
-        Json(json!({
-          "code": code,
-          "statusCode": status_code.as_u16(),
-        }))
-      },
-    )
-      .into_response()
+    let mut body = json!({
+      "type": format!("urn:sumida:error:{code}"),
+      "title": status_code.canonical_reason().unwrap_or("Error"),
+      "status": status_code.as_u16(),
+      "code": code,
+    });
+    if cfg!(debug_assertions) {
+      body["detail"] = json!(detail);
+    }
+
+    let mut response = (status_code, Json(body)).into_response();
+    response
+      .headers_mut()
+      .insert(header::CONTENT_TYPE, header::HeaderValue::from_static("application/problem+json"));
+    response
   }
 }
 
