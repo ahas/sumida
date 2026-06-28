@@ -10,21 +10,8 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait,
-  ConnectionTrait,
-  DeleteResult,
-  EntityTrait,
-  FromQueryResult,
-  InsertResult,
-  IntoActiveModel,
-  IntoSimpleExpr,
-  Order,
-  PaginatorTrait,
-  QueryFilter,
-  QueryOrder,
-  QuerySelect,
-  RelationTrait,
-  Select,
+  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, FromQueryResult, InsertResult, IntoActiveModel,
+  IntoSimpleExpr, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
   TransactionTrait,
 };
 use sea_orm_crud::Nullable;
@@ -32,12 +19,13 @@ use sea_orm_crud::Nullable;
 use self::dto::*;
 use crate::SumidaState;
 use crate::service::ApiService;
+use crate::service::auth::helper::verify_password;
 use crate::util::ap::{self, ApChain, ApGuard};
 use crate::util::pagination::{List, Pagination};
 use crate::util::user::hash_password;
 
 pub struct BoardPostService<S: SumidaState> {
-  state:   S,
+  state: S,
   #[allow(dead_code)]
   session: UserSession,
 }
@@ -86,7 +74,16 @@ impl<S: SumidaState> BoardPostService<S> {
       query.column_as(Expr::cust("NULL::tsvector"), "snippet")
     };
 
-    Ok(filter.apply(query))
+    let query = filter.apply(query);
+
+    // Hide posts whose content the requester can't see (title + snippet) — admins exempt.
+    let query = if self.session.profile.is_admin {
+      query
+    } else {
+      query.filter(util::content_visible_filter(self.session.profile.get_id()))
+    };
+
+    Ok(query)
   }
 
   pub async fn get_notices(
@@ -114,7 +111,7 @@ impl<S: SumidaState> BoardPostService<S> {
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     let db = self.state.db();
     let mut query = self.get_list_query(filter)?;
-    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Notice));
+    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Article));
 
     let count = query.clone().count(db).await?;
 
@@ -196,8 +193,8 @@ impl<S: SumidaState> BoardPostService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    // Then get the post
-    let mut post = util::with_conditional_post_columns(
+    // Per-board read permission + existence: the AP-filtered query yields None when access is denied.
+    let post = util::with_conditional_post_columns(
       self.session.profile.get_id(),
       self.session.profile.is_admin,
       self.select(BoardPosts::find()).column_as(BoardPostsColumn::Content, "content"),
@@ -207,12 +204,62 @@ impl<S: SumidaState> BoardPostService<S> {
     .one(&txn)
     .await?;
 
+    let Some(post) = post else {
+      return Ok(None);
+    };
+
+    // Password + content-visibility gate, mirroring `view`. `get` carries no password input, so a
+    // password-protected post is only reachable here by its author or an admin.
+    let Some(model) = BoardPosts::find_by_id(id).one(&txn).await? else {
+      return Ok(None);
+    };
+    self.guard_post_read(&model, None, &txn).await?;
+
     // Load attached files together
-    post = util::load_attached_files(post, id, &txn).await?;
+    let post = util::load_attached_files(Some(post), id, &txn).await?;
 
     txn.commit().await?;
 
     Ok(post)
+  }
+
+  /// Password + content-visibility gate shared by `get` and `view`.
+  /// A password-protected post requires the matching password unless the requester is the author or an admin;
+  /// content visibility (board config overriding the post when stricter) is then enforced via [`util::check_post_visible`].
+  pub(crate) async fn guard_post_read<C: ConnectionTrait>(
+    &self,
+    post: &BoardPostsModel,
+    password: Option<&str>,
+    txn: &C,
+  ) -> Result<(), SumidaError> {
+    if !self.session.profile.is_admin && post.password.is_some() {
+      let is_author = self.session.profile.is_authorized && post.user_id == Some(self.session.profile.id);
+      if !is_author {
+        let post_password = post.password.as_deref().unwrap_or_default();
+        let ok = password.map(|p| verify_password(p, post_password)).unwrap_or(false);
+        if !ok {
+          return Err(SumidaError::NoAccessPermission);
+        }
+      }
+    }
+
+    let board = Boards::find_by_id(post.board_id)
+      .one(txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Board".to_string(), post.board_id.to_string()))?;
+    let user_id = if self.session.profile.is_authorized { Some(self.session.profile.id) } else { None };
+
+    if !util::check_post_visible(
+      user_id,
+      post.user_id,
+      self.session.profile.is_admin,
+      board.content_visibility,
+      post.content_visibility.clone(),
+    )? {
+      return Err(SumidaError::NoAccessPermission);
+    }
+
+    Ok(())
   }
 
   pub async fn view(&self, id: i32, dto: ViewBoardPost) -> Result<Option<GetBoardPost>, SumidaError> {
@@ -224,37 +271,18 @@ impl<S: SumidaState> BoardPostService<S> {
       self.select(BoardPosts::find_by_id(id)).column_as(BoardPostsColumn::Content, "content"),
     );
 
-    // Find post record
-    let Some(post) = board_post_query.clone().one(&txn).await? else {
+    // Existence + per-board read permission (the AP-filtered query yields None when access is denied).
+    if board_post_query.clone().into_model::<GetBoardPost>().one(&txn).await?.is_none() {
+      return Err(SumidaError::NoData("BoardPost".to_string(), id.to_string()));
+    }
+
+    // Raw model carries the fields the password + visibility gate needs.
+    let Some(post) = BoardPosts::find_by_id(id).one(&txn).await? else {
       return Err(SumidaError::NoData("BoardPost".to_string(), id.to_string()));
     };
 
-    // Verify post password if it exists
-    if !self.session.profile.is_admin {
-      if let Some(ref post_password) = post.password {
-        if !dto.verify_password(post_password) {
-          return Err(SumidaError::NoAccessPermission);
-        }
-      }
-    }
-
-    // Find board to get global visibility configs
-    let Some(board) = Boards::find_by_id(post.board_id).one(&txn).await? else {
-      return Err(SumidaError::NoData("Board".to_string(), post.board_id.to_string()));
-    };
-    let user_id = if self.session.profile.is_authorized { Some(self.session.profile.id) } else { None };
-
-    // Check board record/content visibility limitations
-    // Board configs override post configs when the permission level is lower
-    if !util::check_post_visible(
-      user_id,
-      post.user_id,
-      self.session.profile.is_admin,
-      board.content_visibility,
-      post.content_visibility,
-    )? {
-      return Err(SumidaError::NoAccessPermission);
-    }
+    // Password + content-visibility gate (a missing/wrong password is rejected for protected posts).
+    self.guard_post_read(&post, dto.password.as_deref(), &txn).await?;
 
     // Increase `views` column value
     if self.session.profile.is_authorized {
@@ -315,6 +343,8 @@ impl<S: SumidaState> BoardPostService<S> {
 
     // Store attached file IDs for later processing
     let attached_file_uuids = data.attached_file_uuids.clone();
+    let content_type = data.content_type.clone();
+    let content_for_files: Option<String> = data.content.clone().into();
     let plain_text = data.parse_plain_text()?;
     let password = data.password.clone();
 
@@ -332,15 +362,25 @@ impl<S: SumidaState> BoardPostService<S> {
     // Update `text_tsv`(tsvector) column
     BoardPosts::update_text(post_id, plain_text, &txn).await?;
 
-    // Associate attached files with the created post
-    util::link_files(board.id, post_id, attached_file_uuids.unwrap_or_default(), &txn).await?;
+    // Associate attached files (explicit + inline references in the body) with the created post.
+    util::claim_post_files(
+      board.id,
+      post_id,
+      attached_file_uuids.unwrap_or_default(),
+      content_for_files.as_deref(),
+      &content_type,
+      &txn,
+    )
+    .await?;
 
+    // Grant the author update/delete ownership on this post (consumed by `authorize_post_mutation`).
+    // Scoped to the user alone — not their role/org — so ownership doesn't leak to teammates.
     ap::edit()
       .namespace("board_post")
       .object(post_id)
-      .who(&self.session)
-      .effect("update")
-      .effect("delete")
+      .action(vec!["update".to_string(), "delete".to_string()])
+      .user(ap::ApUser::User(self.session.profile.id))
+      .effect("allow")
       .create(&txn)
       .await?;
 
@@ -413,9 +453,19 @@ impl<S: SumidaState> BoardPostService<S> {
       BoardPosts::insert(am).exec(&txn).await?;
     }
 
+    let content_type = post.content_type.clone();
+    // Only reconcile inline references when content is actually present in this PATCH:
+    // a value (or explicit null = cleared) is parsed; an undefined field leaves attachments alone.
+    let parse_content: Option<String> = if data.content.has_value() {
+      data.content.clone().into()
+    } else if data.content.is_null() {
+      Some(String::new())
+    } else {
+      None
+    };
     let attached_file_uuids = data.attached_file_uuids.clone();
     let detached_file_uuids = data.detached_file_uuids.clone();
-    let plain_text = data.parse_plain_text(post.content_type)?;
+    let plain_text = data.parse_plain_text(content_type.clone())?;
     let password = data.password.clone();
 
     let mut am = data.into_active_model();
@@ -429,12 +479,18 @@ impl<S: SumidaState> BoardPostService<S> {
     let item = BoardPosts::update(am).exec(&txn).await?;
     BoardPosts::update_text(id, plain_text, &txn).await?;
 
-    if let Some(file_uuids) = attached_file_uuids {
-      util::link_files(board.id, id, file_uuids, &txn).await?;
-    }
+    util::claim_post_files(
+      board.id,
+      id,
+      attached_file_uuids.unwrap_or_default(),
+      parse_content.as_deref(),
+      &content_type,
+      &txn,
+    )
+    .await?;
 
     if let Some(file_uuids) = detached_file_uuids {
-      util::unlink_files(id, file_uuids, &txn).await?;
+      util::unclaim_post_files(id, file_uuids, &txn).await?;
     }
 
     txn.commit().await?;
@@ -456,6 +512,9 @@ impl<S: SumidaState> BoardPostService<S> {
 
     // Operator permission (board_group AND board) OR author ownership (board_post)
     self.authorize_post_mutation("delete", id, board.id, board.group_id, &txn).await?;
+
+    // Release attached files (refs--, re-arm TTL) so the FK cascade doesn't strand them as orphans.
+    util::release_all_post_files(id, &txn).await?;
 
     let result = BoardPosts::delete_by_id(id).exec(&txn).await?;
 

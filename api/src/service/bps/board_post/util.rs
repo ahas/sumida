@@ -5,23 +5,15 @@ use error::SumidaError;
 use sea_orm::ActiveValue::Unchanged;
 use sea_orm::sea_query::{Alias, Expr, Func};
 use sea_orm::{
-  ColumnTrait,
-  ConnectionTrait,
-  DbErr,
-  EntityTrait,
-  JoinType,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  RelationTrait,
-  Select,
-  Set,
+  ColumnTrait, ConnectionTrait, DbErr, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
+  RelationTrait, Select, Set,
 };
 use sea_orm_crud::Nullable;
 use uuid::Uuid;
 
 use crate::service::prelude::{BoardFileListItem, BoardPostFilter, GetBoardPost};
 use crate::util::board::{HtmlContent, MarkdownContent};
+use crate::util::file_lifecycle;
 use crate::util::file_validation::FileValidator;
 
 pub fn parse_plain_text(
@@ -74,7 +66,8 @@ pub fn with_conditional_post_columns(
   if is_admin {
     query = query.column_as(Views, VIEWS_COL).column_as(Reactions, REACTIONS_COL)
   } else {
-    query = add_column(user_id, query, Views, VIEWS_COL, None::<i32>);
+    // Non-owners don't see the real view count; default to 0 (the DTO `views` is non-nullable).
+    query = add_column(user_id, query, Views, VIEWS_COL, 0i32);
     query = add_column(user_id, query, Reactions, REACTIONS_COL, None::<serde_json::Value>);
   }
 
@@ -116,11 +109,9 @@ pub fn check_post_visible(
   board_content_visibility: BoardPostContentVisibility,
   post_content_visibility: BoardPostContentVisibility,
 ) -> Result<bool, SumidaError> {
-  let content_visibility = if board_content_visibility < post_content_visibility {
-    board_content_visibility
-  } else {
-    post_content_visibility
-  };
+  // The effective visibility is the MORE restrictive of board and post (Public < MembersOnly < Private):
+  // a board can tighten a post's visibility but never loosen it.
+  let content_visibility = board_content_visibility.max(post_content_visibility);
 
   match content_visibility {
     BoardPostContentVisibility::Public => Ok(true),
@@ -135,6 +126,27 @@ pub fn check_post_visible(
         Ok(user_id == post_user_id)
       }
     }
+  }
+}
+
+/// Row-level visibility predicate for list/search so private (and members-only) posts are not
+/// exposed — title and FTS snippet alike — to users who can't see their content. Admins skip this.
+/// Mirrors [`check_post_visible`]: effective = the stricter of board and post visibility.
+pub fn content_visible_filter(user_id: Option<i32>) -> sea_orm::Condition {
+  use sea_orm::Condition;
+
+  // public=0 < members-only=1 < private=2; effective is the larger (stricter) of board and post.
+  let effective = "GREATEST(\
+      CASE board_posts.content_visibility WHEN 'private' THEN 2 WHEN 'members-only' THEN 1 ELSE 0 END, \
+      CASE boards.content_visibility WHEN 'private' THEN 2 WHEN 'members-only' THEN 1 ELSE 0 END)";
+
+  match user_id {
+    // Unauthenticated: only fully public posts.
+    None => Condition::all().add(Expr::cust(format!("{effective} = 0"))),
+    // Authenticated: public + members-only for anyone; private only for its author.
+    Some(uid) => Condition::any()
+      .add(Expr::cust(format!("{effective} <= 1")))
+      .add(Expr::cust_with_values("board_posts.user_id = $1", [uid])),
   }
 }
 
@@ -156,50 +168,112 @@ pub async fn load_attached_files<C: ConnectionTrait>(
   Ok(post)
 }
 
-pub async fn link_files<C: ConnectionTrait>(
+/// Extract file uuids referenced inline in post content (tiptap `<img src>`, `<a href>`, media tags).
+/// Markdown is rendered to HTML first; plain text carries no references.
+pub fn extract_referenced_file_uuids(content: &str, content_type: &BoardPostContentType) -> Vec<Uuid> {
+  use scraper::{Html, Selector};
+
+  let html = match content_type {
+    BoardPostContentType::Html => content.to_string(),
+    BoardPostContentType::Markdown => markdown::to_html(content),
+    BoardPostContentType::Plain => return Vec::new(),
+  };
+
+  let doc = Html::parse_fragment(&html);
+  let Ok(selector) = Selector::parse("img, a, source, video, audio") else {
+    return Vec::new();
+  };
+
+  let mut uuids: Vec<Uuid> = Vec::new();
+  for el in doc.select(&selector) {
+    for attr in ["src", "href"] {
+      if let Some(url) = el.value().attr(attr)
+        && let Some(uuid) = uuid_from_url(url)
+        && !uuids.contains(&uuid)
+      {
+        uuids.push(uuid);
+      }
+    }
+  }
+
+  uuids
+}
+
+/// Pull the first uuid-looking token out of a URL (path segment or query value, extension stripped).
+fn uuid_from_url(url: &str) -> Option<Uuid> {
+  url
+    .split(['/', '?', '=', '&', '#', '"', '\'', ' '])
+    .filter_map(|seg| seg.split('.').next())
+    .find_map(|token| Uuid::parse_str(token).ok())
+}
+
+/// Attach the given files plus any referenced inline in `content` to `post_id`, enforcing the
+/// board's `max_file_count`. Pending claims are promoted; generic files get a fresh attached link.
+pub async fn claim_post_files<C: ConnectionTrait>(
   board_id: i32,
   post_id: i32,
-  file_uuids: Vec<Uuid>,
+  explicit: Vec<Uuid>,
+  content: Option<&str>,
+  content_type: &BoardPostContentType,
   db: &C,
 ) -> Result<(), SumidaError> {
-  FileValidator::from_board_id(board_id, db).await?.validate_count(file_uuids.len())?;
-
-  // First, remove all existing file associations for this post
-  BoardFiles::delete_many().filter(BoardFilesColumn::PostId.eq(post_id)).exec(db).await?;
-
-  // Then, add new file associations
-  for file_uuid in file_uuids {
-    let file_conflict_count: u64 = BoardFiles::find()
-      .filter(BoardFilesColumn::FileUuid.eq(file_uuid))
-      .filter(BoardFilesColumn::PostId.ne(post_id))
-      .count(db)
-      .await?;
-
-    if file_conflict_count > 0 {
-      return Err(SumidaError::FileReuseNotAllowed);
+  let mut uuids = explicit;
+  if let Some(content) = content {
+    for uuid in extract_referenced_file_uuids(content, content_type) {
+      if !uuids.contains(&uuid) {
+        uuids.push(uuid);
+      }
     }
+  }
+  uuids.sort();
+  uuids.dedup();
 
-    let file_am = BoardFilesActiveModel {
-      post_id:   Set(post_id),
-      file_uuid: Set(file_uuid),
-    };
+  for uuid in uuids {
+    file_lifecycle::claim_file(post_id, uuid, db).await?;
+  }
 
-    BoardFiles::insert(file_am).exec(db).await?;
+  // Enforce the board's max_file_count over the resulting attached set.
+  let config = FileValidator::from_board_id(board_id, db).await?.get_config().clone();
+  if config.max_file_count != 0 {
+    let total = BoardFiles::find().filter(BoardFilesColumn::PostId.eq(post_id)).count(db).await? as usize;
+    if total > config.max_file_count {
+      return Err(SumidaError::TooManyFiles {
+        current_count: total,
+        max_count: config.max_file_count,
+      });
+    }
   }
 
   Ok(())
 }
 
-pub async fn unlink_files<C: ConnectionTrait>(
+/// Detach specific files from a post (decrementing refs / re-arming the TTL when they hit 0).
+pub async fn unclaim_post_files<C: ConnectionTrait>(
   post_id: i32,
   file_uuids: Vec<Uuid>,
   db: &C,
 ) -> Result<(), SumidaError> {
-  BoardFiles::delete_many()
+  for uuid in file_uuids {
+    file_lifecycle::unclaim_file(post_id, uuid, db).await?;
+  }
+
+  Ok(())
+}
+
+/// Release every file attached to a post (used before deleting the post) so refs are decremented
+/// and the files become reapable rather than orphaned by the FK cascade.
+pub async fn release_all_post_files<C: ConnectionTrait>(post_id: i32, db: &C) -> Result<(), SumidaError> {
+  let uuids = BoardFiles::find()
     .filter(BoardFilesColumn::PostId.eq(post_id))
-    .filter(BoardFilesColumn::FileUuid.is_in(file_uuids))
-    .exec(db)
+    .select_only()
+    .column(BoardFilesColumn::FileUuid)
+    .into_tuple::<Uuid>()
+    .all(db)
     .await?;
+
+  for uuid in uuids {
+    file_lifecycle::unclaim_file(post_id, uuid, db).await?;
+  }
 
   Ok(())
 }
@@ -237,4 +311,51 @@ pub async fn increase_view_count_if_not_viewed<C: ConnectionTrait>(
   }
 
   Ok(next_views)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  const UUID_A: &str = "550e8400-e29b-41d4-a716-446655440000";
+  const UUID_B: &str = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
+
+  fn uuid(s: &str) -> Uuid {
+    Uuid::parse_str(s).unwrap()
+  }
+
+  #[test]
+  fn extracts_inline_image_and_link_from_html() {
+    let html = format!(
+      r#"<p>hi</p><img src="/api/files/{UUID_A}/inline" alt="x"><a href="/files/{UUID_B}/download">f</a>"#
+    );
+    let got = extract_referenced_file_uuids(&html, &BoardPostContentType::Html);
+    assert_eq!(got, vec![uuid(UUID_A), uuid(UUID_B)]);
+  }
+
+  #[test]
+  fn extracts_from_markdown_with_extension() {
+    let md = format!("![pic](/files/{UUID_A}.png)");
+    let got = extract_referenced_file_uuids(&md, &BoardPostContentType::Markdown);
+    assert_eq!(got, vec![uuid(UUID_A)]);
+  }
+
+  #[test]
+  fn dedups_repeated_references() {
+    let html = format!(r#"<img src="/files/{UUID_A}/inline"><img src="/files/{UUID_A}.png">"#);
+    let got = extract_referenced_file_uuids(&html, &BoardPostContentType::Html);
+    assert_eq!(got, vec![uuid(UUID_A)]);
+  }
+
+  #[test]
+  fn plain_text_has_no_references() {
+    let text = format!("see file {UUID_A} please");
+    assert!(extract_referenced_file_uuids(&text, &BoardPostContentType::Plain).is_empty());
+  }
+
+  #[test]
+  fn ignores_non_uuid_urls() {
+    let html = r#"<img src="/static/logo.png"><a href="https://example.com/page?x=1">l</a>"#;
+    assert!(extract_referenced_file_uuids(html, &BoardPostContentType::Html).is_empty());
+  }
 }

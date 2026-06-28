@@ -26,8 +26,8 @@ pub mod helpers {
 
     let board_file = BoardFiles::find().filter(Column::FileUuid.eq(file_uuid)).one(db).await?;
 
-    if let Some(board_file) = board_file {
-      let post_id = board_file.post_id;
+    // `post_id` is None for a pending claim (uploaded, not yet attached to a post) — no board to resolve.
+    if let Some(post_id) = board_file.and_then(|bf| bf.post_id) {
       return Ok(Some(get_board_id_from_post(post_id, db).await?));
     }
 

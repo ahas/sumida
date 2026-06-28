@@ -31,9 +31,13 @@ impl<S: SumidaState> BoardController<S> {
   async fn get_posts(
     session: UserSession,
     State(state): State<S>,
-    Query(filter): Query<BoardPostFilter>,
+    Path(board_id): Path<i32>,
+    Query(mut filter): Query<BoardPostFilter>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
+    // The route is `/boards/{id}/posts`; scope to that board regardless of any query `boardId`.
+    filter.board_id = Some(board_id);
+
     let service = BoardPostService::new(state, session);
 
     let post_list = match filter.kind.as_ref().unwrap_or(&BoardPostKind::Article) {

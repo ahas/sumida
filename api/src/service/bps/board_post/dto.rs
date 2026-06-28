@@ -25,52 +25,52 @@ pub trait Reply {
 #[serde(default)]
 pub struct BoardPostFilter {
   pub search: Option<String>,
-  pub title:  Option<String>,
-  pub text:   Option<String>,
-  pub kind:   Option<BoardPostKind>,
+  pub title: Option<String>,
+  pub text: Option<String>,
+  pub kind: Option<BoardPostKind>,
   pub status: Option<BoardPostStatus>,
 
   // FTS
-  pub with_snippet:          bool,
-  pub snippet_start_sel:     String,
-  pub snippet_stop_sel:      String,
-  pub snippet_max_words:     usize,
-  pub snippet_min_words:     usize,
+  pub with_snippet: bool,
+  pub snippet_start_sel: String,
+  pub snippet_stop_sel: String,
+  pub snippet_max_words: usize,
+  pub snippet_min_words: usize,
   pub snippet_max_fragments: usize,
-  pub snippet_short_word:    usize,
-  pub snippet_offset:        usize,
-  pub snippet_length:        Option<usize>,
+  pub snippet_short_word: usize,
+  pub snippet_offset: usize,
+  pub snippet_length: Option<usize>,
   pub snippet_highlight_all: bool,
 
   // Foreign Keys
-  pub topic_id:  Option<i32>,
-  pub board_id:  Option<i32>,
+  pub topic_id: Option<i32>,
+  pub board_id: Option<i32>,
   pub parent_id: Option<i32>,
 }
 
 impl Default for BoardPostFilter {
   fn default() -> Self {
     Self {
-      search:                None,
-      title:                 None,
-      text:                  None,
-      kind:                  None,
-      status:                None,
+      search: None,
+      title: None,
+      text: None,
+      kind: None,
+      status: None,
       // FTS
-      with_snippet:          false,
-      snippet_offset:        0,
-      snippet_length:        None,
-      snippet_start_sel:     "<mark>".into(),
-      snippet_stop_sel:      "</mark>".into(),
+      with_snippet: false,
+      snippet_offset: 0,
+      snippet_length: None,
+      snippet_start_sel: "<mark>".into(),
+      snippet_stop_sel: "</mark>".into(),
       snippet_max_fragments: 1,
-      snippet_max_words:     20,
-      snippet_min_words:     5,
-      snippet_short_word:    3,
+      snippet_max_words: 20,
+      snippet_min_words: 5,
+      snippet_short_word: 3,
       snippet_highlight_all: false,
       // Foreign Keys
-      topic_id:              None,
-      board_id:              None,
-      parent_id:             None,
+      topic_id: None,
+      board_id: None,
+      parent_id: None,
     }
   }
 }
@@ -116,20 +116,20 @@ impl ViewBoardPost {
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostUser {
   #[sea_orm(from_alias = "user_id")]
-  pub id:       i32,
+  pub id: i32,
   #[sea_orm(from_alias = "user_username")]
   pub username: String,
   #[sea_orm(from_alias = "user_full_name")]
-  pub name:     String,
+  pub name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostBoard {
   #[sea_orm(from_alias = "board_id")]
-  pub id:       i32,
+  pub id: i32,
   #[sea_orm(from_alias = "board_name")]
-  pub name:     String,
+  pub name: String,
   #[sea_orm(from_alias = "board_group_id")]
   pub group_id: Option<i32>,
 }
@@ -138,7 +138,7 @@ pub struct BoardPostBoard {
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostTopic {
   #[sea_orm(from_alias = "topic_id")]
-  pub id:   i32,
+  pub id: i32,
   #[sea_orm(from_alias = "topic_name")]
   pub name: String,
 }
@@ -146,21 +146,21 @@ pub struct BoardPostTopic {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostCommon {
-  pub id:           i32,
-  pub parent_id:    Option<i32>,
-  pub title:        String,
-  pub kind:         BoardPostKind,
-  pub status:       BoardPostStatus,
+  pub id: i32,
+  pub parent_id: Option<i32>,
+  pub title: String,
+  pub kind: BoardPostKind,
+  pub status: BoardPostStatus,
   pub content_type: BoardPostContentType,
   #[serde(default)]
-  pub reivision:    Nullable<i32>,
-  pub tags:         Option<Vec<String>>,
-  pub views:        i32,
-  pub reactions:    Option<JsonValue>,
+  pub reivision: Nullable<i32>,
+  pub tags: Option<Vec<String>>,
+  pub views: i32,
+  pub reactions: Option<JsonValue>,
   pub published_at: Option<DateTimeWithTimeZone>,
   pub scheduled_at: Option<DateTimeWithTimeZone>,
-  pub created_at:   DateTimeWithTimeZone,
-  pub updated_at:   DateTimeWithTimeZone,
+  pub created_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeWithTimeZone,
 
   // Nested Data
   #[sea_orm(nested)]
@@ -168,7 +168,7 @@ pub struct BoardPostCommon {
   #[sea_orm(nested, nullable)]
   pub topic: Option<BoardPostTopic>,
   #[sea_orm(nested, nullable)]
-  pub user:  Option<BoardPostUser>,
+  pub user: Option<BoardPostUser>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
@@ -205,7 +205,7 @@ pub struct GetBoardPost {
   #[serde(flatten)]
   pub common: BoardPostCommon,
 
-  pub content:          Option<String>,
+  pub content: Option<String>,
   pub compression_type: Option<String>,
 
   #[sea_orm(skip)]
@@ -239,25 +239,25 @@ impl IntoResponse for GetBoardPost {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPost {
-  pub id:                  Optional<i32>,
-  pub board_id:            i32,
+  pub id: Optional<i32>,
+  pub board_id: i32,
   #[serde(default)]
-  pub topic_id:            Nullable<i32>,
+  pub topic_id: Nullable<i32>,
   #[serde(default)]
-  pub parent_id:           Nullable<i32>,
-  pub title:               String,
+  pub parent_id: Nullable<i32>,
+  pub title: String,
   #[serde(default)]
-  pub password:            Nullable<String>,
+  pub password: Nullable<String>,
   #[serde(default)]
-  pub content:             Nullable<String>,
-  pub content_type:        BoardPostContentType,
-  pub content_visibility:  Optional<BoardPostContentVisibility>,
-  pub kind:                Optional<BoardPostKind>,
-  pub status:              Optional<BoardPostStatus>,
+  pub content: Nullable<String>,
+  pub content_type: BoardPostContentType,
+  pub content_visibility: Optional<BoardPostContentVisibility>,
+  pub kind: Optional<BoardPostKind>,
+  pub status: Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at:        Nullable<DateTimeWithTimeZone>,
+  pub published_at: Nullable<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub tags:                Nullable<Vec<String>>,
+  pub tags: Nullable<Vec<String>>,
   pub attached_file_uuids: Option<Vec<Uuid>>,
 }
 
@@ -271,6 +271,7 @@ impl CreateBoardPost {
       title: Set(self.title),
       content: self.content.into_active_value(),
       content_type: Set(self.content_type),
+      content_visibility: self.content_visibility.into_active_value(),
       kind: self.kind.into_active_value(),
       status: self.status.into_active_value(),
       published_at: self.published_at.into_active_value(),
@@ -300,19 +301,19 @@ impl IntoResponse for BoardPostCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
   #[serde(default)]
-  pub topic_id:            Nullable<i32>,
-  pub title:               Optional<String>,
+  pub topic_id: Nullable<i32>,
+  pub title: Optional<String>,
   #[serde(default)]
-  pub content:             Nullable<String>,
-  pub content_visibility:  Optional<BoardPostContentVisibility>,
+  pub content: Nullable<String>,
+  pub content_visibility: Optional<BoardPostContentVisibility>,
   #[serde(default)]
-  pub password:            Nullable<String>,
-  pub kind:                Optional<BoardPostKind>,
-  pub status:              Optional<BoardPostStatus>,
+  pub password: Nullable<String>,
+  pub kind: Optional<BoardPostKind>,
+  pub status: Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at:        Nullable<DateTimeWithTimeZone>,
+  pub published_at: Nullable<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub tags:                Nullable<Vec<String>>,
+  pub tags: Nullable<Vec<String>>,
   pub attached_file_uuids: Option<Vec<Uuid>>,
   pub detached_file_uuids: Option<Vec<Uuid>>,
 }
@@ -323,6 +324,7 @@ impl UpdateBoardPost {
       topic_id: self.topic_id.into_active_value(),
       title: self.title.into_active_value(),
       content: self.content.into_active_value(),
+      content_visibility: self.content_visibility.into_active_value(),
       kind: self.kind.into_active_value(),
       status: self.status.into_active_value(),
       published_at: self.published_at.into_active_value(),

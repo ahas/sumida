@@ -77,6 +77,7 @@ pub struct MaintenanceReport {
   pub wallets_swept: usize,
   pub expiring_notices: usize,
   pub low_balance_notices: usize,
+  pub orphan_files_reaped: usize,
 }
 
 /// Auto-renew subscriptions whose period has ended: charge the stored billing
@@ -134,9 +135,7 @@ pub async fn renew_due_subscriptions(db: &DatabaseConnection) -> Result<(usize, 
       let duration = plan.duration_days.unwrap_or(30).max(0);
       let order_code = gen_code("rnw");
 
-      let charge = provider
-        .charge_recurring(&billing_key, plan.price, &plan.currency, &order_code)
-        .await;
+      let charge = provider.charge_recurring(&billing_key, plan.price, &plan.currency, &order_code).await;
       let paid = matches!(&charge, Ok(v) if v.status.is_paid());
 
       if paid {
@@ -278,8 +277,7 @@ pub async fn retry_dunning_subscriptions(db: &DatabaseConnection) -> Result<(usi
     };
 
     let order_code = gen_code("dun");
-    let charge =
-      provider.charge_recurring(&billing_key, plan.price, &plan.currency, &order_code).await;
+    let charge = provider.charge_recurring(&billing_key, plan.price, &plan.currency, &order_code).await;
     let paid = matches!(&charge, Ok(v) if v.status.is_paid());
 
     if paid {
@@ -406,8 +404,8 @@ pub async fn expire_due_subscriptions(db: &DatabaseConnection) -> Result<usize, 
       };
 
       let active_due = row.status == SubscriptionStatus::Active && row.current_period_end <= now;
-      let pastdue_done = row.status == SubscriptionStatus::PastDue
-        && row.grace_ends_at.map(|g| g <= now).unwrap_or(true);
+      let pastdue_done =
+        row.status == SubscriptionStatus::PastDue && row.grace_ends_at.map(|g| g <= now).unwrap_or(true);
       if !(active_due || pastdue_done) {
         txn.rollback().await?;
         continue;
@@ -427,7 +425,13 @@ pub async fn expire_due_subscriptions(db: &DatabaseConnection) -> Result<usize, 
         }
       } else {
         // past_due with grace ended → final expiry (dunning exhausted / no grace).
-        (SubscriptionStatus::Expired, "expired", SubscriptionEventKind::Expired, Some("grace-ended"), "past-due")
+        (
+          SubscriptionStatus::Expired,
+          "expired",
+          SubscriptionEventKind::Expired,
+          Some("grace-ended"),
+          "past-due",
+        )
       };
 
       let mut update = SubscriptionsActiveModel {
@@ -699,6 +703,10 @@ pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceRep
     Ok(n) => report.low_balance_notices = n,
     Err(e) => tracing::warn!("membership maintenance: low-balance notices failed: {e}"),
   }
+  match crate::service::fs::maintenance::reap_orphan_files(db).await {
+    Ok(n) => report.orphan_files_reaped = n,
+    Err(e) => tracing::warn!("membership maintenance: orphan file reap failed: {e}"),
+  }
 
   // Release the advisory lock.
   if let Err(e) = guard.commit().await {
@@ -720,7 +728,7 @@ pub fn spawn<S: SumidaState>(state: S, interval: StdDuration) -> tokio::task::Jo
       ticker.tick().await;
       let report = run_once::<S>(state.db()).await;
       tracing::debug!(
-        "membership maintenance: {} renewed, {} renew-failed, {} dunning-recovered, {} dunning-failed, {} expired, {} pending-purchases expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices",
+        "membership maintenance: {} renewed, {} renew-failed, {} dunning-recovered, {} dunning-failed, {} expired, {} pending-purchases expired, {} reservations released, {} wallets swept, {} expiring notices, {} low-balance notices, {} orphan files reaped",
         report.subscriptions_renewed,
         report.subscriptions_renew_failed,
         report.dunning_recovered,
@@ -731,6 +739,7 @@ pub fn spawn<S: SumidaState>(state: S, interval: StdDuration) -> tokio::task::Jo
         report.wallets_swept,
         report.expiring_notices,
         report.low_balance_notices,
+        report.orphan_files_reaped,
       );
     }
   })

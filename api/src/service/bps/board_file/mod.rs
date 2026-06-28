@@ -5,17 +5,8 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  ColumnTrait,
-  DeleteResult,
-  EntityTrait,
-  IntoSimpleExpr,
-  JoinType,
-  PaginatorTrait,
-  QueryFilter,
-  QuerySelect,
-  RelationTrait,
-  Select,
-  TransactionTrait,
+  ColumnTrait, DeleteResult, EntityTrait, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
+  QuerySelect, RelationTrait, Select, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -29,7 +20,7 @@ use crate::util::file_validation::FileValidator;
 use crate::util::pagination::Pagination;
 
 pub struct BoardFileService<S: SumidaState> {
-  state:   S,
+  state: S,
   #[allow(dead_code)]
   session: UserSession,
 }
@@ -103,21 +94,25 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   pub async fn upload(&self, data: UploadBoardFile) -> Result<FileUploaded, SumidaError> {
-    let txn = self.state.db().begin().await?;
+    let db = self.state.db();
 
-    let Some(board) = Boards::find_by_id(data.board_id).one(&txn).await? else {
+    let Some(board) = Boards::find_by_id(data.board_id).one(db).await? else {
       return Err(SumidaError::NoData("Board".to_string(), data.board_id.to_string()));
     };
 
-    FileValidator::from_board_id(board.id, &txn)
+    FileValidator::from_board_id(board.id, db)
       .await?
       .validate_upload_enabled()?
       .validate_extension(data.file.get_extension().as_deref())?
       .validate_size(data.file.bytes.len())?
       .validate_mime_type(&data.file.mime_type)?;
 
+    // Persist the file, then register it as a *pending* board claim (post_id = NULL) with a TTL.
+    // An upload never attached to a post is later collected by the orphan reaper.
     let result = FileService::new(self.state.clone(), self.session.clone()).upload(data.into()).await?;
 
+    let txn = db.begin().await?;
+    crate::util::file_lifecycle::register_pending_board_file(result.uuid, &txn).await?;
     txn.commit().await?;
 
     Ok(result)

@@ -69,6 +69,7 @@ where
     let board_controller = BoardController::<StateT>::new();
     let board_topic_controller = BoardTopicController::<StateT>::new();
     let board_post_controller = BoardPostController::<StateT>::new();
+    let board_post_reaction_controller = BoardPostReactionController::<StateT>::new();
     let board_files_controller = BoardFileController::<StateT>::new();
 
     Router::new()
@@ -91,6 +92,7 @@ where
       .nest("/board-groups", board_group_controller.router(state))
       .nest("/board-topics", board_topic_controller.router(state))
       .nest("/board-posts", board_post_controller.router(state))
+      .nest("/board-post-reactions", board_post_reaction_controller.router(state))
       .nest("/board-files", board_files_controller.router(state))
       // Membership / Billing System
       .nest("/membership-plans", plan_controller.router(state))

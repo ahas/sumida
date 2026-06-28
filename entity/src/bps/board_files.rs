@@ -3,10 +3,13 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "board_files")]
 pub struct Model {
-  #[sea_orm(primary_key)]
-  pub post_id: i32,
-  #[sea_orm(primary_key)]
+  // A file may be linked to at most one board post (1:1), so file_uuid is the sole primary key.
+  // `post_id` is nullable: a row with `post_id = NULL` is a *pending claim* — uploaded for a board
+  // (e.g. tiptap pre-upload) but not yet attached to a created post.
+  #[sea_orm(primary_key, auto_increment = false)]
   pub file_uuid: Uuid,
+  #[sea_orm(indexed, nullable)]
+  pub post_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

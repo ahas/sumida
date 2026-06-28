@@ -82,6 +82,14 @@ impl<S: SumidaState> FileController<S> {
   ) -> Result<Response<Body>, SumidaError> {
     FileService::new(state.clone(), session.clone()).download(uuid).await
   }
+
+  async fn inline(
+    session: UserSession,
+    State(state): State<S>,
+    Path(uuid): Path<Uuid>,
+  ) -> Result<Response<Body>, SumidaError> {
+    FileService::new(state, session).inline(uuid).await
+  }
 }
 
 impl<S> ApiController<S> for FileController<S>
@@ -107,11 +115,16 @@ where
       .route("/{uuid}", routing::delete(Self::delete))
       .route_layer(service_ap!(state, "file", delete));
 
+    // Inline serving authorizes per-row (post visibility for board files, `file:read` otherwise),
+    // so it sits under `user_guard` only — not the `file:read` service gate.
+    let route_inline = Router::new().route("/{uuid}/inline", routing::get(Self::inline));
+
     Router::new()
       .merge(route_read)
       .merge(route_create)
       // .merge(route_update)
       .merge(route_delete)
+      .merge(route_inline)
       .route_layer(user_guard!(state))
   }
 }

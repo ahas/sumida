@@ -18,7 +18,7 @@ use crate::util::pagination::Pagination;
 use crate::util::storage::{Storage, SumidaStorage};
 
 pub struct FileService<S: SumidaState> {
-  state:   S,
+  state: S,
   session: UserSession,
 }
 
@@ -121,6 +121,17 @@ impl<S: SumidaState> FileService<S> {
 
     result?;
 
+    // Grant the uploader read access to their own file so they can preview/serve it
+    // (e.g. a tiptap inline image while the post is still being composed).
+    ap::edit()
+      .namespace("file")
+      .object(file_uuid)
+      .action(vec!["read".to_string()])
+      .user(ap::ApUser::User(self.session.profile.id))
+      .effect("allow")
+      .create(db)
+      .await?;
+
     Ok(FileUploaded { uuid: file_uuid })
   }
 
@@ -134,6 +145,84 @@ impl<S: SumidaState> FileService<S> {
     Ok(response)
   }
 
+  /// Serve a file for inline rendering (e.g. a tiptap `<img>` / preview) with
+  /// `Content-Disposition: inline` and the real content-type. Authorization: a board-attached file
+  /// follows its post's content visibility; an unattached/generic file requires `file:read`.
+  pub async fn inline(&self, uuid: Uuid) -> Result<Response<Body>, SumidaError> {
+    let txn = self.state.db().begin().await?;
+    let Some(file) = Files::find_by_id(uuid).one(&txn).await? else {
+      return Err(SumidaError::NoData("File".to_string(), uuid.to_string()));
+    };
+    self.authorize_inline(&file, &txn).await?;
+    txn.commit().await?;
+
+    use axum::http::{StatusCode, header};
+    use tokio_util::io::ReaderStream;
+
+    let storage = SumidaStorage::new();
+    let path = file.get_path();
+    let stream = storage.stream(&path).await?;
+    let size = storage.get_file_size(&path).await?;
+    let body = Body::from_stream(ReaderStream::new(stream));
+
+    Response::builder()
+      .status(StatusCode::OK)
+      .header(header::CONTENT_TYPE, file.mime_type)
+      .header(header::CONTENT_LENGTH, size.to_string())
+      .header(header::CONTENT_DISPOSITION, "inline")
+      .body(body)
+      .map_err(|_| SumidaError::InternalServerError("Failed to create response".into()))
+  }
+
+  /// Visibility gate for [`Self::inline`].
+  async fn authorize_inline<C: sea_orm::ConnectionTrait>(
+    &self,
+    file: &entity::fs::files::Model,
+    db: &C,
+  ) -> Result<(), SumidaError> {
+    use entity::bps::board_files::Column as BoardFileColumn;
+    use sea_orm::QueryFilter;
+
+    // A file attached to a post inherits that post's content visibility.
+    let attached = BoardFiles::find()
+      .filter(BoardFileColumn::FileUuid.eq(file.uuid))
+      .filter(BoardFileColumn::PostId.is_not_null())
+      .one(db)
+      .await?
+      .and_then(|bf| bf.post_id);
+
+    if let Some(post_id) = attached {
+      let post = BoardPosts::find_by_id(post_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| SumidaError::NoData("BoardPost".into(), post_id.to_string()))?;
+      let board = Boards::find_by_id(post.board_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| SumidaError::NoData("Board".into(), post.board_id.to_string()))?;
+      let user_id = if self.session.profile.is_authorized { Some(self.session.profile.id) } else { None };
+
+      return if crate::service::bps::board_post::util::check_post_visible(
+        user_id,
+        post.user_id,
+        self.session.profile.is_admin,
+        board.content_visibility,
+        post.content_visibility,
+      )? {
+        Ok(())
+      } else {
+        Err(SumidaError::NoAccessPermission)
+      };
+    }
+
+    // Unattached/generic file: require `file:read` on the object.
+    if self.select(Files::find_by_id(file.uuid)).one(db).await?.is_some() {
+      Ok(())
+    } else {
+      Err(SumidaError::NoAccessPermission)
+    }
+  }
+
   pub async fn delete(&self, uuid: Uuid, data: DeleteFile) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
     let Some(file) = self.select(Files::find_by_id(uuid)).one(&txn).await? else {
@@ -145,6 +234,9 @@ impl<S: SumidaState> FileService<S> {
     }
 
     let result = Files::delete_by_id(uuid).exec(&txn).await?;
+
+    // Drop any access policies bound to this file object so they don't outlive the file.
+    ap::edit().namespace("file").object(uuid).delete(&txn).await?;
 
     txn.commit().await?;
 

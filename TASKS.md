@@ -29,6 +29,110 @@
 - 옵션 A: helper.rs에 `revoke_access_token(jti, expires_at)` + 검증 시 `is_token_blacklisted` 호출
 - 옵션 B: access TTL을 더 짧게(예: 5분)로 줄이고 그대로 두기
 
+## BPS — 게시판 검토 후속 (2026-06 코드리뷰)
+
+`bs` 브랜치 게시판(`bps`) 도메인 리뷰 결과. 우선순위 P0(배포 차단) → P2.
+
+### P0-1. `board_posts.user_id` FK가 `boards`를 가리킴 ⚠️
+- 위치: `entity/src/migration/board_system.rs:294-301`
+- `fk_board_posts__user_id`가 `BoardPosts::UserId → Boards::Id`로 연결됨. 글 생성 시 `user_id`에
+  로그인 유저 id가 들어가는데(`board_post/mod.rs:322`), DB FK는 그 값이 `boards.id`에 있어야 통과 →
+  유저/보드 id 안 겹치면 **모든 글 작성이 FK 위반으로 실패**.
+- 작업: FK 대상 테이블을 `users`로 수정 + on_delete `SetNull`(작성자 삭제 시 글 보존) 검토.
+
+### P0-2. `get_articles`가 `Notice`로 필터링
+- 위치: `api/src/service/bps/board_post/mod.rs:117`
+- `kind=article` 기본 분기(`board.rs:43`)가 공지만 반환. `BoardPostKind::Notice` → `Article`로 수정.
+
+### P0-3. `GET /board-posts/{id}`가 비밀번호·가시성 우회 ⚠️
+- 위치: `board_post/mod.rs:196-216`(get) vs `218-296`(view)
+- `view()`는 비밀번호 검증 + `check_post_visible`(멤버/비공개) 수행하나 `get()`은 둘 다 생략하고 본문 반환.
+- 작업: `get()`에도 동일 가드 적용해 두 읽기 경로 통일.
+
+### P0-4. 반응(reaction) 권한/소유자/ap 깨짐
+- 위치: `board_post_reaction/mod.rs:65-76`(create), `113-122`(ap 재사용)
+- create: 권한 체크 없음 + `user_id`를 클라이언트 입력에서 받음(타인 명의 위조 가능) + 중복 무제한.
+- read/update/delete: `BoardPostService::ap()`(boards/board_posts 컬럼 참조)를 조인 없는 reaction 쿼리에
+  적용 → SQL 깨질 가능성. 통합테스트로 확정 필요.
+- 작업: create는 세션 user 강제 + 보드 `reaction_visibility`/post 가시성 확인 + (post_id,user_id,value) 중복 정책.
+  ap는 reaction 전용으로 재작성(board_post join 후 컬럼 참조).
+
+### P0-5. 파일 수명주기 + 고아 파일 정리 (견고 방향 확정) ✅ 구현 완료 (DB 통합테스트 미작성)
+구현됨: 엔티티/마이그레이션 PK 정정(file_uuid 단독, post_id nullable+pending 클레임), board 업로드 시
+pending 등록(`register_pending_board_file`), 포스트 create/update 시 claim(명시 uuid + 본문 HTML 파싱,
+`claim_post_files`/`extract_referenced_file_uuids`), refs 운영 + Active 승격/Temporary 강등
+(`util/file_lifecycle.rs`), 포스트 삭제 시 `release_all_post_files`, reaper(`service/fs/maintenance.rs`)를
+membership maintenance pass에 연결. 본문 파싱은 유닛테스트 5종 통과.
+남은 후속: claim/unclaim/reaper의 **DB 통합테스트**(sumida_test 필요), grace(24h)를 settings로 외출,
+"본문에서 빠진 인라인 이미지 자동 detach"는 보류(첨부 유지 → 깨짐 없음, 스토리지 잔류만).
+설계 합의: `files`=범용 추상 테이블, `board_files`=정션, `files.refs`=도메인 무관 참조카운트.
+tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullable = "pending 클레임".
+- (a) 엔티티 정정: `board_files` 복합 non-null PK 제거 → PK `file_uuid` 단독(1:1 유지), `post_id` nullable+인덱스.
+- (b) board 전용 업로드: 정책 검증 후 `files`(status=temporary, expires_at=now+grace) + `board_files(post_id=NULL)` +
+  `files.refs=1` 등록. 응답에 인라인 표시용 URL/엔드포인트 포함.
+- (c) claim: 포스트 생성/수정 시 `attached_file_uuids` + **본문 HTML 파싱으로 참조 uuid 자동 수집**(견고 방향) →
+  pending `board_files`를 UPDATE로 `post_id` 채움(현 delete+reinsert 폐기), `files.status=active`, `expires_at=NULL`.
+- (d) refs 운영: 정션 insert/delete 시 `files.refs` ± (동일 트랜잭션).
+- (e) 2단계 reaper(`membership::maintenance` 스케줄러 + advisory lock 재사용):
+  A. `board_files WHERE post_id IS NULL AND created_at < now-grace` 삭제 → refs-- (제출-전-이탈 회수)
+  B. `files WHERE refs=0 AND status='temporary' AND expires_at<now` 삭제(스토리지 객체 포함). 드리프트 방어로
+     `AND NOT EXISTS(any junction)` 가드 추가.
+- 참고: `files.refs`/`expires_at` 컬럼은 이미 존재하나 현재 미사용. 업로드는 status를 영구 `Temporary`로 둠.
+
+### P1-6. 목록 스니펫(FTS)으로 비공개 글 본문 유출
+- 위치: `board_post/mod.rs:75-90`(list) + `board_post/util.rs:84-110`(with_fts)
+- list가 read ReBAC만 적용, post `content_visibility` 미반영 → 멤버전용/비공개 글 본문 일부가 스니펫으로 노출.
+- 작업: 스니펫/snippet 컬럼을 가시성에 따라 마스킹(비공개 글이면 NULL).
+
+### P1-7. 파일 인라인 서빙 + 업로더 권한
+- 위치: `util/storage.rs:285-288`(local get_uri=서버 절대경로), `:379-381`(S3 get_uri=공개 URL),
+  `:104`(download은 항상 attachment), `fs/file.rs:upload`(업로더 권한 부여 없음)
+- 로컬 URI는 브라우저에서 사용 불가, S3 URI는 가시성/비밀글 우회. 인라인 표시 경로 없음.
+- 작업: 인증/가시성 연동된 인라인 서빙 엔드포인트(또는 S3 서명 URL), 업로드 시 업로더 file 권한 부여.
+
+### P1-8. MIME/확장자/길이 검증 강화
+- 위치: `util/file_validation.rs:160-180`(블랙리스트만, 매직넘버 없음), content/title 길이 무제한
+- 작업: 매직넘버 기반 콘텐츠 스니핑, content/title 최대 길이, (HTML 본문) 서버측 sanitize 검토(저장형 XSS).
+
+### P2-9. 미완성 / 정합성
+- 예약 발행: `should_be_published_now()`만 존재, 자동 발행 스케줄러 없음 → 예약글 미발행 (`board_posts.rs:204-214`).
+- 반응 집계: `board_posts.reactions`(JSON)을 반응 생성 시 갱신 안 함 → 항상 stale.
+- soft delete: `deleted_at`/status `Deleted` 있으나 `delete()`는 하드 삭제만 (`board_post/mod.rs:445-467`).
+- `with_file_columns`가 `deleted_at`을 `UpdatedAt`에 매핑(오타) (`board_file/util.rs:15`).
+- `boards` 엔티티 `defaultvalue` 오타로 기본값 어트리뷰트 무시 (`entity/src/bps/boards.rs:60,62`).
+- 조회수: `board_post_views`에 (post_id,user_id) 유니크 없음 + read-then-write 경쟁 (`board_post/util.rs:207-240`).
+- `board_post_reports` 테이블만 있고 엔티티/서비스/라우트 전무.
+- 테스트: 글/파일/반응/업로드/가시성/비밀글 테스트 0건 (`api/tests/board.rs`는 boards 권한 9건만).
+
+### 시나리오 테스트 작성 중 발견·수정 (2026-06) ✅
+`api/tests/board_scenario.rs`(7 시나리오) 작성 과정에서 드러난 기존 버그를 함께 수정:
+- **작성자 권한 자동부여가 깨져 모든 글 생성이 500**: `board_post/mod.rs`의 `ap::edit()`이 `.action()` 누락 +
+  `effect`에 "update"/"delete"를 잘못 넣음 → `action must be set`. → action=["update","delete"], effect="allow",
+  대상은 `ApUser::User`(role/org로 새지 않게)로 수정.
+- **비작성자 글 조회가 500**: `with_conditional_post_columns`가 비작성자에게 `views`를 NULL로 반환하나
+  DTO `views: i32`(non-null) → 디코딩 실패. → 비작성자 기본값 0으로 수정.
+- **반응 컨트롤러가 라우터에 미연결**: `BoardPostReactionController`가 `lib.rs` nest 목록에 없어 HTTP로 도달 불가.
+  → `/board-post-reactions`로 마운트.
+- 신규 테스트: 작성자 CRUD, article 목록(공지 제외 회귀가드), 비공개 가시성, 비밀글(get/view 양쪽), 반응
+  (userId 위조 무시·idempotent·소유자만 삭제), 파일 수명주기(업로드→pending→attach→reaper), 인라인 자동 claim.
+  본문 파싱 유닛 5건 + 기존 board 권한 9건 모두 통과.
+
+### 추천 후속 1차 진행 (2026-06) ✅
+- **#6 `get_posts` 경로 board id 강제**: `controller/bps/board.rs`에 `Path(board_id)` 추출해 필터 주입.
+- **#7 `board_post_view` 제거**: 미연결 + 조회기록 수동 CRUD는 footgun → 컨트롤러/서비스/dto 삭제.
+  (후속: `boards.viewer_visibility` 연동 **읽기 전용** 뷰어 목록은 미구현 — 필요 시 신규 구현.)
+- **#1 가시성 합성 min→max**: `check_post_visible`이 더 restrictive 우선(board가 조일 순 있어도 풀진 못함).
+- **#2 목록/검색 가시성 필터**: `content_visible_filter`로 비가시 글을 list/FTS에서 행 자체 제외(제목·스니펫 유출 차단).
+- **#3 인라인 서빙**: `GET /files/{uuid}/inline`(disposition=inline). board 첨부는 post 가시성으로, 그 외는 `file:read`로 인가.
+  로컬 `get_uri` 절대경로 문제는 inline 엔드포인트로 우회(원본 `uri` 의존 제거).
+- **#4 업로더 권한**: 업로드 시 업로더에게 `file:read` 부여(compose 중 미리보기 가능), 파일 삭제 시 정책 정리.
+- **추가로 드러난 기존 버그**: `CreateBoardPost`/`UpdateBoardPost`의 `into_active_model`이 **`content_visibility`를
+  set하지 않아** 모든 글이 DB기본값 `private`로 저장(요청 필드 무시)되던 문제 — DTO에 추가. (min→max 수정이 노출시킴.)
+- 테스트: `board_scenario.rs` 8 시나리오(가시성 list 제외·인라인 서빙 공개/비공개 포함) 전부 통과.
+
+### 추가 발견 (미수정, 후속 필요)
+- S3 `get_uri`는 여전히 공개 URL 반환(서명 URL 아님) — inline 엔드포인트로 서빙하도록 클라이언트 유도 필요.
+
 ## P2 — 정합성 / 정리
 
 ### examples/basic의 stale 바이너리 복구

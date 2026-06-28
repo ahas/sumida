@@ -129,6 +129,13 @@ enum Files {
   Uuid,
 }
 
+// users
+#[derive(DeriveIden)]
+enum Users {
+  Table,
+  Id,
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -295,8 +302,9 @@ impl MigrationTrait for Migration {
             ForeignKey::create()
               .name("fk_board_posts__user_id")
               .from(BoardPosts::Table, BoardPosts::UserId)
-              .to(Boards::Table, Boards::Id)
-              .on_delete(Cascade)
+              .to(Users::Table, Users::Id)
+              // Preserve posts when the author account is removed (user_id is nullable).
+              .on_delete(SetNull)
               .on_update(Cascade),
           )
           .foreign_key(
@@ -537,8 +545,11 @@ impl MigrationTrait for Migration {
         Table::create()
           .if_not_exists()
           .table(BoardFiles::Table)
-          .col(integer_null(BoardFiles::PostId))
           .col(uuid(BoardFiles::FileUuid))
+          .col(integer_null(BoardFiles::PostId))
+          // file_uuid is the sole PK: a file links to at most one post (1:1). post_id is nullable
+          // so a row can represent a *pending claim* (uploaded, not yet attached to a post).
+          .primary_key(Index::create().name("pk_board_files__file_uuid").col(BoardFiles::FileUuid))
           .foreign_key(
             ForeignKey::create()
               .name("fk_board_files__post_id")
@@ -580,7 +591,7 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
-    attach_timestamp_auto_update(db, "board_files").await?;
+    // NOTE: board_files has no created_at/updated_at columns, so no timestamp auto-update trigger.
 
     Ok(())
   }
@@ -591,7 +602,6 @@ impl MigrationTrait for Migration {
     detach_timestamp_auto_update(db, "board_groups").await?;
     detach_timestamp_auto_update(db, "boards").await?;
     detach_timestamp_auto_update(db, "board_posts").await?;
-    detach_timestamp_auto_update(db, "board_files").await?;
 
     drop_table(manager, BoardFiles::Table).await?;
     drop_table(manager, BoardPostReports::Table).await?;
