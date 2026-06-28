@@ -5,29 +5,18 @@
 
 ## P1 — 운영 직결
 
-### G5c. RedisJwtStore 실구현
-- 위치: `infra/src/jwt.rs:53-112`
-- 현재 상태: 모든 메서드가 `SumidaError::Unsupported("Redis JWT store not yet implemented")` 반환.
-  따라서 `session-store-redis` feature로 빌드하면 `/auth/token` 호출 시 501.
-- 필요 작업
-  - `fred` crate(`Cargo.toml`에 이미 의존성 있음)로 RedisJwtStore::new에서 연결 풀 생성
-  - `store_refresh_token` / `get_refresh_token` / `delete_refresh_token` — 키 `refresh_token:{jti}` + TTL = `expires_at`
-  - `blacklist_token` / `is_token_blacklisted` — 키 `blacklist:{jti}` + TTL
-  - `cleanup_expired` — TTL 자동 만료에 의존(noop)으로 두거나 명시적 SCAN
-- 검증
-  - `examples/basic`을 full-local로 띄우고 user 시드 후 `POST /auth/token`로 happy-path 확인
-  - refresh rotation: 새 refresh로 또 refresh했을 때 이전 jti가 무효화되는지 확인
+### ~~G5c. RedisJwtStore 실구현~~ — ✅ 완료 (2026-06 검증)
+- `infra/src/jwt.rs:52-126`에 `fred` 기반으로 완전 구현됨(`jwt:refresh:{id}`/`jwt:blacklist:{jti}` + TTL).
+  `cargo check -p infra --features session-store-redis`(기본 feature) 클린. TASKS 노트가 stale였음.
 
 ### G5d. DynamoDB Local 기반 /auth/token e2e 테스트
 - `DynamoJwtStore`(`infra/src/jwt.rs:117-262`)는 production-ready이지만 자동 검증이 없음
 - `e2e/` 또는 `examples/basic/tests/`에 DynamoDB Local(또는 LocalStack) 기반 시나리오 추가
 - 시나리오: login → refresh → 두 번째 refresh 시 첫 refresh 무효 확인 → logout → blacklist 적용 확인
 
-### Access token 블랙리스트
-- 현재는 refresh token만 logout 시 블랙리스트(`service/auth/token.rs::logout`)
-- access token이 짧으니 봐줄 만하지만, 즉시 무효화가 필요한 경우(보안 사고, 권한 회수)에 부족
-- 옵션 A: helper.rs에 `revoke_access_token(jti, expires_at)` + 검증 시 `is_token_blacklisted` 호출
-- 옵션 B: access TTL을 더 짧게(예: 5분)로 줄이고 그대로 두기
+### ~~Access token 블랙리스트~~ — ✅ 완료 (옵션 A, 2026-06 검증)
+- logout이 access 토큰 jti도 블랙리스트(`service/auth/token.rs:121-128`), `user_guard`가 매 인증 요청에서
+  `is_token_blacklisted` 조회(`layer/user_guard.rs:108-117`) → 즉시 무효화 동작. TASKS 노트가 stale였음.
 
 ## BPS — 게시판 검토 후속 (2026-06 코드리뷰)
 
@@ -176,18 +165,12 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
 
 ## P2 — 정합성 / 정리
 
-### examples/basic의 stale 바이너리 복구
-- `examples/basic/src/bin/create_dummy_board_posts.rs` 컴파일 에러
-- 원인: `OrganizationsActiveModel.description/is_enabled`, `RolesActiveModel.level/is_enabled` 등
-  entity 단순화 이후 따라가지 못함
-- 영향: `cargo check --all-targets`가 깨짐. lib 빌드와 `app` 바이너리는 영향 없음
-- 진단: 단순 dead-code 갱신. 30분 내 작업
+### ~~examples/basic의 stale 바이너리 복구~~ — ✅ 완료 (2026-06 검증)
+- `create_dummy_board_posts` 바이너리 정상 빌드(`f49adaf`에서 복구됨). TASKS 노트가 stale였음.
 
-### 운영 정책 시드 가이드 문서화
-- G7에서 도입한 `namespace="org:user"` 권한을 운영 DB에 시드해야 함:
-  `(namespace="org:user", object="<org_id>", action=["update"], effect="allow", user="role:<org_admin_role_id>")`
-- 시드 누락 시 `is_admin=false` 사용자의 `PATCH /users/{id}`는 항상 403
-- `README.md` 또는 `docs/permissions.md`에 절차 + SQL 예시 명시
+### ~~운영 정책 시드 가이드 문서화~~ — ✅ 완료 (2026-06)
+- [`docs/permissions.md`](docs/permissions.md) 작성: bps/fs 네임스페이스·액션·라우트 매핑 + 역할별 시드 SQL 예시
+  (일반회원/모더레이터/board 위임). `org:user` 등 기존 네임스페이스 시드도 동일 패턴으로 적용.
 
 ## P3 — 갈라파고스 정리 / 표준화 (사용자 합의 후)
 
