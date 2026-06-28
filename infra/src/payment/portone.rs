@@ -356,3 +356,38 @@ mod tests {
     assert!(pv.transaction_id.is_none());
   }
 }
+
+// Live smoke test: confirm the V2 API Secret authenticates (the /login/api-secret token call). Needs
+// no real payment — verify_billing_key on a nonexistent key proves token auth works (-> NotFound),
+// vs an auth failure (-> Request). Reads SUMIDA_TEST_PORTONE_SECRET (+ optional
+// SUMIDA_TEST_PORTONE_STORE); skipped unless the secret is set, so it never runs in normal CI.
+#[cfg(test)]
+mod live_tests {
+  use crate::payment::{PaymentError, PaymentProvider};
+  use crate::settings::membership::PaymentSettings;
+
+  use super::PortOneProvider;
+
+  #[tokio::test]
+  async fn portone_api_secret_authenticates() {
+    let Ok(api_secret) = std::env::var("SUMIDA_TEST_PORTONE_SECRET") else {
+      eprintln!("skipping: set SUMIDA_TEST_PORTONE_SECRET to run the PortOne auth smoke test");
+      return;
+    };
+    let cfg = PaymentSettings {
+      provider: "portone".to_string(),
+      api_base: None,
+      api_secret: Some(api_secret),
+      store_id: std::env::var("SUMIDA_TEST_PORTONE_STORE").ok(),
+      channel_key: None,
+      webhook_secret: None,
+    };
+    let provider = PortOneProvider::from_settings(&cfg);
+
+    match provider.verify_billing_key("does-not-exist-smoke-test").await {
+      Err(PaymentError::NotFound(_)) => {} // token auth succeeded; the key simply doesn't exist
+      Ok(()) => panic!("unexpected: a nonexistent billing key reported valid"),
+      Err(e) => panic!("PortOne auth/request failed — check the API secret: {e}"),
+    }
+  }
+}
