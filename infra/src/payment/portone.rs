@@ -431,7 +431,7 @@ mod tests {
 // SUMIDA_TEST_PORTONE_STORE); skipped unless the secret is set, so it never runs in normal CI.
 #[cfg(test)]
 mod live_tests {
-  use crate::payment::{PaymentError, PaymentProvider};
+  use crate::payment::{PaymentError, PaymentProvider, PaymentStatus};
   use crate::settings::membership::PaymentSettings;
 
   use super::PortOneProvider;
@@ -510,5 +510,21 @@ mod live_tests {
       .await
       .expect("recurring charge request should succeed");
     assert!(result.status.is_paid(), "recurring charge should be paid, got {:?}", result.status);
+
+    // 4) the charge is retrievable (exercises the real verify / payment_from_json parser)
+    let fetched = provider.verify(&order).await.expect("charge should be verifiable");
+    assert!(fetched.status.is_paid(), "verified charge should be paid, got {:?}", fetched.status);
+    assert_eq!(fetched.amount, 1000, "verified amount should match the charge");
+
+    // 5) refund it in full (exercises the real cancel parser)
+    let refund = provider
+      .cancel(&order, None, "automated test refund")
+      .await
+      .expect("refund should succeed");
+    assert!(
+      matches!(refund.status, PaymentStatus::Cancelled | PaymentStatus::PartialCancelled),
+      "refund status should be cancelled, got {:?}",
+      refund.status
+    );
   }
 }
