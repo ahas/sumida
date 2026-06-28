@@ -276,3 +276,50 @@ cfg_if! {
     }
   }
 }
+
+// DynamoDB JWT store integration test. Only built with the DynamoDB store enabled (redis off, since
+// the store is selected by an if/else cfg), and only runs when SUMIDA_TEST_DYNAMO_TABLE points at a
+// real table (pk/sk string keys + a `ttl` attribute). Requires working AWS credentials/region.
+#[cfg(all(test, feature = "session-store-aws-dynamodb", not(feature = "session-store-redis")))]
+mod dynamo_tests {
+  use chrono::Utc;
+
+  use super::*;
+
+  #[tokio::test]
+  async fn dynamo_jwt_store_roundtrip() {
+    let Ok(table) = std::env::var("SUMIDA_TEST_DYNAMO_TABLE") else {
+      eprintln!("skipping: set SUMIDA_TEST_DYNAMO_TABLE (+ AWS creds) to run the DynamoDB JWT store test");
+      return;
+    };
+
+    let cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+    let client = aws_sdk_dynamodb::Client::new(&cfg);
+    let store = DynamoJwtStore::new(client, table);
+
+    let jti = format!("test-{}", Utc::now().timestamp_micros());
+    let expires_at = Utc::now() + chrono::Duration::hours(1);
+    let data = RefreshTokenData {
+      user_id: 42,
+      username: "tester".to_string(),
+      jti: jti.clone(),
+      expires_at,
+      created_at: Utc::now(),
+    };
+
+    // store -> get
+    store.store_refresh_token(&jti, data).await.unwrap();
+    let got = store.get_refresh_token(&jti).await.unwrap().expect("refresh token present");
+    assert_eq!(got.user_id, 42);
+    assert_eq!(got.jti, jti);
+
+    // delete -> gone
+    store.delete_refresh_token(&jti).await.unwrap();
+    assert!(store.get_refresh_token(&jti).await.unwrap().is_none());
+
+    // blacklist roundtrip
+    assert!(!store.is_token_blacklisted(&jti).await.unwrap());
+    store.blacklist_token(&jti, expires_at).await.unwrap();
+    assert!(store.is_token_blacklisted(&jti).await.unwrap());
+  }
+}
