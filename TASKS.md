@@ -204,9 +204,9 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
 - 주입 시 `PaymentProvider::verify_billing_key`로 PG 검증(PortOne `GET /billing-keys/{key}`,
   Mock/None 대응) → 잘못된 키는 즉시 400. `BillingKey.Issued` 웹훅은 불필요로 폐기.
 
-### per-currency 크레딧 월렛 / 환율
-- 현재: 크레딧 월렛은 owner당 1개·단일 통화(통화 필드는 정보성). 통화는 plan/purchase/coupon에만 의미
-- 진짜 멀티커런시는 통화별 잔액(스키마 변경) + 환율 정책 필요. (원안에서도 "과설계"로 분류)
+### ~~per-currency 크레딧 월렛 / 환율~~ — 결정: 안 함 (2026-06)
+- 크레딧은 단일·정보성 통화로 유지. 통화별 잔액/환율은 과설계로 판단해 도입하지 않음.
+- (크레딧은 unitless 내부 잔액이고, 통화는 plan/purchase/coupon에만 의미.)
 
 ### 크레딧 reserve/capture ↔ PG authorize-capture 연결
 - 현재: 내부 원장 기반 hold만. 외부 결제 승인-매입과는 분리
