@@ -1,3 +1,10 @@
+# Loaded via Figment: this TOML file (path = $SUMIDA_SETTINGS, default ./settings.toml) is the base,
+# and `SUMIDA_*` environment variables override it. Env key mapping: `__` nests, a single `_` becomes `-`.
+#   SUMIDA_DATABASE__URL=...                  -> database.url
+#   SUMIDA_STORAGE__ORPHAN_GRACE_HOURS=12     -> storage.orphan-grace-hours
+#   SUMIDA_SERVER__HOST=0.0.0.0:8080          -> server.host
+# Precedence: defaults < this file < SUMIDA_* env.
+
 [server]
 host = "0.0.0.0:7997"
 stage = "dev"

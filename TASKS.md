@@ -174,10 +174,11 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
 
 ## P3 — 갈라파고스 정리 / 표준화 (사용자 합의 후)
 
-### Figment 마이그레이션
-- 현재 `infra/src/settings/mod.rs`는 `config` crate + lazy_static
-- 마이그레이션 시 환경변수 override / SSM provider 통합 / 부팅 시 오류 누적 가능
-- 전제: e2e 회귀 테스트가 동일 settings.toml에 대해 같은 deserialize 결과를 확인
+### ~~Figment 마이그레이션~~ — ✅ 완료 (2026-06)
+- `config` crate → `figment`. 우선순위 `defaults < toml($SUMIDA_SETTINGS) < SUMIDA_* env`.
+  env 키 매핑: `__`=중첩, 세그먼트 내 `_`→`-`(예: `SUMIDA_STORAGE__ORPHAN_GRACE_HOURS` → `storage.orphan-grace-hours`).
+  `SUMIDA_SETTINGS`(파일 선택자)는 무시. `settings.example.toml` 헤더 + 유닛테스트(`figment::Jail`)로 규칙 검증.
+- 후속(선택): SSM을 figment `Provider`로 같은 파이프라인에 통합(현재는 `jwt-secret-store-aws-ssm` 별도 경로 유지).
 
 ### ~~RFC 7807 Problem Details 응답 전환~~ — ✅ 완료 (2026-06)
 - `SumidaApiError::to_response`를 `application/problem+json`으로 전환:
