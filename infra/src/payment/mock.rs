@@ -2,8 +2,8 @@ use chrono::Utc;
 use serde_json::Value;
 
 use super::{
-  PaymentError, PaymentProvider, PaymentStatus, PaymentVerification, RefundResult, WebhookEvent,
-  WebhookHeaders,
+  AuthorizeResult, CaptureResult, PaymentError, PaymentProvider, PaymentStatus, PaymentVerification,
+  RefundResult, VoidResult, WebhookEvent, WebhookHeaders,
 };
 
 /// Deterministic provider for tests. The merchant order id encodes the outcome:
@@ -100,6 +100,39 @@ impl PaymentProvider for MockProvider {
     }
   }
 
+  async fn authorize(
+    &self,
+    payment_id: &str,
+    amount: i64,
+    currency: &str,
+  ) -> Result<AuthorizeResult, PaymentError> {
+    Ok(AuthorizeResult {
+      payment_id: payment_id.to_string(),
+      authorization_id: format!("mockauth-{payment_id}"),
+      status: PaymentStatus::Ready, // held, awaiting capture
+      amount,
+      currency: currency.to_string(),
+      raw_status: "AUTHORIZED".to_string(),
+    })
+  }
+
+  async fn capture(&self, payment_id: &str, amount: Option<i64>) -> Result<CaptureResult, PaymentError> {
+    Ok(CaptureResult {
+      payment_id: payment_id.to_string(),
+      status: PaymentStatus::Paid,
+      captured_amount: amount.unwrap_or(0),
+      raw_status: "PAID".to_string(),
+    })
+  }
+
+  async fn void(&self, payment_id: &str) -> Result<VoidResult, PaymentError> {
+    Ok(VoidResult {
+      payment_id: payment_id.to_string(),
+      status: PaymentStatus::Cancelled,
+      raw_status: "CANCELLED".to_string(),
+    })
+  }
+
   fn verify_webhook(&self, _headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError> {
     let v: Value = serde_json::from_slice(body).map_err(|e| PaymentError::Other(e.to_string()))?;
     let event_type = v.get("type").and_then(Value::as_str).unwrap_or("").to_string();
@@ -119,5 +152,36 @@ impl PaymentProvider for MockProvider {
       payment_id,
       transaction_id,
     })
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::super::none::NoneProvider;
+  use super::*;
+
+  #[tokio::test]
+  async fn mock_two_phase_authorize_capture_void() {
+    let p = MockProvider;
+
+    let auth = p.authorize("ord-1", 1000, "KRW").await.unwrap();
+    assert_eq!(auth.amount, 1000);
+    assert_eq!(auth.status, PaymentStatus::Ready);
+    assert!(auth.authorization_id.contains("ord-1"));
+
+    let cap = p.capture("ord-1", Some(1000)).await.unwrap();
+    assert_eq!(cap.status, PaymentStatus::Paid);
+    assert_eq!(cap.captured_amount, 1000);
+
+    let voided = p.void("ord-2").await.unwrap();
+    assert_eq!(voided.status, PaymentStatus::Cancelled);
+  }
+
+  #[tokio::test]
+  async fn providers_without_manual_capture_are_unsupported() {
+    let n = NoneProvider;
+    assert!(matches!(n.authorize("x", 1, "KRW").await, Err(PaymentError::Unsupported)));
+    assert!(matches!(n.capture("x", None).await, Err(PaymentError::Unsupported)));
+    assert!(matches!(n.void("x").await, Err(PaymentError::Unsupported)));
   }
 }

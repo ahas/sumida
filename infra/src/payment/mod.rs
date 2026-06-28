@@ -74,6 +74,35 @@ pub struct RefundResult {
   pub raw_status: String,
 }
 
+/// Result of a two-phase `authorize` (hold without capturing). `authorization_id` is the PG-side
+/// handle (when distinct from `payment_id`) used by a later `capture`/`void`.
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthorizeResult {
+  pub payment_id: String,
+  pub authorization_id: String,
+  pub status: PaymentStatus,
+  pub amount: i64,
+  pub currency: String,
+  pub raw_status: String,
+}
+
+/// Result of capturing a prior authorization.
+#[derive(Debug, Clone, Serialize)]
+pub struct CaptureResult {
+  pub payment_id: String,
+  pub status: PaymentStatus,
+  pub captured_amount: i64,
+  pub raw_status: String,
+}
+
+/// Result of voiding a prior authorization without capturing.
+#[derive(Debug, Clone, Serialize)]
+pub struct VoidResult {
+  pub payment_id: String,
+  pub status: PaymentStatus,
+  pub raw_status: String,
+}
+
 /// Standard-Webhooks signature headers.
 #[derive(Debug, Clone, Default)]
 pub struct WebhookHeaders {
@@ -152,6 +181,33 @@ pub trait PaymentProvider: Send + Sync {
 
   /// Verify a webhook signature and extract the normalized event.
   fn verify_webhook(&self, headers: &WebhookHeaders, body: &[u8]) -> Result<WebhookEvent, PaymentError>;
+
+  // ---- Two-phase (authorize → capture/void): the PG-side analog of credit reserve/capture/release.
+  // Default to `Unsupported`; only PGs with manual-capture override these.
+
+  /// Authorize (hold) `amount` without capturing — like a credit `reserve`. The returned
+  /// `authorization_id` is captured/voided later.
+  async fn authorize(
+    &self,
+    payment_id: &str,
+    amount: i64,
+    currency: &str,
+  ) -> Result<AuthorizeResult, PaymentError> {
+    let _ = (payment_id, amount, currency);
+    Err(PaymentError::Unsupported)
+  }
+
+  /// Capture a prior [`Self::authorize`] (full when `amount = None`) — like a credit `capture`.
+  async fn capture(&self, payment_id: &str, amount: Option<i64>) -> Result<CaptureResult, PaymentError> {
+    let _ = (payment_id, amount);
+    Err(PaymentError::Unsupported)
+  }
+
+  /// Void a prior [`Self::authorize`] without capturing — like a credit `release`.
+  async fn void(&self, payment_id: &str) -> Result<VoidResult, PaymentError> {
+    let _ = payment_id;
+    Err(PaymentError::Unsupported)
+  }
 }
 
 static PROVIDER: OnceLock<Arc<dyn PaymentProvider>> = OnceLock::new();
