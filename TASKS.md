@@ -160,8 +160,15 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
   알려진 한계: 부모 soft-delete 시 대댓글(자식 post)은 개별 유지 — 필요 시 cascade soft-delete 후속.
 - 테스트: `board_scenario.rs` **15 시나리오**(+신고/뷰어목록/soft-delete/첨부 uri 게이트) 전부 통과.
 
+### 파일 접근 원칙 (확정)
+- 응답·post 본문에 노출되는 파일 경로는 **항상 안정적 앱 경로 `/files/{uuid}/inline`** 하나만 사용.
+  presigned URL / 스토리지 객체 URL을 **반환하지도, 본문에 삽입하지도 않음**.
+- 이유: presigned는 TTL 동안 유출 시 무방비(매 요청 인가 아님)이고, 본문에 박힌 backend 종속 URL은
+  스토리지 마이그레이션 시 전부 깨짐. 앱 경로는 매 요청 인가 + 백엔드 무관(스트리밍 소스만 교체)이라 안전.
+- ~~A-2b presigned 302~~ 철회. 성능 필요 시: 인증된 앱 경로 **앞단에 CDN**(엣지 서명쿠키/토큰 검증, 단기 캐시),
+  응답/콘텐츠에 presigned 객체 URL 노출은 금지.
+
 ### 남은 후속
-- **A-2b** S3 inline pre-signed URL 302(성능 오프로드) — 인프라 결정.
 - 대댓글 cascade soft-delete, board soft delete(현재 board는 하드 유지).
 
 ## P2 — 정합성 / 정리
