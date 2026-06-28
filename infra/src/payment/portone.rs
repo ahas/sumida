@@ -216,8 +216,28 @@ impl PaymentProvider for PortOneProvider {
     }
 
     let v: Value = resp.json().await.map_err(|e| PaymentError::Request(e.to_string()))?;
-    // Response wraps the payment object under `payment`; tolerate a bare object too.
+    // PortOne V2's billing-key payment success returns a minimal `{ payment: { paidAt, pgTxId } }`
+    // (no status/amount). A present `paidAt` means PAID; fall back to the full shape otherwise.
     let payment = v.get("payment").unwrap_or(&v);
+    let paid_at = payment
+      .get("paidAt")
+      .and_then(Value::as_str)
+      .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    if paid_at.is_some() {
+      return Ok(PaymentVerification {
+        payment_id: order_code.to_string(),
+        transaction_id: payment.get("pgTxId").and_then(Value::as_str).map(str::to_string),
+        status: PaymentStatus::Paid,
+        amount: payment
+          .get("amount")
+          .and_then(|a| a.get("total"))
+          .and_then(Value::as_i64)
+          .unwrap_or(amount),
+        currency: currency.to_string(),
+        paid_at,
+        raw_status: "PAID".to_string(),
+      });
+    }
     Ok(Self::payment_from_json(payment, order_code, currency))
   }
 
@@ -418,15 +438,15 @@ mod live_tests {
 
   #[tokio::test]
   async fn portone_api_secret_authenticates() {
-    let Ok(api_secret) = std::env::var("SUMIDA_TEST_PORTONE_SECRET") else {
-      eprintln!("skipping: set SUMIDA_TEST_PORTONE_SECRET to run the PortOne auth smoke test");
+    let Ok(api_secret) = std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__API_SECRET") else {
+      eprintln!("skipping: set SUMIDA_MEMBERSHIP__PAYMENT__API_SECRET to run the PortOne auth smoke test");
       return;
     };
     let cfg = PaymentSettings {
       provider: "portone".to_string(),
       api_base: None,
       api_secret: Some(api_secret),
-      store_id: std::env::var("SUMIDA_TEST_PORTONE_STORE").ok(),
+      store_id: std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__STORE_ID").ok(),
       channel_key: None,
       webhook_secret: None,
     };
@@ -440,16 +460,15 @@ mod live_tests {
   }
 
   // Full recurring flow against real PortOne+PG: keyin billing-key issuance -> verify -> charge.
-  // Needs a recurring channel and a test card (Toss test mode only validates the BIN/first 6 digits).
-  // Env: SUMIDA_TEST_PORTONE_SECRET, SUMIDA_TEST_PORTONE_STORE, SUMIDA_TEST_PORTONE_CHANNEL,
-  //      SUMIDA_TEST_CARD_NUMBER, _EXP_YEAR (YY), _EXP_MONTH (MM), _BIRTH (YYMMDD), _PW2.
-  // Skipped unless SUMIDA_TEST_CARD_NUMBER is set.
+  // Uses the configured PortOne creds (SUMIDA_MEMBERSHIP__PAYMENT__API_SECRET / _STORE_ID /
+  // _CHANNEL_KEY — must be a recurring channel) plus a test card via SUMIDA_TEST_CARD_* (Toss test
+  // mode only validates the BIN/first 6 digits). Skipped unless SUMIDA_TEST_CARD_NUMBER is set.
   #[tokio::test]
   async fn portone_keyin_billing_and_recurring() {
     use super::super::CardCredential;
 
     let Ok(number) = std::env::var("SUMIDA_TEST_CARD_NUMBER") else {
-      eprintln!("skipping: set SUMIDA_TEST_CARD_NUMBER (+ PortOne secret/store/channel) to run");
+      eprintln!("skipping: set SUMIDA_TEST_CARD_NUMBER (+ SUMIDA_MEMBERSHIP__PAYMENT__* creds) to run");
       return;
     };
     let env = |k: &str| std::env::var(k).unwrap_or_default();
@@ -457,9 +476,9 @@ mod live_tests {
     let cfg = PaymentSettings {
       provider: "portone".to_string(),
       api_base: None,
-      api_secret: std::env::var("SUMIDA_TEST_PORTONE_SECRET").ok(),
-      store_id: std::env::var("SUMIDA_TEST_PORTONE_STORE").ok(),
-      channel_key: std::env::var("SUMIDA_TEST_PORTONE_CHANNEL").ok(),
+      api_secret: std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__API_SECRET").ok(),
+      store_id: std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__STORE_ID").ok(),
+      channel_key: std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__CHANNEL_KEY").ok(),
       webhook_secret: None,
     };
     let provider = PortOneProvider::from_settings(&cfg);
