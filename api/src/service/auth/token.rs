@@ -1,3 +1,17 @@
+//! JWT access/refresh token lifecycle (the `/auth/token` endpoints).
+//!
+//! - **login**: issues an access + refresh pair and persists the refresh token (keyed by its `jti`)
+//!   so it can be rotated and revoked.
+//! - **refresh**: validates the refresh token (must be `token_type = "refresh"`, not blacklisted, and
+//!   present in the store), re-checks the account is enabled / not banned, issues a NEW pair, and
+//!   **rotates** — stores the new refresh `jti` and deletes the old one, so a replayed old refresh fails.
+//! - **logout**: blacklists the refresh token *and* the current access token (by `jti`, with a TTL
+//!   until expiry) for immediate invalidation, then clears the session.
+//!
+//! Token-type separation: access tokens authenticate requests (`verify_access_token` rejects a
+//! refresh token); refresh tokens are only accepted by `refresh`. The `jti` blacklist makes the
+//! otherwise-stateless access token immediately revocable (checked in `layer::user_guard`).
+
 use chrono::Utc;
 use entity::access_logs::{AccessMethod, AccessResultCode};
 use entity::prelude::*;
@@ -25,6 +39,8 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     }
   }
 
+  /// Authenticate `data` and issue an access + refresh token pair; the refresh token is persisted
+  /// (by `jti`) so it can later be rotated by [`Self::refresh_token`] or revoked by [`Self::logout`].
   pub async fn login(&mut self, data: LoginSession) -> Result<TokenPair, SumidaError> {
     let db = self.state.db();
 
@@ -99,6 +115,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     result
   }
 
+  /// Revoke a session: blacklist the refresh token (and delete it from the store) and the current
+  /// access token by `jti` for immediate invalidation, then clear the session. Each blacklist entry
+  /// carries a TTL only until that token's own expiry.
   pub async fn logout(
     &mut self,
     refresh_token: Option<String>,
@@ -133,6 +152,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     Ok(())
   }
 
+  /// Validate and **rotate** a refresh token: reject it unless it is a non-blacklisted `refresh`
+  /// token still present in the store for an enabled, non-banned account, then issue a new pair —
+  /// storing the new refresh `jti` and deleting the old one (so the presented token can't be reused).
   pub async fn refresh_token(&mut self, refresh_token: String) -> Result<TokenPair, SumidaError>
   where
     J: infra::jwt::JwtTokenStore,

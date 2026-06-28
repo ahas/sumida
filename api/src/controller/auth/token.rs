@@ -33,6 +33,8 @@ impl<S: SumidaState> AuthTokenController<S> {
     }
   }
 
+  /// `POST /auth/token` — exchange `LoginSession` credentials (username/password) for a
+  /// `TokenPair { access_token, refresh_token }`.
   async fn login(
     session: UserSession,
     State(state): State<S>,
@@ -44,6 +46,8 @@ impl<S: SumidaState> AuthTokenController<S> {
     Ok((StatusCode::OK, Json(token_pair)))
   }
 
+  /// `POST /auth/token/refresh` — body `{ "refreshToken": "..." }`. Returns a freshly rotated
+  /// `TokenPair`; the presented refresh token is invalidated.
   async fn refresh(
     session: UserSession,
     State(state): State<S>,
@@ -55,6 +59,9 @@ impl<S: SumidaState> AuthTokenController<S> {
     Ok((StatusCode::OK, Json(token_pair)))
   }
 
+  /// `DELETE /auth/token` — body `{ "refreshToken"?: "..." }` plus the `Authorization: Bearer
+  /// <access_token>` header. Blacklists both the refresh token (if given) and the current access
+  /// token for immediate invalidation.
   async fn logout(
     session: UserSession,
     State(state): State<S>,
@@ -85,6 +92,7 @@ where
   S: Clone + Send + Sync + 'static,
 {
   fn router(self, _state: &S) -> axum::Router<S> {
+    // POST / = login, POST /refresh = rotate, DELETE / = logout. Nested under `/auth/token`.
     Router::<S>::new()
       .route("/", routing::post(Self::login))
       .route("/refresh", routing::post(Self::refresh))

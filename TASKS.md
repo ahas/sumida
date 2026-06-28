@@ -194,9 +194,9 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
 - 테스트: 작성자/운영자 각각 baseline 허용 → board:update deny 추가 시 403(글로벌 deny) 검증.
   (`ApOr` 자체는 condition들의 OR 전용; 게시판의 chain-OR-condition은 effects()로 직접 조합.)
 
-### G5b 후속 — token 관련 코멘트/주석 정리
-- `service/auth/token.rs` 상단 doc 보강 (login/refresh/logout 흐름과 token_type 검증 요점)
-- `controller/auth/token.rs`에 OpenAPI 스타일 doc-comment 추가 (다운스트림 클라이언트가 참고)
+### ~~G5b 후속 — token 관련 코멘트/주석 정리~~ — ✅ 완료 (2026-06)
+- `service/auth/token.rs`에 모듈 doc(login/refresh-rotation/logout 흐름 + token_type 분리) + login/logout/refresh 메서드 doc.
+- `controller/auth/token.rs` 핸들러에 라우트/요청·응답 doc-comment(`POST /`, `POST /refresh`, `DELETE /`).
 
 ## P2 — 멤버십 후속 (대형 / 외부·제품 의사결정 필요)
 
