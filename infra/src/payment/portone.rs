@@ -145,26 +145,24 @@ impl PaymentProvider for PortOneProvider {
     }
 
     let v: Value = resp.json().await.map_err(|e| PaymentError::Request(e.to_string()))?;
-    // Response shape: { cancellation: { totalAmount, status, ... } }.
-    let cancelled_amount = v
-      .get("cancellation")
+    // Response shape: { cancellation: { totalAmount, status, ... } }. The cancellation `status` is the
+    // *operation* result (always "SUCCEEDED" on a 2xx) — NOT the payment's post-cancel state. Whether
+    // the payment is now PARTIAL_CANCELLED vs CANCELLED is only visible via verify(); here we just
+    // report that the cancellation succeeded and how much it cancelled.
+    let cancellation = v.get("cancellation");
+    let cancelled_amount = cancellation
       .and_then(|c| c.get("totalAmount"))
       .and_then(Value::as_i64)
       .or(amount)
       .unwrap_or(0);
-    let raw_status = v
-      .get("cancellation")
+    let raw_status = cancellation
       .and_then(|c| c.get("status"))
       .and_then(Value::as_str)
-      .unwrap_or("CANCELLED")
+      .unwrap_or("SUCCEEDED")
       .to_string();
 
     Ok(RefundResult {
-      status: if raw_status.contains("PARTIAL") {
-        PaymentStatus::PartialCancelled
-      } else {
-        PaymentStatus::Cancelled
-      },
+      status: PaymentStatus::Cancelled,
       cancelled_amount,
       raw_status,
     })
@@ -516,15 +514,30 @@ mod live_tests {
     assert!(fetched.status.is_paid(), "verified charge should be paid, got {:?}", fetched.status);
     assert_eq!(fetched.amount, 1000, "verified amount should match the charge");
 
-    // 5) refund it in full (exercises the real cancel parser)
-    let refund = provider
-      .cancel(&order, None, "automated test refund")
+    // 5) partial refund (400 of 1000): the cancel succeeds for 400, and the payment itself flips to
+    //    PARTIAL_CANCELLED (visible via verify, not via the cancel response's operation status).
+    let partial = provider.cancel(&order, Some(400), "partial test refund").await.expect("partial refund");
+    assert_eq!(partial.cancelled_amount, 400, "partial cancel amount");
+    let after_partial = provider.verify(&order).await.expect("verify after partial");
+    assert_eq!(
+      after_partial.status,
+      PaymentStatus::PartialCancelled,
+      "payment should be partially cancelled, got {:?}",
+      after_partial.status
+    );
+
+    // 6) refund the remaining 600 -> the payment is now fully CANCELLED.
+    let rest = provider
+      .cancel(&order, Some(600), "remaining test refund")
       .await
-      .expect("refund should succeed");
-    assert!(
-      matches!(refund.status, PaymentStatus::Cancelled | PaymentStatus::PartialCancelled),
-      "refund status should be cancelled, got {:?}",
-      refund.status
+      .expect("remaining refund");
+    assert_eq!(rest.cancelled_amount, 600, "remaining cancel amount");
+    let after_full = provider.verify(&order).await.expect("verify after full");
+    assert_eq!(
+      after_full.status,
+      PaymentStatus::Cancelled,
+      "payment should be fully cancelled, got {:?}",
+      after_full.status
     );
   }
 }
