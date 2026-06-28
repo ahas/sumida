@@ -64,7 +64,10 @@ impl<S: SumidaState> BoardFileService<S> {
     });
     query = pagination.paginate(query);
 
-    let items = query.into_model::<BoardFileListItem>().all(db).await?;
+    let mut items = query.into_model::<BoardFileListItem>().all(db).await?;
+    for item in &mut items {
+      item.file.uri = Some(crate::service::fs::dto::inline_uri(item.file.uuid));
+    }
 
     Ok((items, count))
   }
@@ -90,7 +93,10 @@ impl<S: SumidaState> BoardFileService<S> {
     .one(db)
     .await?;
 
-    Ok(result)
+    Ok(result.map(|mut r| {
+      r.file.uri = Some(crate::service::fs::dto::inline_uri(r.file.uuid));
+      r
+    }))
   }
 
   pub async fn upload(&self, data: UploadBoardFile) -> Result<FileUploaded, SumidaError> {
@@ -165,6 +171,11 @@ impl<S: SumidaState> BoardFileService<S> {
     .into_model::<BoardFileListItem>()
     .all(db)
     .await?;
+
+    let mut items = items;
+    for item in &mut items {
+      item.file.uri = Some(crate::service::fs::dto::inline_uri(item.file.uuid));
+    }
 
     Ok(items)
   }

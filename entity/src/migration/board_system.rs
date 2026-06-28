@@ -551,6 +551,19 @@ impl MigrationTrait for Migration {
           .to_owned(),
       )
       .await?;
+    // One report per (post, user): a re-report updates the reason instead of stacking duplicates.
+    manager
+      .create_index(
+        Index::create()
+          .if_not_exists()
+          .unique()
+          .name("uq_board_post_reports__post_user")
+          .table(BoardPostReports::Table)
+          .col(BoardPostReports::PostId)
+          .col(BoardPostReports::UserId)
+          .to_owned(),
+      )
+      .await?;
 
     // board_files
     manager

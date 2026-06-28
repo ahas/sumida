@@ -114,6 +114,15 @@ impl ViewBoardPost {
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
+pub struct BoardPostViewerItem {
+  pub user_id: Option<i32>,
+  pub username: Option<String>,
+  pub name: Option<String>,
+  pub viewed_at: DateTimeWithTimeZone,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[serde(rename_all = "camelCase")]
 pub struct BoardPostUser {
   #[sea_orm(from_alias = "user_id")]
   pub id: i32,

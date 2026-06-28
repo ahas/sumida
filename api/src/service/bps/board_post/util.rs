@@ -174,13 +174,18 @@ pub async fn load_attached_files<C: ConnectionTrait>(
   db: &C,
 ) -> Result<Option<GetBoardPost>, DbErr> {
   if let Some(ref mut post) = post {
-    post.attached_files = BoardFiles::find()
+    let mut files = BoardFiles::find()
       .filter(BoardFilesColumn::PostId.eq(id))
       .join(JoinType::LeftJoin, BoardFilesRelation::File.def())
       .join(JoinType::LeftJoin, FilesRelation::User.def())
       .into_partial_model::<BoardFileListItem>()
       .all(db)
       .await?;
+    // Expose the access-gated read-only path, not the raw storage URI.
+    for file in &mut files {
+      file.file.uri = Some(crate::service::fs::dto::inline_uri(file.file.uuid));
+    }
+    post.attached_files = files;
   }
 
   Ok(post)

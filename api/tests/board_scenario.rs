@@ -17,7 +17,7 @@ use entity::fs::files::FileStatus;
 use entity::prelude::*;
 use reqwest::StatusCode;
 use sea_orm::ActiveValue::{Set, Unchanged};
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -82,6 +82,18 @@ async fn make_board(
 
 async fn create_post(mock: &Mock, body: Value) -> reqwest::Response {
   mock.client.post("/board-posts").json(&body).send().await.unwrap()
+}
+
+async fn set_viewer_visibility(db: &DatabaseConnection, board_id: i32, v: BoardPostRecordVisibility) {
+  Boards::update_many()
+    .set(entity::bps::boards::ActiveModel {
+      viewer_visibility: Set(v),
+      ..Default::default()
+    })
+    .filter(entity::bps::boards::Column::Id.eq(board_id))
+    .exec(db)
+    .await
+    .unwrap();
 }
 
 async fn create_published_article(mock: &Mock, board_id: i32, title: &str) -> i32 {
@@ -689,4 +701,178 @@ async fn scenario_scheduled_post_autopublish() {
   let post = BoardPosts::find_by_id(post_id).one(&db).await.unwrap().unwrap();
   assert_eq!(post.status, BoardPostStatus::Published);
   assert!(post.published_at.is_some(), "published_at is stamped");
+}
+
+#[tokio::test]
+async fn scenario_report_lifecycle() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  author.login(&mock.client).await;
+  let post_id = create_published_article(&mock, board.id, "reportable").await;
+
+  // a reporter files a report on a visible post
+  let mock_r = Mock::new().await;
+  let reporter = TestUser::create(&db).await.unwrap();
+  allow(&db, &reporter, "board_post_report", "service", &["create"]).await;
+  reporter.login(&mock_r.client).await;
+  let resp = mock_r
+    .client
+    .post("/board-post-reports")
+    .json(&json!({ "postId": post_id, "reason": "spam" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::CREATED);
+  let report_id = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+  // re-report updates the reason in place (one report per user/post)
+  let resp = mock_r
+    .client
+    .post("/board-post-reports")
+    .json(&json!({ "postId": post_id, "reason": "abuse" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.json::<Value>().await.unwrap()["id"].as_i64(), Some(report_id), "report is deduped");
+
+  // a non-moderator cannot list reports
+  let resp = mock_r.client.get("/board-post-reports").send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::FORBIDDEN, "non-moderator cannot read reports");
+
+  // a moderator lists, sees it, and resolves (deletes) it
+  let mock_m = Mock::new().await;
+  let moderator = TestUser::create(&db).await.unwrap();
+  allow(&db, &moderator, "board_post_report", "service", &["read", "delete"]).await;
+  moderator.login(&mock_m.client).await;
+  let resp = mock_m
+    .client
+    .get(&format!("/board-post-reports?postId={post_id}"))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+  let items = resp.json::<Value>().await.unwrap()["items"].as_array().cloned().unwrap_or_default();
+  assert!(items.iter().any(|r| r["id"].as_i64() == Some(report_id)), "moderator sees the report");
+
+  let resp = mock_m.client.delete(&format!("/board-post-reports/{report_id}")).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK, "moderator resolves the report");
+}
+
+#[tokio::test]
+async fn scenario_viewer_list_visibility() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+  set_viewer_visibility(&db, board.id, BoardPostRecordVisibility::Public).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  author.login(&mock.client).await;
+  let post_id = create_published_article(&mock, board.id, "viewed").await;
+
+  // a viewer reads the post (records a view marker)
+  let mock_v = Mock::new().await;
+  let viewer = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &viewer, &board, &["read"]).await;
+  viewer.login(&mock_v.client).await;
+  let resp = mock_v
+    .client
+    .post(&format!("/board-posts/{post_id}/view"))
+    .json(&json!({}))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+
+  // viewer_visibility=public: the viewer list is readable and contains the viewer
+  let resp = mock_v.client.get(&format!("/board-posts/{post_id}/viewers")).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+  let items = resp.json::<Value>().await.unwrap()["items"].as_array().cloned().unwrap_or_default();
+  assert!(
+    items.iter().any(|x| x["userId"].as_i64() == Some(viewer.model.id as i64)),
+    "viewer appears in the public viewer list"
+  );
+
+  // viewer_visibility=private: hidden from non-admin, visible to admin
+  set_viewer_visibility(&db, board.id, BoardPostRecordVisibility::Private).await;
+  let resp = mock_v.client.get(&format!("/board-posts/{post_id}/viewers")).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::FORBIDDEN, "private viewer list hidden from non-admin");
+
+  let mock_a = Mock::new().await;
+  TestUser::create_admin(&db).await.unwrap().login(&mock_a.client).await;
+  let resp = mock_a.client.get(&format!("/board-posts/{post_id}/viewers")).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK, "admin reads the private viewer list");
+}
+
+#[tokio::test]
+async fn scenario_soft_delete_persists_and_hides() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create", "delete"]).await;
+  author.login(&mock.client).await;
+  let post_id = create_published_article(&mock, board.id, "to-delete").await as i32;
+
+  let resp = mock.client.delete(&format!("/board-posts/{post_id}")).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+
+  // gone from reads
+  let resp = mock.client.get(&format!("/board-posts/{post_id}")).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::NOT_FOUND, "soft-deleted post is not readable");
+  let resp = mock
+    .client
+    .get(&format!("/boards/{}/posts?kind=article&boardId={}", board.id, board.id))
+    .send()
+    .await
+    .unwrap();
+  let items = resp.json::<Value>().await.unwrap()["items"].as_array().cloned().unwrap_or_default();
+  assert!(
+    !items.iter().any(|p| p["id"].as_i64() == Some(post_id as i64)),
+    "soft-deleted post is excluded from list"
+  );
+
+  // but the row persists, marked deleted
+  let row = BoardPosts::find_by_id(post_id).one(&db).await.unwrap().unwrap();
+  assert!(row.deleted_at.is_some(), "deleted_at is stamped");
+  assert_eq!(row.status, entity::bps::board_posts::BoardPostStatus::Deleted);
+}
+
+#[tokio::test]
+async fn scenario_attachment_uri_is_gated() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, true).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  allow(&db, &author, "board_file", "service", &["create"]).await;
+  author.login(&mock.client).await;
+
+  let uuid = upload_board_file(&mock, board.id, "doc.png").await;
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": board.id, "title": "with file", "content": "<p>x</p>",
+      "contentType": "text/html", "kind": "article", "status": "published",
+      "contentVisibility": "public", "attachedFileUuids": [uuid.to_string()]
+    }),
+  )
+  .await;
+  let post_id = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+  // the post's attached file exposes the gated read-only path, never the raw storage URI
+  let resp = mock.client.get(&format!("/board-posts/{post_id}")).send().await.unwrap();
+  let body: Value = resp.json().await.unwrap();
+  let uri = body["attachedFiles"][0]["uri"].as_str().unwrap();
+  assert_eq!(uri, format!("/files/{uuid}/inline"), "attachment uri is the gated inline path");
 }

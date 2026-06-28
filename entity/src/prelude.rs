@@ -28,6 +28,10 @@ pub use super::bps::board_post_reactions::{
   ActiveModel as BoardPostReactionsActiveModel, Column as BoardPostReactionsColumn,
   Entity as BoardPostReactions, Model as BoardPostReactionsModel, Relation as BoardPostReactionsRelation,
 };
+pub use super::bps::board_post_reports::{
+  ActiveModel as BoardPostReportsActiveModel, Column as BoardPostReportsColumn, Entity as BoardPostReports,
+  Model as BoardPostReportsModel, Relation as BoardPostReportsRelation,
+};
 pub use super::bps::board_post_views::{
   ActiveModel as BoardPostViewsActiveModel, Column as BoardPostViewsColumn, Entity as BoardPostViews,
   Model as BoardPostViewsModel, Relation as BoardPostViewsRelation,

@@ -24,11 +24,23 @@ pub enum Relation {
     on_update = "Cascade"
   )]
   Post,
+  #[sea_orm(
+    belongs_to = "crate::users::Entity",
+    from = "Column::UserId",
+    to = "crate::users::Column::Id"
+  )]
+  User,
 }
 
 impl Related<super::board_posts::Entity> for Entity {
   fn to() -> RelationDef {
     Relation::Post.def()
+  }
+}
+
+impl Related<crate::users::Entity> for Entity {
+  fn to() -> RelationDef {
+    Relation::User.def()
   }
 }
 

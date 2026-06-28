@@ -146,11 +146,23 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
   → 415/413/400으로 매핑(`error/src/error.rs`).
 - 테스트: `board_scenario.rs` **11 시나리오**(+ 반응집계/실행파일거부/예약발행), board 권한 9건, 유닛 5건 모두 통과.
 
-### 추가 발견 (미수정, 후속 필요 — 제품/협의 결정)
-- **A-2** S3 `get_uri`는 여전히 공개 URL 반환(서명 URL 아님) — inline 엔드포인트로 서빙하도록 클라이언트 유도 또는 비공개 버킷+서명 URL.
-- **B-3** 신고(`board_post_reports`) 테이블만 존재 — 구현 vs 제거 결정 필요.
-- **B-4** `boards.viewer_visibility` 연동 읽기 전용 뷰어 목록(누가 봤나) — 신규 설계 필요.
-- **C-1** soft delete: `deleted_at`/status `Deleted` 컬럼 존재하나 하드삭제만. soft-everywhere(모든 read 쿼리 필터) vs 컬럼 제거 결정 필요(영향 광범).
+### 추천 후속 3차 진행 (2026-06) ✅
+- **A-2 uri 게이트**: 응답에 노출하는 파일 경로를 내부 저장 URI 대신 읽기전용 게이트 경로
+  `/files/{uuid}/inline`으로 가공(`fs::dto::inline_uri`). file list/get, board_file list/get/get_files_for_post,
+  post 첨부(`load_attached_files`) 전부 적용. (남은 후속 A-2b: S3는 inline 핸들러에서 단기 pre-signed 302로 오프로드.)
+- **B-3 신고**: `board_post_reports` 엔티티 + 서비스/컨트롤러/`/board-post-reports` 라우트. 인증 사용자가 가시 글을
+  reason과 함께 신고(`(post_id,user_id)` 유니크 → 재신고는 reason 갱신), 모더레이터(`board_post_report` ns)가 목록/조회/삭제.
+- **B-4 뷰어 목록**: `GET /board-posts/{id}/viewers` — `board.viewer_visibility`(public/members/author/private)로 게이트.
+  board_post_views↔users 관계 추가. (content_visibility=읽기 / reaction_visibility=반응목록 / viewer_visibility=조회자목록 3분리 확인.)
+- **C-1 soft delete**: board_posts `delete()`를 `deleted_at`+status=Deleted 마킹으로 전환(파일은 release).
+  모든 read 경로에 `deleted_at IS NULL` 필터 — `default_query_with`(AP read 일괄) + raw find_by_id 6곳(get/view/update/
+  list_viewers/reaction/report/inline). board는 범위 외(컬럼 미사용 유지).
+  알려진 한계: 부모 soft-delete 시 대댓글(자식 post)은 개별 유지 — 필요 시 cascade soft-delete 후속.
+- 테스트: `board_scenario.rs` **15 시나리오**(+신고/뷰어목록/soft-delete/첨부 uri 게이트) 전부 통과.
+
+### 남은 후속
+- **A-2b** S3 inline pre-signed URL 302(성능 오프로드) — 인프라 결정.
+- 대댓글 cascade soft-delete, board soft delete(현재 board는 하드 유지).
 
 ## P2 — 정합성 / 정리
 

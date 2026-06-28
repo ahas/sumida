@@ -48,6 +48,15 @@ impl<S: SumidaState> BoardPostController<S> {
       .ok_or_else(|| SumidaError::NoData("BoardPost".into(), id.to_string()))
   }
 
+  async fn viewers(
+    session: UserSession,
+    State(state): State<S>,
+    Path(id): Path<i32>,
+    Query(pagination): Query<Pagination>,
+  ) -> Result<List<BoardPostViewerItem>, SumidaError> {
+    Ok(BoardPostService::new(state, session).list_viewers(id, pagination).await?.into())
+  }
+
   async fn create(
     session: UserSession,
     State(state): State<S>,
@@ -100,6 +109,7 @@ where
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route("/{id}/view", routing::post(Self::view))
+      .route("/{id}/viewers", routing::get(Self::viewers))
       .route_layer(service_ap!(state, "board_post", read));
 
     // Write operations - board-level permissions checked in handlers

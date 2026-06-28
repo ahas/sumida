@@ -36,6 +36,7 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     txn: &C,
   ) -> Result<(entity::bps::board_posts::Model, entity::bps::boards::Model), SumidaError> {
     let post = BoardPosts::find_by_id(post_id)
+      .filter(entity::bps::board_posts::Column::DeletedAt.is_null())
       .one(txn)
       .await?
       .ok_or_else(|| SumidaError::NoData("BoardPost".into(), post_id.to_string()))?;

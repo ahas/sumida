@@ -49,19 +49,26 @@ impl<S: SumidaState> FileService<S> {
     });
     query = pagination.paginate(query);
 
-    let items: Vec<FileListItem> = query.into_partial_model().all(db).await?;
+    let mut items: Vec<FileListItem> = query.into_partial_model().all(db).await?;
+    // Expose the access-gated read-only path, never the raw storage URI.
+    for item in &mut items {
+      item.uri = Some(inline_uri(item.uuid));
+    }
 
     Ok((items, count))
   }
 
   pub async fn get(&self, uuid: Uuid) -> Result<Option<GetFile>, SumidaError> {
-    Ok(
-      self
-        .select(Files::find_by_id(uuid))
-        .into_partial_model::<GetFile>()
-        .one(self.state.db())
-        .await?,
-    )
+    let file = self
+      .select(Files::find_by_id(uuid))
+      .into_partial_model::<GetFile>()
+      .one(self.state.db())
+      .await?;
+
+    Ok(file.map(|mut f| {
+      f.uri = Some(inline_uri(f.uuid));
+      f
+    }))
   }
 
   pub async fn upload(&self, data: UploadFile) -> Result<FileUploaded, SumidaError> {
@@ -194,6 +201,7 @@ impl<S: SumidaState> FileService<S> {
 
     if let Some(post_id) = attached {
       let post = BoardPosts::find_by_id(post_id)
+        .filter(entity::bps::board_posts::Column::DeletedAt.is_null())
         .one(db)
         .await?
         .ok_or_else(|| SumidaError::NoData("BoardPost".into(), post_id.to_string()))?;

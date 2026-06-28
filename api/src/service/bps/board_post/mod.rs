@@ -10,7 +10,7 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, FromQueryResult, InsertResult, IntoActiveModel,
+  ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, InsertResult, IntoActiveModel,
   IntoSimpleExpr, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
   TransactionTrait,
 };
@@ -210,7 +210,11 @@ impl<S: SumidaState> BoardPostService<S> {
 
     // Password + content-visibility gate, mirroring `view`. `get` carries no password input, so a
     // password-protected post is only reachable here by its author or an admin.
-    let Some(model) = BoardPosts::find_by_id(id).one(&txn).await? else {
+    let Some(model) = BoardPosts::find_by_id(id)
+      .filter(BoardPostsColumn::DeletedAt.is_null())
+      .one(&txn)
+      .await?
+    else {
       return Ok(None);
     };
     self.guard_post_read(&model, None, &txn).await?;
@@ -277,7 +281,11 @@ impl<S: SumidaState> BoardPostService<S> {
     }
 
     // Raw model carries the fields the password + visibility gate needs.
-    let Some(post) = BoardPosts::find_by_id(id).one(&txn).await? else {
+    let Some(post) = BoardPosts::find_by_id(id)
+      .filter(BoardPostsColumn::DeletedAt.is_null())
+      .one(&txn)
+      .await?
+    else {
       return Err(SumidaError::NoData("BoardPost".to_string(), id.to_string()));
     };
 
@@ -321,6 +329,67 @@ impl<S: SumidaState> BoardPostService<S> {
     }
 
     Err(SumidaError::NoData("Post".to_string(), id.to_string()))
+  }
+
+  /// List the users who viewed a post, gated by the board's `viewer_visibility`.
+  pub async fn list_viewers(
+    &self,
+    post_id: i32,
+    pagination: Pagination,
+  ) -> Result<List<BoardPostViewerItem>, SumidaError> {
+    use sea_orm::JoinType::LeftJoin;
+
+    let txn = self.state.db().begin().await?;
+
+    let post = BoardPosts::find_by_id(post_id)
+      .filter(BoardPostsColumn::DeletedAt.is_null())
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("BoardPost".to_string(), post_id.to_string()))?;
+    let board = Boards::find_by_id(post.board_id)
+      .one(&txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Board".to_string(), post.board_id.to_string()))?;
+
+    self.check_viewer_visibility(&post, &board.viewer_visibility)?;
+
+    let base = BoardPostViews::find()
+      .filter(BoardPostViewsColumn::PostId.eq(post_id))
+      .join(LeftJoin, BoardPostViewsRelation::User.def());
+    let count = base.clone().count(&txn).await?;
+
+    let items = base
+      .select_only()
+      .column_as(BoardPostViewsColumn::UserId, "user_id")
+      .column_as(UsersColumn::Username, "username")
+      .column_as(UsersColumn::FullName, "name")
+      .column_as(BoardPostViewsColumn::CreatedAt, "viewed_at")
+      .order_by(BoardPostViewsColumn::CreatedAt, Order::Desc);
+    let items = pagination.paginate(items).into_model::<BoardPostViewerItem>().all(&txn).await?;
+
+    txn.commit().await?;
+
+    Ok(List::new(items, count))
+  }
+
+  /// Who may see the viewer list, per the board's `viewer_visibility`.
+  fn check_viewer_visibility(
+    &self,
+    post: &BoardPostsModel,
+    visibility: &entity::bps::boards::BoardPostRecordVisibility,
+  ) -> Result<(), SumidaError> {
+    use entity::bps::boards::BoardPostRecordVisibility::*;
+
+    if self.session.profile.is_admin {
+      return Ok(());
+    }
+    let ok = match visibility {
+      Public => true,
+      MembersOnly => self.session.profile.is_authorized,
+      AuthorOnly => self.session.profile.is_authorized && post.user_id == Some(self.session.profile.id),
+      Private => false,
+    };
+    if ok { Ok(()) } else { Err(SumidaError::NoAccessPermission) }
   }
 
   pub async fn create(
@@ -431,6 +500,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let txn = self.state.db().begin().await?;
 
     let post = BoardPosts::find_by_id(id)
+      .filter(BoardPostsColumn::DeletedAt.is_null())
       .one(&txn)
       .await?
       .ok_or_else(|| SumidaError::NoData("Post".to_string(), id.to_string()))?;
@@ -500,10 +570,11 @@ impl<S: SumidaState> BoardPostService<S> {
     Ok(item)
   }
 
-  pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
+  pub async fn delete(&self, id: i32) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
 
     let post = BoardPosts::find_by_id(id)
+      .filter(BoardPostsColumn::DeletedAt.is_null())
       .one(&txn)
       .await?
       .ok_or_else(|| SumidaError::NoData("Post".to_string(), id.to_string()))?;
@@ -515,16 +586,25 @@ impl<S: SumidaState> BoardPostService<S> {
     // Operator permission (board_group AND board) OR author ownership (board_post)
     self.authorize_post_mutation("delete", id, board.id, board.group_id, &txn).await?;
 
-    // Release attached files (refs--, re-arm TTL) so the FK cascade doesn't strand them as orphans.
+    // Soft delete: mark deleted (read paths filter on deleted_at IS NULL) but free attached files now.
     util::release_all_post_files(id, &txn).await?;
 
-    let result = BoardPosts::delete_by_id(id).exec(&txn).await?;
+    BoardPosts::update_many()
+      .set(BoardPostsActiveModel {
+        status: Set(BoardPostStatus::Deleted),
+        deleted_at: Set(Some(chrono::Utc::now().fixed_offset())),
+        ..Default::default()
+      })
+      .filter(BoardPostsColumn::Id.eq(id))
+      .exec(&txn)
+      .await?;
 
+    // Revoke the author's ownership policy for the now-deleted post.
     ap::edit().namespace("board_post").object(id).delete(&txn).await?;
 
     txn.commit().await?;
 
-    Ok(result)
+    Ok(())
   }
 
   async fn load_replies_tree<T: Reply + FromQueryResult, C: ConnectionTrait>(
@@ -639,6 +719,8 @@ impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
       .join(LeftJoin, BoardPostsRelation::Board.def())
       .join(LeftJoin, BoardPostsRelation::Topic.def())
       .join(LeftJoin, BoardsRelation::Group.def())
+      // Soft-deleted posts are never returned by any AP-filtered read path.
+      .filter(BoardPostsColumn::DeletedAt.is_null())
   }
 
   fn ap(&self) -> ApChain {

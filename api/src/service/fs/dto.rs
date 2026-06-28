@@ -17,6 +17,12 @@ use crate::util::ap::ApForUser;
 use crate::util::db::wrap_ilike;
 use crate::util::storage::StaticFile;
 
+/// Read-only, access-gated path exposed to clients instead of the raw internal storage URI.
+/// The `/files/{uuid}/inline` endpoint enforces visibility (post content-visibility / `file:read`).
+pub fn inline_uri(uuid: Uuid) -> String {
+  format!("/files/{uuid}/inline")
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct FileFilter {
   pub user: Option<String>,
