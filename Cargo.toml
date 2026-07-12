@@ -10,14 +10,24 @@ full-local = [
   "session-store-redis",
   "jwt-secret-store-static",
   "storage-local",
+  "full-features",
 ]
 full-aws = [
   "image",
   "session-store-aws-dynamodb",
   "jwt-secret-store-aws-ssm",
   "storage-aws-s3",
+  "full-features",
 ]
 test-suite = ["full-local"]
+
+# 기능(functional) feature — 끌 수 있는 능력 단위. board는 file 의존(board_files→fs::files).
+# full-* 번들이 전부 포함하므로 기존 소비자(lab-app=full-aws)는 무영향.
+board = ["api/board"]
+file = ["api/file"]
+membership = ["api/membership"]
+mail-form = ["api/mail-form"]
+full-features = ["board", "file", "membership", "mail-form"]
 
 aws-dynamodb = ["infra/aws-dynamodb"]
 aws-s3 = ["infra/aws-s3", "api/aws-s3"]

@@ -25,26 +25,42 @@ pub use super::auth::session::AuthSessionService;
 pub use super::ban::BanService;
 pub use super::ban::dto::*;
 //
+#[cfg(feature = "board")]
 pub use super::bps::prelude::*;
 //
+#[cfg(feature = "mail-form")]
 pub use super::mail_form::MailFormService;
+#[cfg(feature = "mail-form")]
 pub use super::mail_form::dto::*;
 //
 pub use super::me::MeService;
 pub use super::me::dto::*;
 //
+#[cfg(feature = "membership")]
 pub use super::membership::coupon::CouponService;
+#[cfg(feature = "membership")]
 pub use super::membership::coupon::dto::*;
+#[cfg(feature = "membership")]
 pub use super::membership::credit::CreditService;
+#[cfg(feature = "membership")]
 pub use super::membership::credit::dto::*;
+#[cfg(feature = "membership")]
 pub use super::membership::entitlement::{EntitlementOutcome, EntitlementService, RequireActionRequest};
+#[cfg(feature = "membership")]
 pub use super::membership::payment::PaymentService;
+#[cfg(feature = "membership")]
 pub use super::membership::payment::dto::*;
+#[cfg(feature = "membership")]
 pub use super::membership::plan::PlanService;
+#[cfg(feature = "membership")]
 pub use super::membership::plan::dto::*;
+#[cfg(feature = "membership")]
 pub use super::membership::purchase::PurchaseService;
+#[cfg(feature = "membership")]
 pub use super::membership::purchase::dto::*;
+#[cfg(feature = "membership")]
 pub use super::membership::subscription::SubscriptionService;
+#[cfg(feature = "membership")]
 pub use super::membership::subscription::dto::*;
 //
 pub use super::monitoring::MonitoringService;

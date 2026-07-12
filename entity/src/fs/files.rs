@@ -64,6 +64,7 @@ impl Related<crate::users::Entity> for Entity {
   }
 }
 
+#[cfg(feature = "board")]
 impl Related<crate::bps::board_posts::Entity> for Entity {
   fn to() -> RelationDef {
     crate::bps::board_files::Relation::Post.def()

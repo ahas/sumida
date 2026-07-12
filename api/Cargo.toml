@@ -19,13 +19,24 @@ storage-aws-s3 = ["aws", "aws-s3"]
 storage-local = []
 session-store-redis = ["infra/session-store-redis"]
 session-store-aws-dynamodb = ["aws-dynamodb", "infra/session-store-aws-dynamodb"]
-full-local = ["image", "jwt-secret-store-static", "storage-local", "session-store-redis"]
+
+# 기능(functional) feature — 끌 수 있는 능력 단위. board는 board_files→fs::files 때문에 file 의존.
+board = ["file", "entity/board"]
+file = ["entity/file"]
+# membership 알림(구독 만료/잔액 부족)이 mail-form을 사용하므로 의존으로 명시.
+membership = ["mail-form", "entity/membership"]
+mail-form = ["entity/mail-form"]
+# 기능 전체 묶음(기존 소비자 무영향: full-*가 전부 포함)
+full-features = ["board", "file", "membership", "mail-form"]
+
+full-local = ["image", "jwt-secret-store-static", "storage-local", "session-store-redis", "full-features"]
 full-aws = [
   "aws-s3",
   "image",
   "jwt-secret-store-aws-ssm",
   "storage-aws-s3",
   "session-store-aws-dynamodb",
+  "full-features",
 ]
 
 [dev-dependencies]
@@ -48,6 +59,7 @@ blake3 = { workspace = true }
 cfg-if = { workspace = true }
 chrono = { workspace = true }
 humantime = { workspace = true }
+inventory = "0.3"
 rand = { workspace = true }
 lettre = { workspace = true }
 sea-orm = { workspace = true }

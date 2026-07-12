@@ -66,6 +66,7 @@ pub async fn add_refs<C: ConnectionTrait>(file_uuid: Uuid, delta: i32, db: &C) -
 }
 
 /// Register a freshly uploaded board file as a *pending claim* (not yet attached to a post).
+#[cfg(feature = "board")]
 pub async fn register_pending_board_file<C: ConnectionTrait>(
   file_uuid: Uuid,
   db: &C,
@@ -82,6 +83,7 @@ pub async fn register_pending_board_file<C: ConnectionTrait>(
 
 /// Attach `file_uuid` to `post_id`. Returns `true` when a new attachment was made.
 /// Skips uuids with no backing file (e.g. stale references parsed from post content).
+#[cfg(feature = "board")]
 pub async fn claim_file<C: ConnectionTrait>(
   post_id: i32,
   file_uuid: Uuid,
@@ -123,6 +125,7 @@ pub async fn claim_file<C: ConnectionTrait>(
 }
 
 /// Detach `file_uuid` from `post_id`. When the file's ref count hits 0 it is put back on the TTL.
+#[cfg(feature = "board")]
 pub async fn unclaim_file<C: ConnectionTrait>(
   post_id: i32,
   file_uuid: Uuid,
@@ -166,6 +169,8 @@ pub async fn find_orphan_files<C: ConnectionTrait>(
 }
 
 /// Defensive re-check used by the reaper: is the file attached to any post right now?
+/// board 기능이 꺼지면 board_files 정션이 없으므로 항상 미첨부(false)다.
+#[cfg(feature = "board")]
 pub async fn is_attached<C: ConnectionTrait>(file_uuid: Uuid, db: &C) -> Result<bool, SumidaError> {
   let count = BoardFiles::find()
     .filter(BoardFilesColumn::FileUuid.eq(file_uuid))
@@ -173,4 +178,9 @@ pub async fn is_attached<C: ConnectionTrait>(file_uuid: Uuid, db: &C) -> Result<
     .count(db)
     .await?;
   Ok(count > 0)
+}
+
+#[cfg(not(feature = "board"))]
+pub async fn is_attached<C: ConnectionTrait>(_file_uuid: Uuid, _db: &C) -> Result<bool, SumidaError> {
+  Ok(false)
 }

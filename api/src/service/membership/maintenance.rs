@@ -704,10 +704,13 @@ pub async fn run_once<S: SumidaState>(db: &DatabaseConnection) -> MaintenanceRep
     Ok(n) => report.low_balance_notices = n,
     Err(e) => tracing::warn!("membership maintenance: low-balance notices failed: {e}"),
   }
+  // 전역 유지보수 러너는 컴파일된(=켜진) 하위 기능의 정리만 수행한다.
+  #[cfg(feature = "file")]
   match crate::service::fs::maintenance::reap_orphan_files(db).await {
     Ok(n) => report.orphan_files_reaped = n,
     Err(e) => tracing::warn!("membership maintenance: orphan file reap failed: {e}"),
   }
+  #[cfg(feature = "board")]
   match crate::service::bps::maintenance::publish_scheduled_posts(db).await {
     Ok(n) => report.scheduled_posts_published = n,
     Err(e) => tracing::warn!("membership maintenance: publish scheduled posts failed: {e}"),

@@ -188,40 +188,44 @@ impl<S: SumidaState> FileService<S> {
     file: &entity::fs::files::Model,
     db: &C,
   ) -> Result<(), SumidaError> {
-    use entity::bps::board_files::Column as BoardFileColumn;
-    use sea_orm::QueryFilter;
+    // A file attached to a board post inherits that post's content visibility. (feature = "board")
+    // board 기능이 꺼지면 board_files 정션이 없어 어떤 파일도 첨부 상태가 아니므로 generic 경로로 폴백한다.
+    #[cfg(feature = "board")]
+    {
+      use entity::bps::board_files::Column as BoardFileColumn;
+      use sea_orm::QueryFilter;
 
-    // A file attached to a post inherits that post's content visibility.
-    let attached = BoardFiles::find()
-      .filter(BoardFileColumn::FileUuid.eq(file.uuid))
-      .filter(BoardFileColumn::PostId.is_not_null())
-      .one(db)
-      .await?
-      .and_then(|bf| bf.post_id);
-
-    if let Some(post_id) = attached {
-      let post = BoardPosts::find_by_id(post_id)
-        .filter(entity::bps::board_posts::Column::DeletedAt.is_null())
+      let attached = BoardFiles::find()
+        .filter(BoardFileColumn::FileUuid.eq(file.uuid))
+        .filter(BoardFileColumn::PostId.is_not_null())
         .one(db)
         .await?
-        .ok_or_else(|| SumidaError::NoData("BoardPost".into(), post_id.to_string()))?;
-      let board = Boards::find_by_id(post.board_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| SumidaError::NoData("Board".into(), post.board_id.to_string()))?;
-      let user_id = if self.session.profile.is_authorized { Some(self.session.profile.id) } else { None };
+        .and_then(|bf| bf.post_id);
 
-      return if crate::service::bps::board_post::util::check_post_visible(
-        user_id,
-        post.user_id,
-        self.session.profile.is_admin,
-        board.content_visibility,
-        post.content_visibility,
-      )? {
-        Ok(())
-      } else {
-        Err(SumidaError::NoAccessPermission)
-      };
+      if let Some(post_id) = attached {
+        let post = BoardPosts::find_by_id(post_id)
+          .filter(entity::bps::board_posts::Column::DeletedAt.is_null())
+          .one(db)
+          .await?
+          .ok_or_else(|| SumidaError::NoData("BoardPost".into(), post_id.to_string()))?;
+        let board = Boards::find_by_id(post.board_id)
+          .one(db)
+          .await?
+          .ok_or_else(|| SumidaError::NoData("Board".into(), post.board_id.to_string()))?;
+        let user_id = if self.session.profile.is_authorized { Some(self.session.profile.id) } else { None };
+
+        return if crate::service::bps::board_post::util::check_post_visible(
+          user_id,
+          post.user_id,
+          self.session.profile.is_admin,
+          board.content_visibility,
+          post.content_visibility,
+        )? {
+          Ok(())
+        } else {
+          Err(SumidaError::NoAccessPermission)
+        };
+      }
     }
 
     // Unattached/generic file: require `file:read` on the object.

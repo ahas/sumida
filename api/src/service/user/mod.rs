@@ -13,6 +13,7 @@ use sea_orm::{
 use sea_orm_crud::Optional;
 
 use self::dto::*;
+#[cfg(feature = "mail-form")]
 use super::mail_form::MailFormSendOptions;
 use super::prelude::*;
 use crate::SumidaState;
@@ -165,27 +166,32 @@ impl<S: SumidaState> UserService<S> {
 
     UserInvitationService::<S>::upsert(user_id, uuid, &txn).await?;
 
-    let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
-      username: opts.username.clone(),
-      password: opts.password.clone(),
-      auth: opts.auth.clone(),
-      server: opts.server.clone(),
-      port: opts.resolved_port(),
-      tls: opts.tls,
-    });
+    // 초대 이메일 발송은 mail-form 기능에 의존한다. 꺼지면 초대 레코드(UUID)는 그대로 만들되
+    // 메일만 생략한다(소비자가 초대 링크를 다른 채널로 전달 가능).
+    #[cfg(feature = "mail-form")]
+    {
+      let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
+        username: opts.username.clone(),
+        password: opts.password.clone(),
+        auth: opts.auth.clone(),
+        server: opts.server.clone(),
+        port: opts.resolved_port(),
+        tls: opts.tls,
+      });
 
-    MailFormService::<S>::send(
-      "invitation",
-      receiver,
-      mail_form_context::InvitationContext {
-        user_id,
-        uuid: uuid.to_string(),
-        full_name: user.full_name.unwrap_or_else(String::new),
-      },
-      opts,
-      &txn,
-    )
-    .await?;
+      MailFormService::<S>::send(
+        "invitation",
+        receiver,
+        mail_form_context::InvitationContext {
+          user_id,
+          uuid: uuid.to_string(),
+          full_name: user.full_name.unwrap_or_else(String::new),
+        },
+        opts,
+        &txn,
+      )
+      .await?;
+    }
 
     txn.commit().await?;
 

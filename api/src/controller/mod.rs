@@ -3,11 +3,15 @@ pub mod access_policy;
 pub mod api_key;
 pub mod auth;
 pub mod ban;
+#[cfg(feature = "board")]
 pub mod bps;
 pub mod dashboard;
+#[cfg(feature = "file")]
 pub mod fs;
+#[cfg(feature = "mail-form")]
 pub mod mail_form;
 pub mod me;
+#[cfg(feature = "membership")]
 pub mod membership;
 pub mod organization;
 pub mod role;

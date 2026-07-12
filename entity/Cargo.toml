@@ -6,6 +6,13 @@ edition = "2024"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# 기능별 엔티티/마이그레이션 게이팅. board는 board_files→fs::files 때문에 file 의존.
+board = ["file"]
+file = []
+membership = []
+mail-form = []
+
 [dependencies]
 error = { path = "../error" }
 

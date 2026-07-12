@@ -60,6 +60,7 @@ pub struct DownloadFile {
   pub mime_type: String,
 }
 
+#[cfg(feature = "file")]
 impl From<entity::fs::files::Model> for DownloadFile {
   fn from(value: entity::fs::files::Model) -> Self {
     Self {

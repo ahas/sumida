@@ -9,10 +9,14 @@ pub mod admin;
 pub mod api_key;
 pub mod auth;
 pub mod ban;
+#[cfg(feature = "board")]
 pub mod bps;
+#[cfg(feature = "file")]
 pub mod fs;
+#[cfg(feature = "mail-form")]
 pub mod mail_form;
 pub mod me;
+#[cfg(feature = "membership")]
 pub mod membership;
 pub mod monitoring;
 pub mod organization;

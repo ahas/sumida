@@ -1,6 +1,7 @@
 pub mod ap;
 pub mod board;
 pub mod db;
+#[cfg(feature = "file")]
 pub mod file_lifecycle;
 pub mod file_validation;
 pub mod org;

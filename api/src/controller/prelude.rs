@@ -6,11 +6,15 @@ pub use super::access_log::AccessLogController;
 pub use super::api_key::ApiKeyController;
 pub use super::auth::prelude::*;
 pub use super::ban::BanController;
+#[cfg(feature = "board")]
 pub use super::bps::prelude::*;
 pub use super::dashboard::DashboardMonitoringController;
+#[cfg(feature = "file")]
 pub use super::fs::prelude::*;
+#[cfg(feature = "mail-form")]
 pub use super::mail_form::MailFormController;
 pub use super::me::MeController;
+#[cfg(feature = "membership")]
 pub use super::membership::prelude::*;
 pub use super::organization::OrganizationController;
 pub use super::role::RoleController;

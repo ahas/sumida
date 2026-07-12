@@ -13,8 +13,11 @@ use sea_orm::{
 
 use self::dto::*;
 use crate::SumidaState;
+#[cfg(feature = "mail-form")]
 use crate::service::mail_form::MailFormSendOptions;
+#[cfg(feature = "mail-form")]
 use crate::service::prelude::MailFormService;
+#[cfg(feature = "mail-form")]
 use crate::service::user::mail_form_context::*;
 
 pub struct UserVerificationService<S: SumidaState> {
@@ -126,6 +129,9 @@ impl<S: SumidaState> UserVerificationService<S> {
       UserVerifications::insert(active_model).exec(&txn).await?;
     }
 
+    // 이메일 발송은 mail-form 기능에 의존한다. 기능이 꺼지면 검증 레코드는 그대로 만들되
+    // 코드 이메일만 생략한다(코드는 DB에 존재 → 소비자가 다른 채널로 전달 가능).
+    #[cfg(feature = "mail-form")]
     if method == "email" {
       // Do not reveal whether an email is on file either (enumeration prevention). Silently succeed.
       let Some(email) = user.email else {

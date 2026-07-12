@@ -1,7 +1,9 @@
 use std::path::Path;
 
+#[cfg(feature = "board")]
 use entity::bps::boards;
 use error::SumidaError;
+#[cfg(feature = "board")]
 use sea_orm::{ConnectionTrait, EntityTrait};
 
 #[derive(Debug, Clone)]
@@ -12,6 +14,7 @@ pub struct FileValidationConfig {
   pub allowed_file_types: Vec<String>,
 }
 
+#[cfg(feature = "board")]
 impl From<&boards::Model> for FileValidationConfig {
   fn from(board: &boards::Model) -> Self {
     Self {
@@ -96,6 +99,7 @@ impl FileValidator {
     Self { config }
   }
 
+  #[cfg(feature = "board")]
   pub async fn from_board_id<C>(board_id: i32, db: &C) -> Result<Self, SumidaError>
   where
     C: ConnectionTrait,

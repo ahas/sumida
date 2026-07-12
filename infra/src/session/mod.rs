@@ -3,6 +3,37 @@ pub mod dynamodb_store;
 #[cfg(feature = "session-store-redis")]
 pub mod redis_store;
 
+/// Build the session store selected by the active `session-store-*` feature.
+///
+/// This self-branches on the compile-time feature (same idiom as `infra::jwt`), so the caller
+/// (an app bin) just does `let store = session::new_store(&settings.session).await?;` and passes
+/// it to `api::layer::session::new(store)` — no store-picking `#[cfg]` in the app.
+/// Only the enabled backend's deps are linked, so there is no runtime-branch binary bloat.
+///
+/// The concrete return type differs per feature (`RedisStore` vs `DynamoDBStore`); both implement
+/// `SessionStore`, so it is returned as `impl SessionStore`.
+#[cfg(feature = "session-store-redis")]
+pub async fn new_store(
+  settings: &crate::settings::session::SessionSettings,
+) -> Result<impl tower_sessions::SessionStore + Clone, anyhow::Error> {
+  let redis = settings
+    .redis
+    .as_ref()
+    .ok_or_else(|| anyhow::anyhow!("missing `session.redis` in settings"))?;
+  Ok(redis_store::RedisSessionStore::new(redis).await?.store())
+}
+
+#[cfg(all(feature = "session-store-aws-dynamodb", not(feature = "session-store-redis")))]
+pub async fn new_store(
+  settings: &crate::settings::session::SessionSettings,
+) -> Result<impl tower_sessions::SessionStore + Clone, anyhow::Error> {
+  let dynamodb = settings
+    .dynamodb
+    .as_ref()
+    .ok_or_else(|| anyhow::anyhow!("missing `session.dynamodb` in settings"))?;
+  dynamodb_store::new(dynamodb).await
+}
+
 use axum::Json;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
