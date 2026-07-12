@@ -1,4 +1,3 @@
-pub mod api_key_hash;
 #[cfg(feature = "board")]
 pub mod board_system;
 #[cfg(feature = "file")]

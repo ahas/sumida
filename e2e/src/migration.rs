@@ -9,7 +9,6 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::init::Migration), //
       Box::new(entity::migration::file_system::Migration),
       Box::new(entity::migration::board_system::Migration),
-      Box::new(entity::migration::api_key_hash::Migration),
       Box::new(entity::migration::membership::Migration),
     ]
   }

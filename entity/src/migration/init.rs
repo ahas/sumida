@@ -1,4 +1,5 @@
 use ForeignKeyAction::*;
+use sea_orm::{FromQueryResult, Statement};
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::*;
 use serde_json::json;
@@ -725,6 +726,10 @@ impl MigrationTrait for Migration {
       .await?;
     attach_timestamp_auto_update(db, "mail_forms").await?;
 
+    // API 키는 blake3 해시로 저장/조회하는 것이 기본이다. 레거시(평문) 키가 있으면 해시로 정규화한다.
+    // fresh init에선 api_keys가 비어 있어 무해하고, 구버전 스키마에서 올라온 DB의 평문 키를 자가 치유한다.
+    hash_legacy_api_keys(db).await?;
+
     Ok(())
   }
 
@@ -758,4 +763,62 @@ impl MigrationTrait for Migration {
 
     Ok(())
   }
+}
+
+#[derive(FromQueryResult)]
+struct ApiKeyRow {
+  key: String,
+}
+
+/// blake3 해시처럼 보이면(64자 소문자 hex) 이미 변환된 것으로 간주한다.
+fn looks_hashed(s: &str) -> bool {
+  s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// 레거시 평문 API 키를 blake3 해시로 정규화한다(멱등).
+///
+/// 신규 코드(`api_key::hash_api_key`)는 키를 blake3 해시로 저장/조회한다. 이 함수는
+/// 평문으로 남아있는 키와, 그 키를 식별자로 쓰는 `access_policies."user"`(`api:<평문>`)를
+/// 함께 `api:<해시>`로 이전해 기존 키가 계속 동작하도록 한다.
+///
+/// - fresh init(빈 테이블)에선 아무것도 하지 않는다.
+/// - 이미 해시(64자 hex)인 행은 건너뛴다(코드 배포 후 생성된 키 보호).
+/// - 해싱은 단방향이라 되돌릴 수 없다.
+pub async fn hash_legacy_api_keys<C: ConnectionTrait>(db: &C) -> Result<(), DbErr> {
+  let backend = db.get_database_backend();
+
+  // 구버전 스키마로 올라온 DB(key_prefix 컬럼 부재)에서도 자립하도록 컬럼을 보장한다. init로 생성된
+  // DB엔 이미 있어 무해(IF NOT EXISTS).
+  db.execute(Statement::from_string(backend, "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_prefix VARCHAR"))
+    .await?;
+
+  let rows =
+    ApiKeyRow::find_by_statement(Statement::from_string(backend, "SELECT key FROM api_keys")).all(db).await?;
+
+  for row in rows {
+    let plaintext = row.key;
+    if looks_hashed(&plaintext) {
+      continue;
+    }
+    let hash = blake3::hash(plaintext.as_bytes()).to_hex().to_string();
+    let prefix: String = plaintext.chars().take(8).collect();
+
+    // 먼저 access_policies의 api:<평문> 식별자를 api:<해시>로 변환.
+    db.execute(Statement::from_sql_and_values(
+      backend,
+      r#"UPDATE access_policies SET "user" = $1 WHERE "user" = $2"#,
+      [format!("api:{hash}").into(), format!("api:{plaintext}").into()],
+    ))
+    .await?;
+
+    // api_keys.key(PK) 평문 → 해시. key_prefix = 평문 앞부분.
+    db.execute(Statement::from_sql_and_values(
+      backend,
+      "UPDATE api_keys SET key = $1, key_prefix = $2 WHERE key = $3",
+      [hash.into(), prefix.into(), plaintext.into()],
+    ))
+    .await?;
+  }
+
+  Ok(())
 }

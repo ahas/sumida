@@ -9,7 +9,6 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::init::Migration),
       Box::new(sumida::entity::migration::file_system::Migration),
       Box::new(sumida::entity::migration::board_system::Migration),
-      Box::new(sumida::entity::migration::api_key_hash::Migration),
       Box::new(sumida::entity::migration::membership::Migration),
     ]
   }
