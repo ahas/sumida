@@ -21,6 +21,8 @@ pub mod membership;
 pub mod monitoring;
 pub mod organization;
 pub mod role;
+#[cfg(feature = "system-settings")]
+pub mod system_settings;
 pub mod user;
 pub mod user_invitation;
 pub mod user_verification;

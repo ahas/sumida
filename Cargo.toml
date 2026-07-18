@@ -27,6 +27,8 @@ board = ["api/board"]
 file = ["api/file"]
 membership = ["api/membership"]
 mail-form = ["api/mail-form"]
+# 공용 운영 설정 — full-features 에 미포함(lab-app=full-aws 제외 유지). site-app/trainer 가 개별 enable.
+system-settings = ["api/system-settings"]
 full-features = ["board", "file", "membership", "mail-form"]
 
 aws-dynamodb = ["infra/aws-dynamodb"]

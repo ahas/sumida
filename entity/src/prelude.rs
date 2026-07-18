@@ -77,6 +77,13 @@ pub use super::roles::{
   ActiveModel as RolesActiveModel, Column as RolesColumn, Entity as Roles, Model as RolesModel,
   Relation as RolesRelation,
 };
+// System settings (feature = "system-settings")
+#[cfg(feature = "system-settings")]
+pub use super::system_settings::{
+  ActiveModel as SystemSettingsActiveModel, Column as SystemSettingsColumn,
+  Entity as SystemSettings, Model as SystemSettingsModel, Relation as SystemSettingsRelation,
+  SystemSettingDataType,
+};
 pub use super::user_invitations::{
   ActiveModel as UserInvitationsActiveModel, Column as UserInvitationsColumn, Entity as UserInvitations,
   Model as UserInvitationsModel, Relation as UserInvitationsRelation,

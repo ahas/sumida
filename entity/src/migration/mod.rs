@@ -6,3 +6,5 @@ pub mod helper;
 pub mod init;
 #[cfg(feature = "membership")]
 pub mod membership;
+#[cfg(feature = "system-settings")]
+pub mod system_settings;

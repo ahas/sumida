@@ -12,6 +12,8 @@ pub mod mail_forms;
 pub mod membership;
 pub mod organizations;
 pub mod roles;
+#[cfg(feature = "system-settings")]
+pub mod system_settings;
 pub mod user_invitations;
 pub mod user_prefs;
 pub mod user_verifications;
