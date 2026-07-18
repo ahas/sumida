@@ -4,6 +4,7 @@ use chrono::{Duration, Utc};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
+#[cfg(feature = "mail-form")]
 use infra::settings;
 use rand::RngExt;
 use sea_orm::{
@@ -86,6 +87,8 @@ impl<S: SumidaState> UserVerificationService<S> {
 
     // Do not reveal account existence in the response (enumeration prevention).
     // If there is no target, silently succeed without sending a code.
+    // (`user` is only read by the mail-form send below; the existence check itself must stay.)
+    #[cfg_attr(not(feature = "mail-form"), allow(unused_variables))]
     let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
       txn.rollback().await?;
       return Ok(());

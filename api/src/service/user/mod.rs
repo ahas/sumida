@@ -158,6 +158,9 @@ impl<S: SumidaState> UserService<S> {
     let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
       return Err(SumidaError::InvalidAccount);
     };
+    // 이메일 없음 검증은 mail-form 여부와 무관하게 유지한다(초대는 이메일 전제).
+    // `receiver` 는 mail-form 발송에서만 읽힌다.
+    #[cfg_attr(not(feature = "mail-form"), allow(unused_variables))]
     let Some(receiver) = user.email else {
       return Err(SumidaError::NoUserEmail(user_id));
     };
