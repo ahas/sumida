@@ -137,4 +137,44 @@ impl Entity {
     Self::update(active).exec(db).await?;
     Ok(())
   }
+
+  /// 없으면 생성(자동등록 기본 메타), 있으면 갱신 — 멱등. `set_value` 는 update-only(신규 key 는
+  /// NoData)라, 스테이지 trainer job id(`site-app.joy_job.<stage>`)처럼 서버가 런타임에 새로 등록하는
+  /// 설정은 이걸 쓴다(새 스테이지 추가 시 setting 행이 없어 set_value 가 실패하던 문제).
+  pub async fn upsert_value<C>(
+    key: &str,
+    value: Json,
+    data_type: SystemSettingDataType,
+    label: &str,
+    updated_by: Option<i32>,
+    db: &'_ C,
+  ) -> Result<(), SumidaError>
+  where
+    C: ConnectionTrait,
+  {
+    // 자동관리 setting(joy_job.<stage> 등)은 is_editable 체크를 우회해 서버가 직접 갱신한다
+    // — set_value 는 is_editable=false 를 거부하는데(사용자 편집 금지), 서버 자동 재등록은 허용해야 한다.
+    if let Some(existing) = Self::find_by_id(key).one(db).await? {
+      let mut active = existing.into_active_model();
+      active.value = Set(value);
+      active.updated_by = Set(updated_by);
+      active.updated_at = Set(chrono::Utc::now().fixed_offset());
+      Self::update(active).exec(db).await?;
+      return Ok(());
+    }
+    let active = ActiveModel {
+      key: Set(key.to_owned()),
+      value: Set(value),
+      data_type: Set(data_type),
+      label: Set(label.to_owned()),
+      description: Set(None),
+      min: Set(None),
+      max: Set(None),
+      is_editable: Set(false),
+      updated_at: Set(chrono::Utc::now().fixed_offset()),
+      updated_by: Set(updated_by),
+    };
+    Self::insert(active).exec(db).await?;
+    Ok(())
+  }
 }
