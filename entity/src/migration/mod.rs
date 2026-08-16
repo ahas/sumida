@@ -6,5 +6,7 @@ pub mod helper;
 pub mod init;
 #[cfg(feature = "membership")]
 pub mod membership;
+pub mod rebac;
+pub mod rebac_backfill;
 #[cfg(feature = "system-settings")]
 pub mod system_settings;
