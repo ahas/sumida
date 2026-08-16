@@ -4,6 +4,24 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to semantic versioning at the workspace level.
 
+## [Unreleased]
+
+### Security fixes
+
+- **An API key could be issued in someone else's name — full account takeover.** `CreateApiKey.user_id`
+  was taken from the request body and written verbatim, while `layer::user_guard::verify_api_key`
+  authorizes the session as the key's owner. `is_secured` defaults to false, so the session inherits
+  that owner's full permissions, `is_admin` included. Holding the coarse `api_key:create` capability
+  was therefore enough to mint a key bound to an administrator and use it. A non-admin may now only
+  issue a key for their own account; the request is refused rather than silently rewritten, so a
+  caller learns the request was wrong. `UpdateApiKey` carries no `user_id`, so there is no rebind path.
+- **`GET /files/stats` aggregated over every tenant's files.** It queried `Files::find()` directly
+  while its sibling `list` went through the access-policy-scoped `select()`. The aggregate now runs
+  over the same scoped row set.
+- **`FileService::delete` authorized against `read`.** It reused the read-scoped select helper to find
+  the row it was about to delete, so read-only access to a file permitted deleting it. It now
+  authorizes against `delete`.
+
 ## [0.2.0] - 2026-06-10
 
 A security-hardening release covering authentication/session, ReBAC authorization,

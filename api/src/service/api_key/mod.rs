@@ -86,6 +86,13 @@ impl<S: SumidaState> ApiKeyService<S> {
   /// Issues a new API key. The plaintext key is exposed **only once, via this return value**, and the DB stores only the hash.
   /// Policies (access_policies) are also bound to the hash identifier (`api:<hash>`) (looked up by hash on verify).
   pub async fn create(&self, data: CreateApiKey) -> Result<String, SumidaError> {
+    // 발급된 키로 인증하면 세션이 키 소유자의 권한을 그대로 상속하므로(layer::user_guard::verify_api_key),
+    // 타인 명의 발급을 허용하면 `api_key:create` 권한만으로 그 계정을 탈취할 수 있다.
+    // 세션 사용자로 조용히 덮어쓰지 않고 거부해, 호출자가 잘못된 요청임을 알 수 있게 한다.
+    if !self.session.profile.is_admin && data.user_id != self.session.profile.id {
+      return Err(SumidaError::NoAccessPermission);
+    }
+
     loop {
       let txn = self.state.db().begin().await?;
       let plaintext = match crate::util::random::generate_url_safe_string(64) {

@@ -238,7 +238,10 @@ impl<S: SumidaState> FileService<S> {
 
   pub async fn delete(&self, uuid: Uuid, data: DeleteFile) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let Some(file) = self.select(Files::find_by_id(uuid)).one(&txn).await? else {
+    // select()는 read 스코프라 읽기 권한만 있는 파일도 통과한다. 삭제는 delete 액션으로 인가한다.
+    self.try_access("delete", Files::find_by_id(uuid), &txn).await?;
+
+    let Some(file) = Files::find_by_id(uuid).one(&txn).await? else {
       return Err(SumidaError::NoData("File".to_string(), uuid.to_string()));
     };
 
@@ -263,7 +266,9 @@ impl<S: SumidaState> FileService<S> {
     use entity::fs::files::Column;
 
     let db = self.state.db();
-    let base_query = filter.apply(Files::find());
+    // list()와 동일한 접근 정책 스코프 위에서 집계한다. 스코프 없이 집계하면 합계/분포에
+    // 조회 권한이 없는 다른 사용자의 파일 메타데이터가 그대로 새어 나간다.
+    let base_query = filter.apply(self.select(Files::find()));
 
     let total_result = base_query
       .clone()
