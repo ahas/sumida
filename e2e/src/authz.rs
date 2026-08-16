@@ -46,8 +46,13 @@ pub enum Access {
   /// single-row equivalent of [`Access::Filtered`]; keep them distinct because which one an
   /// endpoint produces is itself a behaviour worth pinning.
   NotFound,
-  /// `401` — not authenticated at all. Separated from `Forbidden` so a broken login fixture does
-  /// not read as a passing authorization test.
+  /// `401`.
+  ///
+  /// Kept separate from [`Access::Forbidden`] so a broken login fixture cannot read as a passing
+  /// authorization test. Beware that it does **not** always mean "not logged in": some handlers
+  /// map a row their scope filtered out onto `401` rather than `404` — `GET /users/{id}`
+  /// (`controller/user.rs:37`) answers `InvalidAccount` when the scoped select returns nothing.
+  /// A case that expects this must say so and explain why, or it is asserting nothing.
   Unauthenticated,
   /// Anything else, carried verbatim so a failure message can say what actually happened.
   Other(u16),
@@ -106,6 +111,22 @@ impl Session {
     );
 
     Self { label, user_id: user.model.id, base, http }
+  }
+
+  /// Confirms this session is really authenticated.
+  ///
+  /// Some endpoints answer `401` for a row their scope excluded, so a case that reads a `401` as
+  /// "filtered" needs to have established that the session itself is sound. Call this once, then
+  /// the later `401` can only be about the row.
+  pub async fn assert_authenticated(&self) -> &Self {
+    let resp = self.request(Method::GET, "/me").send().await.expect("request failed");
+    assert!(
+      resp.status().is_success(),
+      "[{}] the session is not authenticated (GET /me returned {}) — any later 401 says nothing about authorization",
+      self.label,
+      resp.status()
+    );
+    self
   }
 
   /// A caller that never logged in. Used to pin that a route requires authentication at all.

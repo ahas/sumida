@@ -25,6 +25,19 @@ and this project adheres to semantic versioning at the workspace level.
   claims against the running server, including negative cases that must fail if the assertions
   ever go blind.
 
+- **Golden authorization tests** (`api/tests/authz_golden.rs`), written on that harness, recording
+  what the model does today so the pending rewrite can be *proved* equivalent instead of argued to
+  be. Cases are labelled: `pin_*` must survive the rewrite, `today_*` records a starting point the
+  rewrite is expected to change — pinning a defect under the name "golden" would be worse than no
+  test. Every case first grants the route-level `service` capability, because without it the gate
+  refuses and the row scope under test never runs; a case that passes on a `403` from the gate
+  would pass just as well with the scope deleted.
+
+  Recorded while writing them: `GET /users/{id}` answers **401 `InvalidAccount`** for a row its
+  scope excluded (`controller/user.rs:37` maps `get(..).ok_or(..)`), not 404 — so a `401` from that
+  endpoint says nothing about authentication, and `Session::assert_authenticated` exists to
+  establish the session is sound before a case reads one as "filtered".
+
 ### Security fixes
 
 - **An API key could be issued in someone else's name — full account takeover.** `CreateApiKey.user_id`
