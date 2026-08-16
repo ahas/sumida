@@ -1,6 +1,8 @@
 pub use reqwest;
 
 pub use super::ap_test_utils::{CrudTestData, PermissionTestConfig, PermissionTestSuite};
+pub use super::authz::{Access, DbState, ListProbe, Probe, ResourceId, Session};
+pub use super::org_tree::{Member, OrgTree, unrelated_org};
 pub use super::bootstrap;
 pub use super::client::{TestClient, use_client};
 pub use super::db::TestDb;

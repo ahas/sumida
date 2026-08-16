@@ -6,6 +6,25 @@ and this project adheres to semantic versioning at the workspace level.
 
 ## [Unreleased]
 
+### Added
+
+- **An authorization test harness that can see what a status code cannot** (`e2e::authz`,
+  `e2e::org_tree`). The pre-existing `ap_test_utils` suite asserts `resp.status()` and nothing
+  else, which is the blind spot an authorization audit of this codebase kept falling into: an
+  endpoint answering `200 OK` with another tenant's rows satisfies every assertion in it, and three
+  of the confirmed criticals were exactly that. The new harness asserts **which rows came back**,
+  by id and exactly, and **which layer refused** — a row filtered out by a query's own scope
+  (`200` without it, or `404`) is a different outcome from a handler check returning `403`, and a
+  test that accepts "denied somehow" stays green through a regression that deletes a list query's
+  scope while leaving the single-row check in place. `Session` also gives each caller its own
+  cookie jar; the shared one in `TestClient` meant logging in as a second user silently replaced
+  the first, so a "B cannot see A's row" test was really asking B about B. `OrgTree` builds a real
+  organization hierarchy — root / aunt / parent / subject / sibling / child / grandchild, plus
+  arbitrary-depth chains and re-parenting — deep enough that a walk which stops early or runs
+  toward ancestors instead of descendants shows up. `api/tests/authz_harness.rs` proves these
+  claims against the running server, including negative cases that must fail if the assertions
+  ever go blind.
+
 ### Security fixes
 
 - **An API key could be issued in someone else's name — full account takeover.** `CreateApiKey.user_id`
