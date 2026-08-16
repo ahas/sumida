@@ -19,10 +19,16 @@
 //! Every case therefore has to declare which of the two it expects. That is the point: a test
 //! that accepts "denied somehow" cannot tell a correct SQL filter from a handler check that
 //! happens to agree with it today.
+//!
+//! [`StreamProbe`] carries the same two questions to SSE endpoints, where they are harder. A
+//! firehose filters a live broadcast per event, so "was the request refused" answers nothing: the
+//! subscription is supposed to open. What has to be asserted is **which events reached this
+//! subscriber**, exactly, and that a refused subscription is not mistaken for an open one that
+//! delivered nothing.
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use reqwest::{Method, RequestBuilder, StatusCode, Url};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
@@ -189,6 +195,313 @@ impl Session {
 
     Probe { label: self.label.clone(), path: path.to_string(), status, access, body }
   }
+
+  /// Opens an SSE subscription and returns **as soon as the response headers arrive**, before any
+  /// of the body has been read.
+  ///
+  /// Returning at the headers is what makes the live cases possible. A handler subscribes to its
+  /// broadcast channel before it produces the response, so by the time this returns the subscriber
+  /// is attached and nothing published afterwards can be missed. A case can therefore open the
+  /// stream, *then* cause the events, and only then call [`StreamProbe::collect`] — which is the
+  /// only order in which "which events reached this subscriber" is a meaningful question.
+  ///
+  /// A refused subscription is read to the end here, because its body is a short error document
+  /// and a case needs it to tell which layer refused.
+  pub async fn probe_stream(&self, path: &str) -> StreamProbe {
+    let resp = self
+      .request(Method::GET, path)
+      .header("accept", "text/event-stream")
+      .send()
+      .await
+      .expect("request failed");
+    let status = resp.status();
+
+    let (resp, body) = if status.is_success() {
+      (Some(resp), Value::Null)
+    } else {
+      (None, resp.json().await.unwrap_or(Value::Null))
+    };
+
+    StreamProbe {
+      label: self.label.clone(),
+      path: path.to_string(),
+      status,
+      body,
+      resp,
+      buf: Vec::new(),
+      events: Vec::new(),
+      closed: false,
+    }
+  }
+}
+
+/// How long a [`StreamProbe`] listens, and what may stop it early.
+///
+/// Every stream assertion needs a bound. Without one, the failure mode this harness exists to
+/// catch — a filter that lets nothing through, or one that lets everything through and then goes
+/// quiet — hangs the suite instead of failing it.
+#[derive(Clone, Copy, Debug)]
+pub struct StreamWindow {
+  timeout: Duration,
+  stop_after: Option<usize>,
+}
+
+impl StreamWindow {
+  /// Listen for at most `timeout` and keep everything that arrives in it.
+  ///
+  /// This is the form an exactness assertion needs.
+  pub fn of(timeout: Duration) -> Self {
+    Self { timeout, stop_after: None }
+  }
+
+  /// Stop as soon as `n` events have arrived.
+  ///
+  /// Use it only when the case asks whether something gets through *at all*. Never combine it with
+  /// [`StreamProbe::assert_exactly`]: stopping at the n-th event cannot tell you that an
+  /// (n+1)-th — somebody else's — was not on its way, so the exactness would be an illusion.
+  pub fn stop_after(mut self, n: usize) -> Self {
+    self.stop_after = Some(n);
+    self
+  }
+}
+
+/// One event parsed out of an SSE stream.
+#[derive(Clone, Debug)]
+pub struct StreamEvent {
+  /// The `event:` name — `task:created`, `task:log`. Empty when the server sent none.
+  pub name: String,
+  /// The `data:` payload parsed as JSON. A payload that is not JSON is carried as a string.
+  pub data: Value,
+}
+
+/// A subscription to a stream endpoint, and the events it delivered.
+///
+/// The distinction that matters here is the one a status code cannot make: **the subscription was
+/// refused** and **the subscription opened and delivered nothing** are different outcomes. The
+/// first is a handler check; the second is a per-event filter doing its job — or an over-broad fix
+/// that closed the stream to its rightful subscriber too. A case has to say which it expects:
+/// [`Self::assert_refused`] for the first, [`Self::assert_opened`] plus [`Self::assert_empty`] for
+/// the second.
+pub struct StreamProbe {
+  label: String,
+  path: String,
+  status: StatusCode,
+  /// The refusal body. `Null` while the stream is open — the body is being streamed, not read.
+  body: Value,
+  resp: Option<reqwest::Response>,
+  buf: Vec<u8>,
+  events: Vec<StreamEvent>,
+  closed: bool,
+}
+
+impl StreamProbe {
+  pub fn status(&self) -> StatusCode {
+    self.status
+  }
+
+  /// The refusal body, for a case that needs to say **which** layer refused — two different
+  /// checks can both answer `403`.
+  pub fn body(&self) -> &Value {
+    &self.body
+  }
+
+  pub fn events(&self) -> &[StreamEvent] {
+    &self.events
+  }
+
+  /// The `event:` names received, in order.
+  pub fn names(&self) -> Vec<&str> {
+    self.events.iter().map(|e| e.name.as_str()).collect()
+  }
+
+  /// True once the server closed the stream on its own.
+  pub fn closed(&self) -> bool {
+    self.closed
+  }
+
+  /// The resource ids the subscriber actually received.
+  ///
+  /// Read out of each payload by the shapes the SSE endpoints in this codebase emit: the resource
+  /// itself (`{"id": …}`), a tagged envelope (`{"kind": …, "data": {"id": …}}`), and a log line
+  /// that names the task it belongs to (`{"taskId": …}`), in that order. A payload with none of
+  /// them contributes no id — assert on [`Self::events`] for those.
+  pub fn ids(&self) -> BTreeSet<String> {
+    self.events.iter().filter_map(|e| event_id(&e.data)).collect()
+  }
+
+  /// Asserts the subscription was established.
+  ///
+  /// Call it before collecting. A stream that was refused collects nothing, and "no events
+  /// arrived" would then read as a passing filter test when the truth is that no subscription ever
+  /// existed.
+  #[track_caller]
+  pub fn assert_opened(self) -> Self {
+    assert!(
+      self.resp.is_some(),
+      "[{}] {} — the subscription was refused with HTTP {}, so it delivered nothing for a reason \
+       that has nothing to do with per-event filtering. body: {}",
+      self.label,
+      self.path,
+      self.status,
+      truncate(&self.body)
+    );
+    self
+  }
+
+  /// Asserts the subscription was refused outright, and by which layer.
+  #[track_caller]
+  pub fn assert_refused(self, expected: Access) -> Self {
+    let actual = Access::from_status(self.status).unwrap_or(Access::Visible);
+    assert_eq!(
+      actual, expected,
+      "[{}] {} — expected the subscription to be refused with {:?}, got {:?} (HTTP {}). body: {}",
+      self.label,
+      self.path,
+      expected,
+      actual,
+      self.status,
+      truncate(&self.body)
+    );
+    self
+  }
+
+  /// Listens on an open subscription for `window` and keeps whatever arrived.
+  ///
+  /// Can be called more than once to listen again over a later window; events accumulate.
+  pub async fn collect(mut self, window: StreamWindow) -> Self {
+    // 거절된 구독에 대고 collect 하면 무엇을 단언하든 0건이 나온다. 조용히 통과시키지 않는다.
+    let mut resp = self.resp.take().unwrap_or_else(|| {
+      panic!(
+        "[{}] {} — collect() on a subscription that was refused with HTTP {}; assert_refused() is \
+         the assertion this case wants",
+        self.label, self.path, self.status
+      )
+    });
+
+    let deadline = Instant::now() + window.timeout;
+
+    loop {
+      if window.stop_after.is_some_and(|n| self.events.len() >= n) {
+        break;
+      }
+      let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+        break;
+      };
+
+      match tokio::time::timeout(left, resp.chunk()).await {
+        // 창이 닫혔다. 스트림 테스트의 정상 종료 조건이다.
+        Err(_) => break,
+        Ok(Ok(None)) => {
+          self.closed = true;
+          break;
+        }
+        Ok(Ok(Some(chunk))) => {
+          self.buf.extend_from_slice(&chunk);
+          drain_sse_events(&mut self.buf, &mut self.events);
+        }
+        Ok(Err(e)) => {
+          panic!("[{}] {} — reading the stream failed: {e}", self.label, self.path)
+        }
+      }
+    }
+
+    self.resp = Some(resp);
+    self
+  }
+
+  /// Asserts the subscriber received **exactly** these ids — no more, no fewer.
+  ///
+  /// Exactness is the whole assertion, and on a broadcast it is the only one worth making: a
+  /// firehose that correctly delivers the caller's own events while also delivering every other
+  /// tenant's satisfies "I got mine".
+  #[track_caller]
+  pub fn assert_exactly(self, expected: &[&dyn ResourceId]) -> Self {
+    let got = self.ids();
+    let want: BTreeSet<String> = expected.iter().map(|i| i.as_id()).collect();
+    if got != want {
+      let extra: Vec<_> = got.difference(&want).cloned().collect();
+      let missing: Vec<_> = want.difference(&got).cloned().collect();
+      panic!(
+        "[{}] {} delivered the wrong events.\n  leaked (received, must not be): {:?}\n  hidden (not received, must be): {:?}\n  got: {:?}\n  want: {:?}\n  event names: {:?}",
+        self.label,
+        self.path,
+        extra,
+        missing,
+        got,
+        want,
+        self.names()
+      );
+    }
+    self
+  }
+
+  /// Asserts the subscription opened and then delivered nothing.
+  ///
+  /// Distinct from [`Self::assert_refused`] on purpose — see the type's own documentation.
+  #[track_caller]
+  pub fn assert_empty(self) -> Self {
+    assert!(
+      self.events.is_empty(),
+      "[{}] {} — expected an open subscription to deliver nothing, got {} event(s): {:?}",
+      self.label,
+      self.path,
+      self.events.len(),
+      self.names()
+    );
+    self
+  }
+}
+
+/// Pulls every complete blank-line-terminated block out of `buf`, leaving any partial tail behind.
+///
+/// A chunk boundary can land anywhere, including mid-event and mid-UTF-8-sequence, so only whole
+/// blocks are decoded. axum's SSE writer terminates blocks with `\n\n`.
+fn drain_sse_events(buf: &mut Vec<u8>, out: &mut Vec<StreamEvent>) {
+  while let Some(end) = buf.windows(2).position(|w| w == b"\n\n").map(|i| i + 2) {
+    let block: Vec<u8> = buf.drain(..end).collect();
+    if let Some(event) = parse_sse_block(&String::from_utf8_lossy(&block)) {
+      out.push(event);
+    }
+  }
+}
+
+/// Parses one SSE block. Returns `None` for a block that carries no event — a keep-alive comment.
+fn parse_sse_block(block: &str) -> Option<StreamEvent> {
+  let mut name = String::new();
+  let mut data = String::new();
+
+  for line in block.lines() {
+    // 빈 줄과 `:` 로 시작하는 주석(keep-alive)은 이벤트가 아니다.
+    if line.is_empty() || line.starts_with(':') {
+      continue;
+    }
+    let (field, value) = line.split_once(':').unwrap_or((line, ""));
+    let value = value.strip_prefix(' ').unwrap_or(value);
+    match field {
+      "event" => name = value.to_string(),
+      "data" => {
+        if !data.is_empty() {
+          data.push('\n');
+        }
+        data.push_str(value);
+      }
+      _ => {}
+    }
+  }
+
+  if name.is_empty() && data.is_empty() {
+    return None;
+  }
+  let data = serde_json::from_str(&data).unwrap_or(Value::String(data));
+  Some(StreamEvent { name, data })
+}
+
+fn event_id(data: &Value) -> Option<String> {
+  data
+    .get("id")
+    .or_else(|| data.get("data").and_then(|d| d.get("id")))
+    .or_else(|| data.get("taskId"))
+    .map(id_to_string)
 }
 
 /// The outcome of a single-resource request.
@@ -241,6 +554,12 @@ pub struct ListProbe {
 impl ListProbe {
   pub fn ids(&self) -> &BTreeSet<String> {
     &self.ids
+  }
+
+  /// The raw body — for a refusal, the error document that says **which** check refused. Two
+  /// different checks can both answer `403`.
+  pub fn body(&self) -> &Value {
+    &self.body
   }
 
   /// Asserts the response contains **exactly** these ids — no more, no fewer.
