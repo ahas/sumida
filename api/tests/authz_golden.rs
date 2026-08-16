@@ -17,8 +17,12 @@
 //!
 //! Requires a real Postgres — every scope under test lives in SQL.
 
+use api::util::random::generate_url_safe_string;
 use e2e::prelude::*;
+use entity::prelude::*;
 use reqwest::Method;
+use sea_orm::ActiveValue::Set;
+use sea_orm::EntityTrait;
 use serde_json::json;
 
 // ─── regressions: the three sumida fixes from 67857ef ────────────────────────
@@ -286,35 +290,108 @@ async fn pin_child_row_by_id_does_not_bypass_its_parent() {
 /// ```
 ///
 /// The rewrite replaces per-tuple `deny` with an `exclusion` in the rule, which expresses the same
-/// thing — but only if the rule actually subtracts the block. This test is what makes that
-/// concrete: if the exclusion is forgotten, an author walks through their own block and this goes
-/// red.
+/// thing — but only if the rule actually subtracts the block. This is what makes that concrete: if
+/// the exclusion is forgotten, an author walks through their own block and this goes red.
 ///
-/// Written against the current model's `deny` row so it runs today; after the rewrite the setup
-/// changes to writing a `blocked` relation and the assertion stays identical.
+/// Written against a **real board and a real post the caller authored**, so the ownership branch
+/// is genuinely taken. An earlier version of this case pointed at a post id that did not exist and
+/// "passed" on a 404 — proving nothing at all.
 #[tokio::test]
 async fn pin_a_block_is_not_circumvented_by_authorship() {
   let mock = Mock::new().await;
   let db = infra::db::connect().await;
 
   let author = TestUser::create(&db).await.expect("author");
-  let session = Session::login(mock.server.addr, &author, "author who is blocked").await;
 
-  // 작성자에게 소유 권한을 주고, 동시에 게시판 수준에서 차단한다.
-  e2e::ap_test_utils::create_ap(&db, &author, "board_post", "*", vec!["update".into()], "allow")
-    .await
-    .expect("grant post ownership");
-  e2e::ap_test_utils::create_ap(&db, &author, "board", "*", vec!["update".into()], "deny")
-    .await
-    .expect("block at board level");
+  // 게시판 그룹 → 게시판. 두 단계가 있어야 group/board/owner 세 갈래가 모두 평가된다.
+  let group_id = BoardGroups::insert(entity::bps::board_groups::ActiveModel {
+    name: Set(format!("g-{}", generate_url_safe_string(6).unwrap())),
+    ..Default::default()
+  })
+  .exec(&db)
+  .await
+  .unwrap()
+  .last_insert_id;
 
-  let probe = session
-    .probe_write(Method::PATCH, "/board-posts/1", Some(&json!({ "title": "edited" })))
+  let board_id = Boards::insert(entity::bps::boards::ActiveModel {
+    group_id: Set(Some(group_id)),
+    name: Set(format!("b-{}", generate_url_safe_string(6).unwrap())),
+    is_enabled: Set(true),
+    max_file_size: Set(0),
+    max_file_count: Set(0),
+    ..Default::default()
+  })
+  .exec(&db)
+  .await
+  .unwrap()
+  .last_insert_id;
+
+  // 작성자에게 글을 쓸 권한을 전부 준다.
+  for (ns, object) in [
+    ("board_post", "service".to_string()),
+    ("board", "service".to_string()),
+    ("board", board_id.to_string()),
+    ("board_group", group_id.to_string()),
+  ] {
+    e2e::ap_test_utils::create_ap(
+      &db,
+      &author,
+      ns,
+      &object,
+      vec!["create".into(), "read".into(), "update".into()],
+      "allow",
+    )
+    .await
+    .expect("grant");
+  }
+
+  let session = Session::login(mock.server.addr, &author, "author").await;
+  session.assert_authenticated().await;
+
+  let created = session
+    .probe_write(
+      Method::POST,
+      "/board-posts",
+      Some(&json!({
+        "boardId": board_id, "title": "mine", "content": "<p>x</p>",
+        "contentType": "text/html", "kind": "article", "status": "published",
+        "contentVisibility": "public"
+      })),
+    )
+    .await;
+  let post_id = created.body()["id"].as_i64().expect("the fixture must create a real post") as i32;
+
+  // 차단 전: 작성자는 자기 글을 고칠 수 있다. 이 확인이 없으면 아래 단언이
+  // "원래 못 고쳤다" 로도 통과해 버린다.
+  session
+    .probe_write(Method::PATCH, &format!("/board-posts/{post_id}"), Some(&json!({ "title": "edited" })))
+    .await
+    .assert(Access::Visible);
+
+  // 이제 게시판 수준에서 차단한다. 소유권은 그대로다.
+  e2e::ap_test_utils::create_ap(
+    &db,
+    &author,
+    "board",
+    &board_id.to_string(),
+    vec!["update".into()],
+    "deny",
+  )
+  .await
+  .expect("block at board level");
+
+  let after = session
+    .probe_write(Method::PATCH, &format!("/board-posts/{post_id}"), Some(&json!({ "title": "blocked" })))
     .await;
 
   assert_ne!(
-    probe.access(),
+    after.access(),
     Access::Visible,
     "a board-level block was circumvented by post ownership — the absolute-deny property is gone"
   );
+
+  // 응답만이 아니라 행이 실제로 안 바뀌었는지까지 본다.
+  DbState::new(&db)
+    .assert_absent("board_posts", &format!("id = {post_id} AND title = 'blocked'"))
+    .await;
 }
