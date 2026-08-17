@@ -12,8 +12,12 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::membership::Migration),
       // ReBAC data layer. After board_system — board_group_closure references board_groups.
       Box::new(sumida::entity::migration::rebac::Migration),
-      // Last: it translates whatever access_policies rows the migrations above have seeded.
+      // Additive columns the compiled rule set reads (boards.organization_id, idx_users__is_admin).
+      Box::new(sumida::entity::migration::rebac_columns::Migration),
+      // Translates whatever access_policies rows the migrations above have seeded.
       Box::new(sumida::entity::migration::rebac_backfill::Migration),
+      // Last: the mirror keeps the two stores in step for every policy written after the backfill.
+      Box::new(sumida::entity::migration::rebac_mirror::Migration),
     ]
   }
 }

@@ -1,0 +1,171 @@
+// trainer's rule set — design §5.5.
+//
+// PENDING SCHEMA (design §3.4, §3.5). Four columns these rules read do not exist yet, and trainer folds
+// its schema changes into `src/migration/joy_service_init.rs` rather than into a sumida migration,
+// so they land when trainer registers. Until then `Authz::boot` reports every definition below as
+// drift-blocked against a trainer database and refuses to activate it — which is the intended order:
+// no rule goes live before the column it reads.
+//
+//   tasks.owner_user_id           generated from owner_key  ('user:<id>' → <id>)
+//   tasks.owner_scope             generated from owner_key  ('<scope>:user:<extid>' → <scope>)
+//   jobs.owner_key   + projections   `jobs` has no owner column of any kind, so R3 is inexpressible
+//                                    for jobs today
+//   agents.organization_id           `agent_clusters` is M:N, so an agent's organization cannot be
+//                                    derived from its clusters
+//   cloud_instances.owner_user_id generated from owner_key
+//
+// `tasks.owner_key` itself is **not** repurposed and **not** rewritten: it is load-bearing for
+// scheduler fairness (`PARTITION BY owner_key`, `task_dispatch_cursor`). The rules read it as it is.
+
+// `owner: user = column(tasks.owner_key -> subject_key)` is the third derived form: the column
+// already holds a canonical subject key, so the predicate is `tasks.owner_key = ANY($1)` with no
+// join and no cast.
+//
+// Three owner shapes, three outcomes, all falling out of the rules:
+//
+//   user:7               owner_user_id=7, owner_scope=NULL — user 7; managers of user 7's
+//                        organization and its ancestors; service operators; platform admin
+//   svc:site-app:user:42  owner_user_id=NULL, owner_scope='svc:site-app' — holders of
+//                        `delegation_scope:svc:site-app#operator` only. No organization tier: there
+//                        is no sumida user behind the key, so `creator_org` is NULL and the branch
+//                        is statically dead
+//   system               both NULL — service operators and platform admin only, identical to today
+definition joy_task on tasks.id uuid {
+  relation owner:       user             = column(tasks.owner_key -> subject_key)
+  relation scope:       delegation_scope = column(tasks.owner_scope -> delegation_scope
+                                                  where tasks.owner_scope IS NOT NULL)
+  relation creator_org: organization     = column(tasks.owner_user_id -> organization
+                                                  via users.organization_id)
+
+  relation viewer:   user | role#member | organization#member | apikey
+  relation operator: user | role#member | organization#member | apikey
+
+  permission view   = owner | viewer | operator | scope->assert
+                    | creator_org->view_task | service:trainer:task->operate_read
+  permission edit   = owner | operator | scope->assert
+                    | creator_org->manage_task | service:trainer:task->operate_update
+  permission remove = owner | operator | scope->assert
+                    | creator_org->manage_task | service:trainer:task->operate_delete
+  permission create = service:trainer:task->can_create
+  permission grant  = creator_org->manage_task | service:trainer:task->operate_update
+}
+
+definition joy_job on jobs.id int {
+  relation owner:       user         = column(jobs.owner_key -> subject_key)
+  relation creator_org: organization = column(jobs.owner_user_id -> organization
+                                              via users.organization_id)
+
+  permission view   = owner | creator_org->view_job   | service:trainer:job->operate_read
+  permission edit   = owner | creator_org->manage_job | service:trainer:job->operate_update
+  permission remove = owner | creator_org->manage_job | service:trainer:job->operate_delete
+  // POST /jobs/{id}/launch is gated `trainer:task create` at the route (`controller/job.rs:115`);
+  // the object check is on the job.
+  permission launch = edit
+}
+
+definition joy_agent on agents.id int {
+  relation org: organization = column(agents.organization_id -> organization
+                                      where agents.organization_id IS NOT NULL)
+  relation viewer:   user | role#member | organization#member | apikey
+  relation operator: user | role#member | organization#member | apikey
+
+  permission view   = viewer | operator | org->view_agent   | service:trainer:agent->operate_read
+  permission edit   = operator | org->manage_agent | service:trainer:agent->operate_update
+  permission remove = operator | org->manage_agent | service:trainer:agent->operate_delete
+}
+
+// `clusters.organization_id` exists, and is currently read by no query at all. It becomes the
+// organization edge.
+definition joy_cluster on clusters.id int {
+  relation org: organization = column(clusters.organization_id -> organization
+                                      where clusters.organization_id IS NOT NULL)
+  relation viewer:   user | role#member | organization#member | apikey
+  relation operator: user | role#member | organization#member | apikey
+
+  permission view   = viewer | operator | org->view_cluster   | service:trainer:cluster->operate_read
+  permission edit   = operator | org->manage_cluster | service:trainer:cluster->operate_update
+  permission remove = operator | org->manage_cluster | service:trainer:cluster->operate_delete
+}
+
+// `term:shadow:attach` (trainer `5cc8f42`) is the `shadow` permission, distinct from `attach`:
+// attaching to your own session and shadowing somebody else's are different powers with different
+// rules. Previously both went through one `can_access_all(caller, action)`.
+definition joy_terminal_session on terminal_sessions.id uuid {
+  relation owner:       user         = column(terminal_sessions.user_id -> user)
+  relation agent:       joy_agent    = column(terminal_sessions.agent_id -> joy_agent)
+  relation creator_org: organization = column(terminal_sessions.user_id -> organization
+                                              via users.organization_id)
+
+  permission view   = owner | agent->view | creator_org->view_terminal
+                    | service:trainer:terminal-session->operate_read
+  permission remove = owner | agent->edit | creator_org->manage_terminal
+                    | service:trainer:terminal-session->operate_delete
+  permission attach = owner | service:trainer:terminal-session->operate_update
+  permission shadow = agent->edit | creator_org->manage_terminal
+                    | service:trainer:terminal-session->operate_update
+}
+
+definition joy_cloud_instance on cloud_instances.id uuid {
+  relation owner:       user         = column(cloud_instances.owner_key -> subject_key
+                                              where cloud_instances.owner_key IS NOT NULL)
+  relation creator_org: organization = column(cloud_instances.owner_user_id -> organization
+                                              via users.organization_id)
+
+  permission view   = owner | creator_org->view_cloud   | service:trainer:cloud->operate_read
+  permission edit   = owner | creator_org->manage_cloud | service:trainer:cloud->operate_update
+  permission remove = owner | creator_org->manage_cloud | service:trainer:cloud->operate_delete
+}
+
+// Cloud credentials, templates and capacity providers hold secrets and have no owner, so they are
+// service-tier only. resource_id is 'credential:3', 'template:9', …
+definition joy_cloud_config {
+  permission view   = service:trainer:cloud->operate_read
+  permission edit   = service:trainer:cloud->operate_update
+  permission remove = service:trainer:cloud->operate_delete
+}
+
+// Containment children — the trainer half of the seven hand-implemented delegations. Three of the
+// audit's confirmed criticals were a missing parent check on exactly these; a missing check is now
+// a **missing definition**, which fails validation rule 8 at boot rather than being a silently
+// absent `if`.
+definition joy_task_log on task_logs.id int {
+  relation task: joy_task = column(task_logs.task_id -> joy_task)
+  permission view = task->view
+}
+
+definition joy_task_metric on task_metrics.id int {
+  relation task: joy_task = column(task_metrics.task_id -> joy_task)
+  permission view = task->view
+}
+
+definition joy_task_interrupt on task_interrupts.id int {
+  relation task: joy_task = column(task_interrupts.task_id -> joy_task)
+  permission view   = task->view
+  permission create = task->edit
+}
+
+definition joy_terminal_log on terminal_session_logs.id int {
+  relation session: joy_terminal_session
+    = column(terminal_session_logs.session_id -> joy_terminal_session)
+  permission view = session->view
+}
+
+// ─── the namespace inventory ─────────────────────────────────────────────────────────────────
+//
+// Enumerated from trainer/server/src:
+//   grep -rn 'service_ap!' → trainer:agent(c,r,u,d) trainer:cloud(c,r,u,d) trainer:cluster(c,r,u,d)
+//                            trainer:dashboard(r) trainer:job(c,r,u,d) trainer:system-settings(r,u)
+//                            trainer:task(c,r,u,d) trainer:terminal-session(r,d)
+//   grep -rn 'ap::ns('     → trainer:task (task/mod.rs:49), trainer:cloud (cloud/crud.rs:124),
+//                            trainer:terminal-session (terminal/mod.rs:172),
+//                            trainer:delegate (identity/mod.rs:46) — no route gate, a pure capability
+
+namespace trainer:agent            service = joy_agent
+namespace trainer:cloud            service = joy_cloud_instance
+namespace trainer:cluster          service = joy_cluster
+namespace trainer:dashboard        service
+namespace trainer:job              service = joy_job
+namespace trainer:system-settings  service
+namespace trainer:task             service = joy_task
+namespace trainer:terminal-session service = joy_terminal_session
+namespace trainer:delegate                 = delegation_scope

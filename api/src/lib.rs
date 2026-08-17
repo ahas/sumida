@@ -1,3 +1,6 @@
+/// Relational Zanzibar — the replacement for `util::ap`. Compiled and boot-validated, and called by
+/// nothing yet, on purpose: see the module docs.
+pub mod authz;
 pub mod capability;
 pub mod controller;
 pub mod layer;

@@ -8,5 +8,7 @@ pub mod init;
 pub mod membership;
 pub mod rebac;
 pub mod rebac_backfill;
+pub mod rebac_columns;
+pub mod rebac_mirror;
 #[cfg(feature = "system-settings")]
 pub mod system_settings;

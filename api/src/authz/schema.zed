@@ -1,0 +1,398 @@
+// sumida's rule set — design §5.1 to §5.4.
+//
+// Read this file, not `ap.rs`, to find out who may do what. Every rule that used to live at a call
+// site as an `if session.profile.is_admin` or an `ap::chain()` is here, which is the point: a rule
+// in one place cannot be forgotten by the next caller.
+//
+// Nothing evaluates any of this yet. The definitions exist so the compiler has something to compile
+// and boot validation has something to check.
+//
+// Conventions:
+//   · `on <table>.<col> [int|uuid]`  where a definition’s objects live, and what type its id is.
+//                               Omitted when the objects are named by string alone (`service`,
+//                               `platform`, `delegation_scope`).
+//   · definition names use `_`  so a name is a valid Rust identifier and an unambiguous SQL
+//                               literal. The *service object id* keeps today's colon form.
+//   · `where` clauses are      column-qualified, because a derivation can be emitted inside a
+//                               subquery where an unqualified name would bind to the wrong table.
+
+// ─── terminal subject types ──────────────────────────────────────────────────────────────────
+
+definition user   { }
+definition apikey { }   // apikey:<blake3 hash>, the same hash `access_policies."user"` held as `api:<hash>`
+
+// ─── R1 ──────────────────────────────────────────────────────────────────────────────────────
+
+// Exactly one object: platform:root.
+//
+// `flagged` keeps `users.is_admin` as the operational source of truth, so the admin user screen is
+// unchanged — while `admin` makes platform administration grantable without touching the `users`
+// table, which today is only expressible as the `* | * | * | {*}` catch-all.
+//
+// The consequence that matters: the flag is now reachable only through the subject set, so a
+// **secured API key bound to an admin no longer carries administrative power**. `who()` already got
+// that right; the ~55 direct `session.profile.is_admin` reads got it wrong. Here there is nothing to
+// get wrong, because there is no direct read on an authorization path.
+definition platform {
+  relation admin:   user | role#member
+  relation flagged: user = column(users.id -> user where users.is_admin)
+
+  permission superuser = admin | flagged
+  permission grant     = superuser
+}
+
+// ─── the route-gate tier ─────────────────────────────────────────────────────────────────────
+
+// resource_id is today's namespace string, colons included: `service:user`, `service:trainer:task`,
+// `service:lab-app:site`. `resource_type` and `resource_id` are separate columns, so the colons are
+// inert — and the `/me/access-policies` compatibility payload stays byte-identical for the CASL
+// client, which builds `can(action, `${namespace}:${object}`)`.
+//
+// One deliberate semantic change, stated plainly. Today `_build_object_condition` (`ap.rs:18`) ORs
+// `object = '*'` unconditionally, so an `object='*'` row also satisfies the route gate. Here
+// `op_read` grants the object-wide power *and* implies the route gate, but a route-gate grant
+// (`read`) does **not** grant object-wide power. That is a narrowing, in the safe direction, and it
+// is what makes "let Jiwon see everyone's tasks" a different grant from "let Jiwon use the task API".
+definition service {
+  // route-gate tier — what `service_ap!` checks (object = 'service' today)
+  relation create: user | role#member | organization#member | apikey
+  relation read:   user | role#member | organization#member | apikey
+  relation update: user | role#member | organization#member | apikey
+  relation delete: user | role#member | organization#member | apikey
+
+  // object-wide tier — what `object = '*'` used to mean
+  relation op_create: user | role#member | organization#member | apikey
+  relation op_read:   user | role#member | organization#member | apikey
+  relation op_update: user | role#member | organization#member | apikey
+  relation op_delete: user | role#member | organization#member | apikey
+  relation operator:  user | role#member | organization#member | apikey
+
+  permission operate_create = op_create | operator | platform:root->superuser
+  permission operate_read   = op_read   | operator | platform:root->superuser
+  permission operate_update = op_update | operator | platform:root->superuser
+  permission operate_delete = op_delete | operator | platform:root->superuser
+
+  permission can_create = create | operate_create
+  permission can_read   = read   | operate_read
+  permission can_update = update | operate_update
+  permission can_delete = delete | operate_delete
+
+  permission grant = operator | platform:root->superuser
+}
+
+// Replaces `trainer:delegate` with action `assert`. The object id is compared for equality and nothing
+// else, which is the property that stops lab-app asserting site-app's scope.
+definition delegation_scope {
+  relation operator: user | role#member | apikey
+
+  permission assert = operator | platform:root->superuser
+  permission grant  = platform:root->superuser
+}
+
+// ─── R2: organizations, roles, users ─────────────────────────────────────────────────────────
+
+// `manager^` reads "a `manager` tuple on this organization **or on any ancestor of it**" — R2's
+// direction: down, never up, never sideways. `manage` unions into every `manage_<family>`, so the
+// single tuple `organization:100#manager@user:9` makes user 9 manager of everything in org 100 and
+// everything beneath it. That one tuple is the whole of R2 for that person.
+//
+// `scope <family>` expands to three stored relations and three permissions (see `parse.rs`). Three
+// tiers, not one, because the old model's per-action organization grants have to survive exactly:
+// `{read}` is a viewer, `{read,update}` an editor, `{read,update,owner}` a manager.
+//
+// Deliberately **not** declared: `scope site`, `scope asset`. lab-app has no organization reach on
+// sites or downloadable assets today, and declaring an unused scope would let someone grant a tuple
+// that silently widens production.
+definition organization on organizations.id int {
+  closure parent via org_closure
+
+  relation parent: organization = column(organizations.parent_id -> organization
+                                         where organizations.parent_id IS NOT NULL)
+  relation member: user         = column(users.id -> user of users.organization_id)
+
+  relation manager: user | role#member | organization#member | apikey
+
+  scope user   scope subscription  scope board  scope file
+  scope task   scope job           scope agent  scope cluster
+  scope cloud  scope terminal
+  scope project                                   // site-app
+  scope ai_model                                  // lab-app
+
+  // `credit` is written out rather than declared with `scope`, because it needs one extra branch.
+  // `CreditService::authorize_use` (`membership/credit/mod.rs:88`) short-circuits on
+  // `OwnerKind::Organization if session.profile.organization.id == owner_id` — a plain member of an
+  // organization may spend that organization's credit. That is `member`, and `view_credit` has to
+  // keep it or the migration takes a capability away from every ordinary account.
+  relation credit_viewer:  user | role#member | organization#member | apikey
+  relation credit_editor:  user | role#member | organization#member | apikey
+  relation credit_manager: user | role#member | organization#member | apikey
+
+  permission view_credit   = credit_viewer^ | edit_credit | member
+  permission edit_credit   = credit_editor^ | manage_credit
+  permission manage_credit = credit_manager^ | manage
+
+  permission manage = manager^
+  permission view   = member | manage | service:organization->operate_read
+  permission edit   = manage | service:organization->operate_update
+  permission remove = manage | service:organization->operate_delete
+  permission grant  = manage
+}
+
+definition role on roles.id int {
+  relation member: user = column(users.id -> user of users.role_id)
+  relation admin:  user | role#member | organization#member
+
+  permission view  = admin | service:role->operate_read
+  permission edit  = admin | service:role->operate_update
+  permission grant = admin | service:role->operate_update
+}
+
+// The *object* side of a user row. `user` stays the subject type; this is "may I act on that
+// person". `UserService::update`'s `org:user` branch (`user/mod.rs:111`) becomes
+// `sumida_user:<id>#edit`, and the per-row recursive CTE it used is gone.
+definition sumida_user on users.id int {
+  relation org:     organization = column(users.organization_id -> organization)
+  relation manager: user | role#member | organization#member | apikey
+
+  permission view   = manager | org->manage_user | service:user->operate_read
+  permission edit   = manager | org->manage_user | service:user->operate_update
+  permission remove = manager | org->manage_user | service:user->operate_delete
+  permission grant  = org->manage_user
+}
+
+// ─── boards ──────────────────────────────────────────────────────────────────────────────────
+
+definition board_group on board_groups.id int {
+  closure parent via board_group_closure
+
+  relation parent: board_group = column(board_groups.parent_id -> board_group
+                                        where board_groups.parent_id IS NOT NULL)
+
+  relation owner:   user | role#member | organization#member | apikey
+  relation editor:  user | role#member | organization#member | apikey
+  relation viewer:  user | role#member | organization#member | apikey
+  relation blocked: user | role#member | organization#member | apikey
+
+  permission own    = owner^ | service:board_group->operate_delete
+  permission edit   = (editor^ | own)  - blocked^
+  permission view   = (viewer^ | edit) - blocked^
+  permission create = edit
+  permission grant  = own
+}
+
+// The `board_group` AND `board` composition is **preserved, not converted to a union**. It is what
+// `board_post/mod.rs:406-411` (create) and `:739-744` (list) actually do, and the grammar admits
+// intersection, so there is no reason to change the semantics. `editor_or_own_here` and
+// `viewer_or_edit_here` are the local-only halves, named so the intersection reads as "the group
+// permits it **and** this board permits it" — exactly how `ApChain` composes today.
+//
+// `org->manage_board` is dead when `boards.organization_id IS NULL`. That is how a public-board
+// deployment opts out of organization scoping with no config flag; a public board is one tuple,
+// `board:7#viewer@user:*`.
+definition board on boards.id int {
+  relation group: board_group  = column(boards.group_id -> board_group
+                                        where boards.group_id IS NOT NULL)
+  relation org:   organization = column(boards.organization_id -> organization
+                                        where boards.organization_id IS NOT NULL)
+
+  relation owner:   user | role#member | organization#member | apikey
+  relation editor:  user | role#member | organization#member | apikey | user:*
+  relation viewer:  user | role#member | organization#member | apikey | user:*
+  relation blocked: user | role#member | organization#member | apikey
+
+  permission editor_or_own_here = editor | own
+  permission viewer_or_edit_here = viewer | edit
+
+  permission own    = owner | org->manage_board | service:board->operate_delete
+  permission edit   = (editor | own | (group->edit & editor_or_own_here))
+                    - (blocked | group->blocked)
+  permission view   = (viewer | edit | (group->view & viewer_or_edit_here))
+                    - (blocked | group->blocked)
+  permission create = edit
+  permission grant  = own
+}
+
+definition board_topic on board_topics.id int {
+  relation board: board = column(board_topics.board_id -> board)
+
+  permission view   = board->view
+  permission edit   = board->edit
+  permission create = board->create
+  permission remove = board->edit
+  permission grant  = board->own
+}
+
+// `authorize_post_mutation` (`board_post/mod.rs:465-500`) transcribed:
+//
+//     allowed = (group_allow && board_allow) || owner_allow
+//     denied  = group_deny  || board_deny   || owner_deny
+//     result  = allowed && !denied
+//
+// `board->edit` already carries the `group & board` intersection, and the subtrahend is a union.
+// The exclusion binds outside the whole union, so authorship cannot route around a block — and
+// because it is in the rule rather than at a call site, the next caller cannot forget it.
+//
+// `author` derives from `board_posts.user_id`, which create already sets. The `ap::edit()` grant at
+// `:448` and its matching revocation at `:613` become dead once this is live: ownership stops being
+// a stored row that can drift from the column.
+definition board_post on board_posts.id int {
+  relation board:  board = column(board_posts.board_id -> board)
+  relation author: user  = column(board_posts.user_id -> user
+                                  where board_posts.user_id IS NOT NULL)
+  relation blocked: user | role#member | organization#member | apikey
+
+  permission view   = (author | board->view)
+                    - (blocked | board->blocked | board->group->blocked)
+  permission edit   = (author | board->edit)
+                    - (blocked | board->blocked | board->group->blocked)
+  permission remove = edit
+  permission create = board->create
+  permission grant  = board->own
+}
+
+definition board_file on board_files.file_uuid uuid {
+  relation post: board_post = column(board_files.post_id -> board_post
+                                     where board_files.post_id IS NOT NULL)
+  relation file: file       = column(board_files.file_uuid -> file)
+
+  permission view   = post->view | file->view
+  permission create = post->edit
+  permission remove = post->edit | file->remove
+}
+
+// `board_post_reaction` and `board_post_report` have a route gate and **no** row-level check
+// anywhere today — an existing gap. Giving them definitions closes it, which is a widening of
+// enforcement and is called out as such.
+definition board_post_reaction on board_post_reactions.id int {
+  relation post:   board_post = column(board_post_reactions.post_id -> board_post)
+  relation author: user       = column(board_post_reactions.user_id -> user
+                                       where board_post_reactions.user_id IS NOT NULL)
+
+  permission view   = post->view
+  permission create = post->view
+  permission edit   = author
+  permission remove = author | post->edit
+}
+
+definition board_post_report on board_post_reports.id int {
+  relation post:   board_post = column(board_post_reports.post_id -> board_post)
+  relation author: user       = column(board_post_reports.user_id -> user)
+
+  permission view   = author | service:board_post_report->operate_read
+  permission create = post->view
+  permission remove = service:board_post_report->operate_delete
+}
+
+// The three permissions are distinct rules. sumida `67857ef` fixed `FileService::delete`
+// authorising against `read`; here that mistake is no longer expressible, because `remove` and
+// `view` are different permissions rather than different strings passed to `.action()`.
+definition file on files.uuid uuid {
+  relation owner: user         = column(files.user_id -> user where files.user_id IS NOT NULL)
+  relation org:   organization = column(files.user_id -> organization via users.organization_id)
+  relation viewer: user | role#member | organization#member | apikey | user:*
+
+  permission view   = owner | viewer | org->manage_file | service:file->operate_read
+  permission edit   = owner | org->manage_file | service:file->operate_update
+  permission remove = owner | org->manage_file | service:file->operate_delete
+  permission grant  = owner | org->manage_file
+}
+
+// ─── flat sumida resources ───────────────────────────────────────────────────────────────────
+
+// `ApiKeyService::create`'s "a non-admin may not issue a key for another user" guard
+// (`api_key/mod.rs:92`, added by `67857ef`) becomes `sumida_user:<user_id>#edit` — issuing a key in
+// somebody's name is exactly as powerful as editing them, and now says so.
+definition api_key on api_keys.key {
+  relation owner: user         = column(api_keys.user_id -> user)
+  relation org:   organization = column(api_keys.user_id -> organization via users.organization_id)
+
+  permission view   = owner | org->manage_user | service:api_key->operate_read
+  permission edit   = owner | org->manage_user | service:api_key->operate_update
+  permission remove = owner | org->manage_user | service:api_key->operate_delete
+  permission grant  = owner | org->manage_user
+}
+
+definition ban on bans.id int {
+  relation target: sumida_user = column(bans.user_id -> sumida_user where bans.user_id IS NOT NULL)
+  relation author: user        = column(bans.created_by -> user where bans.created_by IS NOT NULL)
+
+  permission view   = author | target->view | service:ban->operate_read
+  permission edit   = target->edit | service:ban->operate_update
+  permission remove = target->edit | service:ban->operate_delete
+}
+
+definition access_log on access_logs.id int {
+  relation subject_user: sumida_user = column(access_logs.user_id -> sumida_user)
+
+  permission view   = subject_user->view | service:access_log->operate_read
+  permission remove = service:access_log->operate_delete
+}
+
+definition user_invitation on user_invitations.uuid uuid {
+  relation invitee: sumida_user = column(user_invitations.user_id -> sumida_user)
+
+  permission view   = invitee->view | service:user_invitation->operate_read
+  permission edit   = invitee->edit | service:user_invitation->operate_update
+  permission remove = invitee->edit | service:user_invitation->operate_delete
+}
+
+// `mail_form`, `membership_plan`, `role`, `organization` and `relation_tuple` are global
+// configuration: no creator, no organization, so R2 and R3 do not apply and they are reachable only
+// through R1 or an explicit grant. That is already the effective behaviour.
+definition mail_form on mail_forms.kind {
+  permission view   = service:mail_form->operate_read
+  permission edit   = service:mail_form->operate_update
+  permission remove = service:mail_form->operate_delete
+}
+
+definition membership_plan on membership_plans.id int {
+  permission view   = service:membership_plan->operate_read
+  permission edit   = service:membership_plan->operate_update
+  permission remove = service:membership_plan->operate_delete
+}
+
+// The tuple table itself, replacing the `access_policy` namespace.
+definition relation_tuple on relation_tuples.id int {
+  permission view   = service:access_policy->operate_read
+  permission create = service:access_policy->operate_create
+  permission edit   = service:access_policy->operate_update
+  permission remove = service:access_policy->operate_delete
+}
+
+// ─── the namespace inventory ─────────────────────────────────────────────────────────────────
+//
+// Enumerated from the code, not from the design:
+//   grep -rn 'service_ap!' --include='*.rs' api/src   → 18 namespaces × their actions
+//   grep -rn 'ap::ns('     --include='*.rs' api/src   → the row-level namespaces below
+//
+// `service` marks a route gate, so `service:<namespace>` is a real object; `= <definition>` says
+// what row-level checks on the namespace resolve to. Validation rule 8 refuses to boot if any entry
+// has no definition behind it, which is what makes "a namespace left out" impossible rather than
+// merely unlikely.
+
+namespace access_log          service = access_log
+namespace access_policy       service = relation_tuple
+namespace api_key             service = api_key
+namespace ban                 service = ban
+namespace board               service = board
+namespace board_file          service = board_file
+namespace board_group         service = board_group
+namespace board_post          service = board_post
+namespace board_post_reaction service = board_post_reaction
+namespace board_post_report   service = board_post_report
+namespace board_topic         service = board_topic
+namespace file                service = file
+namespace mail_form           service = mail_form
+namespace membership_plan     service = membership_plan
+namespace organization        service = organization
+namespace role                service = role
+namespace user                service = sumida_user
+namespace user_invitation     service = user_invitation
+
+// Row-level only — no `service_ap!` gate anywhere. `org:credit` and `org:subscription` keep a `use`
+// tier distinct from `manage`: `credit/mod.rs:66` uses `manage`, `:93` uses `use`, and collapsing
+// them would remove a capability that is in use. They map onto `organization`'s `credit` and
+// `subscription` scopes.
+namespace org:user         = sumida_user
+namespace org:credit       = organization
+namespace org:subscription = organization

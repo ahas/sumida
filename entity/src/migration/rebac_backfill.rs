@@ -24,7 +24,7 @@ pub struct Migration;
 /// failure. Until that exists, the backfill has no other way to tell "a namespace somebody
 /// declared" from "a typo that has been sitting in the table for a year", and inventing a
 /// `service:` object for the second is exactly the silent migration this phase must not do.
-const SERVICE_NAMESPACES: &[&str] = &[
+pub const SERVICE_NAMESPACES: &[&str] = &[
   // sumida — 18
   "access_log",
   "access_policy",
@@ -78,7 +78,7 @@ const SERVICE_NAMESPACES: &[&str] = &[
 
 /// Namespaces seeded by `site-app/src/bin/initiator.rs` that nothing anywhere gates on. Two of
 /// them do not even exist as sumida concepts. Their rows are dropped, with a line each.
-const ORPHAN_NAMESPACES: &[&str] = &["user_log", "user_block", "site-app:node"];
+pub const ORPHAN_NAMESPACES: &[&str] = &["user_log", "user_block", "site-app:node"];
 
 /// One `access_policies` row and what the backfill decided to do with it.
 #[derive(Debug, FromQueryResult)]
@@ -238,7 +238,7 @@ const SUBJECT_COLUMNS: &str = r#"
 
 const TUPLE_COLUMNS: &str = "relation_tuples (resource_type, resource_id, relation, subject_type, subject_id, subject_relation, created_by)";
 
-fn sql_text_array(values: &[&str]) -> String {
+pub fn sql_text_array(values: &[&str]) -> String {
   let items = values.iter().map(|v| format!("'{v}'")).collect::<Vec<_>>().join(",");
   format!("ARRAY[{items}]::text[]")
 }
