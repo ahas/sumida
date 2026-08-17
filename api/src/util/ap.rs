@@ -1,4 +1,41 @@
+//! The legacy access-policy evaluator — and, since design §14 step 7, a **shim**.
+//!
+//! Every signature here is unchanged and every call site still compiles. What changed is where an
+//! answer comes from: a check whose namespace has opted in (`authz::registry::ROUTED_PRODUCTS`) is
+//! answered by the compiled rule against `relation_tuples`; everything else runs the lateral-join
+//! code below, byte for byte as before.
+//!
+//! ## What routes, and why not more
+//!
+//! Only the **route-gate tier** — `ap::ns(<namespace>).object("service")`. In sumida, trainer and
+//! site-app that is one production call site, `layer::service_ap::ServiceApService`, behind the
+//! `service_ap!` macro every route uses; nothing else in any of the three builds that shape.
+//!
+//! That is not a smaller ambition than §11's; it is the tier for which the two stores are
+//! *provably* holding the same grants. The mirror trigger
+//! (`entity/src/migration/rebac_mirror.rs`) translates exactly four shapes — the service tier,
+//! `trainer:delegate`, `lab-app:site` and `site-app:project.row` — and the shadow comparator run against
+//! the live `trainer`, `lab-app` and `site-app` databases reports zero unexplained divergences on them.
+//!
+//! The object tier is **not** routed, and the reason is worth stating rather than discovering:
+//! three of its shapes have no tuple behind them, and each would need a decision a person has to
+//! make, not a mapping code can infer.
+//!
+//! | shape | why it has no tuple |
+//! |---|---|
+//! | `object = '*'` | it needs a person to decide whether it meant `service:<ns>#operator` or `platform:root#admin` (§9.2). Both the backfill and the mirror refuse it. |
+//! | `effect = 'deny'` | the exclusion mapping assumes there is none to translate (§9.1.1); a `blocked` tuple is the replacement (§8) and writing one is an operator action. |
+//! | `board` / `board_group` / `board_post` object rows | the backfill has no branch for a row id in those namespaces, so the mapping does not cover them. |
+//!
+//! Routing the object tier while those three are unmirrored would answer `false` where the legacy
+//! evaluator answers `true` — silently widening nothing and silently narrowing a great deal, which
+//! is the failure mode §11 rejects a generic fallback for. It becomes routable when the mirror
+//! covers those shapes, which is a mapping change and belongs with the phase that makes it.
+//!
+//! Both halves are logged once, by name, at the first routing decision — see `log_routing_plan`.
+
 use std::mem;
+use std::sync::Once;
 
 use entity::access_policies::{ActiveModel as ApAm, Column as ApCol, Entity as ApEntity, Model as ApModel};
 use error::SumidaError;
@@ -14,6 +51,59 @@ use sea_orm::{
   QuerySelect, QueryTrait, Select, Set, Statement,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::authz::subject::SubjectSet;
+use crate::authz::{Authz, AuthzError};
+
+/// Prints which namespaces answer from `relation_tuples` and which still answer from
+/// `access_policies`, once per process.
+///
+/// Called from the first routing decision so no consumer has to add a boot hook, and exposed
+/// publicly so one that wants it *at* boot can say so. A silent fallback is a resource nobody
+/// knows is unmigrated; the point of this function is that the set is enumerable from the log of
+/// any process that has served one request.
+pub fn log_routing_plan() {
+  static ONCE: Once = Once::new();
+
+  ONCE.call_once(|| {
+    let registry = match Authz::registry() {
+      Ok(registry) => registry,
+      // The rule set does not validate. Nothing routes, everything stays legacy, and the reason is
+      // printed rather than swallowed — a check that silently keeps working is how a broken rule
+      // set survives a deploy.
+      Err(error) => {
+        tracing::error!("authz routing disabled — the rule set does not validate: {error}");
+        return;
+      }
+    };
+
+    let routed: Vec<&str> = registry
+      .namespaces()
+      .iter()
+      .filter(|entry| registry.routes_service_gate(&entry.namespace))
+      .map(|entry| entry.namespace.as_str())
+      .collect();
+
+    tracing::info!(
+      "authz: {} namespace(s) answer their route gate from relation_tuples: {}",
+      routed.len(),
+      routed.join(", ")
+    );
+
+    for (namespace, reason) in registry.unrouted_namespaces() {
+      tracing::info!("authz: `{namespace}` still answers from access_policies — {reason}");
+    }
+
+    // Not a per-namespace fact, so it does not belong in the list above; it is still the larger
+    // half of what has not moved, and leaving it unsaid would make the list above read as "these
+    // namespaces are done".
+    tracing::info!(
+      "authz: object-tier checks (`ap::ns(..).object(<id>)` / `.join(..)`) answer from \
+       access_policies for every namespace — the mirror carries no tuples for `object = '*'`, for \
+       `effect = 'deny'`, or for board object rows"
+    );
+  });
+}
 
 fn _build_object_condition<C: IntoColumnRef>(
   objects: &[String],
@@ -154,6 +244,9 @@ pub struct ApCondition {
   object_in_subqueries: Vec<SimpleExpr>,
   users: Vec<ApUser>,
   alias: Option<Alias>,
+  /// Forces the legacy path even for a namespace that routes. Phrased as an opt-*out* so that
+  /// `Default` — which `ApChain`/`ApOr` take through `mem::take` — routes like everything else.
+  skip_routing: bool,
 }
 
 impl ApCondition {
@@ -166,7 +259,25 @@ impl ApCondition {
       object_in_subqueries: Vec::new(),
       users: Vec::new(),
       alias: None,
+      skip_routing: false,
     }
+  }
+
+  /// Answers from `access_policies` even where the namespace routes.
+  ///
+  /// This exists for **one** caller: `api/tests/authz_equivalence.rs`, which compares the two
+  /// evaluators. Once `ap::ns(..).object("service")` answers from the compiled rule, a comparison
+  /// written the obvious way is the compiled rule against itself — it passes unconditionally and
+  /// stops being able to fail, which is worse than not having it. This keeps the left-hand side of
+  /// that comparison genuinely legacy.
+  ///
+  /// Not for production code. A call site that wants the old answer wants it because something is
+  /// wrong with the new one, and the fix for that is `ROUTED_PRODUCTS`, where the decision is
+  /// visible.
+  #[doc(hidden)]
+  pub fn without_routing(mut self) -> Self {
+    self.skip_routing = true;
+    self
   }
 
   pub fn alias(mut self, alias: Alias) -> Self {
@@ -202,9 +313,124 @@ impl ApCondition {
       .add(self.has_deny_expr(&alias).not())
   }
 
+  /// The identities this condition judges as, in the compiled evaluator's vocabulary.
+  ///
+  /// `ApUser::Admin` maps to **nothing**, and that is the whole of the I4 fix. `who()` pushes it
+  /// alongside `User(id)` when `session.profile.is_admin`, so the flag is already reachable through
+  /// `user_ids` and `platform#flagged`. A secured API key's `who()` pushes only `ApiKey`, and
+  /// therefore no `user_ids` at all — so `flagged` is statically false and a key bound to an
+  /// administrator stops carrying administrative power, instead of carrying it because the session
+  /// was filled in from the owner's profile.
+  fn subject_set(&self) -> SubjectSet {
+    let mut keys = Vec::with_capacity(self.users.len());
+    let mut user_ids = Vec::new();
+
+    for user in &self.users {
+      match user {
+        ApUser::User(id) => {
+          keys.push(format!("user:{id}"));
+          user_ids.push(*id);
+        }
+        ApUser::Role(id) => keys.push(format!("role:{id}#member")),
+        ApUser::Org(id) => keys.push(format!("organization:{id}#member")),
+        ApUser::ApiKey(key) => keys.push(format!("apikey:{key}")),
+        ApUser::Admin | ApUser::Unknown => {}
+      }
+    }
+
+    SubjectSet::from_parts(keys, user_ids)
+  }
+
+  /// `Some(predicate)` when this check is a **route gate** on a routed namespace.
+  ///
+  /// The shape test is deliberately strict: the only object is the literal `"service"`, and no
+  /// column, expression or subquery has been bound. Anything else is an object-tier check and
+  /// stays on the legacy path (see this module's header for the three shapes that make that
+  /// necessary). Being strict here is what makes the routing decision readable from the call site
+  /// rather than from a table of exceptions.
+  fn compiled_gate(&self) -> Option<SimpleExpr> {
+    log_routing_plan();
+
+    if self.skip_routing
+      || self.objects.as_slice() != ["service"]
+      || !self.exprs.is_empty()
+      || !self.object_in_subqueries.is_empty()
+      || self.actions.is_empty()
+      // No principal at all. The legacy predicate still ORs `"user" = '*'`, so an unbound check
+      // could be satisfied by a wildcard-subject row; the compiled rule has no such branch, and
+      // answering `false` where the old evaluator answers `true` is the one direction this shim
+      // must not move in silently. No such row exists in any of the three databases — which is
+      // why this is a guard and not a mapping.
+      || self.users.is_empty()
+    {
+      return None;
+    }
+
+    let registry = Authz::registry().ok()?;
+    if !registry.routes_service_gate(&self.namespace) {
+      return None;
+    }
+
+    let subject = self.subject_set();
+
+    // `_build_action_condition` is `action @> $requested`, so every requested action must be
+    // present — an AND, not an OR. Preserved exactly: `service_ap!` and `ApiService` each pass one
+    // action, but a caller that passes two must keep meaning "both".
+    let mut predicate: Option<SimpleExpr> = None;
+    for action in &self.actions {
+      let permission = format!("can_{action}");
+      let compiled =
+        match Authz::object_predicate("service", self.namespace.as_str(), &permission, &subject) {
+          Ok(compiled) => compiled,
+          // A namespace in the inventory whose `service` definition has no `can_<action>` — an
+          // action outside `create|read|update|delete`. It has no compiled meaning, so the whole
+          // check falls back rather than being answered on a partial rule.
+          Err(AuthzError::UnknownPermission { .. }) => return None,
+          Err(error) => {
+            tracing::error!(
+              "authz: `service:{}#{permission}` did not compile, falling back to access_policies: \
+               {error}",
+              self.namespace
+            );
+            return None;
+          }
+        };
+      predicate = Some(match predicate {
+        Some(accumulated) => accumulated.and(compiled),
+        None => compiled,
+      });
+    }
+
+    predicate
+  }
+
+  /// `SELECT <predicate>` — the route gate is session-constant, so one statement answers it.
+  async fn eval<C: ConnectionTrait>(predicate: SimpleExpr, db: &C) -> bool {
+    #[derive(FromQueryResult)]
+    struct Answer {
+      allowed: bool,
+    }
+
+    let statement = Query::select().expr_as(predicate, Alias::new("allowed")).take();
+    Answer::find_by_statement(db.get_database_backend().build(&statement))
+      .one(db)
+      .await
+      .ok()
+      .flatten()
+      .map(|row| row.allowed)
+      .unwrap_or(false)
+  }
+
   /// `(has_allow, has_deny)` — presence of allow/deny policies matching this condition, evaluated
   /// separately so callers (e.g. `ApOr` global-deny) can combine them across branches.
   pub async fn effects<C: ConnectionTrait>(&self, db: &C) -> (bool, bool) {
+    // On the compiled path there is no second store to deny from: exclusion is part of the rule, so
+    // a routed check answers `(allowed, false)` and the caller's `allow && !deny` arithmetic
+    // collapses to `allowed` — which is the same answer, reached without the caller composing it.
+    if let Some(predicate) = self.compiled_gate() {
+      return (Self::eval(predicate, db).await, false);
+    }
+
     let ap_alias = Alias::new(ApEntity.table_name());
     let col_effect = Expr::col((ap_alias.clone(), ApCol::Effect));
     let condition = Condition::all()
@@ -316,6 +542,12 @@ impl ApGuard for ApCondition {
   }
 
   fn apply<S: EntityTrait>(self, query: Select<S>) -> Select<S> {
+    // A route gate is session-constant, so it filters every row or none — the same thing the
+    // lateral join does for `object = 'service'`, with no join.
+    if let Some(predicate) = self.compiled_gate() {
+      return query.filter(predicate);
+    }
+
     let alias = "ap_check";
     self.with_lateral_join(query, alias).filter(self.condition(Alias::new(alias)))
   }
@@ -342,10 +574,19 @@ impl ApGuard for ApCondition {
       exists: bool,
     }
 
-    let ap_check_alias = Alias::new("ap_check");
-    let subquery = self
-      .with_lateral_join(query.select_only().expr(Expr::val(1)), ap_check_alias.clone())
-      .filter(self.condition(ap_check_alias));
+    // `can_access` is `EXISTS(<query> WHERE <allowed>)`, not `<allowed>`: a caller that passes
+    // `find_by_id(x)` is asking about a row that may not exist, and answering `true` for a missing
+    // row would turn "no such thing" into "yours". Routing swaps the predicate and keeps the
+    // `EXISTS`.
+    let subquery = match self.compiled_gate() {
+      Some(predicate) => query.select_only().expr(Expr::val(1)).filter(predicate),
+      None => {
+        let ap_check_alias = Alias::new("ap_check");
+        self
+          .with_lateral_join(query.select_only().expr(Expr::val(1)), ap_check_alias.clone())
+          .filter(self.condition(ap_check_alias))
+      }
+    };
     let stmt = Query::select().expr(Expr::exists(subquery.into_query())).take();
 
     let builder = db.get_database_backend();
@@ -472,8 +713,16 @@ impl ApGuard for ApChain {
 
   fn apply<E: EntityTrait>(self, mut query: Select<E>) -> Select<E> {
     for (i, child) in self.children.iter().enumerate() {
-      let alias = Alias::new(format!("ap_check_{i}"));
-      query = child.with_lateral_join(query, alias.clone()).filter(child.condition(alias));
+      // Per child, not per chain: routing is a property of the namespace and each link has its
+      // own. `check_allowed` and `can_access` already delegate to the child and so route already;
+      // this is the one method that reached past it into the lateral join.
+      query = match child.compiled_gate() {
+        Some(predicate) => query.filter(predicate),
+        None => {
+          let alias = Alias::new(format!("ap_check_{i}"));
+          child.with_lateral_join(query, alias.clone()).filter(child.condition(alias))
+        }
+      };
     }
 
     query
@@ -629,12 +878,22 @@ impl ApGuard for ApOr {
     let mut deny_any: Option<SimpleExpr> = None;
 
     for (i, child) in self.children.iter().enumerate() {
-      let alias = Alias::new(format!("ap_or_{i}"));
-      query = child.with_lateral_join(query, alias.clone());
-      let allow = child.has_allow_expr(&alias);
-      let deny = child.has_deny_expr(&alias);
+      // A routed branch contributes an allow and no deny — exclusion is inside its rule, so there
+      // is nothing left for the global-deny arithmetic to subtract. Mixing routed and unrouted
+      // branches in one `ApOr` still composes correctly, because each contributes to the same two
+      // accumulators.
+      let (allow, deny) = match child.compiled_gate() {
+        Some(predicate) => (predicate, None),
+        None => {
+          let alias = Alias::new(format!("ap_or_{i}"));
+          query = child.with_lateral_join(query, alias.clone());
+          (child.has_allow_expr(&alias), Some(child.has_deny_expr(&alias)))
+        }
+      };
       allow_any = Some(allow_any.map_or(allow.clone(), |acc| acc.or(allow)));
-      deny_any = Some(deny_any.map_or(deny.clone(), |acc| acc.or(deny)));
+      if let Some(deny) = deny {
+        deny_any = Some(deny_any.map_or(deny.clone(), |acc| acc.or(deny)));
+      }
     }
 
     let allow_any = allow_any.unwrap_or_else(|| Expr::val(false).into());

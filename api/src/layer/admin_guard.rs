@@ -10,6 +10,8 @@ use infra::session::UserSession;
 use tower::{Layer, Service};
 
 use crate::SumidaState;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 
 #[derive(Clone)]
 pub struct AdminGuardLayer<S> {
@@ -60,7 +62,7 @@ where
   }
 
   fn call(&mut self, req: Request<Body>) -> Self::Future {
-    let _state = self.state.clone();
+    let state = self.state.clone();
     let mut inner = self.inner.clone();
 
     Box::pin(async move {
@@ -74,15 +76,34 @@ where
         }
       };
 
-      match session.profile.is_admin {
-        true => {
-          let req = Request::from_parts(parts, body);
-          inner.call(req).await
+      // R1 through the rule, not through the session field (design §8.1).
+      //
+      // `session.profile.is_admin` was filled in from the key's owner by `verify_api_key`, so a
+      // **secured** API key — one that is supposed to carry only its own grants — passed this guard
+      // with its owner's administrative power. `SubjectSet::of` gives a secured key an empty
+      // `user_ids`, so `platform#flagged` cannot match `users.is_admin` at all and the escalation
+      // is closed structurally rather than by remembering to check `api_key.is_secured` here.
+      //
+      // For an interactive session the answer is identical to the field: `flagged` reads the same
+      // column for the same user id.
+      let subject = SubjectSet::of(&session);
+      let allowed = match Authz::is_superuser(&subject, state.db()).await {
+        Ok(allowed) => allowed,
+        // The rule set did not compile or the statement failed. Refuse: an administrative route
+        // that opens when the evaluator is broken is the one failure mode this guard exists to
+        // prevent.
+        Err(error) => {
+          tracing::error!("admin guard could not evaluate `platform:root#superuser`: {error}");
+          false
         }
-        false => {
-          let error_response = SumidaError::OnlyAdminAllowed.into_response();
-          Ok(error_response)
-        }
+      };
+
+      if allowed {
+        let req = Request::from_parts(parts, body);
+        inner.call(req).await
+      } else {
+        let error_response = SumidaError::OnlyAdminAllowed.into_response();
+        Ok(error_response)
       }
     })
   }

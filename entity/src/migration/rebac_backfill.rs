@@ -187,6 +187,16 @@ fn classify_cte() -> String {
           THEN CASE WHEN ap.subject LIKE 'user:%' OR ap.subject LIKE 'org:%'
                     THEN 'migrate:daqs_site' ELSE 'refuse:lab-app-site-subject' END
 
+        -- §0.2's lesson, applied a second time. `object = 'service' AND action = {{'*'}}` means
+        -- "every route action on this namespace" and nothing else — the object is `service`, so
+        -- there is no object-wide power in it to guess at. That is exactly the four route-gate
+        -- relations, so it has a translation and must be taken *before* the generic wildcard
+        -- refusal below. A refusal that ran first would drop every such grant, which is the same
+        -- mistake as refusing lab-app's `Edit = {{'*'}}` shares.
+        WHEN ap.object = 'service' AND '*' = ANY(ap.action) AND ap.namespace <> '*'
+          THEN CASE WHEN ap.namespace = ANY ({service_namespaces})
+                    THEN 'migrate:service_wildcard' ELSE 'refuse:unknown-namespace' END
+
         -- §9.2 — a wildcard on a non-admin subject is not expressible. It needs a person to decide
         -- whether it meant `service:<ns>#operator` or `platform:root#admin`, and guessing either
         -- way silently changes what that account can reach.
@@ -298,6 +308,15 @@ pub async fn backfill<C: ConnectionTrait>(db: &C) -> Result<BackfillReport, DbEr
        FROM classified c, LATERAL unnest(c.action) AS act \
        WHERE c.disposition = 'migrate:service' ON CONFLICT DO NOTHING"
     ),
+    // The same tier written with a wildcard action. Four relations, one per route action — the
+    // wildcard is expanded rather than carried, because `relation` is a scalar and `{'*'}` is
+    // precisely what the `@>` predicate a btree cannot serve was there to answer.
+    format!(
+      "{cte} INSERT INTO {TUPLE_COLUMNS} \
+       SELECT 'service', c.namespace, act, {subject}, 'migration' \
+       FROM classified c, LATERAL unnest(ARRAY['create','read','update','delete']::text[]) AS act \
+       WHERE c.disposition = 'migrate:service_wildcard' ON CONFLICT DO NOTHING"
+    ),
     // `trainer:delegate | <scope> | {assert}`. The scope object id keeps its exact string, because it
     // is compared for equality — lab-app must not be able to assert site-app's scope.
     format!(
@@ -372,8 +391,14 @@ pub async fn shadow_compare<C: ConnectionTrait>(db: &C) -> Result<Vec<ShadowDive
     r#"
     {cte},
     legacy AS (
+      -- A wildcard route-gate row is compared as the four grants it actually confers, not as the
+      -- literal `*`. Diffing the literal would report four divergences for a row that translated
+      -- exactly, which trains a reader to skim the output — the one thing this report must not do.
       SELECT c.namespace, c.object, act AS action, c.subject, c.disposition
-      FROM classified c, LATERAL unnest(c.action) AS act
+      FROM classified c,
+           LATERAL unnest(CASE WHEN c.disposition = 'migrate:service_wildcard'
+                               THEN ARRAY['create','read','update','delete']::text[]
+                               ELSE c.action END) AS act
       WHERE c.effect = 'allow'
     ),
     subj AS (

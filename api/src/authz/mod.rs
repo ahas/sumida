@@ -109,12 +109,21 @@ impl From<sea_orm::DbErr> for AuthzError {
 
 /// One object's id.
 ///
-/// Two variants rather than a string, because the id reaches two columns of different types —
-/// `relation_tuples.resource_id` is text, `org_closure.descendant_id` is integer — and collapsing
-/// them into text would mean a cast on the join that the closure index cannot serve.
+/// Three variants rather than a string, because the id reaches columns of three different types and
+/// Postgres has no implicit conversion between any two of them:
+///
+/// * `relation_tuples.resource_id` is `text`,
+/// * `org_closure.descendant_id` is `integer`,
+/// * a uuid-keyed definition's own key column (`files.uuid`, `tasks.id`) is `uuid`.
+///
+/// A point check compares the id against the definition's **own** key column before it ever reaches
+/// a tuple, so an id collapsed into text is not a slow query — it is `operator does not exist:
+/// uuid = text` at run time, on exactly the definitions (`file`, `board_file`, `joy_task`,
+/// `joy_terminal_session`) whose regressions this repository cares most about.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ObjectKey {
   Int(i32),
+  Uuid(uuid::Uuid),
   Text(String),
 }
 
@@ -122,6 +131,7 @@ impl ObjectKey {
   pub(crate) fn as_expr(&self) -> SimpleExpr {
     match self {
       ObjectKey::Int(value) => Expr::val(*value).into(),
+      ObjectKey::Uuid(value) => Expr::val(*value).into(),
       ObjectKey::Text(value) => Expr::val(value.clone()).into(),
     }
   }
@@ -147,7 +157,7 @@ impl From<String> for ObjectKey {
 
 impl From<uuid::Uuid> for ObjectKey {
   fn from(value: uuid::Uuid) -> Self {
-    ObjectKey::Text(value.to_string())
+    ObjectKey::Uuid(value)
   }
 }
 
@@ -209,6 +219,93 @@ impl Authz {
     }
   }
 
+  /// A check on one of the string-named singletons — `service`, `platform`, `delegation_scope`
+  /// (design §8.2).
+  ///
+  /// Mechanically `check` with a text id; it exists as its own name because those three have no
+  /// row behind them and reading `check("platform", "root", …)` as a row lookup is the mistake
+  /// worth spending a function on.
+  pub async fn check_object<C: ConnectionTrait>(
+    definition: &str,
+    id: &str,
+    permission: &str,
+    subject: &SubjectSet,
+    db: &C,
+  ) -> Result<bool, AuthzError> {
+    Self::check(definition, id, permission, subject, db).await
+  }
+
+  /// The service-tier grants one subject holds, in the shape `/me/access-policies` returns
+  /// (design §9.7).
+  ///
+  /// One row per namespace with the relations aggregated into the legacy `action` array, which is
+  /// what `updateAbilityFor` (`casl/src/runtime/plugin.ts:19`) consumes — it builds
+  /// `can(action, `${namespace}:${object}`)` per element, so the payload has to keep both the
+  /// namespace strings and the literal `"service"` object. Service object ids *are* today's
+  /// namespace strings, so the projection is exact rather than approximate.
+  ///
+  /// Two things it deliberately does not do:
+  ///
+  /// * it does not project the object tier. Those grants are still `access_policies` rows on the
+  ///   legacy path (§11 Phase 1), and synthesising them from tuples would report a permission the
+  ///   evaluator does not yet consult.
+  /// * it does not invent an `effect: "deny"` row. Deny is a rule construct now, not a record, and
+  ///   the client's `updateAbilityFor` would turn a synthesised one into a `cannot(...)` nobody
+  ///   granted.
+  pub async fn service_grants<C: ConnectionTrait>(
+    subject: &SubjectSet,
+    db: &C,
+  ) -> Result<Vec<ServiceGrant>, AuthzError> {
+    if subject.is_empty() {
+      return Ok(Vec::new());
+    }
+
+    ServiceGrant::find_by_statement(Statement::from_sql_and_values(
+      db.get_database_backend(),
+      // `relation` is the second column of `idx_rt__lookup`, so this is an index range scan per
+      // subject key rather than the `@>` a btree cannot answer.
+      r#"
+      SELECT rt.resource_id AS namespace, array_agg(DISTINCT rt.relation) AS action
+        FROM relation_tuples rt
+       WHERE rt.resource_type = 'service'
+         AND rt.subject_key = ANY($1)
+         AND (rt.expires_at IS NULL OR rt.expires_at > CURRENT_TIMESTAMP)
+       GROUP BY rt.resource_id
+       ORDER BY rt.resource_id
+      "#,
+      [subject.keys().to_vec().into()],
+    ))
+    .all(db)
+    .await
+    .map_err(Into::into)
+  }
+
+  /// Whether this subject is a platform administrator. R1, and the only caller-visible remnant of
+  /// `session.profile.is_admin` on an authorization path.
+  pub async fn is_superuser<C: ConnectionTrait>(
+    subject: &SubjectSet,
+    db: &C,
+  ) -> Result<bool, AuthzError> {
+    Self::check_object("platform", "root", "superuser", subject, db).await
+  }
+
+  /// The point-check predicate as a boolean expression, for a caller that wants to place it in a
+  /// `WHERE` of its own rather than run it as a statement.
+  ///
+  /// `ap.rs`'s shim needs exactly this: a route gate is session-constant, so the same expression
+  /// serves `SELECT <it>`, `EXISTS (<query> WHERE <it>)` and a filter — which is what lets the
+  /// legacy `apply` / `can_access` / `check_allowed` trio keep their three different shapes while
+  /// answering from one rule.
+  pub fn object_predicate<K: Into<ObjectKey>>(
+    definition: &str,
+    id: K,
+    permission: &str,
+    subject: &SubjectSet,
+  ) -> Result<SimpleExpr, AuthzError> {
+    let registry = Self::registry()?;
+    Compiler::new(registry, subject).object_predicate(definition, permission, &id.into())
+  }
+
   /// The predicate as Postgres SQL text, values inlined.
   ///
   /// This is what the golden tests assert against. A compiled rule is the only place the whole
@@ -264,9 +361,14 @@ impl Authz {
       .iter()
       .map(|definition| {
         let product = registry.owner_of(&definition.name).unwrap_or("sumida");
+        // Not just this definition's own columns: a rule that walks (`agent->view`) emits a
+        // subquery over the target's table, so a column missing two hops away breaks this
+        // definition's statement just as surely as one of its own. Judging by own columns alone
+        // reported `joy_terminal_session` backed while `joy_agent.organization_id` did not exist.
+        let reachable = registry.reachable_from(&definition.name);
         let mine: Vec<&registry::ColumnDependency> = dependencies
           .iter()
-          .filter(|dependency| dependency.definition == definition.name)
+          .filter(|dependency| reachable.contains(&dependency.definition.as_str()))
           .collect();
         DefinitionStatus {
           definition: definition.name.clone(),
@@ -495,6 +597,14 @@ async fn live_columns<C: ConnectionTrait>(db: &C) -> Result<HashSet<(String, Str
   .await?;
 
   Ok(rows.into_iter().map(|row| (row.table_name, row.column_name)).collect())
+}
+
+/// One namespace's service-tier grants, as `/me/access-policies` reports them.
+#[derive(Debug, Clone, FromQueryResult)]
+pub struct ServiceGrant {
+  /// The legacy namespace string — which is literally the `service` object's id.
+  pub namespace: String,
+  pub action:    Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

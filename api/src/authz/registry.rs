@@ -62,6 +62,19 @@ pub const PRODUCTS: &[Product] = &[
   },
 ];
 
+/// The products whose namespaces are **routed to the compiled evaluator** (design §11, Phase 1).
+///
+/// Migration is per-namespace opt-in, not a global flip: a namespace nobody has opted in for
+/// behaves exactly as it does today, because it *is* today's code path. This list is the opt-in,
+/// and each consumer appends its own name in its own Phase 2 — trainer at §14 step 8, site-app at step
+/// 9, lab-app at step 10 (lab-app behind a per-namespace list of its own, so `lab-app:site` can be switched
+/// last and switched back).
+///
+/// It is a `const` rather than configuration on purpose. A routing decision that can change at run
+/// time is a permission model that differs between two processes reading the same database, and
+/// the only way to find out which one a request got is to have been watching.
+pub const ROUTED_PRODUCTS: &[&str] = &["sumida"];
+
 #[derive(Debug)]
 pub struct Registry {
   definitions: Vec<Definition>,
@@ -141,6 +154,45 @@ impl Registry {
     self.owner.get(definition).copied()
   }
 
+  pub fn namespace(&self, name: &str) -> Option<&NamespaceEntry> {
+    self.namespaces.iter().find(|entry| entry.namespace == name)
+  }
+
+  /// Whether `namespace`'s **route gate** answers from `relation_tuples` instead of from
+  /// `access_policies`.
+  ///
+  /// Three conditions, all necessary:
+  ///
+  /// * the namespace is in the inventory — validation rule 8 already guarantees every namespace
+  ///   that reaches a live call site is, so a `false` here means a namespace nobody declared;
+  /// * it declares a route gate, so `service:<namespace>` is a real object;
+  /// * its product has opted in (`ROUTED_PRODUCTS`).
+  pub fn routes_service_gate(&self, namespace: &str) -> bool {
+    self
+      .namespace(namespace)
+      .is_some_and(|entry| entry.gated && ROUTED_PRODUCTS.contains(&entry.product.as_str()))
+  }
+
+  /// Every namespace in the inventory that is **not** routed, with the reason, sorted.
+  ///
+  /// This is what the boot log prints. A fallback that nobody can enumerate is a resource nobody
+  /// knows is unmigrated, and that is the state this list exists to make impossible.
+  pub fn unrouted_namespaces(&self) -> Vec<(&str, &'static str)> {
+    let mut out: Vec<(&str, &'static str)> = self
+      .namespaces
+      .iter()
+      .filter_map(|entry| {
+        match (entry.gated, ROUTED_PRODUCTS.contains(&entry.product.as_str())) {
+          (true, true) => None,
+          (false, _) => Some((entry.namespace.as_str(), "row-level only, no route gate to route")),
+          (true, false) => Some((entry.namespace.as_str(), "product has not opted in")),
+        }
+      })
+      .collect();
+    out.sort_unstable();
+    out
+  }
+
   /// Every `<table>.<column>` the rules read, with the definition that reads it. This is what
   /// `Authz::boot` checks against the live database: a table that is absent means the product is
   /// not deployed here, a column that is absent from a table that *is* present is a fatal schema
@@ -187,6 +239,82 @@ impl Registry {
     out.dedup_by(|a, b| a.table == b.table && a.column == b.column && a.definition == b.definition);
     out
   }
+
+  /// `name` and every definition its permissions can reach, transitively.
+  ///
+  /// A rule is not confined to its own table. `joy_terminal_session#view` is
+  /// `owner | agent->view | …`, so evaluating it emits a subquery over `agents` — and if
+  /// `agents.organization_id` is missing, the statement fails even though every column
+  /// `joy_terminal_session`'s *own* relations read is present. Judging a definition by its own
+  /// columns alone therefore reports it backed when it is not, which is the one thing `boot` exists
+  /// to prevent.
+  ///
+  /// Only `->` and `type:id->` leave the definition; a computed permission stays on it and is
+  /// already covered by the definition's own relations.
+  pub fn reachable_from(&self, name: &str) -> Vec<&str> {
+    let mut out: Vec<&str> = Vec::new();
+    let mut queue: Vec<&str> = vec![name];
+
+    while let Some(current) = queue.pop() {
+      let Some(definition) = self.get(current) else { continue };
+      if out.contains(&definition.name.as_str()) {
+        continue;
+      }
+      out.push(&definition.name);
+
+      for (_, rewrite) in &definition.permissions {
+        self.collect_targets(definition, rewrite, &mut queue);
+      }
+    }
+
+    out.sort_unstable();
+    out
+  }
+
+  /// Every definition `rewrite` steps out to, as names.
+  ///
+  /// A walk's right-hand side is judged against the **target**, not against the definition the walk
+  /// started from, so a chain (`board->group->blocked`) has to change scope at each hop or the
+  /// second edge resolves against the wrong relation set.
+  fn collect_targets<'a>(
+    &'a self,
+    definition: &'a Definition,
+    rewrite: &'a Rewrite,
+    out: &mut Vec<&'a str>,
+  ) {
+    match rewrite {
+      Rewrite::Walk { edge, next } => {
+        let Some(Relation {
+          source: RelationSource::Derived(derivation),
+          ..
+        }) = definition.relation(edge)
+        else {
+          return;
+        };
+        let EdgeTarget::Object(target) = &derivation.target else { return };
+        out.push(target);
+        if let Some(target_definition) = self.get(target) {
+          self.collect_targets(target_definition, next, out);
+        }
+      }
+      Rewrite::Absolute { ty, next, .. } => {
+        out.push(ty);
+        if let Some(target_definition) = self.get(ty) {
+          self.collect_targets(target_definition, next, out);
+        }
+      }
+      Rewrite::Union(parts) | Rewrite::Intersection(parts) => {
+        for part in parts {
+          self.collect_targets(definition, part, out);
+        }
+      }
+      Rewrite::Exclusion { base, subtract } => {
+        self.collect_targets(definition, base, out);
+        self.collect_targets(definition, subtract, out);
+      }
+      Rewrite::This(_) | Rewrite::Computed(_) | Rewrite::Closure(_) => {}
+    }
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,4 +322,86 @@ pub struct ColumnDependency {
   pub definition: String,
   pub table:      String,
   pub column:     String,
+}
+
+#[cfg(test)]
+mod routing_tests {
+  use super::*;
+
+  /// Exactly sumida's gated namespaces route, and nothing else does.
+  ///
+  /// The list is written out rather than counted. "18 namespaces route" passes just as happily
+  /// when one of trainer's has been swapped in for one of sumida's, and the whole claim of Phase 1 is
+  /// *which* ones — a consumer that has not migrated must be on the code path it is on today, byte
+  /// for byte.
+  #[test]
+  fn only_sumidas_route_gates_are_routed() {
+    let registry = Registry::load().expect("the rule set must validate");
+
+    let routed: Vec<&str> = registry
+      .namespaces()
+      .iter()
+      .filter(|entry| registry.routes_service_gate(&entry.namespace))
+      .map(|entry| entry.namespace.as_str())
+      .collect();
+
+    assert_eq!(
+      routed,
+      vec![
+        "access_log",
+        "access_policy",
+        "api_key",
+        "ban",
+        "board",
+        "board_file",
+        "board_group",
+        "board_post",
+        "board_post_reaction",
+        "board_post_report",
+        "board_topic",
+        "file",
+        "mail_form",
+        "membership_plan",
+        "organization",
+        "role",
+        "user",
+        "user_invitation",
+      ]
+    );
+  }
+
+  /// Every namespace that does not route is enumerable, with a reason.
+  ///
+  /// This is the "never silent" half. A fallback nobody can list is a resource nobody knows is
+  /// unmigrated, so what is asserted is that the two sets **partition** the inventory — no
+  /// namespace is in neither list, which is the only way one could go unreported.
+  #[test]
+  fn every_unrouted_namespace_is_named_with_a_reason() {
+    let registry = Registry::load().expect("the rule set must validate");
+    let unrouted = registry.unrouted_namespaces();
+
+    for (namespace, reason) in &unrouted {
+      assert!(!reason.is_empty(), "`{namespace}` is unrouted with no reason given");
+      assert!(
+        !registry.routes_service_gate(namespace),
+        "`{namespace}` is listed as unrouted and routes anyway"
+      );
+    }
+
+    let routed = registry.namespaces().iter().filter(|e| registry.routes_service_gate(&e.namespace));
+    assert_eq!(
+      unrouted.len() + routed.count(),
+      registry.namespaces().len(),
+      "a namespace is in neither list, so it would fall back without being reported"
+    );
+
+    // The three consumers, by name. If one of them starts routing, it is because somebody added it
+    // to `ROUTED_PRODUCTS` — a Phase 2 decision that must not arrive as a side effect.
+    for namespace in ["trainer:task", "site-app:project", "lab-app:site", "org:user"] {
+      assert!(
+        unrouted.iter().any(|(name, _)| *name == namespace),
+        "`{namespace}` is no longer reported as unrouted"
+      );
+    }
+  }
 }

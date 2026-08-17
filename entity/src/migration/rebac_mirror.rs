@@ -119,6 +119,19 @@ impl MigrationTrait for Migration {
           RETURN;
         END IF;
 
+        -- `object = 'service' AND action = {{'*'}}` means "every route action on this namespace"
+        -- and nothing more, because the object is `service`. That is the four route-gate relations
+        -- exactly, so it is translated here — *before* the generic wildcard skip below, for the
+        -- same reason lab-app's site rows are: a refusal that runs before the branch which knows what
+        -- the wildcard meant drops a grant that had an exact translation.
+        IF p_object = 'service' AND '*' = ANY(p_action) AND p_namespace <> '*' THEN
+          IF p_namespace = ANY ({services}) THEN
+            RETURN QUERY SELECT 'service', p_namespace, a
+              FROM unnest(ARRAY['create','read','update','delete']::text[]) AS a;
+          END IF;
+          RETURN;
+        END IF;
+
         -- A wildcard on any column is not expressible, and the admin catch-all is superseded by
         -- `platform:root#superuser` — whose `flagged` branch is `users.is_admin` itself, so
         -- mirroring it would put the admin grant in two places at once. Both are skipped.

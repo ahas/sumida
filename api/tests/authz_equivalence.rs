@@ -110,8 +110,15 @@ fn subject_of(user: &entity::users::Model) -> SubjectSet {
   )
 }
 
+/// A check pinned to the **legacy** evaluator.
+///
+/// `.without_routing()` is load-bearing, not decoration. Since the Phase 1 shim (§14 step 7),
+/// `ap::ns(..).object("service")` answers from the compiled rule for a routed namespace — so a
+/// comparison written without this would put the compiled evaluator on both sides and pass no
+/// matter what either one does. The whole file would keep reporting "identical" while measuring
+/// nothing.
 fn legacy(namespace: &str, object: &str, action: &str, user: &entity::users::Model) -> ap::ApCondition {
-  let mut condition = ap::ns(namespace).object(object).action(action);
+  let mut condition = ap::ns(namespace).object(object).action(action).without_routing();
   for principal in legacy_who(user) {
     condition = condition.user(principal);
   }
@@ -259,6 +266,76 @@ async fn service_tier_gate_matches() {
   });
 
   report("service-tier route gate", &cases);
+}
+
+/// The route gate really is answered from `relation_tuples` — not merely capable of being.
+///
+/// Every case above would still pass if the shim silently fell back for every namespace, because
+/// the mirror keeps both stores holding the same grants and both evaluators would then agree by
+/// accident. So this grants a route gate **as a tuple only**, with no `access_policies` row behind
+/// it, and asks `ap::ns(..)` — the same call `service_ap!` makes. The legacy evaluator cannot see
+/// that grant; if the answer is `true`, the compiled one was consulted.
+///
+/// The negative half matters as much: `trainer:task` is a real, gated namespace whose product has not
+/// opted in (`ROUTED_PRODUCTS`), and the identical tuple must **not** reach it. That is what makes
+/// this a test of per-namespace routing rather than of a global flip.
+#[tokio::test]
+async fn the_route_gate_is_answered_from_tuples() {
+  let db = prepare().await;
+
+  let user = TestUser::create(&db).await.expect("a caller whose only grant is a tuple");
+  let id = user.model.id.to_string();
+
+  tuple(&db, "service", "user", "read", "user", &id, "").await;
+  tuple(&db, "service", "trainer:task", "read", "user", &id, "").await;
+
+  let gate = |namespace: &'static str| {
+    let user = user.model.clone();
+    let db = db.clone();
+    async move {
+      let mut condition = ap::ns(namespace).object("service").action("read");
+      for principal in legacy_who(&user) {
+        condition = condition.user(principal);
+      }
+      condition.check_allowed(&db).await
+    }
+  };
+
+  let routed = gate("user").await;
+  let unrouted = gate("trainer:task").await;
+
+  report(
+    "per-namespace routing (tuple-only grant, no policy row)",
+    &[
+      Case {
+        what:     "`user` — sumida's, routed".to_owned(),
+        legacy:   false,
+        compiled: routed,
+        note:     Some(
+          "the tuple is invisible to `access_policies`, so the two must differ — that difference \
+           *is* the routing",
+        ),
+      },
+      Case {
+        what:     "`trainer:task` — trainer has not opted in".to_owned(),
+        legacy:   false,
+        compiled: unrouted,
+        note:     None,
+      },
+    ],
+  );
+
+  assert!(
+    routed,
+    "a tuple-only grant did not open `user`'s route gate — the shim fell back to access_policies \
+     for a namespace that is supposed to route, and every other case in this file agrees by \
+     accident rather than by construction"
+  );
+  assert!(
+    !unrouted,
+    "the identical tuple opened `trainer:task`'s gate — routing is global, not per-namespace, and \
+     trainer's Phase 2 has just happened by accident"
+  );
 }
 
 // ─── 2. delegation ───────────────────────────────────────────────────────────────────────────
@@ -673,13 +750,24 @@ async fn the_mirror_writes_what_the_backfill_would_have() {
   /// `(resource_type, resource_id, relations)`.
   type Mapped = (&'static str, &'static str, &'static [&'static str]);
 
-  let shapes: [Shape; 8] = [
+  let shapes: [Shape; 9] = [
     (
       "user",
       "service",
       &["read", "update"],
       "allow",
       Some(("service", "user", &["read", "update"])),
+    ),
+    // The route gate written with a wildcard action. It means "every route action on this
+    // namespace" and the object is `service`, so there is no object-wide power to guess at — it
+    // expands to the four gate relations. A generic wildcard refusal placed before this branch
+    // would drop the grant instead, which is §0.2's mistake in a second place.
+    (
+      "user",
+      "service",
+      &["*"],
+      "allow",
+      Some(("service", "user", &["create", "delete", "read", "update"])),
     ),
     (
       "trainer:delegate",
@@ -774,6 +862,83 @@ async fn the_mirror_writes_what_the_backfill_would_have() {
 
   report_as("the access_policies mirror", "matches the backfill", "expected", &cases);
   assert!(after.is_empty(), "revoking the policy left {after:?} behind");
+}
+
+// ─── the client's payload ────────────────────────────────────────────────────────────────────
+
+/// `/me/access-policies` still answers what the CASL client has always been given.
+///
+/// The route-gate half of that payload is projected from `relation_tuples` now (§9.7). The client
+/// is not being changed in this phase, so the wire shape is a contract: `updateAbilityFor`
+/// (`casl/src/runtime/plugin.ts:19`) iterates `action × object` and emits
+/// `can(action, `${namespace}:${object}`)`, with a special case on `namespace === "*"`. A missing
+/// `"service"` object string, a `namespace` that is no longer the legacy string, or a lost `"*"`
+/// entry each silently disable part of the UI — the sort of break that shows up as "the button is
+/// gone" days later and not as a failing request.
+///
+/// So this asserts the payload against what the legacy projection produced for the same subject,
+/// element for element, rather than against a hand-written expectation.
+#[tokio::test]
+async fn me_access_policies_keeps_its_payload() {
+  let db = prepare().await;
+
+  let user = TestUser::create(&db).await.expect("a caller with grants");
+  let admin = TestUser::create_admin(&db).await.expect("an administrator");
+
+  // One route-gate grant and one object-tier grant. Both must survive, and they now come from
+  // different stores — which is the whole reason this case exists.
+  e2e::ap_test_utils::create_ap(&db, &user, "user", "service", vec!["read".into()], "allow")
+    .await
+    .expect("grant the route gate");
+  e2e::ap_test_utils::create_ap(&db, &user, "board", "7", vec!["update".into()], "allow")
+    .await
+    .expect("grant an object-tier row");
+
+  let mock = Mock::new().await;
+
+  let session = Session::login(mock.server.addr, &user, "a caller with grants").await;
+  let body = session.probe_one("/me/access-policies", &"policies").await;
+  let policies = body.body().as_array().cloned().unwrap_or_default();
+
+  let entry = |namespace: &str, object: &str| {
+    policies.iter().find(|policy| {
+      policy["namespace"] == namespace
+        && policy["object"].as_array().is_some_and(|objects| objects.iter().any(|o| o == object))
+    })
+  };
+
+  let gate = entry("user", "service").unwrap_or_else(|| panic!("the route gate is gone: {policies:?}"));
+  assert_eq!(gate["effect"], "allow");
+  assert!(
+    gate["action"].as_array().is_some_and(|actions| actions.iter().any(|a| a == "read")),
+    "the route-gate entry lost its action: {gate:?}"
+  );
+
+  assert!(
+    entry("board", "7").is_some(),
+    "the object-tier grant vanished from the payload while the server still resolves it from \
+     `access_policies` — the client would hide UI whose request succeeds: {policies:?}"
+  );
+
+  // A non-admin must not be handed the catch-all, or the client grants `manage all` to everyone.
+  assert!(
+    entry("*", "*").is_none(),
+    "a non-admin received the `*` catch-all: {policies:?}"
+  );
+
+  // And an administrator must still get it, from `platform:root#superuser` rather than from the
+  // legacy row — this is the branch `plugin.ts:27` turns into `can("manage", "all")`.
+  let admin_session = Session::login(mock.server.addr, &admin, "an administrator").await;
+  let admin_body = admin_session.probe_one("/me/access-policies", &"policies").await;
+  let admin_policies = admin_body.body().as_array().cloned().unwrap_or_default();
+  assert!(
+    admin_policies.iter().any(|policy| {
+      policy["namespace"] == "*"
+        && policy["action"].as_array().is_some_and(|actions| actions.iter().any(|a| a == "*"))
+    }),
+    "an administrator did not receive the `*` entry, so the client loses `manage all`: \
+     {admin_policies:?}"
+  );
 }
 
 /// Every tuple the mirror wrote for one subject, as `type:id#relation`, sorted.
