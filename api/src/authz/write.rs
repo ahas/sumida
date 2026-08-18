@@ -11,7 +11,7 @@
 //! * **A write is checked against the rule set before it reaches the table.** A relation that is
 //!   derived from a domain column cannot be granted as a row, and a subject type the relation never
 //!   declared is refused at the API instead of being stored and silently never matching. That is
-//!   the defect site-app's reversed `admin:user` row is: a grant nobody could ever have used, sitting
+//!   the defect a reversed `admin:user` row is: a grant nobody could ever have used, sitting
 //!   in the table looking like authority.
 //! * **A write is authority-checked against `<definition>#grant`.** The old model had
 //!   `assert_policy_within_authority`, which could not verify that a granter holds what they grant
@@ -36,7 +36,7 @@ use super::{Authz, AuthzError, ServiceGrant};
 /// meant without ever saying so.
 ///
 /// `Hash` is derived because a caller that rewrites a whole grant grid deduplicates by subject
-/// before it writes — lab-app's site-sharing screen submits the same person twice at two levels, and
+/// before it writes — a sharing screen can submit the same person twice at two levels, and
 /// resolving that in a `HashMap<SubjectKey, _>` is what stops the second write from being an
 /// `ON CONFLICT` that silently keeps whichever row lost.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -74,7 +74,7 @@ impl SubjectKey {
 
   /// Parses the canonical key form `<type>:<id>[#<relation>]`.
   ///
-  /// The id may itself contain colons (`delegation_scope:svc:site-app`), so the split is on the
+  /// The id may itself contain colons (`delegation_scope:svc:alpha`), so the split is on the
   /// **first** one — the same rule `subject_key`'s generated column concatenates by.
   pub fn parse(key: &str) -> Result<Self, AuthzError> {
     let (head, relation) = match key.split_once('#') {
@@ -106,7 +106,7 @@ impl SubjectKey {
   /// The integer user id, for a terminal `user:` subject and nothing else.
   ///
   /// `role:1#member` is a set of users and must **not** answer here: a caller that treated it as
-  /// one would report a role as a person, which is precisely how site-app's share list would grow a
+  /// one would report a role as a person, which is precisely how a share list would grow a
   /// phantom member.
   pub fn as_user_id(&self) -> Option<i32> {
     if self.ty == "user" && self.relation.is_empty() { self.id.parse().ok() } else { None }
@@ -184,7 +184,7 @@ impl TupleFilter {
 /// One grant read back off an object — who, and at which relation.
 ///
 /// The design's `subjects_with` returns bare subject keys. The relation comes back with them
-/// because every caller of this (site-app's `level_of`, lab-app's `GetSite.permissions`) has to say
+/// because every caller of this — a sharing screen's "who holds what" read — has to say
 /// *at which level* the subject holds the object, and deriving that afterwards would mean one
 /// query per relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -196,8 +196,8 @@ pub struct ObjectGrant {
 /// Which existing grants `replace_object_grants` may delete.
 ///
 /// It exists because two products already have this exact operation and implement it with
-/// different preservation rules: lab-app preserves out-of-subtree, `role:`/`apikey:` and denied rows,
-/// site-app rewrites only the one user being re-levelled. Carrying the policy here is what lets both
+/// different preservation rules: one screen preserves out-of-subtree, `role:`/`apikey:` and denied
+/// rows, another rewrites only the one user being re-levelled. Carrying the policy here lets both
 /// call one function instead of each hand-rolling a delete.
 #[derive(Clone, Debug)]
 pub enum SubjectScope {
@@ -242,8 +242,8 @@ impl Authz {
   ///
   /// For the seeding paths only, and the distinction is not a convenience: at creation time there
   /// is no grantor to check, because the resource did not exist a moment ago and therefore nobody
-  /// can hold `grant` on it yet. site-app's owner seed (`project/mod.rs`) is exactly that — the
-  /// authorization already happened, at `service:site-app:project#can_create`.
+  /// can hold `grant` on it yet. A create path's owner seed is exactly that — the authorization
+  /// already happened, at the `create` permission that let the row exist.
   ///
   /// Still rule-checked. Skipping the authority is a decision about *who*; writing a relation
   /// nobody declared would be a decision about *what*, and no path gets to make that one.
@@ -356,8 +356,8 @@ impl Authz {
   /// call site in this tree passes one.
   ///
   /// The authority check runs once, against `<definition>#grant`, before anything is touched. A
-  /// caller who may not grant does not get to delete either, which is the rule lab-app's
-  /// hand-rolled version gets right and is easy to get wrong.
+  /// caller who may not grant does not get to delete either, which is a rule a hand-rolled
+  /// version is easy to get wrong.
   pub async fn replace_object_grants<C: ConnectionTrait>(
     resource_type: &str,
     resource_id: &str,
@@ -588,9 +588,9 @@ async fn insert_tuple<C: ConnectionTrait>(
 ///
 /// 1. **A relation nobody declared.** The foreign key catches this in the database too; catching it
 ///    here is what turns a constraint violation into a sentence.
-/// 2. **A derived relation.** `antares_project#owner_user` is `projects.owner_user_id`. Granting it
+/// 2. **A derived relation.** `board_group#parent` is `board_groups.parent_id`. Granting it
 ///    as a row would store authority the evaluator never reads, because the rule reads the column.
-/// 3. **A subject type the relation never declared.** `service:trainer:task#read@board:7` is stored
+/// 3. **A subject type the relation never declared.** `service:board_post#read@board:7` is stored
 ///    happily by `access_policies` and matches nothing, forever.
 ///
 /// Crate-visible so `/relation-tuples` can run it **before** `Authz::write` and answer the three
@@ -644,22 +644,22 @@ mod write_validation_tests {
   use super::*;
 
   fn write(relation: &str, subject: SubjectKey) -> TupleWrite {
-    TupleWrite::new("antares_project", "my_desk", relation, subject)
+    TupleWrite::new("board_group", "7", relation, subject)
   }
 
-  /// The shape site-app's owner seed writes.
+  /// The shape a create path's owner seed writes.
   #[test]
   fn a_declared_subject_on_a_stored_relation_is_accepted() {
-    validate_write(&write("owner", SubjectKey::user(1))).expect("a user may own a project");
+    validate_write(&write("owner", SubjectKey::user(1))).expect("a user may own a board group");
     validate_write(&write("viewer", SubjectKey::userset("organization", "100", "member")))
-      .expect("an organization's members may view a project");
+      .expect("an organization's members may view a board group");
   }
 
-  /// `owner_user` is `projects.owner_user_id`. A tuple on it would be authority the evaluator never
+  /// `parent` is `board_groups.parent_id`. A tuple on it would be authority the evaluator never
   /// looks at, which is worse than a refusal: it reads as a grant.
   #[test]
   fn a_derived_relation_cannot_be_granted_as_a_tuple() {
-    let error = validate_write(&write("owner_user", SubjectKey::user(1))).unwrap_err();
+    let error = validate_write(&write("parent", SubjectKey::user(1))).unwrap_err();
     assert!(
       matches!(&error, AuthzError::NotCompilable(m) if m.contains("derived")),
       "{error:?}"
@@ -707,7 +707,7 @@ mod write_validation_tests {
     }
   }
 
-  /// The subject key round-trips, colons in the id included — `delegation_scope:svc:site-app` is a
+  /// The subject key round-trips, colons in the id included — `delegation_scope:svc:alpha` is a
   /// real object id and splitting on the last colon would mangle it.
   #[test]
   fn subject_keys_round_trip() {

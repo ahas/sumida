@@ -17,7 +17,7 @@ use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 
-/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace user_invitation service = user_invitation`).
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace user_invitation service = user_invitation`).
 const RESOURCE: &str = "user_invitation";
 
 pub struct UserInvitationService<S: SumidaState> {

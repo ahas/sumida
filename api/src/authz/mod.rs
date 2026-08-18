@@ -1,26 +1,25 @@
 //! Relational Zanzibar — the evaluator.
 //!
-//! **This is the authority, and since §14 step 14 it is the only one.** Both tiers answer from
-//! here: the route gate through `layer::service_ap` and the object tier through every service's
-//! `select` / `Authz::try_check`. `util/ap.rs` — the lateral-join evaluator over `access_policies`
-//! — was deleted when lab-app, its last consumer, was routed.
+//! **This is the authority, and it is the only one.** Both tiers answer from here: the route gate
+//! through `layer::service_ap` and the object tier through every service's `select` /
+//! `Authz::try_check`. The lateral-join evaluator over `access_policies` that preceded it is
+//! deleted, and nothing on a request path reads that table.
 //!
-//! `access_policies` itself remains, and is not a second evaluator: `migration/init.rs` still
-//! creates it, `rebac_backfill.rs` reads it to produce the tuples a not-yet-migrated database
-//! needs, and `rebac_mirror.rs`'s trigger keeps translating writes to it for as long as one exists.
-//! Nothing on a request path reads that table.
+//! **sumida carries its own rules and nobody else's.** A product built on it hands its rule files
+//! to `Authz::install_rules` before anything reads the registry; the rule set is then sumida's file
+//! plus whatever was installed. Nothing in this module enumerates products or names one.
 //!
 //! ```text
-//! schema*.zed  ──parse──▶  ir  ──validate──▶  registry  ──compile──▶  one SQL predicate
-//!                                   │                                        │
-//!                                   └── aborts boot, naming the offender      └── drops into an
-//!                                                                                existing WHERE
+//! schema.sz + installed  ──parse──▶  ir  ──validate──▶  registry  ──compile──▶  one SQL predicate
+//!                                         │                                        │
+//!                                         └── aborts boot, naming the offender      └── drops into
+//!                                                                                an existing WHERE
 //! ```
 //!
 //! * `subject`  — one identity expansion, replacing four copies and a hand-parser.
 //! * `ir`       — the rewrite representation.
-//! * `parse`    — the SpiceDB-flavoured schema language of §4.1.
-//! * `registry` — the rule set, memoised, with the namespace inventory.
+//! * `parse`    — the `.sz` rule language of §4.1.
+//! * `registry` — the rule set, memoised, with the namespace inventory, and the install seam.
 //! * `validate` — the eight boot rules. Failure aborts start-up.
 //! * `compile`  — a rewrite becomes one boolean `SimpleExpr`.
 //! * `write`    — the grants themselves: write, revoke, and "who holds this on this object".
@@ -130,8 +129,8 @@ impl From<sea_orm::DbErr> for AuthzError {
 ///
 /// A point check compares the id against the definition's **own** key column before it ever reaches
 /// a tuple, so an id collapsed into text is not a slow query — it is `operator does not exist:
-/// uuid = text` at run time, on exactly the definitions (`file`, `board_file`, `joy_task`,
-/// `joy_terminal_session`) whose regressions this repository cares most about.
+/// uuid = text` at run time, on exactly the uuid-keyed definitions (`file`, `board_file`) whose
+/// regressions this repository cares most about.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ObjectKey {
   Int(i32),
@@ -146,8 +145,8 @@ impl ObjectKey {
   /// (`resource_id` is `text`), a URL path segment, a JSON body. `Authz::write` is the case that
   /// found this: it took `TupleWrite::resource_id`, a `String`, straight into the `#grant` point
   /// check, which then compared `organizations.id` against a text literal and failed the request
-  /// with `operator does not exist: integer = text`. `antares_project` is slug-keyed, so the only
-  /// call site in the tree could not see it.
+  /// with `operator does not exist: integer = text`. A text-keyed definition cannot see the defect
+  /// at all, which is why it went unnoticed until an integer-keyed one was written through.
   pub fn typed(kind: ir::IdKind, definition: &str, id: &str) -> Result<Self, AuthzError> {
     let malformed = |what: &str| {
       AuthzError::Schema(format!("`{definition}` is keyed by {what}, and `{id}` is not one"))
@@ -197,6 +196,18 @@ impl From<uuid::Uuid> for ObjectKey {
 pub struct Authz;
 
 impl Authz {
+  /// Registers a product's own rule files, before anything reads the rule set.
+  ///
+  /// sumida ships its own rules and knows of no others; this is how a product says what its own
+  /// are. It must run **above** `boot_or_abort` — install after the first read and the process has
+  /// already answered questions without them, which is why that is an error and not a warning.
+  ///
+  /// A product with no rules of its own passes `&[]`, deliberately rather than by omission: "I have
+  /// none" and "I forgot" must not look the same.
+  pub fn install_rules(files: &'static [registry::RuleFile]) -> Result<(), AuthzError> {
+    Registry::install(files)
+  }
+
   /// The validated rule set. The first call parses and validates; every later call is a lookup.
   pub fn registry() -> Result<&'static Registry, AuthzError> {
     Registry::global()
@@ -380,32 +391,25 @@ impl Authz {
   /// Three outcomes per definition, and the difference between the last two is the whole point:
   ///
   /// * **Active** — every table and column the rule reads is present.
-  /// * **Absent** — the product's marker table is not in this database, so the product is not
-  ///   deployed here. Not an error: sumida's schema is shared by four products and no database has
-  ///   all four.
-  /// * **Drift** — the product *is* deployed and a column the rule reads is missing. That is a rule
-  ///   and a schema disagreeing, which is fatal for anything that would evaluate the rule;
+  /// * **Absent** — a table the rule reads is not in this database at all. Not an error: sumida's
+  ///   board, file and membership features are optional per deployment, and a feature that is off
+  ///   never created its tables, while its rules are compiled in unconditionally.
+  /// * **Drift** — every table is present and a **column** the rule reads is missing. That is a
+  ///   rule and a schema disagreeing, which is fatal for anything that would evaluate the rule;
   ///   `boot_or_abort` treats it as such.
   pub async fn boot<C: ConnectionTrait>(db: &C) -> Result<BootReport, AuthzError> {
     let registry = Self::registry()?; // parse + validate; aborts here on any structural failure
     let present = live_columns(db).await?;
-
-    let deployed: HashSet<&str> = registry::PRODUCTS
-      .iter()
-      .filter(|product| present.iter().any(|(table, _)| table == product.marker))
-      .map(|product| product.name)
-      .collect();
 
     let dependencies = registry.column_dependencies();
     let entries = registry
       .definitions()
       .iter()
       .map(|definition| {
-        let product = registry.owner_of(&definition.name).unwrap_or("sumida");
-        // Not just this definition's own columns: a rule that walks (`agent->view`) emits a
+        // Not just this definition's own columns: a rule that walks (`board->view`) emits a
         // subquery over the target's table, so a column missing two hops away breaks this
         // definition's statement just as surely as one of its own. Judging by own columns alone
-        // reported `joy_terminal_session` backed while `joy_agent.organization_id` did not exist.
+        // reported a definition backed while a column two hops away did not exist.
         let reachable = registry.reachable_from(&definition.name);
         let mine: Vec<&registry::ColumnDependency> = dependencies
           .iter()
@@ -413,8 +417,8 @@ impl Authz {
           .collect();
         DefinitionStatus {
           definition: definition.name.clone(),
-          product,
-          state: classify(product, &mine, deployed.contains(product), &present),
+          source: registry.source_of(&definition.name).unwrap_or(registry::SUMIDA_RULES.name),
+          state: classify(&mine, &present),
         }
       })
       .collect();
@@ -445,9 +449,11 @@ impl Authz {
   /// Rewrites the `relation_definitions` / `permission_definitions` projection (E6) from the
   /// compiled registry, in one transaction's worth of statements.
   ///
-  /// The projection is never read by the evaluator. It exists for the foreign key — three products
-  /// write policy rows by raw SQL and by `ActiveModel` insert, and the FK is the only thing that
-  /// can stop them writing a relation nobody declared — and for `GET /authz/schema`.
+  /// The projection is never read by the evaluator. It exists for the foreign key on
+  /// `relation_tuples`, which is the only thing that can stop a caller writing a tuple on a
+  /// relation nobody declared — and for `GET /authz/schema`. It is therefore part of the boot
+  /// sequence: a rule may declare a relation before any tuple names it, and the row has to be
+  /// there before the first grant.
   ///
   /// A relation that has disappeared from the rules but still has tuples pointing at it is **not**
   /// deleted: that is a schema change with live grants behind it, and silently dropping either the
@@ -574,26 +580,21 @@ impl Authz {
 /// Decides one definition's state from what the database actually holds.
 ///
 /// A pure function so the three outcomes can be exercised without a database. The distinction it
-/// draws is the whole value of the check: **Absent** is a deployment fact (sumida's board and
-/// membership features are optional, and no database has all four products' tables), while
-/// **Drift** is a rule and a schema disagreeing — which fails closed only by accident, as a 500 on
-/// the first request that evaluates the rule.
+/// draws is the whole value of the check: **Absent** is a deployment fact — a switched-off optional
+/// feature never created its tables, and the rules that read them are compiled in regardless,
+/// because `.sz` has no conditional compilation — while **Drift** is a rule and a schema
+/// disagreeing, which fails closed only by accident, as a 500 on the first request that evaluates
+/// the rule.
 fn classify(
-  product: &str,
   dependencies: &[&registry::ColumnDependency],
-  product_deployed: bool,
   present: &HashSet<(String, String)>,
 ) -> DefinitionState {
-  let mut missing_tables: Vec<String> = if product_deployed {
-    let tables: HashSet<&str> = present.iter().map(|(table, _)| table.as_str()).collect();
-    dependencies
-      .iter()
-      .map(|dependency| dependency.table.clone())
-      .filter(|table| !tables.contains(table.as_str()))
-      .collect()
-  } else {
-    vec![format!("<{product} is not deployed here>")]
-  };
+  let tables: HashSet<&str> = present.iter().map(|(table, _)| table.as_str()).collect();
+  let mut missing_tables: Vec<String> = dependencies
+    .iter()
+    .map(|dependency| dependency.table.clone())
+    .filter(|table| !tables.contains(table.as_str()))
+    .collect();
   missing_tables.sort();
   missing_tables.dedup();
 
@@ -616,7 +617,7 @@ fn classify(
   }
 }
 
-fn render(predicate: SimpleExpr) -> String {
+pub(crate) fn render(predicate: SimpleExpr) -> String {
   let sql = Query::select().expr(predicate).take().to_string(PostgresQueryBuilder);
   sql.strip_prefix("SELECT ").unwrap_or(&sql).to_owned()
 }
@@ -652,9 +653,9 @@ pub struct ServiceGrant {
 pub enum DefinitionState {
   Active,
   /// A table the rule reads is not in this database at all, so the rule cannot run here — and
-  /// should not: sumida is one working tree shared by four products, and its own board and
-  /// membership features are optional per deployment, so "no table" is a deployment fact rather
-  /// than a defect.
+  /// should not. sumida's board, file and membership features are optional per deployment and a
+  /// feature that is off never created its tables, while the rules that read them are compiled in
+  /// unconditionally, so "no table" is a deployment fact rather than a defect.
   Absent {
     missing_tables: Vec<String>,
   },
@@ -669,7 +670,8 @@ pub enum DefinitionState {
 #[derive(Debug, Clone)]
 pub struct DefinitionStatus {
   pub definition: String,
-  pub product:    &'static str,
+  /// The rule file this definition was declared in. Report-only.
+  pub source:     &'static str,
   pub state:      DefinitionState,
 }
 
@@ -714,31 +716,26 @@ mod boot_tests {
   fn a_backed_rule_is_active() {
     let dependencies = [dependency("things", "id"), dependency("things", "user_id")];
     let state = classify(
-      "sumida",
       &dependencies.iter().collect::<Vec<_>>(),
-      true,
       &database(&[("things", "id"), ("things", "user_id")]),
     );
     assert_eq!(state, DefinitionState::Active);
   }
 
-  /// The product is not deployed here at all. Not an error: sumida is one working tree shared by
-  /// four products and no database has all four's tables.
-  #[test]
-  fn a_rule_of_an_undeployed_product_is_absent() {
-    let dependencies = [dependency("tasks", "owner_key")];
-    let state = classify("trainer", &dependencies.iter().collect::<Vec<_>>(), false, &database(&[]));
-    assert!(matches!(state, DefinitionState::Absent { .. }), "{state:?}");
-  }
-
-  /// The product is deployed and one of the rule's tables is not. This is sumida's optional board
-  /// feature in a database that does not enable it — site-app is exactly that — so it must read as a
-  /// deployment fact and not as drift, or site-app would refuse to start.
+  /// One of the rule's tables is not here. This is an optional feature in a database that does not
+  /// enable it — the rules for `board`, `file` and `membership_plan` are compiled in whether or not
+  /// the feature that creates their tables is on, because the rule language has no conditional
+  /// compilation. So a missing **table** has to read as a deployment fact and not as drift, or
+  /// every deployment with a feature switched off refuses to start.
+  ///
+  /// This is the executable form of the whole feature-flag argument, and it is the reason there is
+  /// no per-product marker table any more: a product that ships only its own rules has no foreign
+  /// rules to suppress, and the branch that made an absent optional feature survivable was never
+  /// the marker.
   #[test]
   fn a_rule_whose_table_is_missing_is_absent_not_drift() {
     let dependencies = [dependency("boards", "id"), dependency("boards", "group_id")];
-    let state =
-      classify("sumida", &dependencies.iter().collect::<Vec<_>>(), true, &database(&[("users", "id")]));
+    let state = classify(&dependencies.iter().collect::<Vec<_>>(), &database(&[("users", "id")]));
     assert_eq!(
       state,
       DefinitionState::Absent {
@@ -752,17 +749,15 @@ mod boot_tests {
   /// first request that evaluates the rule.
   #[test]
   fn a_rule_whose_column_is_missing_is_drift() {
-    let dependencies = [dependency("tasks", "id"), dependency("tasks", "owner_user_id")];
+    let dependencies = [dependency("things", "id"), dependency("things", "owner_user_id")];
     let state = classify(
-      "trainer",
       &dependencies.iter().collect::<Vec<_>>(),
-      true,
-      &database(&[("tasks", "id"), ("tasks", "owner_key")]),
+      &database(&[("things", "id"), ("things", "owner_key")]),
     );
     assert_eq!(
       state,
       DefinitionState::Drift {
-        missing_columns: vec!["tasks.owner_user_id".to_owned()],
+        missing_columns: vec!["things.owner_user_id".to_owned()],
       }
     );
   }

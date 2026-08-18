@@ -61,7 +61,7 @@ impl<S: SumidaState> SubscriptionService<S> {
     query: Select<Subscriptions>,
     db: &C,
   ) -> Result<Select<Subscriptions>, SumidaError> {
-    // `organization` 의 구독 층에는 `platform:root->superuser` 갈래가 없다(`schema.zed`의
+    // `organization` 의 구독 층에는 `platform:root->superuser` 갈래가 없다(`schema.sz`의
     // `scope subscription`). 최상위 관리자의 전량 열람은 그래서 여기 남되, 세션의 `is_admin`
     // 필드를 직접 읽지 않고 규칙에 묻는다.
     if Authz::is_superuser(&self.subject(), db).await? {

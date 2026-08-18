@@ -3,16 +3,15 @@
 //! The `/relation-tuples` screen's three selects — resource type, relation, subject type — have to
 //! come from the same place the evaluator reads, or the form offers grants that cannot take effect.
 //! That is the defect the old free-text form had: `access_policies` had no vocabulary at all, which
-//! is why site-app's reversed `admin:user` row sat in the table looking like authority and matching
+//! is why a reversed `admin:user` row could sit in the table looking like authority and matching
 //! nothing, forever.
 //!
 //! **Served from the compiled registry, not from `relation_definitions`.** §3.2 describes the two
 //! tables as a projection of the registry that exists for the foreign key and for this endpoint,
-//! and they are the same content whenever they are in sync — but nothing in this tree rewrites them
-//! at boot (`Authz::sync_schema` has no production call site; `trainer.rs` calls `boot_or_abort`, which
-//! validates and does not project). A screen fed from a stale projection offers a relation the
-//! evaluator does not know, which is precisely the failure this endpoint exists to prevent. The
-//! registry cannot be stale: it *is* what `Authz::check` compiles.
+//! and they are the same content whenever they are in sync — but "whenever they are in sync" is a
+//! condition, and a screen fed from a stale projection offers a relation the evaluator does not
+//! know, which is precisely the failure this endpoint exists to prevent. The registry cannot be
+//! stale: it *is* what `Authz::check` compiles.
 //!
 //! What is deliberately **not** exposed: `relation_definitions.source`, the `Derivation` behind a
 //! derived relation. It names a table, a column, its join hops and a raw SQL filter fragment — a

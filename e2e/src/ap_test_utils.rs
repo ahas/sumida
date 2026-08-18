@@ -139,9 +139,9 @@ pub async fn grant_object(
 /// A block on one row — what `effect = 'deny'` meant, where the rules can express it (§3).
 ///
 /// Denial stopped being a property of a grant and became a property of the rule: `blocked` is
-/// subtracted **outside** the whole union, so authorship cannot walk through it. Only the four
-/// definitions whose code contemplated denial declare it (`board_group`, `board`, `board_post`,
-/// `daqs_site`); anywhere else a block is not expressible and this panics rather than pretending.
+/// subtracted **outside** the whole union, so authorship cannot walk through it. Only the
+/// definitions whose code contemplated denial declare it (`board_group`, `board`, `board_post`);
+/// anywhere else a block is not expressible and this panics rather than pretending.
 pub async fn block_object(
   db: &DatabaseConnection,
   user: &TestUser,
@@ -245,7 +245,7 @@ fn permission_of(definition: &str, action: &str) -> Option<&'static str> {
 /// What a namespace's row-level checks resolve to — the `= <definition>` half of the inventory.
 ///
 /// Read out of the registry rather than written down here: a table in the fixture is a second copy
-/// of `schema.zed`'s inventory, and the two would drift the first time a namespace moved.
+/// of the rule set's inventory, and the two would drift the first time a namespace moved.
 /// `Registry::global` is memoised for the process, so the name it hands back lives as long as the
 /// process does.
 fn definition_of(namespace: &str) -> &'static str {

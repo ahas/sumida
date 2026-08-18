@@ -15,11 +15,10 @@ use sea_orm_migration::prelude::*;
 ///   `EXISTS (SELECT 1 FROM users WHERE is_admin AND id = ANY($2))` that Postgres hoists into an
 ///   InitPlan — is index-backed rather than a sequential scan once per statement.
 ///
-/// The remaining columns of §3.4/§3.5 belong to trainer (`tasks.owner_user_id`, `tasks.owner_scope`,
-/// `jobs.owner_key`, `agents.organization_id`, `cloud_instances.owner_user_id`) and land in trainer's
-/// own `src/migration/joy_service_init.rs`, per trainer's convention. Until they do, `Authz::boot`
-/// reports trainer's definitions as drift-blocked against a trainer database rather than activating a rule
-/// that reads a column which does not exist.
+/// The remaining columns of §3.4/§3.5 belong to definitions sumida does not declare, and land in
+/// the migrations of whatever declares them. Until they do, `Authz::boot` reports those definitions
+/// as drift and refuses to start, rather than activating a rule that reads a column which does not
+/// exist.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -27,7 +26,7 @@ pub struct Migration;
 ///
 /// A runtime probe rather than `#[cfg(feature = "board")]`, for the reason `rebac.rs` records:
 /// Cargo unifies features across the dependency graph, so `entity` can be compiled with `board` on
-/// for a build whose database has no board tables — site-app is exactly that.
+/// for a build whose database has no board tables.
 async fn has_boards<C: ConnectionTrait>(db: &C) -> Result<bool, DbErr> {
   #[derive(FromQueryResult)]
   struct Present {

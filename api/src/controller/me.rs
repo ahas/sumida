@@ -56,7 +56,7 @@ impl<S: SumidaState> MeController<S> {
   /// The caller's own grants, in the shape the CASL client has always received (design §9.7).
   ///
   /// The wire shape is unchanged, and unchanged deliberately: `updateAbilityFor`
-  /// (`trainer/client/vendor/skytree/packages/casl/src/runtime/plugin.ts:19`) turns each element into
+  /// (the CASL runtime plugin the clients share) turns each element into
   /// `can(action, `${namespace}:${object}`)`, and because a `service` object's id *is* today's
   /// namespace string, projecting that half from tuples is exact rather than approximate.
   ///
@@ -111,9 +111,9 @@ impl<S: SumidaState> MeController<S> {
   /// as two rows in one flat list, and the client's CASL rules collapse them.
   ///
   /// Every entry is evaluated through the compiled rule rather than read off the tuples, so one
-  /// `service:trainer:task#operator` tuple reports all eight capabilities and `platform:root#superuser`
+  /// `service:<namespace>#operator` tuple reports every capability on it, and `platform:root#superuser`
   /// reports every namespace. A client that had to re-derive that from the raw grants would be
-  /// carrying a second copy of `schema.zed` in TypeScript.
+  /// carrying a second copy of `schema.sz` in TypeScript.
   ///
   /// It reports the **service tier only**, and now that the object tier routes too that is a
   /// statement about what can be enumerated rather than about which store decides. A row-level

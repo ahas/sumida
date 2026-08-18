@@ -39,7 +39,20 @@ pub struct TestServer {
 }
 
 impl TestServer {
+  /// A server carrying sumida's rules and nothing else.
   pub async fn spawn() -> anyhow::Result<Self> {
+    Self::spawn_with_rules(&[]).await
+  }
+
+  /// A server carrying `rules` as well — the shape a product's own harness has.
+  ///
+  /// The harness has to say which rules it serves for the same reason a product does: the router
+  /// registers them, and a router that registered nothing while the test binary had installed
+  /// something would be two declarations disagreeing. Passing the slice the binary installed makes
+  /// the two the same declaration, which `install` accepts.
+  pub async fn spawn_with_rules(
+    rules: &'static [api::authz::registry::RuleFile],
+  ) -> anyhow::Result<Self> {
     let settings = settings::get();
     let db = infra::db::connect().await;
     // Bind to an ephemeral port (host:0) so concurrent tests don't collide on the
@@ -61,7 +74,7 @@ impl TestServer {
 
     let api = Router::new()
       .merge(
-        api::Sumida::new() //
+        api::Sumida::new(rules) //
           .set_state(&state)
           .router(),
       )

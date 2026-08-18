@@ -82,7 +82,7 @@ where
     // The namespace is `access_policy`, not a new one: this endpoint replaces that screen, and
     // giving it a namespace of its own would silently take the capability away from everyone who
     // holds it today. `service:access_policy` resolves to the `relation_tuple` definition through
-    // the inventory (`schema.zed`'s `namespace access_policy service = relation_tuple`).
+    // the inventory (`schema.sz`'s `namespace access_policy service = relation_tuple`).
     let route_read = Router::new() //
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))

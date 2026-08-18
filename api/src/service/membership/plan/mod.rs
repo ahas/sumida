@@ -18,7 +18,7 @@ use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 
-/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace membership_plan service = membership_plan`).
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace membership_plan service = membership_plan`).
 const RESOURCE: &str = "membership_plan";
 
 pub struct PlanService<S: SumidaState> {

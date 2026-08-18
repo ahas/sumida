@@ -2,15 +2,16 @@
 //!
 //! Scannerless recursive descent over the schema text. There is no separate token stream because
 //! two constructs need the raw source — the `where` clause of a derivation, and identifiers that
-//! carry `:` and `.` (`service:trainer:system-settings`, `site-app:project.row`, `sites.manager_id`) —
-//! and threading a lexer mode through a token stream to serve two cases costs more than it saves.
+//! carry `:` and `.` (`service:app:system-settings`, `org:credit`, `sites.manager_id`) — and
+//! threading a lexer mode through a token stream to serve two cases costs more than it saves.
 //!
-//! Grammar, as implemented. Three additions to the design's sketch, each because the compiler
+//! Grammar, as implemented. Four additions to the design's sketch, each because the compiler
 //! cannot do its job without the fact and inferring it would mean guessing:
 //!
 //! ```text
-//! file        := ( definition | namespace )*
+//! file        := ( definition | extension | namespace )*
 //! definition  := 'definition' NAME [ 'on' TABLE '.' COL [ 'int' | 'uuid' ] ] '{' member* '}'
+//! extension   := 'extend' NAME '{' member* '}'
 //! member      := 'closure'    NAME 'via' NAME
 //!              | 'relation'   NAME ':' relbody
 //!              | 'permission' NAME '=' expr
@@ -40,9 +41,30 @@
 //!   is "the users whose organization is this object", which is what `organization#member` means;
 //!   without the clause it is indistinguishable from `column(board_posts.user_id -> user)`, which
 //!   means the opposite.
+//! * **`extend NAME`** — further members for a definition declared in **another file**. A rule file
+//!   may not redeclare a definition another file already declared, so without this a consumer could
+//!   not add its own resource families to `organization`: the framework would have to enumerate
+//!   them, which means the framework has to know what its consumers are. An extension may not
+//!   introduce `on` or `closure` — those are the definition's identity, not a member of it — and a
+//!   member that collides with one the target already has is refused.
 //! * **`namespace`** — the legacy-namespace inventory validation rule 8 checks against.
 
 use super::ir::*;
+
+/// Marks every own-table derivation as uncorrelated.
+///
+/// A definition with no backing table has no row to correlate a derivation to. Kept as a free
+/// function because an extension's members are parsed before the target definition is known, so the
+/// registry applies it once the two are joined.
+pub fn free_correlate(relations: &mut [Relation]) {
+  for relation in relations {
+    if let RelationSource::Derived(derivation) = &mut relation.source
+      && derivation.correlation == Correlation::Own
+    {
+      derivation.correlation = Correlation::Free;
+    }
+  }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
@@ -58,30 +80,29 @@ impl std::fmt::Display for ParseError {
   }
 }
 
-/// One parsed schema file.
+/// One parsed rule file.
 #[derive(Debug, Default)]
 pub struct SchemaFile {
   pub definitions: Vec<Definition>,
+  pub extensions:  Vec<DefinitionExtension>,
   pub namespaces:  Vec<NamespaceEntry>,
 }
 
-pub fn parse(file: &str, product: &str, src: &str) -> Result<SchemaFile, ParseError> {
+pub fn parse(file: &str, src: &str) -> Result<SchemaFile, ParseError> {
   Parser {
-    file:    file.to_owned(),
-    product: product.to_owned(),
-    src:     src.as_bytes(),
-    text:    src,
-    pos:     0,
+    file: file.to_owned(),
+    src:  src.as_bytes(),
+    text: src,
+    pos:  0,
   }
   .file()
 }
 
 struct Parser<'a> {
-  file:    String,
-  product: String,
-  src:     &'a [u8],
-  text:    &'a str,
-  pos:     usize,
+  file: String,
+  src:  &'a [u8],
+  text: &'a str,
+  pos:  usize,
 }
 
 impl<'a> Parser<'a> {
@@ -152,7 +173,7 @@ impl<'a> Parser<'a> {
   ///
   /// `-` continues an identifier only when a word character follows it, so `system-settings` is one
   /// name while `board->view` and `edit - blocked` are not. `:` and `.` continue likewise, which is
-  /// what makes `service:trainer:system-settings`, `site-app:project.row` and `sites.manager_id` single
+  /// what makes `service:app:system-settings`, `org:credit` and `sites.manager_id` single
   /// names — and keeps `user:*` and `relation viewer: user` three tokens, because `*` and a space
   /// are not word characters.
   fn ident(&mut self) -> Result<String, ParseError> {
@@ -176,7 +197,7 @@ impl<'a> Parser<'a> {
   }
 
   /// Consumes `name` if it is the next identifier. Used for the keywords, which are contextual
-  /// rather than reserved — `scope` is a member keyword and also a relation name in `joy_task`.
+  /// rather than reserved — `scope` is a member keyword and is also a perfectly good relation name.
   fn eat_keyword(&mut self, name: &str) -> bool {
     let save = self.pos;
     match self.ident() {
@@ -203,10 +224,12 @@ impl<'a> Parser<'a> {
     while self.peek().is_some() {
       if self.eat_keyword("definition") {
         out.definitions.push(self.definition()?);
+      } else if self.eat_keyword("extend") {
+        out.extensions.push(self.extension()?);
       } else if self.eat_keyword("namespace") {
         out.namespaces.push(self.namespace()?);
       } else {
-        return self.err("expected `definition` or `namespace`");
+        return self.err("expected `definition`, `extend` or `namespace`");
       }
     }
     Ok(out)
@@ -226,7 +249,7 @@ impl<'a> Parser<'a> {
       namespace,
       gated,
       definition,
-      product: self.product.clone(),
+      source: self.file.clone(),
     })
   }
 
@@ -264,11 +287,67 @@ impl<'a> Parser<'a> {
       permissions: Vec::new(),
     };
 
+    self.members(&mut def, false)?;
+
+    // A definition with no backing table has no row to correlate a derivation to, so its
+    // derivations are uncorrelated by construction. Recording that here rather than re-deriving it
+    // in the compiler keeps `Correlation` a fact of the registry instead of a compile-time guess.
+    if def.table.is_none() {
+      free_correlate(&mut def.relations);
+    }
+
+    Ok(def)
+  }
+
+  /// `extend NAME { member* }` — further members for a definition another file declared.
+  fn extension(&mut self) -> Result<DefinitionExtension, ParseError> {
+    let target = self.ident()?;
+
+    // `on` and `closure` are the definition's identity, not members of it. An extension that could
+    // move a definition's table, id kind or hierarchy would be redeclaring it under another name.
+    if self.eat_keyword("on") {
+      return self
+        .err(format!("`extend {target}` cannot declare `on`; where a definition's objects live is \
+                      part of the definition, and only the file that declares it may say"));
+    }
+
+    self.expect(b'{')?;
+    let mut def = Definition {
+      name:        target.clone(),
+      table:       None,
+      closure:     None,
+      relations:   Vec::new(),
+      permissions: Vec::new(),
+    };
+
+    self.members(&mut def, true)?;
+
+    Ok(DefinitionExtension {
+      target,
+      relations: def.relations,
+      permissions: def.permissions,
+    })
+  }
+
+  /// The shared `{ member* }` body, up to and including the closing brace.
+  ///
+  /// `in_extension` refuses `closure`, which an extension may not introduce. Everything else is
+  /// identical, deliberately: an extension is not a second language, it is the same members applied
+  /// to a definition that lives in another file.
+  fn members(&mut self, def: &mut Definition, in_extension: bool) -> Result<(), ParseError> {
     while !self.eat(b'}') {
       if self.peek().is_none() {
-        return self.err(format!("definition `{}` is not closed", def.name));
+        let what = if in_extension { "extension of" } else { "definition" };
+        return self.err(format!("{what} `{}` is not closed", def.name));
       }
       if self.eat_keyword("closure") {
+        if in_extension {
+          return self.err(format!(
+            "`extend {}` cannot declare a closure; a definition's hierarchy is part of the \
+             definition, and only the file that declares it may say",
+            def.name
+          ));
+        }
         let relation = self.ident()?;
         if !self.eat_keyword("via") {
           return self.err("expected `via <closure table>`");
@@ -297,26 +376,13 @@ impl<'a> Parser<'a> {
         if def.relation(&format!("{family}_viewer")).is_some() {
           return self.err(format!("scope `{family}` is declared twice"));
         }
-        self.expand_scope(&mut def, &family);
+        self.expand_scope(def, &family);
       } else {
-        return self.err("expected `relation`, `permission`, `closure`, `scope` or `}`");
+        let extra = if in_extension { "" } else { "`closure`, " };
+        return self.err(format!("expected `relation`, `permission`, {extra}`scope` or `}}`"));
       }
     }
-
-    // A definition with no backing table has no row to correlate a derivation to, so its
-    // derivations are uncorrelated by construction. Recording that here rather than re-deriving it
-    // in the compiler keeps `Correlation` a fact of the registry instead of a compile-time guess.
-    if def.table.is_none() {
-      for relation in &mut def.relations {
-        if let RelationSource::Derived(derivation) = &mut relation.source
-          && derivation.correlation == Correlation::Own
-        {
-          derivation.correlation = Correlation::Free;
-        }
-      }
-    }
-
-    Ok(def)
+    Ok(())
   }
 
   /// The `scope <family>` shorthand of §5.2.
@@ -570,7 +636,7 @@ impl<'a> Parser<'a> {
 
     if self.eat_arrow() {
       let next = Box::new(self.term()?);
-      // `service:trainer:task->…` is an absolute object; `board->…` is an edge on this object.
+      // `service:<namespace>->…` is an absolute object; `board->…` is an edge on this object.
       return Ok(match name.split_once(':') {
         Some((ty, id)) => Rewrite::Absolute {
           ty: ty.to_owned(),
@@ -596,8 +662,13 @@ mod tests {
   use super::*;
 
   fn one(src: &str) -> Definition {
-    let mut file = parse("test.zed", "test", src).expect("parses");
+    let mut file = parse("test.sz", src).expect("parses");
     file.definitions.pop().expect("a definition")
+  }
+
+  fn extension_of(src: &str) -> DefinitionExtension {
+    let mut file = parse("test.sz", src).expect("parses");
+    file.extensions.pop().expect("an extension")
   }
 
   #[test]
@@ -654,27 +725,27 @@ mod tests {
   /// service id whole.
   #[test]
   fn arrows_and_hyphenated_ids_lex_apart() {
-    let def = one("definition t { permission p = board->view | service:trainer:system-settings->can_read }");
+    let def = one("definition t { permission p = board->view | service:demo:settings->can_read }");
     let Rewrite::Union(parts) = def.permission("p").unwrap() else { panic!() };
     assert!(matches!(&parts[0], Rewrite::Walk { edge, .. } if edge == "board"));
     let Rewrite::Absolute { ty, id, .. } = &parts[1] else { panic!() };
-    assert_eq!((ty.as_str(), id.as_str()), ("service", "trainer:system-settings"));
+    assert_eq!((ty.as_str(), id.as_str()), ("service", "demo:settings"));
   }
 
   #[test]
   fn multi_hop_derivation_records_every_join() {
     let def = one(
-      "definition t on inspections.id int {
-         relation site: daqs_site = column(inspections.photo_id -> daqs_site
-                                           via photos.structure_id, structures.site_id)
+      "definition t on buds.id int {
+         relation root: demo_root = column(buds.leaf_id -> demo_root
+                                           via leaves.branch_id, branches.root_id)
        }",
     );
-    let RelationSource::Derived(d) = &def.relation("site").unwrap().source else {
+    let RelationSource::Derived(d) = &def.relation("root").unwrap().source else {
       panic!()
     };
     assert_eq!(d.hops.len(), 2);
-    assert_eq!((d.hops[0].table.as_str(), d.hops[0].next_col.as_str()), ("photos", "structure_id"));
-    assert_eq!((d.hops[1].table.as_str(), d.hops[1].next_col.as_str()), ("structures", "site_id"));
+    assert_eq!((d.hops[0].table.as_str(), d.hops[0].next_col.as_str()), ("leaves", "branch_id"));
+    assert_eq!((d.hops[1].table.as_str(), d.hops[1].next_col.as_str()), ("branches", "root_id"));
   }
 
   #[test]
@@ -690,13 +761,66 @@ mod tests {
 
   #[test]
   fn a_closure_cannot_be_walked_through() {
-    let err = parse("t.zed", "t", "definition t { permission p = a^->b }").unwrap_err();
+    let err = parse("t.sz", "definition t { permission p = a^->b }").unwrap_err();
     assert!(err.message.contains("closure"), "{err}");
   }
 
   #[test]
   fn a_namespace_must_do_something() {
-    let err = parse("t.zed", "t", "namespace trainer:task").unwrap_err();
+    let err = parse("t.sz", "namespace demo:widget").unwrap_err();
     assert!(err.message.contains("neither"), "{err}");
+  }
+
+  /// `extend` carries exactly the members a definition body does, `scope` included — which is the
+  /// only member any file in the estate uses it for.
+  #[test]
+  fn an_extension_carries_the_same_members_a_definition_does() {
+    let extension = extension_of(
+      "extend organization {
+         scope widget
+         relation auditor: user
+         permission audit = auditor
+       }",
+    );
+
+    assert_eq!(extension.target, "organization");
+    for tier in ["widget_viewer", "widget_editor", "widget_manager", "auditor"] {
+      assert!(extension.relations.iter().any(|r| r.name == tier), "{tier} must exist");
+    }
+    for permission in ["view_widget", "edit_widget", "manage_widget", "audit"] {
+      assert!(
+        extension.permissions.iter().any(|(name, _)| name == permission),
+        "{permission} must exist"
+      );
+    }
+  }
+
+  /// An extension may not say where the target's objects live, or what its hierarchy is. Both are
+  /// the definition's identity: an extension that could move them would be redeclaring it.
+  #[test]
+  fn an_extension_cannot_restate_the_definitions_identity() {
+    let on = parse("t.sz", "extend organization on orgs.id int { scope widget }").unwrap_err();
+    assert!(on.message.contains("cannot declare `on`"), "{on}");
+
+    let closure =
+      parse("t.sz", "extend organization { closure parent via org_closure }").unwrap_err();
+    assert!(closure.message.contains("cannot declare a closure"), "{closure}");
+  }
+
+  /// A file may hold definitions, extensions and namespaces in any order.
+  #[test]
+  fn a_file_may_mix_definitions_extensions_and_namespaces() {
+    let file = parse(
+      "t.sz",
+      "extend organization { scope widget }
+       definition demo_widget on widgets.slug { relation viewer: user  permission view = viewer }
+       namespace demo:widget service = demo_widget",
+    )
+    .expect("parses");
+
+    assert_eq!(file.definitions.len(), 1);
+    assert_eq!(file.extensions.len(), 1);
+    assert_eq!(file.namespaces.len(), 1);
+    assert_eq!(file.namespaces[0].source, "t.sz");
   }
 }

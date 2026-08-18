@@ -1,6 +1,6 @@
 //! The rule IR (design §4.3).
 //!
-//! This is what `schema.zed` parses into and what `compile` walks. It is deliberately dumb: it
+//! This is what a `.sz` rule file parses into and what `compile` walks. It is deliberately dumb: it
 //! carries no resolution, no defaults and no inference. Everything a rule means is either written
 //! in the schema text or rejected by `validate` — because the failure mode of an inferring IR is a
 //! rule that means something nobody wrote, which in this subsystem is a permission nobody granted.
@@ -20,9 +20,9 @@ use serde::Serialize;
 
 /// Who a stored relation will accept as a subject.
 ///
-/// Declared per relation so a write of `service:trainer:task#read@board:7` is refused at the API
+/// Declared per relation so a write of `service:<namespace>#read@board:7` is refused at the API
 /// instead of being stored and silently never matching — the failure the old model had no
-/// vocabulary to prevent, and which left site-app's reversed `admin:user` row in the table.
+/// vocabulary to prevent, and which left a reversed `admin:user` row sitting in the table.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum SubjectSpec {
   /// `user`, `apikey` — a terminal subject type.
@@ -130,7 +130,7 @@ pub enum Rewrite {
     next: Box<Rewrite>,
   },
   /// `type:id->…` — an absolute object reference, for the singletons (`platform:root`,
-  /// `service:trainer:task`, `delegation_scope:svc:site-app`).
+  /// `service:<namespace>`, `delegation_scope:<scope>`).
   Absolute {
     ty:   String,
     id:   String,
@@ -215,7 +215,7 @@ impl Definition {
 /// unprotected in a running product.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct NamespaceEntry {
-  /// The legacy namespace string, e.g. `trainer:task`, `org:credit`, `site-app:project.row`.
+  /// The legacy namespace string, e.g. `org:credit`, `board_post`.
   pub namespace:  String,
   /// Whether a route gate (`service_ap!`) exists, i.e. whether `service:<namespace>` is a real
   /// object. Service object ids keep today's namespace strings, colons included, so the
@@ -223,6 +223,25 @@ pub struct NamespaceEntry {
   pub gated:      bool,
   /// The definition row-level checks on this namespace resolve to, when there are any.
   pub definition: Option<String>,
-  /// The product whose code the namespace was enumerated from. Report-only.
-  pub product:    String,
+  /// The rule file the namespace was declared in. Report-only — it names the second declaration
+  /// when two files collide, and nothing compares it against anything.
+  pub source:     String,
+}
+
+/// Further members for a definition **declared in another file** (`extend NAME { … }`).
+///
+/// A consumer's resource families are the consumer's business: sumida declares `organization` and
+/// cannot enumerate the kinds of thing a product will scope to it. `extend` is how the product adds
+/// them without redeclaring the definition — which is refused, because two definitions of one name
+/// is two answers to one question.
+///
+/// Applied after every file is parsed, so the order of the files does not decide whether an
+/// extension finds its target. A target that does not exist, and a member that collides with one
+/// the target already has, are both boot failures: silently overriding a framework member is the
+/// single worst outcome this construct could produce.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DefinitionExtension {
+  pub target:      String,
+  pub relations:   Vec<Relation>,
+  pub permissions: Vec<(String, Rewrite)>,
 }

@@ -21,7 +21,7 @@ use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 
-/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace mail_form service = mail_form`).
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace mail_form service = mail_form`).
 const RESOURCE: &str = "mail_form";
 
 pub struct MailFormSendOptions {

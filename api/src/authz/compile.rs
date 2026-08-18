@@ -3,9 +3,9 @@
 //! This is the property the whole design rests on. `ap.rs::with_lateral_join` aggregates
 //! `bool_or(effect='allow') / bool_or(effect='deny')` per row in a `LEFT JOIN LATERAL`, which keeps
 //! filter, `COUNT`, `ORDER BY` and `LIMIT/OFFSET` in one statement; a Zanzibar *service* would
-//! answer with an id set that has to be fed back into SQL, and that breaks pagination at trainer's
-//! 15 000 tasks and lab-app's 13 647 photos. So a rule compiles to a `SimpleExpr` that drops into an
-//! existing `WHERE`, and nothing here ever materialises an id list into Rust.
+//! answer with an id set that has to be fed back into SQL, and that breaks pagination the moment a
+//! list runs to five figures. So a rule compiles to a `SimpleExpr` that drops into an existing
+//! `WHERE`, and nothing here ever materialises an id list into Rust.
 //!
 //! With per-tuple `deny` gone there is nothing left to aggregate, so the lateral goes too:
 //!

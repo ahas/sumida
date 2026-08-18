@@ -18,7 +18,7 @@ use crate::util::file_validation::{FileValidationConfig, FileValidator};
 use crate::util::pagination::Pagination;
 use crate::util::storage::{Storage, SumidaStorage};
 
-/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace file service = file`).
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace file service = file`).
 const RESOURCE: &str = "file";
 
 pub struct FileService<S: SumidaState> {

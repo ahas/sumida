@@ -1,11 +1,12 @@
 // sumida's rule set — design §5.1 to §5.4.
 //
-// Read this file, not `ap.rs`, to find out who may do what. Every rule that used to live at a call
-// site as an `if session.profile.is_admin` or an `ap::chain()` is here, which is the point: a rule
-// in one place cannot be forgotten by the next caller.
+// Read this file to find out who may do what. Every rule that used to live at a call site as an
+// `if session.profile.is_admin` or a hand-built policy chain is here, which is the point: a rule in
+// one place cannot be forgotten by the next caller.
 //
-// Nothing evaluates any of this yet. The definitions exist so the compiler has something to compile
-// and boot validation has something to check.
+// This is sumida's file and only sumida's. A product built on sumida keeps its own rules in its own
+// repository and installs them at boot; nothing here knows what those are, and a family of resource
+// that belongs to a product is added to a definition below with `extend`, from the product's file.
 //
 // Conventions:
 //   · `on <table>.<col> [int|uuid]`  where a definition’s objects live, and what type its id is.
@@ -43,16 +44,16 @@ definition platform {
 
 // ─── the route-gate tier ─────────────────────────────────────────────────────────────────────
 
-// resource_id is today's namespace string, colons included: `service:user`, `service:trainer:task`,
-// `service:lab-app:site`. `resource_type` and `resource_id` are separate columns, so the colons are
-// inert — and the `/me/access-policies` compatibility payload stays byte-identical for the CASL
-// client, which builds `can(action, `${namespace}:${object}`)`.
+// resource_id is today's namespace string, colons included: `service:user`, `service:board_post`,
+// and whatever a product declares for its own. `resource_type` and `resource_id` are separate
+// columns, so the colons are inert — and the `/me/access-policies` compatibility payload stays
+// byte-identical for the CASL client, which builds `can(action, `${namespace}:${object}`)`.
 //
-// One deliberate semantic change, stated plainly. Today `_build_object_condition` (`ap.rs:18`) ORs
-// `object = '*'` unconditionally, so an `object='*'` row also satisfies the route gate. Here
-// `op_read` grants the object-wide power *and* implies the route gate, but a route-gate grant
-// (`read`) does **not** grant object-wide power. That is a narrowing, in the safe direction, and it
-// is what makes "let Jiwon see everyone's tasks" a different grant from "let Jiwon use the task API".
+// One deliberate semantic change, stated plainly. The old evaluator ORed `object = '*'`
+// unconditionally, so an `object='*'` row also satisfied the route gate. Here `op_read` grants the
+// object-wide power *and* implies the route gate, but a route-gate grant (`read`) does **not**
+// grant object-wide power. That is a narrowing, in the safe direction, and it is what makes "let
+// Jiwon see everyone's records" a different grant from "let Jiwon use the records API".
 definition service {
   // route-gate tier — what `service_ap!` checks (object = 'service' today)
   relation create: user | role#member | organization#member | apikey
@@ -80,8 +81,10 @@ definition service {
   permission grant = operator | platform:root->superuser
 }
 
-// Replaces `trainer:delegate` with action `assert`. The object id is compared for equality and nothing
-// else, which is the property that stops lab-app asserting site-app's scope.
+// The delegation tier: one service submitting work on behalf of its own users. The object id is
+// compared for equality and by nothing else, which is the property that stops one service asserting
+// another's scope — a prefix match here would be a cross-tenant hole that only shows up the day
+// somebody registers a scope whose name starts with somebody else's.
 definition delegation_scope {
   relation operator: user | role#member | apikey
 
@@ -100,9 +103,10 @@ definition delegation_scope {
 // tiers, not one, because the old model's per-action organization grants have to survive exactly:
 // `{read}` is a viewer, `{read,update}` an editor, `{read,update,owner}` a manager.
 //
-// Deliberately **not** declared: `scope site`, `scope asset`. lab-app has no organization reach on
-// sites or downloadable assets today, and declaring an unused scope would let someone grant a tuple
-// that silently widens production.
+// Only the families sumida itself has an organization-scoped resource for are declared here.
+// Declaring an unused scope would let somebody grant a tuple that silently widens production — and
+// a family that belongs to a product is the product's to declare, in its own file, with
+// `extend organization { scope <family> }`. sumida cannot enumerate them and does not try.
 definition organization on organizations.id int {
   closure parent via org_closure
 
@@ -113,10 +117,6 @@ definition organization on organizations.id int {
   relation manager: user | role#member | organization#member | apikey
 
   scope user   scope subscription  scope board  scope file
-  scope task   scope job           scope agent  scope cluster
-  scope cloud  scope terminal
-  scope project                                   // site-app
-  scope ai_model                                  // lab-app
 
   // `credit` is written out rather than declared with `scope`, because it needs one extra branch.
   // `CreditService::authorize_use` (`membership/credit/mod.rs:88`) short-circuits on
@@ -152,8 +152,8 @@ definition role on roles.id int {
 }
 
 // The *object* side of a user row. `user` stays the subject type; this is "may I act on that
-// person". `UserService::update`'s `org:user` branch (`user/mod.rs:111`) becomes
-// `sumida_user:<id>#edit`, and the per-row recursive CTE it used is gone.
+// person". `UserService::update`'s `org:user` branch becomes `sumida_user:<id>#edit`, and the
+// per-row recursive CTE it used is gone.
 definition sumida_user on users.id int {
   relation org:     organization = column(users.organization_id -> organization)
   relation manager: user | role#member | organization#member | apikey
@@ -365,9 +365,11 @@ definition relation_tuple on relation_tuples.id int {
 
 // ─── the namespace inventory ─────────────────────────────────────────────────────────────────
 //
-// Enumerated from the code, not from the design:
+// sumida's own, enumerated from sumida's code, not from the design:
 //   grep -rn 'service_ap!' --include='*.rs' api/src   → 18 namespaces × their actions
 //   grep -rn 'ap::ns('     --include='*.rs' api/src   → the row-level namespaces below
+//
+// A product's namespaces are in the product's own rule file, and are not repeated here.
 //
 // `service` marks a route gate, so `service:<namespace>` is a real object; `= <definition>` says
 // what row-level checks on the namespace resolve to. Validation rule 8 refuses to boot if any entry

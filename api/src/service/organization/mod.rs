@@ -14,7 +14,7 @@ use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 
-/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace organization service = organization`).
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace organization service = organization`).
 const RESOURCE: &str = "organization";
 
 pub struct OrganizationService<S: SumidaState> {

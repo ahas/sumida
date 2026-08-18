@@ -4,12 +4,7 @@ use sea_orm_migration::prelude::*;
 /// ReBAC data layer — the tuple table, the rule-vocabulary projection, and the closure tables
 /// that materialise the authorization-bearing trees (design §3).
 ///
-/// **Purely additive, and nothing reads any of it yet.** `access_policies` and
-/// `api/src/util/ap.rs` remain the only authority for every decision the server makes in this
-/// phase, so this migration can be reverted without changing a single answer. That is deliberate:
-/// the tables have to exist and be maintained correctly for a while before anything depends on
-/// them.
-///
+
 /// Depends on `organizations` (init); the board half additionally needs `board_groups`
 /// (board_system), so consumers that have boards must register this after that migration.
 #[derive(DeriveMigrationName)]
@@ -18,10 +13,10 @@ pub struct Migration;
 /// Whether the board half applies to *this database*.
 ///
 /// Deliberately a runtime probe and not `#[cfg(feature = "board")]`. Cargo unifies features across
-/// the whole dependency graph, so `entity` ends up compiled with `board` on for a build that also
-/// links something which wants it — site-app's test binary is exactly that, via its `e2e`
-/// dev-dependency — while site-app's own database has no board tables at all. A compile-time gate
-/// would therefore create `board_group_closure` against a `board_groups` that does not exist.
+/// the whole dependency graph, so `entity` ends up compiled with `board` on for a build that merely
+/// links something which wants it — a test binary pulling in a dev-dependency is exactly that —
+/// while the database that build migrates has no board tables at all. A compile-time gate would
+/// therefore create `board_group_closure` against a `board_groups` that does not exist.
 async fn has_board_groups<C: ConnectionTrait>(db: &C) -> Result<bool, DbErr> {
   #[derive(FromQueryResult)]
   struct Present {
@@ -45,11 +40,10 @@ impl MigrationTrait for Migration {
 
     // ── the rule vocabulary (§3.2) ──────────────────────────────────────────────────────────
     //
-    // These two tables are a *projection* of the rule registry that a later phase compiles into
-    // the binary; the evaluator will never read them. They exist here for two reasons that are
-    // already live: the foreign key below, which is the only thing that can stop site-app's and
-    // lab-app's raw-SQL/ActiveModel policy writers from inserting a relation nobody declared, and
-    // `GET /authz/schema`, which the /relation-tuples screen will read.
+    // These two tables are a *projection* of the compiled rule registry; the evaluator never reads
+    // them. They exist here for two reasons: the foreign key below, which is the only thing that
+    // can stop a raw-SQL or `ActiveModel` writer inserting a relation nobody declared, and
+    // `GET /authz/schema`, which the /relation-tuples screen reads.
     db.execute_unprepared(
       r#"
       CREATE TABLE IF NOT EXISTS relation_definitions (
@@ -77,32 +71,21 @@ impl MigrationTrait for Migration {
     )
     .await?;
 
-    // Bootstrap vocabulary — **only** the relations the backfill of `rebac_backfill` can write.
+    // Bootstrap vocabulary — **only** what a database needs before anything has booted.
     //
-    // This is not the rule set of design §5; it is the subset needed so the foreign key below can
-    // be in force from the moment the tuple table exists. When the registry lands it rewrites this
-    // table wholesale and becomes the single source of truth. Seeding more than the backfill needs
-    // would create a second, drifting copy of §5 inside a migration.
-    //
-    // `daqs_site` / `antares_project` are seeded in every database, including trainer's. A row in a
-    // vocabulary table costs nothing and grants nothing; leaving them out would make the backfill
-    // fail on exactly the two consumers that have object-tier rows.
+    // This is not the rule set: it is the five relations an initial seed writes, so the foreign key
+    // below can be in force from the moment the tuple table exists. `Authz::sync_schema` rewrites
+    // this table from the compiled registry at boot and is the single source of truth thereafter,
+    // which is why nothing more is seeded here — a longer list in a migration is a second copy of
+    // the rules that drifts, and a migration cannot know what a consumer's rules declare anyway.
     db.execute_unprepared(
       r#"
       INSERT INTO relation_definitions (resource_type, relation, kind, subject_types) VALUES
-        ('service',          'create',          'stored', '{user,role#member,organization#member,apikey}'),
-        ('service',          'read',            'stored', '{user,role#member,organization#member,apikey}'),
-        ('service',          'update',          'stored', '{user,role#member,organization#member,apikey}'),
-        ('service',          'delete',          'stored', '{user,role#member,organization#member,apikey}'),
-        ('delegation_scope', 'operator',        'stored', '{user,role#member,apikey}'),
-        ('daqs_site',        'viewer',          'stored', '{user,organization#member}'),
-        ('daqs_site',        'editor',          'stored', '{user,organization#member}'),
-        ('antares_project',  'viewer',          'stored', '{user,organization#member,apikey}'),
-        ('antares_project',  'editor',          'stored', '{user,organization#member,apikey}'),
-        ('antares_project',  'owner',           'stored', '{user,organization#member,apikey}'),
-        ('organization',     'project_viewer',  'stored', '{user,role#member,organization#member,apikey}'),
-        ('organization',     'project_editor',  'stored', '{user,role#member,organization#member,apikey}'),
-        ('organization',     'project_manager', 'stored', '{user,role#member,organization#member,apikey}')
+        ('service',          'create',   'stored', '{user,role#member,organization#member,apikey}'),
+        ('service',          'read',     'stored', '{user,role#member,organization#member,apikey}'),
+        ('service',          'update',   'stored', '{user,role#member,organization#member,apikey}'),
+        ('service',          'delete',   'stored', '{user,role#member,organization#member,apikey}'),
+        ('delegation_scope', 'operator', 'stored', '{user,role#member,apikey}')
       ON CONFLICT DO NOTHING;
       "#,
     )
@@ -113,9 +96,9 @@ impl MigrationTrait for Migration {
     // What the shape buys over `access_policies(namespace, object, action[], "user")`:
     //
     //   · resource_type / resource_id split the one untyped `object` column that carried a row id
-    //     in `board_post`, an organization id in `org:user`, a slug in `site-app:project.row` and
-    //     the literal string 'service' for route gates — disambiguated only by naming conventions
-    //     three teams invented independently.
+    //     for one namespace, an organization id for another, a slug for a third and the literal
+    //     string 'service' for route gates — disambiguated only by naming conventions that
+    //     several teams invented independently.
     //   · `relation` is one scalar per row instead of `action varchar[]`. This is the fix for the
     //     index defect: `_build_action_condition` matches with array containment (`@>`), which a
     //     btree cannot answer, so `idx_access_policies__tuple` was only ever usable for its
@@ -200,10 +183,10 @@ impl MigrationTrait for Migration {
 
     // ── org_closure (§3.3) ──────────────────────────────────────────────────────────────────
     //
-    // R2 ("an organization admin reaches its descendants, to arbitrary depth") is a recursive walk
-    // today, run per row inside the LATERAL join — `util/org.rs`'s own doc warns the cost
-    // accumulates by N×depth, and lab-app re-implemented the same walk a third time in the opposite
-    // direction. Materialising it makes the walk one bounded join.
+    // R2 ("an organization admin reaches its descendants, to arbitrary depth") was a recursive walk
+    // run per row inside a LATERAL join, whose cost accumulates by N×depth — and it had been
+    // re-implemented more than once, in more than one direction. Materialising it makes the walk
+    // one bounded join.
     //
     // Maintenance is a **full rebuild** in a statement-level trigger, not an incremental update.
     // Organizations number in the hundreds and change rarely; incremental closure maintenance

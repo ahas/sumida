@@ -1,13 +1,13 @@
-//! The twelve fixed criticals of design §12.8, re-asserted **against the compiled evaluator**.
+//! The four of design §12.8's twelve fixed criticals that are **sumida's**, re-asserted against the
+//! compiled evaluator.
 //!
-//! Each of them is also pinned **through HTTP** — in `api/tests/authz_golden.rs` for sumida's four,
-//! in trainer's `authz_task_read` / `authz_task_stream` / `authz_terminal_session` for trainer's eight.
-//! Those pins were written while `ap.rs` was the evaluator and did not have to change when the
-//! compiled rules replaced it, because they name a request and a response and never an evaluator.
+//! Each is also pinned **through HTTP**, in `api/tests/authz_golden.rs`. Those pins were written
+//! while the legacy evaluator was in charge and did not have to change when the compiled rules
+//! replaced it, because they name a request and a response and never an evaluator.
 //!
-//! This file asserts sumida's four against the rule directly. Two levels, deliberately: failing
-//! here is a rule defect, failing in `authz_golden.rs` is a defect in the code around the rule, and
-//! needing both to change at once is the signal that a boundary moved.
+//! This file asserts the four against the rule directly. Two levels, deliberately: failing here is
+//! a rule defect, failing in `authz_golden.rs` is a defect in the code around the rule, and needing
+//! both to change at once is the signal that a boundary moved.
 //!
 //! | # | property | here |
 //! |---|---|---|
@@ -16,17 +16,10 @@
 //! | G11 | `/files/stats` is scoped the way `list` is | one `file#view` predicate, two statements |
 //! | G12 | delete authorizes against `remove`, not `view` | two permissions, not two strings |
 //!
-//! **G1–G8 are trainer's, and they live in trainer's repository** — not here. Their row scopes turn on
-//! `joy_task` / `joy_terminal_session` / `joy_cloud_instance`, whose backing tables are absent from
-//! a sumida database entirely, so `Authz::boot` reports them `Absent` and there is nothing here to
-//! evaluate them against.
-//!
-//! They were blocked for a while by five columns that did not exist (`tasks.owner_user_id`,
-//! `tasks.owner_scope`, `jobs.owner_key`, `agents.organization_id`,
-//! `cloud_instances.owner_user_id`); trainer's Phase 2 (§14 step 8) added them to
-//! `trainer/server/src/migration/joy_service_init.rs`, put trainer in `ROUTED_PRODUCTS`, and replaced the
-//! placeholder case in `trainer/server/tests/rebac_e2e.rs` with the compiled-side assertions the eight
-//! regressions had been waiting for.
+//! **The other eight belong to a product and live in that product's repository** — not here. Their
+//! row scopes turn on definitions sumida does not declare, whose backing tables are absent from a
+//! sumida database entirely, so there is nothing here to evaluate them against. A regression suite
+//! for a rule belongs beside the rule.
 //!
 //! Requires a real Postgres. No request goes through the router: the evaluator is called directly,
 //! so a failure here is a rule and not a handler.
@@ -308,12 +301,11 @@ async fn g11_the_file_aggregate_and_the_file_list_are_one_predicate() {
 /// fails `remove`, on the same file, in the same statement shape.
 ///
 /// The **compile-time** half of G12 — "passing `\"view\"` to a delete path does not compile" — is
-/// still not assertable, and §14 step 13 decided not to make it so. §8.1 proposed a reshaped
+/// still not assertable, and the conversion decided not to make it so. §8.1 proposed a reshaped
 /// `ApiService<E>` whose `try_access` would take a typed permission; that trait was rejected rather
-/// than rewritten. The reason held while lab-app still had nine implementors and holds more plainly
-/// now that it has none: reshaping a trait nobody implements buys nothing, and the trait itself is
-/// what §14 step 13 finished emptying. `Authz::try_check` takes the permission as a `&str`, so a
-/// wrong one is a wrong *value*. What guards it instead is
+/// than rewritten, and then emptied of implementors entirely. Reshaping a trait nobody implements
+/// buys nothing. `Authz::try_check` takes the permission as a `&str`, so a wrong one is a wrong
+/// *value*. What guards it instead is
 /// `golden_sql_tests::every_converted_call_site_names_a_permission_that_exists`: a hand-maintained
 /// table of every `(definition, permission)` a converted call site names, which turns a run-time
 /// `UnknownPermission` 500 into a unit-test failure. A table somebody has to maintain is weaker

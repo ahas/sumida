@@ -22,12 +22,12 @@ full-aws = [
 test-suite = ["full-local"]
 
 # 기능(functional) feature — 끌 수 있는 능력 단위. board는 file 의존(board_files→fs::files).
-# full-* 번들이 전부 포함하므로 기존 소비자(lab-app=full-aws)는 무영향.
+# full-* 번들이 전부 포함하므로 그 번들을 쓰는 소비자는 무영향.
 board = ["api/board"]
 file = ["api/file"]
 membership = ["api/membership"]
 mail-form = ["api/mail-form"]
-# 공용 운영 설정 — full-features 에 미포함(lab-app=full-aws 제외 유지). site-app/trainer 가 개별 enable.
+# 공용 운영 설정 — full-features 에 미포함. 필요한 소비자가 개별 enable 한다.
 system-settings = ["api/system-settings"]
 full-features = ["board", "file", "membership", "mail-form"]
 
@@ -121,7 +121,7 @@ cfg-if.workspace = true
 [dev-dependencies]
 e2e = { path = "./e2e", default-features = false }
 
-# trainer 와 같은 이유 — 링커가 디버그 정보를 통째로 안고 있느라 빌드가 겹치면 OOM 이 난다.
-# trainer 실측 기준 링크 피크 7.07GB → 3.50GB.
+# 링커가 디버그 정보를 통째로 안고 있느라 빌드가 겹치면 OOM 이 난다. 실측 기준 링크 피크
+# 7.07GB → 3.50GB.
 [profile.dev]
 split-debuginfo = "unpacked"

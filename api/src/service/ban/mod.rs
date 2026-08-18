@@ -17,7 +17,7 @@ use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 
-/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace ban service = ban`).
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace ban service = ban`).
 const RESOURCE: &str = "ban";
 
 pub struct BanService<S: SumidaState> {

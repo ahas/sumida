@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// 시스템 설정(운영 설정 key-value) — 공용 feature `system-settings`.
 ///
-/// key-value 운영 설정 저장소. 앱별 키 상수(예: `site-app.*`, `task.purge.*`)는 각 소비자
+/// key-value 운영 설정 저장소. 앱별 키 상수(예: `<app>.*`, `task.purge.*`)는 각 소비자
 /// 크레이트가 자체 `keys` 모듈로 소유하고, 이 엔티티는 스키마와 접근 헬퍼만 제공한다.
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, Serialize, Deserialize, DeriveActiveEnum)]
 #[sea_orm(
@@ -139,8 +139,8 @@ impl Entity {
   }
 
   /// 없으면 생성(자동등록 기본 메타), 있으면 갱신 — 멱등. `set_value` 는 update-only(신규 key 는
-  /// NoData)라, 스테이지 trainer job id(`site-app.joy_job.<stage>`)처럼 서버가 런타임에 새로 등록하는
-  /// 설정은 이걸 쓴다(새 스테이지 추가 시 setting 행이 없어 set_value 가 실패하던 문제).
+  /// NoData)라, 스테이지별 외부 작업 id 처럼 서버가 런타임에 새로 등록하는 설정은 이걸 쓴다
+  /// (새 스테이지 추가 시 setting 행이 없어 set_value 가 실패하던 문제).
   pub async fn upsert_value<C>(
     key: &str,
     value: Json,
@@ -152,7 +152,7 @@ impl Entity {
   where
     C: ConnectionTrait,
   {
-    // 자동관리 setting(joy_job.<stage> 등)은 is_editable 체크를 우회해 서버가 직접 갱신한다
+    // 자동관리 setting(스테이지별 자동 등록 키 등)은 is_editable 체크를 우회해 서버가 직접 갱신한다
     // — set_value 는 is_editable=false 를 거부하는데(사용자 편집 금지), 서버 자동 재등록은 허용해야 한다.
     if let Some(existing) = Self::find_by_id(key).one(db).await? {
       let mut active = existing.into_active_model();

@@ -1,5 +1,5 @@
-/// Relational Zanzibar — compiled, boot-validated, and the only evaluator there is. It replaced
-/// `util::ap`, which was deleted at §14 step 14 once lab-app, its last consumer, was routed.
+/// Relational Zanzibar — compiled, boot-validated, and the only evaluator there is. It replaced the
+/// lateral-join evaluator over `access_policies`, which is deleted.
 pub mod authz;
 pub mod capability;
 pub mod controller;
@@ -30,8 +30,26 @@ impl<'a, StateT> Sumida<'a, StateT>
 where
   StateT: SumidaState,
 {
-  pub fn new() -> Self {
-    Self::default()
+  /// 라우터를 만들면서 이 제품의 권한 규칙을 등록한다.
+  ///
+  /// sumida 는 자기 규칙만 싣는다. 제품 규칙이 무엇인지는 제품이 말해야 하고, 그 말을 하는
+  /// 자리가 여기다 — 모든 제품이 반드시 부르는 유일한 호출이라, 빠뜨리면 컴파일이 안 된다.
+  /// 자기 규칙이 없는 제품은 `&[]` 를 넘긴다("없다"와 "잊었다"가 같아 보이면 안 된다).
+  ///
+  /// 등록은 레지스트리를 **처음 읽기 전**이어야 한다. 부팅 검증이 라우터 구성보다 먼저 도는
+  /// 배선이라면 `Authz::install_rules` 를 그 위에서 한 번 더 부른다 — 같은 슬라이스로 여러 번
+  /// 부르는 것은 오류가 아니다.
+  ///
+  /// # Panics
+  ///
+  /// 이미 다른 규칙 집합이 등록돼 있거나 레지스트리를 이미 읽은 뒤라면 패닉이다. 둘 다 "이
+  /// 프로세스가 어떤 규칙으로 판정하는지가 호출 순서에 달려 있다"는 뜻이고, 그건 배선 실수이지
+  /// 런타임 상태가 아니다 — `set_state` 를 빠뜨렸을 때와 같은 성질의 실패다.
+  pub fn new(rules: &'static [authz::registry::RuleFile]) -> Self {
+    if let Err(error) = authz::Authz::install_rules(rules) {
+      panic!("[SumidaRouter]: {error}");
+    }
+    Self { state: None }
   }
 
   pub fn set_state(mut self, state: &'a StateT) -> Self {
@@ -161,11 +179,5 @@ async fn capabilities_handler() -> axum::Json<Vec<&'static Capability>> {
   axum::Json(capability::enabled())
 }
 
-impl<StateT> Default for Sumida<'_, StateT>
-where
-  StateT: SumidaState,
-{
-  fn default() -> Self {
-    Self { state: None }
-  }
-}
+// `Default` 는 일부러 두지 않는다. 그것이 있으면 `Sumida::default()` 로 규칙 등록을 건너뛸 수
+// 있고, 그 순간 "제품이 규칙 등록을 잊으면 컴파일이 안 된다"가 성립하지 않는다.

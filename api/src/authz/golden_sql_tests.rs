@@ -13,8 +13,34 @@
 //! Alias numbering is deterministic — one counter per compilation, one traversal order — so it
 //! moves only when the rule or the compiler moves, which is exactly when a golden test should fail.
 
+use std::sync::OnceLock;
+
+use super::compile::Compiler;
+use super::registry::{Registry, RuleFile, SUMIDA_RULES};
 use super::subject::SubjectSet;
-use super::{Authz, ObjectKey};
+use super::{Authz, ObjectKey, render};
+
+/// A fictional consumer's rules, for the shapes sumida's own file has no example of.
+///
+/// sumida ships one rule file and knows of no others, so a slug-keyed definition, a canonical
+/// subject-key column, a two-hop walk and `extend` would all be untested here — they are shapes a
+/// *consumer* writes. The fixture supplies them without sumida naming a consumer.
+const DEMO_RULES: RuleFile = RuleFile {
+  name: "schema.demo.sz",
+  text: include_str!("../../tests/fixtures/schema.demo.sz"),
+};
+
+/// sumida's rules plus the fixture, memoised.
+///
+/// Not the process-wide registry: these are **lib** tests, and the lib's registry is sumida's rules
+/// alone — which is exactly right, and exactly why the fixture cannot go through `Authz`. Compiling
+/// against a registry built here keeps the two apart.
+fn demo() -> &'static Registry {
+  static DEMO: OnceLock<Registry> = OnceLock::new();
+  DEMO.get_or_init(|| {
+    Registry::from_sources(&[SUMIDA_RULES, DEMO_RULES]).expect("the fixture rules must validate")
+  })
+}
 
 /// The caller of design §6.2: user 7, role 3, organization 100.
 fn caller() -> SubjectSet {
@@ -40,6 +66,24 @@ fn check_sql(definition: &str, id: impl Into<ObjectKey>, permission: &str) -> St
   Authz::object_predicate_sql(definition, id, permission, &caller()).expect("compiles")
 }
 
+/// `sql`, against the fixture registry.
+fn demo_sql(definition: &str, permission: &str) -> String {
+  let caller = caller();
+  render(
+    Compiler::new(demo(), &caller).filter_predicate(definition, permission).expect("compiles"),
+  )
+}
+
+/// `check_sql`, against the fixture registry.
+fn demo_check_sql(definition: &str, id: impl Into<ObjectKey>, permission: &str) -> String {
+  let caller = caller();
+  render(
+    Compiler::new(demo(), &caller)
+      .object_predicate(definition, permission, &id.into())
+      .expect("compiles"),
+  )
+}
+
 // ─── the individual rule shapes ──────────────────────────────────────────────────────────────
 
 /// A stored relation is one `EXISTS` over `relation_tuples`: `resource_type` and `relation` bound
@@ -56,12 +100,16 @@ fn stored_relation() {
 }
 
 /// A derived relation whose column already holds a canonical subject key: no join, no cast.
-/// `tasks.owner_key` is load-bearing for scheduler fairness and is read exactly as it is.
+///
+/// This is the third derived form, and the only one sumida's own rules have no instance of: a
+/// column that already holds `user:7` rather than an integer id or a foreign key. A consumer whose
+/// owner column is load-bearing for something else — a scheduler's fairness partition, say — reads
+/// it exactly as it is instead of projecting a second copy.
 #[test]
 fn derived_relation_over_a_subject_key_column() {
-  let compiled = sql("joy_task", "view");
+  let compiled = demo_sql("demo_ticket", "view");
   assert!(
-    compiled.starts_with(&format!(r#"("tasks"."owner_key" = {KEYS})"#)),
+    compiled.starts_with(&format!(r#"("tickets"."owner_key" = {KEYS})"#)),
     "the owner branch must be a bare array match on owner_key, and emitted first: {compiled}"
   );
 }
@@ -125,14 +173,27 @@ fn closure_walks_from_the_resource_up_to_the_grant() {
 }
 
 /// Four closure branches of the same shape collapse into one `relation IN (…)`, so R2 costs one
-/// index probe rather than four. This is `scope task`'s three tiers plus the blanket `manager`,
+/// index probe rather than four. This is `scope board`'s three tiers plus the blanket `manager`,
 /// which is what makes `organization:100#manager@user:9` the whole of R2 for that person.
 #[test]
 fn same_shape_closure_branches_are_flattened() {
-  let compiled = check_sql("organization", 100, "view_task");
+  let compiled = check_sql("organization", 100, "view_board");
   assert!(
-    compiled.contains(r#""relation" IN ('task_viewer', 'task_editor', 'task_manager', 'manager')"#),
+    compiled.contains(r#""relation" IN ('board_viewer', 'board_editor', 'board_manager', 'manager')"#),
     "the three tiers and the blanket manager must be one probe: {compiled}"
+  );
+  assert_eq!(compiled.matches("SELECT").count(), 1, "and exactly one subquery: {compiled}");
+}
+
+/// The same flattening, for a family a **consumer** added with `extend organization`. An extended
+/// member is an ordinary member: the fixture's `scope widget` compiles to the same one probe.
+#[test]
+fn an_extended_scope_compiles_exactly_as_a_declared_one_does() {
+  let compiled = demo_check_sql("organization", 100, "view_widget");
+  assert!(
+    compiled
+      .contains(r#""relation" IN ('widget_viewer', 'widget_editor', 'widget_manager', 'manager')"#),
+    "a scope added by `extend` must flatten like any other: {compiled}"
   );
   assert_eq!(compiled.matches("SELECT").count(), 1, "and exactly one subquery: {compiled}");
 }
@@ -141,13 +202,13 @@ fn same_shape_closure_branches_are_flattened() {
 /// `operate_read = op_read | operator | platform:root->superuser`.
 #[test]
 fn same_shape_stored_branches_are_flattened() {
-  let compiled = check_sql("service", "trainer:task", "can_read");
+  let compiled = check_sql("service", "board_post", "can_read");
   assert!(
     compiled.contains(
-      r#""_az_t0"."relation" IN ('read', 'op_read', 'operator') AND "_az_t0"."resource_id" = 'trainer:task'"#
+      r#""_az_t0"."relation" IN ('read', 'op_read', 'operator') AND "_az_t0"."resource_id" = 'board_post'"#
     ),
-    "the route gate and the two object-wide grants are one probe, and the service object id keeps \
-     today's colon form: {compiled}"
+    "the route gate and the two object-wide grants are one probe, and the service object id is the \
+     namespace string: {compiled}"
   );
 }
 
@@ -173,31 +234,31 @@ fn the_public_wildcard_is_added_only_where_declared() {
 /// target's own rules do not read its table.
 #[test]
 fn walk_over_an_edge_substitutes_the_target_id() {
-  let compiled = sql("joy_task", "view");
+  let compiled = demo_sql("demo_ticket", "view");
   assert!(
     compiled.contains(
-      r#""_az_t1"."resource_type" = 'delegation_scope' AND "_az_t1"."relation" = 'operator' AND "_az_t1"."resource_id" = "tasks"."owner_scope""#
+      r#""_az_t1"."resource_type" = 'delegation_scope' AND "_az_t1"."relation" = 'operator' AND "_az_t1"."resource_id" = "tickets"."owner_scope""#
     ),
-    "the delegation branch compares the tuple's resource_id to the task's scope column, with no \
+    "the delegation branch compares the tuple's resource_id to the row's scope column, with no \
      join: {compiled}"
   );
   assert!(
-    compiled.contains("AND (tasks.owner_scope IS NOT NULL)"),
-    "and the edge's `where` clause gates the whole walk, so a task with no scope is not delegated: \
+    compiled.contains("AND (tickets.owner_scope IS NOT NULL)"),
+    "and the edge's `where` clause gates the whole walk, so a row with no scope is not delegated: \
      {compiled}"
   );
 }
 
-/// A multi-hop derivation (E5) becomes nested `EXISTS`, one per join — the same two joins
-/// `lab-app:site`'s inspection path pays for today, and no more.
+/// A multi-hop derivation (E5) becomes nested `EXISTS`, one per join — exactly the joins a
+/// hand-written containment query pays for today, and no more.
 #[test]
 fn multi_hop_derivation_becomes_nested_exists() {
-  let compiled = sql("daqs_inspection", "view");
+  let compiled = demo_sql("demo_bud", "view");
   assert!(
     compiled.starts_with(
-      r#"EXISTS(SELECT 1 FROM "photos" AS "_az_h0" WHERE "_az_h0"."id" = "inspections"."photo_id" AND EXISTS(SELECT 1 FROM "structures" AS "_az_h1" WHERE "_az_h1"."id" = "_az_h0"."structure_id" AND EXISTS(SELECT 1 FROM "sites" AS "_az_o2" WHERE "_az_o2"."id" = "_az_h1"."site_id""#
+      r#"EXISTS(SELECT 1 FROM "leaves" AS "_az_h0" WHERE "_az_h0"."id" = "buds"."leaf_id" AND EXISTS(SELECT 1 FROM "branches" AS "_az_h1" WHERE "_az_h1"."id" = "_az_h0"."branch_id" AND EXISTS(SELECT 1 FROM "roots" AS "_az_o2" WHERE "_az_o2"."id" = "_az_h1"."root_id""#
     ),
-    "inspections → photos → structures → sites, in that order: {compiled}"
+    "buds → leaves → branches → roots, in that order: {compiled}"
   );
 }
 
@@ -302,25 +363,26 @@ fn a_chained_exclusion_is_one_subtraction_of_a_union() {
   );
 }
 
-// ─── the rules of §5, end to end ─────────────────────────────────────────────────────────────
+// ─── whole rules, end to end ─────────────────────────────────────────────────────────────────
 
 /// §6.2's worked example. Every branch it names must be present, and the whole thing must still be
 /// one expression — no CTE, no second statement, nothing to feed back into SQL. That is the
-/// property trainer's 15 000-row task list and lab-app's 13 647 photos depend on.
+/// property a five-figure list screen depends on: the rule is a `WHERE` clause, so `COUNT`,
+/// `ORDER BY` and `LIMIT` stay in one statement with it.
 #[test]
-fn joy_task_view_matches_the_worked_example() {
-  let compiled = sql("joy_task", "view");
+fn the_worked_example_is_one_expression_with_every_branch() {
+  let compiled = demo_sql("demo_ticket", "view");
 
   for (branch, fragment) in [
-    ("R3 owner", r#""tasks"."owner_key" = ANY"#),
+    ("R3 owner", r#""tickets"."owner_key" = ANY"#),
     ("per-object grant", r#""_az_t0"."relation" IN ('viewer', 'operator')"#),
     ("delegated owner", r#""resource_type" = 'delegation_scope'"#),
     ("R2 creator org", r#""org_closure""#),
-    ("service operator", r#""_az_t7"."resource_id" = 'trainer:task'"#),
+    ("service operator", r#""_az_t7"."resource_id" = 'demo:ticket'"#),
     ("R1 flag", ".is_admin"),
     ("R1 grant", r#""resource_type" = 'platform'"#),
   ] {
-    assert!(compiled.contains(fragment), "{branch} is missing from joy_task#view: {compiled}");
+    assert!(compiled.contains(fragment), "{branch} is missing from demo_ticket#view: {compiled}");
   }
 
   assert!(!compiled.contains("WITH "), "no CTE — the rule must be one predicate: {compiled}");
@@ -328,48 +390,51 @@ fn joy_task_view_matches_the_worked_example() {
 }
 
 /// R2 reaches the **creator's** organization and every ancestor of it, through the user who created
-/// the task. A grant on an ancestor reaches the descendant, never the reverse.
+/// the row. A grant on an ancestor reaches the descendant, never the reverse.
 #[test]
-fn joy_task_reaches_the_creators_org_and_its_ancestors() {
-  let compiled = sql("joy_task", "view");
+fn a_creator_org_edge_reaches_the_org_and_its_ancestors() {
+  let compiled = demo_sql("demo_ticket", "view");
   assert!(
     compiled.contains(
-      r#"EXISTS(SELECT 1 FROM "users" AS "_az_h4" WHERE "_az_h4"."id" = "tasks"."owner_user_id" AND "_az_h4"."organization_id" IN (SELECT "_az_c6"."descendant_id""#
+      r#"EXISTS(SELECT 1 FROM "users" AS "_az_h4" WHERE "_az_h4"."id" = "tickets"."owner_user_id" AND "_az_h4"."organization_id" IN (SELECT "_az_c6"."descendant_id""#
     ),
     "the organization is the creator's, and the closure is walked from it: {compiled}"
   );
   assert!(
-    compiled
-      .contains(r#""_az_m5"."relation" IN ('task_viewer', 'task_editor', 'task_manager', 'manager')"#),
+    compiled.contains(
+      r#""_az_m5"."relation" IN ('ticket_viewer', 'ticket_editor', 'ticket_manager', 'manager')"#
+    ),
     "with all four organization tiers in one probe: {compiled}"
   );
 }
 
-/// site-app's project scope. The `^` closure replaces `organization_ancestors_subquery`'s per-row
-/// recursive CTE, and read/update/owner become viewer/editor/manager on the organization.
+/// A **slug-keyed** definition scoped to an organization. The `^` closure replaces the per-row
+/// recursive walk of `organizations.parent_id` that a hand-written ancestor subquery needed, and
+/// the three sharing levels become viewer/editor/manager on the organization.
 #[test]
-fn antares_project_view_replaces_the_ancestor_subquery() {
-  let compiled = sql("antares_project", "view");
+fn a_slug_keyed_definition_scopes_to_its_org_without_a_recursive_cte() {
+  let compiled = demo_sql("demo_widget", "view");
 
   assert!(
-    compiled.contains(r#""projects"."organization_id" IN (SELECT "#)
+    compiled.contains(r#""widgets"."organization_id" IN (SELECT "#)
       && compiled.contains(r#""org_closure""#),
-    "the project's own organization enters the closure: {compiled}"
+    "the widget's own organization enters the closure: {compiled}"
   );
   assert!(
     compiled
-      .contains(r#""relation" IN ('project_viewer', 'project_editor', 'project_manager', 'manager')"#),
+      .contains(r#""relation" IN ('widget_viewer', 'widget_editor', 'widget_manager', 'manager')"#),
     "read maps to the viewer tier, which the editor and manager tiers imply: {compiled}"
   );
   assert!(
     compiled.starts_with(&format!(
-      r#"EXISTS(SELECT 1 FROM "relation_tuples" AS "_az_t0" WHERE "_az_t0"."resource_type" = 'antares_project' AND "_az_t0"."relation" IN ('owner', 'editor', 'viewer') AND "_az_t0"."resource_id" = "projects"."slug" AND ("_az_t0"."subject_key" = {KEYS})"#
+      r#"EXISTS(SELECT 1 FROM "relation_tuples" AS "_az_t0" WHERE "_az_t0"."resource_type" = 'demo_widget' AND "_az_t0"."relation" IN ('owner', 'editor', 'viewer') AND "_az_t0"."resource_id" = "widgets"."slug" AND ("_az_t0"."subject_key" = {KEYS})"#
     )),
-    "the per-slug grant is one probe over the three levels: {compiled}"
+    "the per-slug grant is one probe over the three levels, and the object id is the slug rather \
+     than a row id: {compiled}"
   );
   assert!(
     compiled.contains(
-      r#"("projects"."owner_user_id" = ANY(CAST(ARRAY [7] AS int[]))) AND (projects.owner_user_id IS NOT NULL)"#
+      r#"("widgets"."owner_user_id" = ANY(CAST(ARRAY [7] AS int[]))) AND (widgets.owner_user_id IS NOT NULL)"#
     ),
     "and the owner column stays an owner: {compiled}"
   );
@@ -379,35 +444,68 @@ fn antares_project_view_replaces_the_ancestor_subquery() {
   );
 }
 
-/// lab-app's site rule: no organization branch at all, and one block subtracted from everything.
-/// Gaining an ancestor walk here would silently widen production, which is why its absence is
-/// asserted rather than assumed.
+/// A definition with **no** organization branch at all, and one block subtracted from everything.
+///
+/// Not every resource is organization-scoped, and gaining an ancestor walk by accident would widen
+/// access silently — so the absence is asserted rather than assumed. The block is the other half:
+/// it is subtracted outside the whole union, so the ownership column cannot walk around it.
 #[test]
-fn daqs_site_has_no_org_branch_and_one_block() {
-  let compiled = sql("daqs_site", "view");
-  assert!(!compiled.contains("org_closure"), "lab-app has no hierarchy on sites today: {compiled}");
+fn a_definition_without_an_org_branch_keeps_none_and_blocks_last() {
+  let compiled = demo_sql("demo_root", "view");
+  assert!(
+    !compiled.contains("org_closure"),
+    "this definition declares no organization edge, so no closure may appear: {compiled}"
+  );
   assert!(
     compiled.contains(
-      r#"("sites"."manager_id" = ANY(CAST(ARRAY [7] AS int[]))) AND (sites.manager_id IS NOT NULL)"#
+      r#"("roots"."manager_id" = ANY(CAST(ARRAY [7] AS int[]))) AND (roots.manager_id IS NOT NULL)"#
     ),
     "the manager column is the ownership edge: {compiled}"
   );
   assert!(
     compiled.ends_with(&format!(
-      r#"AND (NOT EXISTS(SELECT 1 FROM "relation_tuples" AS "_az_t9" WHERE "_az_t9"."resource_type" = 'daqs_site' AND "_az_t9"."relation" = 'blocked' AND "_az_t9"."resource_id" = CAST("sites"."id" AS text) AND ("_az_t9"."subject_key" = {KEYS}) AND ("_az_t9"."expires_at" IS NULL OR "_az_t9"."expires_at" > (CURRENT_TIMESTAMP))))"#
+      r#"AND (NOT EXISTS(SELECT 1 FROM "relation_tuples" AS "_az_t9" WHERE "_az_t9"."resource_type" = 'demo_root' AND "_az_t9"."relation" = 'blocked' AND "_az_t9"."resource_id" = CAST("roots"."id" AS text) AND ("_az_t9"."subject_key" = {KEYS}) AND ("_az_t9"."expires_at" IS NULL OR "_az_t9"."expires_at" > (CURRENT_TIMESTAMP))))"#
     )),
     "and the block is subtracted last, outside everything: {compiled}"
+  );
+}
+
+/// A `via` hop into a **text-keyed** target: the row's own column holds the target's row id, and
+/// the hop turns it into the key the target is actually keyed by.
+///
+/// Without the hop the predicate would compare a row id against a slug — which is not a slow query,
+/// it is a statement that selects nothing and refuses everybody.
+#[test]
+fn a_via_hop_resolves_the_targets_own_key() {
+  let compiled = demo_sql("demo_run", "view");
+  assert!(
+    compiled.contains(
+      r#"EXISTS(SELECT 1 FROM "widgets" AS "_az_h0" WHERE "_az_h0"."id" = "runs"."widget_id""#
+    ),
+    "the hop joins the target's table on its row id: {compiled}"
+  );
+  assert!(
+    compiled.contains(r#""_az_o1"."slug" = "_az_h0"."slug""#),
+    "and the hop's row is matched to the target's own row by that key: {compiled}"
+  );
+  assert!(
+    compiled.contains(r#""_az_t2"."resource_id" = "_az_o1"."slug""#),
+    "so the tuple is matched against the target's own key column, never against the row id: \
+     {compiled}"
   );
 }
 
 /// Every `(definition, permission)` pair a converted call site names, asserted to exist.
 ///
 /// `Authz::filter` and `Authz::try_check` take the permission as a `&str` and answer
-/// `UnknownPermission` — a **500 on the first request**, not a compile error. `role` had no `remove`
-/// until this step added one; `board` and `board_group` still have none and their delete paths ask
-/// for `own` instead; `daqs_inquiry` and `daqs_inquiry_rating` had none until §14 step 13 added
-/// one, so lab-app's two delete paths had nothing to name. A typo anywhere in the converted sites
-/// compiles and fails in production.
+/// `UnknownPermission` — a **500 on the first request**, not a compile error. `role` had no
+/// `remove` until this table found the gap; `board` and `board_group` still have none and their
+/// delete paths ask for `own` instead. A typo anywhere in the converted sites compiles and fails in
+/// production.
+///
+/// It lists **sumida's** call sites only. A product's call sites are the product's to pin, in a
+/// table of the same shape over its own rules — sumida cannot see them, and a list here that named
+/// them would be a copy that drifts the first time the product moves a file.
 ///
 /// So this is the list, by hand, one row per site. Maintaining it by hand is its weakness and the
 /// reason it is written out rather than derived: a table generated from the rules would assert that
@@ -470,48 +568,6 @@ fn every_converted_call_site_names_a_permission_that_exists() {
     // `authorize*` prologues ask `platform:root#superuser`.
     ("authz/write.rs", "service", "grant"),
     ("membership/*", "platform", "superuser"),
-    // ── lab-app (§14 step 13) ────────────────────────────────────────────────────────────────
-    //
-    // Paths are `lab-app/server/src/lab-app/…`. lab-app is a separate crate, so its call sites cannot be
-    // reached from a test in this one — which is precisely why they belong in this table: nothing
-    // else in sumida's suite would notice a permission name that lab-app asks for and the rules do
-    // not declare.
-    ("lab-app site/mod.rs", "daqs_site", "view"),
-    ("lab-app site/mod.rs", "daqs_site", "edit"),
-    ("lab-app site/tile_map.rs", "daqs_site", "edit"),
-    // Creating a structure/photo/inspection is a `create` on the **site**: the row being
-    // authorized does not exist yet, so the question can only be asked of its parent.
-    ("lab-app structure/mod.rs", "daqs_site", "create"),
-    ("lab-app photo/mod.rs", "daqs_site", "create"),
-    ("lab-app inspection/mod.rs", "daqs_site", "create"),
-    // The organization branch of `assert_can_change_manager` — `ap::ns("organization")` with
-    // action `update` was `organization#edit`.
-    ("lab-app site/mod.rs", "organization", "edit"),
-    ("lab-app structure/mod.rs", "daqs_structure", "view"),
-    ("lab-app structure/mod.rs", "daqs_structure", "edit"),
-    ("lab-app structure/mod.rs", "daqs_structure", "remove"),
-    ("lab-app photo/mod.rs", "daqs_photo", "view"),
-    ("lab-app photo/mod.rs", "daqs_photo", "edit"),
-    ("lab-app photo/mod.rs", "daqs_photo", "remove"),
-    // Both mutating paths asked for action `update`, the delete one included. Preserved as it
-    // stood rather than promoted to `remove` — this step changes no answer.
-    ("lab-app inspection/mod.rs", "daqs_inspection", "view"),
-    ("lab-app inspection/mod.rs", "daqs_inspection", "edit"),
-    ("lab-app report/mod.rs", "daqs_report", "view"),
-    ("lab-app report/mod.rs", "daqs_report", "remove"),
-    ("lab-app ai_model/mod.rs", "daqs_ai_model", "view"),
-    ("lab-app ai_model/mod.rs", "daqs_ai_model", "edit"),
-    ("lab-app ai_model/mod.rs", "daqs_ai_model", "remove"),
-    ("lab-app downloadable_asset/mod.rs", "daqs_downloadable_asset", "view"),
-    ("lab-app downloadable_asset/mod.rs", "daqs_downloadable_asset", "edit"),
-    ("lab-app downloadable_asset/mod.rs", "daqs_downloadable_asset", "remove"),
-    // `remove` did not exist on either inquiry definition until this step; both delete paths had
-    // no permission to name at all.
-    ("lab-app inquiry/status.rs", "daqs_inquiry", "view"),
-    ("lab-app inquiry/status.rs", "daqs_inquiry", "edit"),
-    ("lab-app inquiry/status.rs", "daqs_inquiry", "remove"),
-    ("lab-app inquiry/rating.rs", "daqs_inquiry_rating", "view"),
-    ("lab-app inquiry/rating.rs", "daqs_inquiry_rating", "remove"),
   ];
 
   for (site, definition, permission) in sites {
@@ -581,22 +637,24 @@ fn every_permission_in_the_rule_set_compiles() {
 
 // ─── the inventory ───────────────────────────────────────────────────────────────────────────
 
-/// Every namespace found by grepping `service_ap!` and `ap::ns(` in the four products is declared,
-/// and the counts match that enumeration. A count is a weak assertion on its own; it is here so
-/// that *adding* a namespace to the code without adding a rule fails loudly rather than quietly.
+/// Every namespace found by grepping `service_ap!` and `ap::ns(` in sumida is declared, and the
+/// counts match that enumeration. A count is a weak assertion on its own; it is here so that
+/// *adding* a namespace to the code without adding a rule fails loudly rather than quietly.
+///
+/// The registry a lib test sees is sumida's rules alone — nothing installs here — so these are
+/// sumida's own numbers, and they cannot move when a consumer's inventory does.
 #[test]
 fn the_namespace_inventory_matches_the_code() {
   let registry = Authz::registry().expect("validates");
   let namespaces = registry.namespaces();
 
   let gated = namespaces.iter().filter(|n| n.gated).count();
-  assert_eq!(gated, 44, "44 service objects, one per route-gated namespace");
-
-  let per_product = |product: &str| namespaces.iter().filter(|n| n.product == product).count();
-  assert_eq!(per_product("sumida"), 21, "18 gates + org:user, org:credit, org:subscription");
-  assert_eq!(per_product("trainer"), 9, "8 gates + trainer:delegate");
-  assert_eq!(per_product("site-app"), 11, "10 gates + site-app:project.row");
-  assert_eq!(per_product("lab-app"), 8, "7 gates + the unprefixed downloadable_asset");
+  assert_eq!(gated, 18, "18 service objects, one per route-gated namespace");
+  assert_eq!(namespaces.len(), 21, "18 gates + org:user, org:credit, org:subscription");
+  assert!(
+    namespaces.iter().all(|entry| entry.source == "schema.sz"),
+    "a namespace reached sumida's registry from somewhere other than sumida's own rule file"
+  );
 
   for entry in namespaces {
     if let Some(definition) = &entry.definition {
@@ -609,17 +667,31 @@ fn the_namespace_inventory_matches_the_code() {
   }
 }
 
-/// The three namespaces site-app's initiator seeds and nothing gates on stay out. Manufacturing a
-/// `service:` object for a typo is how a dead grant becomes a live one.
+/// The fixture's inventory, for the two shapes sumida's own has no instance of: one definition
+/// behind two namespaces, and a route gate with no row tier at all.
+///
+/// Two namespaces naming one resource is a defect a consumer arrives with — a grant on one does
+/// nothing for the other — and honouring both service object ids is how it is closed without losing
+/// an existing grant.
 #[test]
-fn the_known_orphan_namespaces_are_not_declared() {
-  let registry = Authz::registry().expect("validates");
-  for orphan in ["user_log", "user_block", "site-app:node"] {
-    assert!(
-      !registry.namespaces().iter().any(|n| n.namespace == orphan),
-      "`{orphan}` is gated on by nothing and must not gain a rule"
-    );
+fn one_definition_may_answer_two_namespaces() {
+  let registry = demo();
+  for namespace in ["demo_asset", "demo:asset"] {
+    let entry = registry.namespace(namespace).unwrap_or_else(|| panic!("`{namespace}` is declared"));
+    assert_eq!(entry.definition.as_deref(), Some("demo_asset"));
+    assert!(entry.gated, "`{namespace}` must have a route gate of its own");
   }
+
+  let compiled = demo_sql("demo_asset", "view");
+  for object in ["'demo_asset'", "'demo:asset'"] {
+    assert!(compiled.contains(object), "a grant on {object} must still reach the row: {compiled}");
+  }
+
+  let gate_only = registry.namespace("demo:settings").expect("`demo:settings` is declared");
+  assert!(
+    gate_only.gated && gate_only.definition.is_none(),
+    "a route gate with no row tier: the resource is not a row, so there is nothing to judge"
+  );
 }
 
 /// `org:credit` and `org:subscription` keep a `use` tier distinct from `manage` — blocking item 2

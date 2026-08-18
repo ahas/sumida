@@ -1,119 +1,177 @@
-# 권한(ReBAC) 모델 & 시드 가이드 — 게시판(bps) / 파일(fs)
+# 권한 선언 구조 & 시드 가이드
 
-`sumida`의 모든 보호 라우트는 단일 테이블 `access_policies`로 운영되는 ReBAC로 통제된다.
-**운영 DB에 시드 정책을 넣지 않으면 `service_ap` 레이어에서 전부 403**이 된다.
-(전체 ReBAC 동작은 [`CLAUDE.md`](../CLAUDE.md) §2 참고. 이 문서는 게시판/파일 도메인의 시드 실무를 다룬다.)
+> **이 문서를 고치는 사람에게.**
+>
+> 구현 코드를 인용하지 않는다(파일 경로, 줄 번호, 함수·타입 이름). 코드는 움직이고 문서는 안
+> 따라 움직인다. 수정 이력도 남기지 않는다 — "원래는", "이전 버전에서는", 날짜 붙은 변경 서술은
+> git과 CHANGELOG의 일이다. **고칠 때는 덧붙이지 말고 해당 부분을 다시 쓴다.**
+>
+> 이 문서는 **무엇을 어떻게 선언하고 부여하는가**를 다룬다. 규칙 언어 자체의 문법과 설계 근거는
+> [`sz-language.md`](./sz-language.md)가 정본이다. 둘이 겹치면 언어 쪽은 그쪽에 맡기고 여기서는
+> 지운다.
 
-## 1. 통제 계층 3종
+---
 
-요청이 핸들러에 닿기까지 거치는 관문:
+## 1. 세 층
 
-1. **`user_guard`** — 세션 쿠키 또는 `Authorization: Bearer <jwt>` / `APIKEY <key>` 검증. 로그인 필요.
-2. **`service_ap!(ns, action)`** — `(namespace=ns, object="service", action=action)` 정책을 통과해야 핸들러 진입.
-   즉 **각 네임스페이스마다 `object="service"` 정책이 사용자(또는 그 role/org)에게 있어야** 라우트에 들어간다.
-3. **행(row) 단위 검사** — 핸들러 내부:
-   - 글 목록/조회: `board_group:read` + `board:read`를 해당 board/group 객체에 대해 통과한 글만 보임(+ post `content_visibility`).
-   - 글 생성: `board_group:create object=<group_id>`(그룹 있으면) **AND** `board:create object=<board_id>`.
-   - 글 수정/삭제: 운영자(`board_group`+`board`) **OR** 작성자 소유권(`board_post:update|delete object=<post_id>`, 생성 시 자동 부여).
-   - 반응/신고/뷰어/인라인: 서비스에서 가시성·소유권으로 판정(아래 표).
+권한 검사는 세 층을 지난다. 위에서 아래로 좁아지고, **모두 통과해야** 허용된다.
 
-`is_admin=true` 사용자는 위 전부를 우회한다.
-
-## 2. 네임스페이스 / 액션 / 객체
-
-| 네임스페이스 | 액션 | service-level 필요? | 추가 행 단위 검사 |
-|---|---|---|---|
-| `board` | read/create/update/delete | ✅ | 객체=board id. 글 생성·조회 체인에서도 사용 |
-| `board_group` | read/create/update/delete | ✅ | 객체=group id. 글 생성·조회 체인에서도 사용 |
-| `board_topic` | read/create/update/delete | ✅ | 객체=topic id |
-| `board_post` | read/create/update/delete | ✅ | 생성=board/group 체인, 수정/삭제=운영자 OR 작성자(자동부여), 조회=board/group 체인 + `content_visibility` |
-| `board_post_reaction` | read/create/update/delete | ✅ | board `reaction_visibility` + 소유자만 수정/삭제. 생성 시 user_id=세션 |
-| `board_post_report` | read/create/delete | ✅ | create=가시 글 + 인증(누구나 신고 가능하게 시드), read/delete=모더레이터 |
-| `board_file` | read/create/delete | ✅ | board 업로드 정책(`can_upload_file` 등) + 행 단위 권한 |
-| `file` | read/create/delete | ✅ | 단, `GET /files/{uuid}/inline`은 service_ap 없이 **post 가시성/`file:read`로 행 단위 인가** |
-
-`who`(정책의 `user` 컬럼) 형식: `user:<id>` | `role:<id>` | `org:<id>` | `api:<KEY>` | `user:admin` | `*`.
-**반드시 `ApUser::*.to_string()` 형식으로 저장**(예: `role:2`).
-
-## 3. 라우트 → 필요 권한 요약
-
-| 라우트 | service_ap | 비고 |
+| 층 | 무엇을 묻나 | 부여 형태 |
 |---|---|---|
-| `GET /boards`, `/boards/{id}`, `/boards/{id}/posts` | `board:read` | 글 목록은 board 컨트롤러가 제공 |
-| `POST/PATCH/DELETE /boards` | `board:create|update|delete` | |
-| `GET /board-posts`, `/board-posts/{id}`, `/board-posts/{id}/view`, `/board-posts/{id}/viewers` | `board_post:read` | viewers는 board `viewer_visibility`로 추가 게이트 |
-| `POST /board-posts` | `board_post:create` (+ board/group 체인) | |
-| `PATCH/DELETE /board-posts/{id}` | `board_post:update|delete` (운영자 OR 작성자) | 삭제는 soft-delete(대댓글 cascade) |
-| `GET/POST/PATCH/DELETE /board-post-reactions` | `board_post_reaction:read|create|update|delete` | |
-| `GET/POST/DELETE /board-post-reports` | `board_post_report:read|create|delete` | create는 일반 사용자, read/delete는 모더레이터 |
-| `POST /board-files`, `GET /board-files`, `DELETE /board-files` | `board_file:read|create|delete` | |
-| `GET /files`, `/files/{uuid}`, `POST /files`, `DELETE /files/{uuid}` | `file:read|create|delete` | |
-| `GET /files/{uuid}/inline` | (service_ap 없음) | 인증 + post 가시성/`file:read`로 행 단위 인가 |
+| 플랫폼 | 전부 통과하는가 | `platform:root#admin@user:1` |
+| 서비스(라우트 게이트) | 이 API를 부를 자격이 있는가 | `service:<네임스페이스>#read@role:3#member` |
+| 객체(행) | 이 행에 닿을 수 있는가 | `file:<uuid>#viewer@user:9` |
 
-## 4. 시드 예시 (SQL)
+게이트만 있으면 API는 부르지만 남의 행은 안 보인다. 행 권한만 있고 게이트가 없으면 라우트에서
+먼저 막힌다. **두 실패는 서로 다른 오류 코드로 구분된다** — 게이트 거절과 소유권 거절을 같은
+403으로 뭉뚱그리면, 행 스코프를 통째로 지워도 테스트가 초록으로 남는다.
 
-`access_policies(namespace, object, action, effect, "user")` 직접 INSERT 예시.
-`action`은 `text[]`, `effect`는 `allow|deny`.
+## 2. 주체 표기
 
-### 4-1. 일반 회원 역할 (role:2) — 읽기 + 글/반응/신고 작성
+튜플의 오른쪽에 오는 것들이다.
 
-```sql
--- 게시판/그룹/토픽 읽기 (글 조회 체인이 board_group:read + board:read 를 요구)
-INSERT INTO access_policies (namespace, object, action, effect, "user") VALUES
-  ('board',       'service', '{read}',          'allow', 'role:2'),
-  ('board',       '*',       '{read}',          'allow', 'role:2'),
-  ('board_group', 'service', '{read}',          'allow', 'role:2'),
-  ('board_group', '*',       '{read}',          'allow', 'role:2'),
-  ('board_topic', 'service', '{read}',          'allow', 'role:2'),
-  ('board_topic', '*',       '{read}',          'allow', 'role:2'),
--- 글 읽기/쓰기
-  ('board_post',  'service', '{read,create}',   'allow', 'role:2'),
-  ('board',       '*',       '{create}',        'allow', 'role:2'),  -- 글 생성 체인: board:create
-  ('board_group', '*',       '{create}',        'allow', 'role:2'),  -- 글 생성 체인: board_group:create
--- 반응 / 신고 / 파일
-  ('board_post_reaction', 'service', '{read,create,update,delete}', 'allow', 'role:2'),
-  ('board_post_report',   'service', '{create}',                    'allow', 'role:2'),
-  ('board_file',          'service', '{read,create}',               'allow', 'role:2'),
-  ('file',                'service', '{read,create}',               'allow', 'role:2');
--- 글 수정/삭제는 작성자 소유권 정책이 생성 시 자동 부여되므로 별도 시드 불필요.
--- (단 service_ap 통과를 위해 board_post:update,delete service 정책이 필요하면 아래 추가)
-INSERT INTO access_policies (namespace, object, action, effect, "user") VALUES
-  ('board_post', 'service', '{update,delete}', 'allow', 'role:2');
+| 표기 | 뜻 |
+|---|---|
+| `user:7` | 개인 |
+| `role:3#member` | 그 역할을 가진 전원 |
+| `organization:100#member` | 그 조직 소속 전원 |
+| `apikey:<해시>` | 키 자체 |
+| `user:*` | 로그인한 누구나 (허용한 관계에만) |
+
+같은 관계 자리에 무엇을 넣을지는 부여할 때 정한다. 규칙은 어떤 종류가 올 수 있는지만 선언한다.
+
+**API 키는 두 가지로 갈린다.** 비보안 키는 소유자의 신원으로 확장되어 소유자가 가진 것을 그대로
+가진다. 보안 키는 키 자신이 받은 것만 가지며, 소유자가 관리자여도 플랫폼 권한을 물려받지 않는다.
+
+## 3. 플랫폼 관리자
+
+```
+platform:root#admin@user:1
 ```
 
-> 글 수정/삭제: 라우트는 `board_post:update|delete` **service-level**을 요구하고(2계층), 핸들러는
-> 운영자 권한 **또는** 작성자 소유권(생성 시 자동 부여된 `board_post:update|delete object=<post_id>`)을 본다.
-> 따라서 일반 회원도 자기 글을 고치려면 `board_post:update|delete` service 정책이 있어야 라우트에 진입한다.
+한 줄이면 모든 검사를 통과한다.
 
-### 4-2. 모더레이터 역할 (role:3) — 신고 처리 + 글 운영
+사용자 테이블의 관리자 플래그도 같은 결과를 낸다. 둘을 함께 두는 이유는 나뉘어 있어서다 —
+플래그는 관리자 화면이 계속 쓰는 운영상의 정본이고, 관계 쪽은 사용자 테이블을 건드리지 않고
+플랫폼 권한을 줄 수 있게 한다.
 
-```sql
-INSERT INTO access_policies (namespace, object, action, effect, "user") VALUES
-  ('board_post_report', 'service', '{read,delete}',          'allow', 'role:3'),
-  ('board_post',        'service', '{read,update,delete}',   'allow', 'role:3'),
-  ('board',             '*',       '{read,update,delete}',   'allow', 'role:3'),
-  ('board_group',       '*',       '{read,update,delete}',   'allow', 'role:3');
+**전권을 두 곳에 심지 않는다.** 관리자 계정을 만들면서 별도의 만능 부여를 또 넣으면, 나중에
+한쪽만 지웠을 때 설명할 수 없는 상태가 된다.
+
+## 4. 라우트 게이트
+
+네임스페이스마다 네 동작(`read`/`create`/`update`/`delete`)이 있고, 그 위에 운영자 등급이 있다.
+
+```
+service:<네임스페이스>#read@role:3#member        일반 등급
+service:<네임스페이스>#op_read@user:5            운영 등급
+service:<네임스페이스>#operator@user:5           운영 등급 전체
 ```
 
-### 4-3. 관리자
+일반 등급은 게이트만 연다. 행 스코프는 따로 통과해야 한다.
+**운영 등급은 소유권을 무시한다** — 그 네임스페이스의 모든 행에 닿고 조직 경계도 넘는다.
+운영자 하나를 부여하면 네 동작이 모두 열린다.
 
-`users.is_admin = true`면 ReBAC를 전부 우회한다. 별도 정책 불필요.
+새로 만든 데이터베이스는 게이트가 비어 있어 **모든 보호 라우트가 거절된다.** 초기화 도구가
+역할 하나에 기본 게이트를 심는 것이 첫 단계다.
 
-### 4-4. 게시판 운영 위임 (특정 board만)
+## 5. 조직
 
-특정 board(예: id=5)와 그 그룹(예: id=1)만 운영하게 하려면 `*` 대신 객체 id로 좁힌다:
+조직은 계층을 이루고, 부여는 **아래로만** 흐른다.
 
-```sql
-INSERT INTO access_policies (namespace, object, action, effect, "user") VALUES
-  ('board',       '5', '{read,create,update,delete}', 'allow', 'user:42'),
-  ('board_group', '1', '{read,create,update,delete}', 'allow', 'user:42'),
-  ('board_post',  'service', '{read,create,update,delete}', 'allow', 'user:42');
+```
+organization:100#manager@user:5
 ```
 
-## 5. 주의
+100번과 그 아래 전부의 관리자가 된다. 상위 조직이나 형제 조직에는 닿지 않는다. 나중에 100번
+아래에 조직이 새로 생기면 **다시 부여할 필요 없이 자동으로 포함된다.**
 
-- **시드 누락 = 403.** 새 네임스페이스(예: `board_post_report`)를 도입하면 운영 DB·다운스트림 시드 스크립트를 같이 갱신한다.
-- `deny`는 `allow`보다 우선한다(특정 객체 차단에 사용).
-- `*` 와일드카드는 객체/액션 양쪽에 쓸 수 있다(`object='*'`, `action='{*}'`).
-- 정책 관리 API: `/access-policies` 라우트 또는 `ap::edit()` 헬퍼(`api/src/util/ap.rs`).
-- 파일은 응답·본문에 **항상 `/files/{uuid}/inline`(읽기전용 게이트 경로)** 만 노출한다(presigned/스토리지 URL 금지 — [`TASKS.md`](../TASKS.md) "파일 접근 원칙").
+### 종류별로 쪼개기
+
+전권 대신 리소스 종류별로 3단 등급을 줄 수 있다.
+
+```
+organization:100#file_manager@user:5           파일만 관리
+organization:100#task_viewer@role:3#member     태스크는 조회만
+```
+
+등급은 `viewer` < `editor` < `manager` 순으로 포함한다. 관리자는 편집을 함의하고 편집은 조회를
+함의한다. 반대는 성립하지 않는다 — 편집자는 소유 권한을 얻지 못한다.
+
+각 종류가 어떤 이름으로 열려 있는지는 규칙 파일이 정본이다. 새 종류가 필요하면 규칙에 한 줄을
+추가해야 하고, 그건 배포가 필요한 몇 안 되는 변경 중 하나다.
+
+## 6. 개별 행
+
+```
+file:<uuid>#viewer@user:9                  파일 하나를 9번에게
+board:7#editor@organization:200#member     게시판 7번을 조직 200 전체에
+board:7#viewer@user:*                      로그인한 누구나 읽기
+```
+
+소유자는 부여하지 않는다. 리소스를 만든 계정이 소유자 컬럼에 기록되고, 규칙이 그 컬럼을 읽는다.
+API 키로 만들어도 키 소유자의 계정이 남으므로 결과가 같다.
+
+## 7. 차단
+
+```
+board_post:42#blocked@user:9
+```
+
+차단은 **부여보다 항상 세다.** 규칙에서 제외가 합집합 바깥에 걸리므로 글쓴이 본인이어도 차단되면
+못 본다. 게시판 차단은 그 안의 모든 글에, 그룹 차단은 그룹 아래 모든 게시판에 내려간다.
+
+차단은 규칙이 미리 자리를 만들어 둔 곳에서만 걸린다. 임의의 부여에 "단 이 사람만 빼고"를 나중에
+덧붙일 수는 없다.
+
+## 8. 계층 상속과 교집합
+
+게시판은 그룹에서 권한을 물려받되 교집합으로 받는다. **그룹 편집권만으로는 부족하고 그 게시판
+에도 자격이 있어야** 편집된다. 상위 권한이 하위를 무조건 뚫지 않는다는 뜻이다.
+
+자식 행은 부모를 타고 올라가 판정되고 거기서 멈춘다. 사진은 자기가 속한 현장의 권한을 따르며,
+현장 권한이 없으면 사진 id를 알아도 닿지 못한다.
+
+## 9. 위임
+
+다른 서비스가 자기 사용자를 대신해 작업을 제출하는 경우다.
+
+```
+delegation_scope:svc:alpha#operator@user:5
+```
+
+`svc:alpha`를 통해 위임된 것을 5번이 조작할 수 있다. **정확일치**라 다른 서비스의 위임에는 닿지
+않으며, 접두사나 확장도 통하지 않는다.
+
+위임된 리소스에는 **제출한 계정**이 기록된다. 따라서 그 계정이 속한 조직의 관리자에게도 보인다.
+위임된 쪽의 사용자 번호는 그 서비스 안의 식별자일 뿐 이쪽 계정이 아니므로 아무 권한도 주지 않는다.
+
+## 10. 부여하는 방법
+
+관계 튜플 엔드포인트로 부여하고 회수한다. 같은 튜플을 다시 부여하면 만료 시각이 갱신된다.
+
+**부여 자체가 인가된다.** 부여하려는 객체에 대해 부여 권한을 쥐고 있어야 하며, 자기가 갖지 않은
+것을 남에게 줄 수 없다. 조직 관리자는 자기 하위 조직 안에서만 부여할 수 있다.
+
+거부(`deny`) 항목은 받지 않는다. 차단은 규칙 구조이지 데이터가 아니다.
+
+만료 시각을 줄 수 있다. 시간대나 요일 같은 조건은 표현되지 않는다.
+
+## 11. 무엇이 고정이고 무엇이 동적인가
+
+**배포가 필요한 것** — 새 리소스 종류, 기존 종류의 새 권한, 조합 방식 변경, 새 조직 스코프 종류.
+즉 **없던 개념이 생길 때**다. 규칙 파일은 서비스마다 자기 것을 갖고, 프레임워크의 정의에 자기
+리소스 종류를 붙일 때는 `extend`로 붙인다 — 프레임워크 쪽 파일을 고치지 않는다.
+
+**배포 없이 되는 것** — 누구에게 무엇을 주고 회수할지 전부. 조직 신설, 사용자 추가, 역할 변경,
+개별 공유, 차단, 위임, 만료. 실무에서 매일 일어나는 일은 전부 이쪽이다.
+
+## 12. 주의
+
+- **새 데이터베이스는 게이트가 비어 있다.** 시드 전에는 보호 라우트가 전부 거절된다.
+- **부여를 두 곳에 심지 않는다.** 같은 권한이 두 경로로 열려 있으면 한쪽을 지워도 닫히지 않고,
+  왜 안 닫히는지 찾는 데 시간이 걸린다.
+- **소유자와 조직은 부여 대상이 아니다.** 컬럼에서 파생되므로 튜플로 심으려 하면 규칙과 데이터가
+  어긋난다.
+- **규칙이 참조하는 컬럼이 없으면 서버가 기동을 거부한다.** 마이그레이션을 건너뛴 데이터베이스는
+  뜨지 않는다. 조용히 잘못된 판정을 내리는 것보다 낫다.

@@ -164,7 +164,7 @@ async fn test_role_admin_bypass_comprehensive() {
 
 // `test_*_explicit_deny_comprehensive` 는 없어졌다. 개별 부여에 붙는 `effect = 'deny'` 가
 // 사라졌기 때문이다(설계 §3): 차단은 이제 규칙의 성질이고, 그것을 표현하는 `blocked` 관계는
-// 부정을 다루던 네 정의(`board_group`/`board`/`board_post`/`daqs_site`)만 선언한다. 여기서
+// 부정을 다루던 게시판 계열 세 정의(`board_group`/`board`/`board_post`)만 선언한다. 여기서
 // 다루는 정의에는 차단할 방법이 아예 없으므로, 있는 척하는 테스트를 남기지 않는다.
 // 차단 우선순위 자체는 `api/tests/board.rs::test_board_block_precedence_comprehensive` 가 든다.
 

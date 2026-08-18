@@ -50,7 +50,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
   let app = Router::new()
     .merge(
-      sumida::api::Sumida::new() //
+      // 이 예제는 sumida 자신의 규칙만 쓴다 — 자기 규칙이 없다는 선언을 명시적으로 한다.
+      sumida::api::Sumida::new(&[]) //
         .set_state(&state)
         .router(),
     )

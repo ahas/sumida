@@ -5,11 +5,11 @@
 //! endpoint rather than reshaping the first.
 //!
 //! `/me/access-policies` reports **tuples**. `/me/permissions` reports **permissions**, which is
-//! not the same set: `service:trainer:task#operator` is one tuple and confers all eight capabilities on
+//! not the same set: `service:<namespace>#operator` is one tuple and confers every capability on
 //! that namespace, and `platform:root#superuser` is one tuple and confers them on every namespace.
 //! A client that received only the tuples would have to re-derive `can_X = X | op_X | operator |
 //! superuser` for itself — a second copy of the rule, in TypeScript, drifting from the one in
-//! `schema.zed`. So every entry here is **evaluated through the compiled rule**, never assembled
+//! the rule file. So every entry here is **evaluated through the compiled rule**, never assembled
 //! from the raw relations.
 //!
 //! Two tiers, kept apart because §5.2 deliberately made them different grants:
@@ -116,7 +116,7 @@ impl Authz {
     }
 
     // One column per (namespace, tier, action). The alias is positional because a namespace is a
-    // caller-visible string with colons and dashes in it (`trainer:terminal-session`), and an
+    // caller-visible string with colons and dashes in it (`board_post`, `app:terminal-session`), and an
     // identifier built out of one is a quoting decision this file has no business making.
     let mut statement = Query::select();
     let mut columns: Vec<(String, Tier, &'static str)> = Vec::new();

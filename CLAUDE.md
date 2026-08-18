@@ -19,8 +19,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 크레이트 | 책임 |
 |---|---|
-| `api/` | Axum 컨트롤러·서비스·레이어·유틸. `Sumida::new().router()` 진입점, `ApiController`/`ApiService` 트레잇, `util::ap`(ReBAC), `util::pagination/s3/storage/db/...` |
-| `entity/` | 공통 SeaORM 엔티티(users/roles/organizations/access_policies/api_keys/bans/access_logs/mail_forms/user_invitations/user_verifications/user_prefs/files/board_*) |
+| `api/` | Axum 컨트롤러·서비스·레이어·유틸. `Sumida::new().router()` 진입점, `ApiController` 트레잇, `authz`(규칙 평가기), `util::pagination/s3/storage/db/...` |
+| `entity/` | 공통 SeaORM 엔티티(users/roles/organizations/relation_tuples/api_keys/bans/access_logs/mail_forms/user_invitations/user_verifications/user_prefs/files/board_*) |
 | `infra/` | DB 풀, 세션 스토어(redis/dynamodb), AWS SDK, settings(`config` crate), `messenger`(socketioxide), tracing, jwt |
 | `error/` | `SumidaError` enum + `IntoResponse` + `StatusCode` 매핑 |
 | `e2e/`, `examples/` | 테스트/예제 |
@@ -39,7 +39,7 @@ cargo feature로 백엔드 토글: `full-local`(redis + local-fs + 정적 JWT) v
 
 ## Sumida 활용 가이드 (다운스트림 서비스 작성용)
 
-`sumida`를 의존성으로 추가한 서비스(예: `lab-app-server`)가 표준적으로 따르는 패턴.
+`sumida`를 의존성으로 추가한 서비스가 표준적으로 따르는 패턴.
 
 ### 1. 진입점 통합
 
@@ -50,57 +50,73 @@ impl sumida::api::SumidaState for AppState {
   fn db(&self) -> &DatabaseConnection { &self.db }
 }
 
+// 규칙 등록은 레지스트리를 처음 읽기 전이어야 하므로 부팅 검증보다 먼저다.
+sumida::api::authz::Authz::install_rules(my_app::authz::RULES)?;
+// 규칙이 읽는 테이블·컬럼이 이 데이터베이스에 없으면 요청을 받기 전에 죽는다.
+sumida::api::authz::Authz::boot_or_abort(&db).await?;
+// 관계 어휘 투영 — relation_tuples 의 외래키가 이것을 참조한다.
+sumida::api::authz::Authz::sync_schema(&db).await?;
+
 let app = Router::new()
-  .merge(sumida::api::Sumida::new().set_state(&state).router())  // 공통 라우트 nest
+  .merge(sumida::api::Sumida::new(my_app::authz::RULES).set_state(&state).router())  // 공통 라우트 nest
   .merge(my_domain::new_router(&state)?)                         // 도메인 라우트 nest
   .layer(sumida::infra::session::new_layer().await?)             // 세션
   .layer(sumida::api::layer::cors::new())                        // CORS
   .with_state(state);
 ```
 
-`Sumida::new().router()`가 자동으로 nest하는 경로:
+`Sumida::new(RULES).router()`가 자동으로 nest하는 경로:
 `/access-logs`, `/access-policies`, `/api-keys`, `/dashboard/monitoring`, `/bans`, `/organizations`, `/roles`, `/auth/session`, `/me`, `/users`, `/user-invitations`, `/user-verifications`, `/mail-forms`, `/boards`, `/board-groups`, `/board-topics`, `/board-posts`, `/board-files`, `/files`.
 
-### 2. ReBAC 권한 모델 — `api/src/util/ap.rs`
+### 2. ReBAC 권한 모델 — 규칙 언어와 관계 튜플
 
-단일 테이블 `access_policies(uuid, namespace, object, action[], effect, user)`로 운영. `*` 와일드카드 지원.
+권한은 `.sz` 규칙 파일에서 컴파일된 SQL 술어로 평가된다. 규칙이 **어떤 종류의 권한이 존재하고
+어떻게 조합되는지**를 정하고, 관계 튜플이 **누가 그것을 가지는지**를 정한다. 규칙은 배포로만
+바뀌고 튜플은 런타임에 바뀐다.
+
+- 언어 문법과 설계 근거: [`docs/sz-language.md`](docs/sz-language.md)
+- 선언 구조와 시드 실무: [`docs/permissions.md`](docs/permissions.md)
+
+**sumida 는 자기 규칙 파일(`api/src/authz/schema.sz`) 하나만 싣는다.** 다운스트림 서비스는 자기
+`.sz` 파일을 자기 저장소에 두고 `Sumida::new(RULES)` 로 등록한다. sumida 의 `organization` 에
+자기 리소스 종류를 붙일 때는 자기 파일에서 `extend organization { scope <종류> }` 로 붙인다 —
+sumida 쪽 파일은 고치지 않으며, sumida 는 어떤 서비스가 자기를 쓰는지 알지 않는다.
+
+세 층을 모두 통과해야 허용된다.
 
 ```
-user 식별자 형식 : "user:admin" | "org:N" | "role:N" | "user:N" | "api:KEY" | "*"
-effect           : "allow" | "deny"
+platform:root#admin@user:1              플랫폼 — 전부 통과
+service:<네임스페이스>#read@role:3#member   라우트 게이트 — 이 API를 부를 자격
+file:<uuid>#viewer@user:9               객체(행) — 이 행에 닿을 자격
 ```
 
-호출 패턴 3종:
+게이트 거절과 소유권 거절은 **서로 다른 오류 코드**로 나온다. 같은 403으로 뭉뚱그리면 행 스코프를
+통째로 지워도 테스트가 초록으로 남는다.
 
-| 호출 | SQL | 용도 |
-|---|---|---|
-| `ap::ns(ns).who(&s).join(E,Col).apply(query)` | LATERAL JOIN으로 read 필터 | 목록 조회 가시성 제한 |
-| `ap::ns(ns).who(&s).action("..").try_access(query, db)` | `SELECT EXISTS(...)` | 단일 행 수정/삭제 전 가드 |
-| `ap::ns(ns).who(&s).object(id).action("..").try_check_allowed(db)` | 정책 매칭만 | 신규 객체 생성 사전 검사 |
+호출 패턴은 둘뿐이다.
 
-다중 조건 AND: `ap::chain().push(...).push(...)`. 관리 헬퍼:
-- `ap::edit().namespace(..).object(..).action(..).user(..).effect("allow").create(db)` / `.update(effect, db)` / `.delete(db)`
-- `ap::for_users().user(ApUser::Role(id)).find_all(db)` — 특정 user의 정책 목록
-- `ap::find_users("ns").object(id).action(..).all(db)` — 특정 객체에 권한 있는 사용자 역추적
-- `.who(&session)`는 user/role/org/admin/api 식별자를 한 번에 펼쳐 넣어 줌
+| 호출 | 용도 |
+|---|---|
+| 리스트 스코프 | 목록 쿼리의 `WHERE` 절을 규칙에서 만든다. 필터·`COUNT`·`ORDER BY`·`LIMIT`가 한 문장에 남는다 |
+| 단건 점검 | 특정 행에 특정 권한이 있는지 묻는다. 수정·삭제 전 가드 |
 
-### 3. 서비스 표준 — `ApiService<A, E>`
+**읽기와 쓰기는 다른 권한으로 검사한다.** 목록에 보이는 것과 지울 수 있는 것은 다른 규칙이며,
+같은 스코프를 재사용하면 읽기 권한만 있는 행이 삭제된다.
 
-```rust
-pub struct MyService<S: SumidaState> { state: S, session: UserSession }
+부여와 회수는 관계 튜플 엔드포인트로 하고, **부여 자체가 인가된다** — 대상 객체에 대한 부여
+권한이 있어야 하며 자기가 갖지 않은 것은 줄 수 없다.
 
-impl<S: SumidaState> ApiService<ApCondition, MyEntity> for MyService<S> {
-  fn ap(&self) -> ApCondition {
-    ap::ns("my:ns").who(&self.session).join(MyEntity, my::Column::Id)
-  }
-}
-```
+서버는 부팅 때 규칙을 실제 스키마에 대조하고, 규칙이 읽는 컬럼이 없으면 **기동을 거부한다.**
+조용히 잘못된 행을 고르는 것보다 낫다.
 
-`ap()`만 구현하면 다음이 자동 제공:
-- `self.select(query)` = `ap().action("read").apply(query)` — 목록/단건 조회용
-- `self.try_access("update"|"delete"|.., ::find_by_id(id), &txn)` — 단일 행 보호
+### 3. 서비스 표준
 
-부모-자식 종속(예: site → structure → photo → inspection)은 `default_query_with(query)`를 오버라이드해 LEFT JOIN으로 부모 id를 끌어와 같은 namespace에 흘려보낸다. `lab-app-server`의 `DaqsInspectionService::default_query_with`가 표준 사례.
+서비스는 자기 리소스의 리스트 스코프와 단건 점검을 직접 붙인다. 공통 트레이트를 통해 자동으로
+얻는 구조가 아니므로, 읽기 경로에 스코프를 빠뜨리면 아무도 대신 채워 주지 않는다. **새 읽기
+경로를 추가할 때 이것이 가장 흔한 누락 지점이다.**
+
+부모-자식 종속은 규칙 쪽에서 푼다. 자식 정의가 부모로 가는 관계를 갖고 부모의 권한을 참조하면,
+자식 조회에 부모 조인이 자동으로 따라붙는다. 서비스 코드에서 조인을 조립하지 않는다.
 
 ### 4. 컨트롤러 표준 — 액션별 `service_ap!` 분리
 
@@ -125,7 +141,7 @@ fn router(self, state: &S) -> Router<S> {
 레이어 종류:
 - `user_guard!(state)` — 세션 또는 `Authorization: Bearer <jwt>` / `APIKEY <key>` 검증
 - `admin_guard!(state)` — `profile.is_admin` 체크
-- `service_ap!(state,"ns",action)` — `ap::ns(ns).object("service").action(action).who(&s).check_allowed(db)` 통과해야 진입
+- `service_ap!(state,"ns",action)` — 라우트 게이트. `service:<ns>#can_<action>` 을 통과해야 진입하며, 행 스코프는 그 뒤에 따로 검사된다
 - `board_ap!(state, [board_id,] action)` — 게시판 단위 권한
 
 **중요**: 액션별로 `service_ap!`를 따로 묶어야 한다. 한 묶음에 다른 액션을 섞으면 권한 체크가 약한 쪽으로 새어 나간다.
@@ -155,7 +171,7 @@ DTO `IntoActiveModel`에서 `.into_active_value()` 한 줄로 변환.
 - `UserSession::from_request_parts`로 자동 추출. `session.profile`에 id/username/full_name/role/organization/is_admin/api_key/expiry
 - `session.authorize(id, username, expiry, db).await` — 로그인 처리. role/org/is_admin이 자동 동기화(`identify`)
 - `UserEnvironment`(IP + UA 파싱)는 `Bans` 검사·`AccessLogs` 기록에 사용. ip_source는 settings에서 `ConnectInfo`/`Forwarded`/`XForwardedFor` 등 선택
-- JWT 비밀키 저장소: cargo feature `jwt-secret-store-static`(설정 파일) vs `jwt-secret-store-aws-ssm`(`/trainer/{stage}/jwt-secret`)
+- JWT 비밀키 저장소: cargo feature `jwt-secret-store-static`(설정 파일) vs `jwt-secret-store-aws-ssm`(`/{app}/{stage}/jwt-secret`)
 - 세션 스토어: `session-store-redis` vs `session-store-aws-dynamodb` — 동일 인터페이스, settings 키만 다름
 
 ### 8. 메신저(socketioxide)
@@ -166,7 +182,7 @@ messenger.of("/ns").org([1,2]).emit("event", &payload).await?;
 messenger.user([user_id]).emit("event", &payload).await?;
 ```
 
-room 자동 가입 규칙: 접속 사용자는 `org:N`, `user:N`, `admin`(관리자) 룸에 자동 합류. 다운스트림은 래퍼 구조체에 site/photo 같은 도메인 helper를 추가하면 된다(lab-app의 `DaqsMessenger` 패턴).
+room 자동 가입 규칙: 접속 사용자는 `org:N`, `user:N`, `admin`(관리자) 룸에 자동 합류. 다운스트림은 `Messenger` 를 감싼 래퍼 구조체에 자기 도메인 helper를 추가하면 된다.
 
 ### 9. 에러 처리
 
@@ -184,15 +200,15 @@ room 자동 가입 규칙: 접속 사용자는 `org:N`, `user:N`, `admin`(관리
 1. `entity/`에 SeaORM 엔티티 + prelude 노출 (다운스트림이 자체 entity면 자체 prelude)
 2. 마이그레이션 추가 (`sea_orm_migration`)
 3. DTO 5종 세트 작성 — `Optional`/`Nullable`로 PATCH 시멘틱 정리
-4. `Service`에 `ApiService<ApCondition, MyEntity>` 구현 — 부모 종속이면 `default_query_with`로 부모 id LEFT JOIN
+4. `.sz` 에 정의를 추가하고 서비스에 리스트 스코프와 단건 점검을 붙인다 — 부모 종속은 규칙 쪽에서 부모 관계로 푼다
 5. `Controller`에 list/get/create/update/delete + 액션별 `service_ap!` + `user_guard!`
 6. 라우터 nest 추가
-7. **운영 DB의 `access_policies`에 namespace 시드 정책 삽입** — 안 하면 `service_ap` 레이어에서 전부 403. `examples/basic` 또는 다운스트림의 initiator(`DEFAULT_SERVICES` 배열 패턴) 참고.
+7. **라우트 게이트 시드** — 새 데이터베이스는 게이트가 비어 있어 보호 라우트가 전부 거절된다. 다운스트림 initiator가 역할 하나에 기본 게이트를 심는 패턴을 따른다.
 
 ### 11. 변경 시 주의 사항
 
-- `try_access`/`select`는 `ap_check[_i]` alias로 LATERAL JOIN을 깐다 — 쿼리에 동명 alias 있으면 `ApCondition::alias(Alias::new("..."))`로 바꾼다.
-- `access_policies`에 직접 INSERT/DELETE할 때 user 컬럼은 반드시 `ApUser::*.to_string()` 형식으로 저장.
+- 읽기 경로를 새로 만들 때 리스트 스코프를 빠뜨리기 쉽다. 공통 트레이트가 대신 채워 주지 않으므로, 새 조회 라우트마다 스코프가 붙었는지 확인한다.
+- 소유자와 조직은 부여 대상이 아니다 — 컬럼에서 파생되므로 튜플로 심으면 규칙과 데이터가 어긋난다.
 - 새 namespace를 도입하면 README/AGENTS, `.env.example`, 다운스트림 시드 스크립트까지 같이 갱신.
 - 세션 cookie 속성(`name`/`secure`/`same_site`/`domain`/`path`) 변경은 클라이언트 호환성 영향 큼 — settings 키와 함께 다운스트림에도 공지.
 - AWS 프로파일 전환(local↔aws) 시 `target/`, Redis, S3 버킷 캐시를 비워야 리뷰가 깨끗하게 재현됨.

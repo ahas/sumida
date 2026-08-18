@@ -19,7 +19,7 @@ use crate::authz::write::SubjectKey;
 use crate::service::grants::{from_service_grants, to_service_grants};
 use crate::util::pagination::Pagination;
 
-/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace api_key service = api_key`).
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace api_key service = api_key`).
 const RESOURCE: &str = "api_key";
 
 /// Converts an API key into a hash for storage and lookup. The plaintext is exposed only once at issuance; the DB keeps only the hash.

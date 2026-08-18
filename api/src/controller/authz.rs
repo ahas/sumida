@@ -10,7 +10,7 @@ use crate::{SumidaState, user_guard};
 /// **Gated at authentication and no further, deliberately.**
 ///
 /// It carries no grant. Not a subject, not an object id, not a `created_by` — only which relations
-/// and permissions *exist*, which is the content of `schema.zed`, a file compiled into a binary
+/// and permissions *exist*, which is the content of `schema.sz`, a file compiled into a binary
 /// that ships to four products. So there is no authorization state here to leak, and the only thing
 /// a session requirement buys is that the resource model is not enumerable by an anonymous
 /// caller — cheap, and uniform with every other route in this tree.

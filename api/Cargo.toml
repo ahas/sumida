@@ -26,7 +26,7 @@ file = ["entity/file"]
 # membership 알림(구독 만료/잔액 부족)이 mail-form을 사용하므로 의존으로 명시.
 membership = ["mail-form", "entity/membership"]
 mail-form = ["entity/mail-form"]
-# 공용 운영 설정 — full-features 에 미포함(lab-app=full-aws 제외 유지). site-app/trainer 가 개별 enable.
+# 공용 운영 설정 — full-features 에 미포함. 필요한 소비자가 개별 enable 한다.
 system-settings = ["entity/system-settings"]
 # 기능 전체 묶음(기존 소비자 무영향: full-*가 전부 포함)
 full-features = ["board", "file", "membership", "mail-form"]

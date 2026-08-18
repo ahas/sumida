@@ -26,7 +26,7 @@ use crate::util::pagination::{MAX_LIMIT, Pagination};
 /// |---|---|---|
 /// | who is exempt | `is_admin`, read off the session | `platform:root#superuser`, which most `grant` rules union in through their own chain |
 /// | what a non-admin may not write | any `allow` row containing a `*` in namespace, object, action or user | any tuple on an object they do not hold `grant` on |
-/// | what a non-admin **could** write | any concrete row at all — `trainer:task | 7 | {delete} | user:99`, on somebody else's task, from any account | nothing, unless the rule says so |
+/// | what a non-admin **could** write | any concrete row at all — `board_post | 7 | {delete} | user:99`, on somebody else's post, from any account | nothing, unless the rule says so |
 ///
 /// The old rule only ever refused wildcards. A concrete grant on a resource the granter had no
 /// relationship to passed it, because the table records no grantor and the check had nothing to

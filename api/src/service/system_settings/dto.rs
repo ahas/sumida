@@ -7,7 +7,7 @@ use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-/// 시스템 설정 단건 응답 — camelCase 계약(trainer/site-app 공용).
+/// 시스템 설정 단건 응답 — camelCase 계약(소비 서비스 공용).
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemSettingItem {

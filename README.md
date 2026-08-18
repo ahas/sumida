@@ -235,9 +235,10 @@ graph TD
 <summary>Relation Tuples (authorization)</summary>
 
 Authorization is evaluated from a compiled rule set (`api/src/authz/`) over `relation_tuples`,
-not from per-request policy rows. The rules live in `schema.zed` plus one file per consumer, and
-are validated against the live database at boot — a rule reading a column that does not exist is
-a refusal to start, not a wrong answer at request time.
+not from per-request policy rows. sumida carries one rule file, `schema.sz`, and a consumer
+registers its own with `Sumida::new(RULES)`. The whole set is validated against the live database
+at boot — a rule reading a column that does not exist is a refusal to start, not a wrong answer at
+request time.
 
 ```mermaid
 graph TD

@@ -6,6 +6,64 @@ and this project adheres to semantic versioning at the workspace level.
 
 ## [Unreleased]
 
+### Changed
+
+- **sumida no longer knows its consumers.** The framework shipped every downstream product's
+  authorization rules — four rule files compiled into one binary, and a `PRODUCTS` table naming
+  each one — so a service built on sumida carried the names, resources and namespaces of unrelated
+  services in its binary and in its source. It now ships **one** rule file, its own, and a product
+  registers its own with `Sumida::new(RULES)`. Nothing in the framework enumerates products, counts
+  them, or names one.
+
+  `Sumida::new` grows a required argument, which is the point: forgetting to register is a compile
+  error at the one call every product makes, rather than a 500 on the first authorized request. A
+  product with no rules of its own passes `&[]` — "I have none" and "I forgot" must not look the
+  same. Registration must happen **before** the rule set is first read, and installing after that
+  is refused rather than warned about: a process that answered one request with one rule set and
+  the next with another is two permission models wearing one deployment.
+
+- **`extend NAME { … }`, a new rule-language construct.** A rule file may not redeclare a definition
+  another file declared — one name with two definitions is one question with two answers — so
+  without this, a product could not add its own resource families to sumida's `organization` and
+  the framework would have to enumerate them for it. `extend` puts that list back on the side that
+  owns it. An extension may not restate the definition's identity (`on`, `closure`), and a member
+  that collides with one the target already has is a boot failure: a product silently redefining a
+  framework permission by adding a file is the worst outcome the construct could have.
+
+- **The rule files are `.sz`, not `.zed`.** The extension belonged to SpiceDB, and the language is a
+  dialect rather than a subset — `on TABLE.COL`, `column(...)` derivations, `closure … via` with
+  `^`, `scope`, and now `extend`, none of which SpiceDB has. Pointing SpiceDB's tooling at one of
+  these files fails. `docs/sz-language.md` is the language's canonical statement.
+
+- **Boot validation is stricter, and the rule that made a switched-off feature survivable is
+  unchanged.** With no foreign product's rules in the binary there is no per-product marker table
+  to decide whose rules to check, so `Authz::boot` checks every rule it carries. What still absorbs
+  an optional feature being off is the branch that was always doing it: a rule whose **table** is
+  absent is `Absent`, because a feature that is off never created its tables while its rules are
+  compiled in regardless. A missing **column** is `Drift` and still refuses start-up.
+
+- **`Authz::sync_schema` is part of the boot sequence.** `relation_tuples` has a foreign key onto
+  the vocabulary projection, so a relation the rules declare has to be there before the first grant
+  — and with each product carrying its own rules, no migration can know what that vocabulary is. It
+  is projected from the compiled registry at boot instead. The bootstrap seed in the `rebac`
+  migration keeps only sumida's own five pairs.
+
+### Removed
+
+- **`rebac_backfill` and `rebac_mirror` are tombstones.** Both translated the legacy
+  `access_policies` table, and both carried the resource vocabulary of whichever services existed
+  when they were written — which is exactly what a framework must not hold. `access_policies` is
+  gone from every database they ran against. The modules survive because sea-orm tracks migrations
+  by file stem and deleting one breaks `migration up` on every database that applied it;
+  `rebac_backfill` still refuses to continue past policy rows it would once have translated, so a
+  stale dump restored onto a fresh checkout fails loudly instead of losing grants silently.
+
+  `api/tests/authz_evaluation.rs::the_mirror_writes_what_the_backfill_would_have` is **deleted with
+  no replacement.** It asserted that two implementations of that translation agreed with each
+  other; there are now zero implementations, and nothing else covered what it covered because
+  nothing else needs to. A deleted test with no replacement deserves a sentence, and that is it.
+
+
 ### Added
 
 - **An authorization test harness that can see what a status code cannot** (`e2e::authz`,

@@ -23,7 +23,7 @@ use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
 
-/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace user service = sumida_user`).
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace user service = sumida_user`).
 ///
 /// 정의 이름이 네임스페이스와 다른 유일한 자리다. `user` 는 주체 타입이고 `sumida_user` 는
 /// "그 사람에게 무언가를 할 수 있는가"라는 객체 쪽이다.

@@ -249,7 +249,7 @@ async fn an_organization_manager_sees_the_route_gates_and_not_the_org_authority(
 /// The payload is evaluated through `service#can_X` / `service#operate_X`, not read off the tuples.
 /// A projection that reported the raw relations would answer `{"user": ["operator"]}` here, and the
 /// client would have to re-derive `can_read = read | op_read | operator | superuser` in TypeScript —
-/// a second copy of `schema.zed`, drifting.
+/// a second copy of the rule file, drifting.
 #[tokio::test]
 async fn one_operator_tuple_reports_every_verb() {
   let (mock, db) = prepare().await;
@@ -319,8 +319,8 @@ async fn the_route_gate_and_the_object_authority_are_different_refusals() {
 
 /// A member cannot grant themselves anything they do not already have the authority to grant.
 ///
-/// Both halves matter and they fail for different reasons. `service:trainer:task#op_read` is the
-/// "let me see everyone's tasks" grant, refused because `service#grant` is
+/// Both halves matter and they fail for different reasons. `service:board_post#op_read` is the
+/// "let me see everyone's posts" grant, refused because `service#grant` is
 /// `operator | platform:root->superuser` and this caller is neither. `platform:root#admin` is
 /// outright self-elevation to platform administrator, refused because `platform#grant` is
 /// `superuser`.
@@ -329,8 +329,9 @@ async fn the_route_gate_and_the_object_authority_are_different_refusals() {
 /// authority and not the gate — asserted by code, not by status.
 ///
 /// The old rule here was `assert_policy_within_authority`, which refused a non-admin only when the
-/// row contained a `*`. `trainer:task | * | {read} | user:<self>` was refused by it. `platform` had no
-/// representation at all, and a concrete row naming somebody else's resource passed it outright.
+/// row contained a `*`. `board_post | * | {read} | user:<self>` was refused by it. `platform` had
+/// no representation at all, and a concrete row naming somebody else's resource passed it
+/// outright.
 #[tokio::test]
 async fn a_member_cannot_grant_themselves_more_than_they_hold() {
   let (mock, db) = prepare().await;
@@ -348,7 +349,7 @@ async fn a_member_cannot_grant_themselves_more_than_they_hold() {
     .probe_write(
       Method::POST,
       "/relation-tuples",
-      Some(&tuple_body("service", "trainer:task", "op_read", &key)),
+      Some(&tuple_body("service", "board_post", "op_read", &key)),
     )
     .await
     .assert(Access::Forbidden)
@@ -356,7 +357,7 @@ async fn a_member_cannot_grant_themselves_more_than_they_hold() {
   state
     .assert_absent(
       "relation_tuples",
-      &format!("resource_type = 'service' AND resource_id = 'trainer:task' AND subject_key = '{key}'"),
+      &format!("resource_type = 'service' AND resource_id = 'board_post' AND subject_key = '{key}'"),
     )
     .await;
 

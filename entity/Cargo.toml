@@ -12,7 +12,7 @@ board = ["file"]
 file = []
 membership = []
 mail-form = []
-# 공용 운영 설정. full-features 에 넣지 않는다 — lab-app(full-aws)는 미enable → 테이블 미생성.
+# 공용 운영 설정. full-features 에 넣지 않는다 — enable 하지 않은 소비자는 테이블이 서지 않는다.
 system-settings = []
 
 [dependencies]

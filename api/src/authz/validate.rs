@@ -13,7 +13,7 @@
 //! | rule | what it stops |
 //! |---|---|
 //! | 1 | a rewrite naming a relation or permission that does not exist |
-//! | 2 | a subject vocabulary that admits a tuple nothing can ever match (site-app's reversed `admin:user` row), and a userset that is not O(1)-derivable from the session (E4) |
+//! | 2 | a subject vocabulary that admits a tuple nothing can ever match (a reversed `admin:user` row), and a userset that is not O(1)-derivable from the session (E4) |
 //! | 3 | a permission defined in terms of itself, directly or through a walk |
 //! | 4 | `^` over anything but a stored relation — an exclusion re-evaluated at every ancestor level is not a bounded join |
 //! | 5 | a `->` chain deeper than 4 |
@@ -96,8 +96,8 @@ fn check_relations(registry: &Registry, definition: &Definition, errors: &mut Ve
   }
 }
 
-/// Rule 2. A subject type nobody declared is a tuple that can be written and can never match —
-/// which is what site-app's `admin:user` row is, sitting in the table doing nothing.
+/// Rule 2. A subject type nobody declared is a tuple that can be written and can never match — a
+/// reversed `admin:user` row, sitting in the table doing nothing.
 fn check_subject_spec(registry: &Registry, spec: &SubjectSpec, at: &str, errors: &mut Vec<String>) {
   let ty = match spec {
     SubjectSpec::Direct(ty) | SubjectSpec::Wildcard(ty) => ty,
@@ -424,7 +424,7 @@ fn check_namespaces(registry: &Registry, errors: &mut Vec<String>) {
     if !seen.insert(entry.namespace.as_str()) {
       errors.push(format!(
         "namespace `{}` is declared twice (second in {})",
-        entry.namespace, entry.product
+        entry.namespace, entry.source
       ));
     }
     if entry.gated && !has_service {
@@ -439,7 +439,7 @@ fn check_namespaces(registry: &Registry, errors: &mut Vec<String>) {
       errors.push(format!(
         "namespace `{}` ({}) resolves to definition `{definition}`, which is not declared — a \
          namespace with no rule is a live resource that is either unreachable or unprotected",
-        entry.namespace, entry.product
+        entry.namespace, entry.source
       ));
     }
   }
@@ -479,7 +479,7 @@ fn check_compiles(registry: &Registry, errors: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::authz::registry::Product;
+  use crate::authz::registry::{RuleFile, SUMIDA_RULES};
 
   /// Validates one schema in isolation and returns the messages it produced.
   ///
@@ -487,13 +487,8 @@ mod tests {
   /// check nobody has watched fail is a boot check nobody knows works — and this one's whole job is
   /// to turn a silent authorization defect into a process that will not start.
   fn errors_in(text: &'static str) -> Vec<String> {
-    let product = Product {
-      name: "test",
-      file: "test.zed",
-      text,
-      marker: "users",
-    };
-    match Registry::from_sources(std::slice::from_ref(&product)) {
+    let file = RuleFile { name: "test.sz", text };
+    match Registry::from_sources(std::slice::from_ref(&file)) {
       Ok(_) => Vec::new(),
       Err(AuthzError::Validation(errors)) => errors,
       Err(other) => vec![other.to_string()],
@@ -518,7 +513,7 @@ mod tests {
     );
   }
 
-  /// Rule 2 — a subject type nobody declared. This is site-app's `admin:user` row: writable, and
+  /// Rule 2 — a subject type nobody declared. This is the `admin:user` shape: writable, and
   /// matching nothing forever.
   #[test]
   fn a_subject_type_that_does_not_exist_is_refused() {
@@ -630,7 +625,7 @@ mod tests {
     assert_rejected(
       "definition thing on things.id int { permission view = viewer  relation viewer: user }
        definition user { }
-       namespace lab-app:site = daqs_site",
+       namespace demo:widget = demo_widget",
       "a namespace with no rule is a live resource",
     );
   }
@@ -652,9 +647,12 @@ mod tests {
 
   /// The rule set that actually ships must validate. This is the same check `Registry::global`
   /// performs at boot, asserted here so it cannot regress unnoticed between releases.
+  ///
+  /// Built from `SUMIDA_RULES` directly rather than through `Registry::global`, so that what it
+  /// asserts is sumida's own rules and not whatever a test elsewhere in this binary installed.
   #[test]
   fn the_shipped_rule_set_validates() {
-    if let Err(error) = Registry::load() {
+    if let Err(error) = Registry::from_sources(&[SUMIDA_RULES]) {
       panic!("the shipped rule set does not validate:\n{error}");
     }
   }

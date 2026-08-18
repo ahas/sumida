@@ -4,7 +4,7 @@ use super::helper::attach_timestamp_auto_update;
 
 /// system_settings — 공용 운영 설정 key-value 테이블(feature "system-settings").
 ///
-/// 이 마이그레이션 도입 전에 각 앱(site-app/trainer)이 자체 마이그레이션으로 이미 테이블을 만들어
+/// 이 마이그레이션 도입 전에 일부 소비 서비스가 자체 마이그레이션으로 이미 테이블을 만들어
 /// 배포한 상태이므로, **멱등**하게(IF NOT EXISTS·enum/FK 존재 검사) 작성한다. 기존 배포 DB 에선
 /// no-op, 신규 DB 에선 생성. users 테이블(FK updated_by)에 의존하므로 소비자 Migrator 에서
 /// sumida init 다음·시드 마이그레이션 이전에 배치한다.

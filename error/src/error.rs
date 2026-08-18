@@ -249,12 +249,12 @@ impl SumidaError {
 /// as sumida's `SumidaError`.
 ///
 /// ```ignore
-/// impl SumidaApiError for DaqsError {
+/// impl SumidaApiError for AppError {
 ///   fn status_code(&self) -> StatusCode { ... }
-///   fn error_code(&self) -> String { "lab-app.something".into() }
+///   fn error_code(&self) -> String { "app.something".into() }
 /// }
 ///
-/// impl IntoResponse for DaqsError {
+/// impl IntoResponse for AppError {
 ///   fn into_response(self) -> Response { self.to_response() }
 /// }
 /// ```

@@ -1,0 +1,194 @@
+// A fictional product's rule set, for sumida's own tests.
+//
+// sumida ships one rule file — its own. Every shape a *consumer* writes is therefore unexercised
+// here unless something declares it, and the shapes below are exactly the ones sumida's own rules
+// have no example of: a slug-keyed table, a uuid-keyed table, a column that already holds a
+// canonical subject key, a walk three tables deep, a `via` hop into a text-keyed definition, two
+// namespaces naming one definition, a namespace with no route gate, and `extend`.
+//
+// It is a fixture and not a product: `demo` names nothing that exists. Loaded by
+// `golden_sql_tests` (compiled only, no database) and by `authz_evaluation` (against the fixture
+// tables it creates in a schema of its own).
+
+// ─── the organization families a consumer adds ───────────────────────────────────────────────
+//
+// `organization` is sumida's, and a consumer cannot redeclare it — a duplicate definition name is
+// refused at boot. `extend` is how a consumer adds its own resource families to it: sumida cannot
+// enumerate them, and does not try.
+extend organization {
+  scope widget
+  scope ticket
+}
+
+// ─── a slug-keyed definition, with the three sharing levels ──────────────────────────────────
+//
+// The object id is a text slug rather than a row id, which is the shape a definition takes when
+// the resource is named by its own key. `own`/`edit`/`view` map onto the organization's three
+// `widget` tiers, so a grant on an ancestor organization reaches it through `^`.
+definition demo_widget on widgets.slug {
+  relation org:        organization = column(widgets.organization_id -> organization
+                                             where widgets.organization_id IS NOT NULL)
+  relation owner_user: user         = column(widgets.owner_user_id -> user
+                                             where widgets.owner_user_id IS NOT NULL)
+
+  relation owner:  user | role#member | organization#member | apikey
+  relation editor: user | role#member | organization#member | apikey
+  relation viewer: user | role#member | organization#member | apikey
+
+  permission own    = owner | owner_user | org->manage_widget
+                    | service:demo:widget->operate_delete
+  permission edit   = own   | editor | org->edit_widget
+                    | service:demo:widget->operate_update
+  permission view   = edit  | viewer | org->view_widget
+                    | service:demo:widget->operate_read
+  permission create = service:demo:widget->can_create
+  permission grant  = own
+}
+
+// A `via` hop into a text-keyed definition: the run's own column holds the widget's row id, and the
+// hop turns it into the slug the widget is keyed by. Without the hop the predicate would compare a
+// row id against a slug.
+definition demo_run on runs.id int {
+  relation widget: demo_widget = column(runs.widget_id -> demo_widget via widgets.slug
+                                        where runs.widget_id IS NOT NULL)
+
+  permission view = widget->view
+  permission edit = widget->edit
+}
+
+// ─── a uuid-keyed definition whose owner column is a canonical subject key ───────────────────
+//
+// `tickets.owner_key` already holds `user:7` / `svc:alpha:user:42`, so the owner branch is a bare
+// array match — no join, no cast. `owner_scope` is the delegation half: a scope is compared for
+// equality and by nothing else, so one service cannot assert another's. `owner_user_id` is the
+// account that *submitted* the ticket, which for a delegated subject is a different person from
+// the owner — that is what `creator_org` reaches.
+definition demo_ticket on tickets.id uuid {
+  relation owner:       user             = column(tickets.owner_key -> subject_key)
+  relation scope:       delegation_scope = column(tickets.owner_scope -> delegation_scope
+                                                  where tickets.owner_scope IS NOT NULL)
+  relation creator_org: organization     = column(tickets.owner_user_id -> organization
+                                                  via users.organization_id)
+
+  relation viewer:   user | role#member | organization#member | apikey
+  relation operator: user | role#member | organization#member | apikey
+
+  permission view   = owner | viewer | operator | scope->assert
+                    | creator_org->view_ticket | service:demo:ticket->operate_read
+  permission edit   = owner | operator | scope->assert
+                    | creator_org->manage_ticket | service:demo:ticket->operate_update
+  permission remove = owner | operator | scope->assert
+                    | creator_org->manage_ticket | service:demo:ticket->operate_delete
+  permission create = service:demo:ticket->can_create
+  permission grant  = creator_org->manage_ticket | service:demo:ticket->operate_update
+}
+
+// ─── a containment tree, walked from the leaf up to the root ─────────────────────────────────
+//
+// `demo_root` is the only thing anybody shares. Everything under it is judged by walking to it and
+// stopping there, at zero, one and two hops — the shapes a consumer's child rows take. `blocked`
+// is subtracted outside the whole union on every permission, so a block cannot be walked around.
+definition demo_root on roots.id int {
+  relation manager: user = column(roots.manager_id -> user where roots.manager_id IS NOT NULL)
+
+  relation viewer:  user | organization#member | role#member | apikey
+  relation editor:  user | organization#member | role#member | apikey
+  relation blocked: user | organization#member | role#member | apikey
+
+  permission edit   = (manager | editor  | service:demo:root->operate_update) - blocked
+  permission view   = (viewer  | edit    | service:demo:root->operate_read)   - blocked
+  permission create = (editor  | manager | service:demo:root->operate_create) - blocked
+  permission remove = (editor  | manager | service:demo:root->operate_delete) - blocked
+  permission share  = manager | service:demo:root->operate_update
+  permission grant  = share
+}
+
+definition demo_branch on branches.id int {
+  relation root: demo_root = column(branches.root_id -> demo_root)
+
+  permission view   = root->view
+  permission edit   = root->edit
+  permission create = root->create
+  permission remove = root->remove
+}
+
+// One hop: `leaves → branches → roots`.
+definition demo_leaf on leaves.id int {
+  relation root: demo_root = column(leaves.branch_id -> demo_root via branches.root_id)
+
+  permission view   = root->view
+  permission edit   = root->edit
+  permission create = root->create
+  permission remove = root->remove
+}
+
+// Two hops: `buds → leaves → branches → roots`.
+definition demo_bud on buds.id int {
+  relation root: demo_root = column(buds.leaf_id -> demo_root
+                                    via leaves.branch_id, branches.root_id)
+
+  permission view   = root->view
+  permission edit   = root->edit
+  permission create = root->create
+  permission remove = root->remove
+}
+
+definition demo_note on notes.id int {
+  relation root: demo_root = column(notes.root_id -> demo_root)
+
+  permission view   = root->view
+  permission create = root->create
+  permission remove = root->remove
+}
+
+// ─── one definition behind two namespaces ────────────────────────────────────────────────────
+//
+// A consumer that gated its routes on one namespace and its rows on another ends up with two names
+// for one resource, and a grant on either has to keep working. One definition honours both service
+// object ids, so neither name is a second place to grant the same power.
+definition demo_asset on assets.id int {
+  relation viewer:   user | organization#member | role#member | apikey
+  relation operator: user | organization#member | role#member | apikey
+
+  permission view   = viewer | operator
+                    | service:demo_asset->operate_read
+                    | service:demo:asset->operate_read
+  permission edit   = operator
+                    | service:demo_asset->operate_update
+                    | service:demo:asset->operate_update
+  permission remove = operator
+                    | service:demo_asset->operate_delete
+                    | service:demo:asset->operate_delete
+}
+
+// ─── a consumer definition that walks into one of sumida's ───────────────────────────────────
+//
+// A thread is a board post, so it is judged by the board it sits on. This is the direction that
+// makes a change to sumida's `board` rule reach a consumer's screen.
+definition demo_thread on threads.post_id int {
+  relation board: board = column(threads.post_id -> board via board_posts.board_id)
+
+  permission view   = board->view
+  permission edit   = board->edit
+  permission remove = board->edit
+}
+
+// ─── the namespace inventory ─────────────────────────────────────────────────────────────────
+
+namespace demo:widget    service = demo_widget
+namespace demo:ticket    service = demo_ticket
+namespace demo:root      service = demo_root
+namespace demo:branch    service = demo_branch
+namespace demo:leaf      service = demo_leaf
+namespace demo:bud       service = demo_bud
+namespace demo:note      service = demo_note
+namespace demo:run       service = demo_run
+namespace demo:thread    service = demo_thread
+namespace demo:asset     service = demo_asset
+// The unprefixed spelling of the same resource, kept because grants were written against it.
+namespace demo_asset     service = demo_asset
+// A route gate with no row tier at all: the resource is not a row, so there is nothing to judge.
+namespace demo:settings  service
+
+// Row-level only — no route gate, so no `service:<name>` object exists for one to consult.
+namespace demo:widget.row = demo_widget
