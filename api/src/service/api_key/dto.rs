@@ -9,7 +9,7 @@ use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::ap::ApForUser;
+use crate::service::grants::ApForUser;
 use crate::util::db::wrap_ilike;
 
 #[derive(Clone, Debug, Default, Deserialize)]

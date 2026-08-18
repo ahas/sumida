@@ -1,19 +1,24 @@
-//! Golden tests: what the authorization model does **today**.
+//! Golden tests: the **outcome** of an authorization decision, through HTTP.
 //!
-//! These exist so the pending rewrite can be proved equivalent rather than argued to be. The
-//! acceptance bar for that rewrite is not "identical mechanism" but "the new model can be
-//! configured to produce the same outcome", so what has to be written down is the *outcome* —
-//! for each tier of caller, against each shape of resource, which rows come back and which layer
-//! refuses.
+//! Written before the ReBAC rewrite so it could be proved equivalent rather than argued to be. The
+//! acceptance bar was not "identical mechanism" but "the new model can be configured to produce the
+//! same outcome", so what is written down is the outcome — for each tier of caller, against each
+//! shape of resource, which rows come back and which layer refuses.
+//!
+//! Every case goes through the router and asserts on a response, so it never named an evaluator and
+//! did not have to change when one replaced the other. That is why it survived §14 step 14, which
+//! deleted `util/ap.rs` and with it `authz_equivalence.rs`: these cases were the "before" of the
+//! comparison, they are the "after" unchanged, and a case that is both is the strongest evidence
+//! the migration produces.
 //!
 //! **A golden test is not an endorsement.** Some of what is pinned here is behaviour this codebase
-//! is changing on purpose, and locking a defect in place under the name "golden" would be worse
-//! than having no test at all. So every case is labelled:
+//! changed on purpose, and locking a defect in place under the name "golden" would be worse than
+//! having no test at all. So every case is labelled:
 //!
-//! - `pin_*` — behaviour that must survive the rewrite. A change here is a regression.
-//! - `today_*` — behaviour recorded because it is what currently happens, and which the rewrite is
-//!   expected to change. These document the starting point; when one of them fails after the
-//!   rewrite, read the comment and decide whether the new answer is the intended one.
+//! - `pin_*` — behaviour that had to survive the rewrite. A change here is a regression.
+//! - `today_*` — behaviour recorded because it was what happened before, and which the rewrite was
+//!   expected to change. These document the starting point; when one of them fails, read the
+//!   comment and decide whether the new answer is the intended one.
 //!
 //! Requires a real Postgres — every scope under test lives in SQL.
 
@@ -91,7 +96,7 @@ async fn pin_file_stats_are_scoped_not_global() {
 
   // 라우트 게이트(`service_ap!`)를 먼저 통과시킨다. 이걸 주지 않으면 403 에서 끝나고
   // 행 스코프는 실행조차 되지 않아, 스코프를 전부 지워도 이 테스트는 통과한다.
-  e2e::ap_test_utils::create_ap(&db, &outsider, "file", "service", vec!["read".into()], "allow")
+  e2e::ap_test_utils::grant_service(&db, &outsider, "file", vec!["read".into()])
     .await
     .expect("grant the file route capability");
 
@@ -160,7 +165,7 @@ async fn today_plain_member_sees_no_users_at_all() {
   let _below = Member::create(&db, tree.child).await.expect("member of a descendant org");
 
   // 게이트를 통과시켜야 행 스코프가 실제로 평가된다.
-  e2e::ap_test_utils::create_ap(&db, &member.user, "user", "service", vec!["read".into()], "allow")
+  e2e::ap_test_utils::grant_service(&db, &member.user, "user", vec!["read".into()])
     .await
     .expect("grant the user route capability");
 
@@ -172,71 +177,106 @@ async fn today_plain_member_sees_no_users_at_all() {
     .assert_empty();
 }
 
-/// **Today's behaviour, expected to change.**
+/// **This was `today_update_and_read_disagree_about_the_org_tier`, and the disagreement is gone.**
 ///
-/// The asymmetry at the heart of the audit: within one service, `update` is hierarchy-aware
-/// (`ap::ns("org:user")` composed with the ancestor walk) while `list`, `get` and `delete` resolve
-/// through `ap::ns("user")` and are not. A manager granted authority over an organization can
-/// therefore modify a user they cannot see or enumerate.
+/// The asymmetry at the heart of the audit: within one service, `update` was hierarchy-aware
+/// (`ap::ns("org:user")` composed with the ancestor walk) while `list`, `get` and `delete` resolved
+/// through `ap::ns("user")` and were not. A manager granted authority over an organization could
+/// therefore modify a user they could not see or enumerate.
 ///
-/// This pins the *shape* of that asymmetry rather than its exact status codes, so the rewrite is
-/// forced to confront it: after the rewrite both sides should agree.
+/// Both sides are `sumida_user#edit` / `sumida_user#view` now, generated from one rewrite tree, so
+/// the two cannot diverge by construction. What is asserted is the agreement in **both**
+/// directions: the manager reaches the descendant org's user through read, list and update; a
+/// caller holding the same route gate and no organization tier reaches none of them. Asserting only
+/// the first would pass on a scope that had been deleted outright.
 #[tokio::test]
-async fn today_update_and_read_disagree_about_the_org_tier() {
+async fn pin_update_and_read_agree_about_the_org_tier() {
   let mock = Mock::new().await;
   let db = infra::db::connect().await;
 
   let tree = OrgTree::create(&db).await.expect("tree");
   let manager = Member::create(&db, tree.subject).await.expect("manager");
   let target = Member::create(&db, tree.child).await.expect("target in a descendant org");
+  let outside = Member::create(&db, tree.aunt).await.expect("a user in another branch");
 
-  // 읽기와 쓰기 양쪽 게이트를 준다. 그래야 두 경로의 *행 스코프* 차이가 드러난다.
-  for action in ["read", "update"] {
-    e2e::ap_test_utils::create_ap(&db, &manager.user, "user", "service", vec![action.into()], "allow")
-      .await
-      .expect("grant the user route capability");
-  }
-  // 조직 계층 권한: update 경로만 이걸 본다.
-  e2e::ap_test_utils::create_ap(
+  // 읽기와 쓰기 양쪽 게이트를 준다. 그래야 두 경로의 *행 스코프* 가 실제로 평가된다.
+  e2e::ap_test_utils::grant_service(
     &db,
     &manager.user,
-    "org:user",
-    &tree.subject.to_string(),
-    vec!["update".into()],
-    "allow",
+    "user",
+    vec!["read".into(), "update".into()],
   )
   .await
-  .expect("grant org-tier update over the subject org");
+  .expect("grant the user route capability");
+  // 조직 계층 권한. 종전 `org:user | <subject org> | {update}` 가 뜻하던 층이다.
+  e2e::ap_test_utils::grant_org_scope(&db, &manager.user, tree.subject, "user_manager")
+    .await
+    .expect("grant org-tier update over the subject org");
 
   let session = Session::login(mock.server.addr, &manager.user, "manager of subject org").await;
   session.assert_authenticated().await;
 
-  let read = session
+  // 단건 읽기 — 종전에는 행 스코프가 걸러 내어 401 이 나오던 자리다.
+  session
     .probe_one(&format!("/users/{}", target.user.model.id), &target.user.model.id)
+    .await
+    .assert(Access::Visible);
+
+  // 쓰기 — 종전에도 통과했다. 둘이 이제 같은 규칙에서 나온다는 것이 요점이다.
+  session
+    .probe_write(
+      Method::PATCH,
+      &format!("/users/{}", target.user.model.id),
+      Some(&json!({ "fullName": "reached by the org tier" })),
+    )
+    .await
+    .assert(Access::Visible);
+
+  // 목록도 같은 술어다. 다른 가지의 사용자는 여기 새어 나오면 안 된다.
+  let listed = session.probe_list("/users?limit=200").await;
+  assert!(
+    listed.ids().contains(&target.user.model.id.to_string()),
+    "the list does not reach the descendant org the point check reaches — the two have diverged \
+     again: {:?}",
+    listed.ids()
+  );
+  assert!(
+    !listed.ids().contains(&outside.user.model.id.to_string()),
+    "the list left the manager's subtree: {:?}",
+    listed.ids()
+  );
+
+  // 반대 방향. 같은 라우트 게이트만 가진 호출자는 어느 쪽으로도 닿지 못한다 — 이게 없으면
+  // 행 스코프를 통째로 지워도 위 단언들은 그대로 통과한다.
+  let bystander = Member::create(&db, tree.subject).await.expect("a peer with no organization tier");
+  e2e::ap_test_utils::grant_service(
+    &db,
+    &bystander.user,
+    "user",
+    vec!["read".into(), "update".into()],
+  )
+  .await
+  .expect("grant the user route capability");
+
+  let peer = Session::login(mock.server.addr, &bystander.user, "peer with the gate only").await;
+  peer.assert_authenticated().await;
+  peer
+    .probe_one(&format!("/users/{}", target.user.model.id), &target.user.model.id)
+    .await
+    .assert(Access::Unauthenticated);
+  peer.probe_list("/users?limit=200").await.assert_empty();
+  peer
+    .probe_write(
+      Method::PATCH,
+      &format!("/users/{}", target.user.model.id),
+      Some(&json!({ "fullName": "must not happen" })),
+    )
+    .await
+    .assert(Access::Forbidden)
+    .assert_code("E1008");
+  DbState::new(&db)
+    .assert_absent("users", &format!("id = {} AND full_name = 'must not happen'", target.user.model.id))
     .await;
-
-  assert_ne!(
-    read.access(),
-    Access::Forbidden,
-    "the route gate refused, so the row scope never ran — this case proves nothing"
-  );
-
-  // 관측된 현재 동작: 스코프가 걸러낸 사용자는 404 가 아니라 401 로 나온다.
-  // `controller/user.rs:37` 이 `get(..).ok_or(SumidaError::InvalidAccount)` 이기 때문이다.
-  // 세션이 멀쩡하다는 것은 위에서 확인했으므로 이 401 은 인증이 아니라 행 스코프를 뜻한다.
-  assert_eq!(
-    read.access(),
-    Access::Unauthenticated,
-    "GET /users/{{id}} no longer answers 401 for a row its scope excluded — if the rewrite changed \
-     this to 404, that is an improvement; update this test deliberately rather than loosening it"
-  );
-
-  // 읽기는 지금 아무것도 내주지 않는다. 이것이 기록해 두는 출발점이다.
-  assert_ne!(
-    read.access(),
-    Access::Visible,
-    "read already resolves the org tier — the rewrite's premise has changed, revisit this test"
-  );
 }
 
 // ─── containment: a child row must inherit its parent's scope ────────────────
@@ -255,7 +295,7 @@ async fn pin_child_row_by_id_does_not_bypass_its_parent() {
   let db = infra::db::connect().await;
 
   let outsider = TestUser::create(&db).await.expect("outsider");
-  e2e::ap_test_utils::create_ap(&db, &outsider, "file", "service", vec!["read".into()], "allow")
+  e2e::ap_test_utils::grant_service(&db, &outsider, "file", vec!["read".into()])
     .await
     .expect("grant the file route capability");
   let session = Session::login(mock.server.addr, &outsider, "unrelated caller with the capability").await;
@@ -327,23 +367,18 @@ async fn pin_a_block_is_not_circumvented_by_authorship() {
   .last_insert_id;
 
   // 작성자에게 글을 쓸 권한을 전부 준다.
-  for (ns, object) in [
-    ("board_post", "service".to_string()),
-    ("board", "service".to_string()),
-    ("board", board_id.to_string()),
-    ("board_group", group_id.to_string()),
-  ] {
-    e2e::ap_test_utils::create_ap(
-      &db,
-      &author,
-      ns,
-      &object,
-      vec!["create".into(), "read".into(), "update".into()],
-      "allow",
-    )
-    .await
-    .expect("grant");
+  let actions = vec!["create".to_string(), "read".to_string(), "update".to_string()];
+  for namespace in ["board_post", "board"] {
+    e2e::ap_test_utils::grant_service(&db, &author, namespace, actions.clone())
+      .await
+      .expect("grant the route gate");
   }
+  e2e::ap_test_utils::grant_object(&db, &author, "board", &board_id.to_string(), actions.clone())
+    .await
+    .expect("grant the board");
+  e2e::ap_test_utils::grant_object(&db, &author, "board_group", &group_id.to_string(), actions)
+    .await
+    .expect("grant the group");
 
   let session = Session::login(mock.server.addr, &author, "author").await;
   session.assert_authenticated().await;
@@ -368,17 +403,11 @@ async fn pin_a_block_is_not_circumvented_by_authorship() {
     .await
     .assert(Access::Visible);
 
-  // 이제 게시판 수준에서 차단한다. 소유권은 그대로다.
-  e2e::ap_test_utils::create_ap(
-    &db,
-    &author,
-    "board",
-    &board_id.to_string(),
-    vec!["update".into()],
-    "deny",
-  )
-  .await
-  .expect("block at board level");
+  // 이제 게시판 수준에서 차단한다. 소유권은 그대로다. 종전에는 `effect = 'deny'` 한 행이었고,
+  // 지금은 `board:<id>#blocked` 튜플이다 — 규칙에서 합집합 바깥으로 빠진다.
+  e2e::ap_test_utils::block_object(&db, &author, "board", &board_id.to_string())
+    .await
+    .expect("block at board level");
 
   let after = session
     .probe_write(Method::PATCH, &format!("/board-posts/{post_id}"), Some(&json!({ "title": "blocked" })))

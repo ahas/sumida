@@ -10,6 +10,8 @@ use infra::session::UserSession;
 use tower::{Layer, Service};
 
 use crate::SumidaState;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 
 #[derive(Clone)]
 pub struct ServiceApLayer<S> {
@@ -88,13 +90,24 @@ where
 
       let req = Request::from_parts(parts, body);
 
-      use crate::util::ap::{self, ApGuard};
-      let is_allowed = ap::ns(namespace)
-        .object("service")
-        .action(action)
-        .who(&session)
-        .check_allowed(state.db())
-        .await;
+      // `service:<namespace>#can_<action>`. Between §14 steps 7 and 13 this went through
+      // `ap::ns(..)`, whose shim decided per namespace whether to answer from the compiled rule or
+      // from `access_policies`; once all four products were routed there was one store and no
+      // decision left to make, so step 14 deleted the shim and the call is made here directly.
+      //
+      // A rule that does not compile refuses the request rather than admitting it. The error is
+      // logged because a gate that fails closed and says nothing is indistinguishable from a
+      // caller who simply holds no grant.
+      let permission = format!("can_{action}");
+      let subject = SubjectSet::of(&session);
+      let is_allowed =
+        match Authz::check_object("service", &namespace, &permission, &subject, state.db()).await {
+          Ok(allowed) => allowed,
+          Err(error) => {
+            tracing::error!("authz: `service:{namespace}#{permission}` did not evaluate: {error}");
+            false
+          }
+        };
 
       if is_allowed {
         inner.call(req).await
@@ -121,6 +134,6 @@ macro_rules! service_ap {
 }
 
 // NOTE: The former `board_ap!` macro referenced the unimplemented `BoardApLayer`, so it broke
-// compilation when used; with zero call sites it was removed. Per-board permissions are handled
-// by each service's internal `ap::chain`/ownership checks (e.g. board_post's `authorize_post_mutation`).
-// If you need to extract board_id, use `layer::board_ap::helpers`.
+// compilation when used; with zero call sites it was removed. Per-board permissions are a rule now
+// (`board_post#edit` unions its group, its board and its author, and subtracts `blocked`), so there
+// is nothing left for a per-board layer to compose at the call site.

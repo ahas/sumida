@@ -10,24 +10,23 @@ use sea_orm_crud::Optional;
 use serde_json::json;
 
 use crate::SumidaState;
-use crate::service::ApiService;
 use crate::service::user::UserService;
-use crate::util::ap::ApCondition;
 use crate::util::user::hash_password;
 
 pub struct MeService<S: SumidaState> {
   state: S,
   session: UserSession,
-  user_service: UserService<S>,
 }
 
 impl<S: SumidaState> MeService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
-    Self {
-      user_service: UserService::new(state.clone(), session.clone()),
-      state,
-      session,
-    }
+    Self { state, session }
+  }
+
+  /// `/me` 는 언제나 세션 본인의 행이므로 행 스코프를 붙이지 않는다. 열·조인은
+  /// `/users` 와 같은 것을 써야 응답 모양이 갈라지지 않으므로 `UserService` 의 것을 그대로 쓴다.
+  fn default_query_with(query: Select<Users>) -> Select<Users> {
+    UserService::<S>::default_query_with(query)
   }
 
   pub async fn get_session(&self) -> Result<Option<Me>, SumidaError> {
@@ -101,16 +100,3 @@ impl<S: SumidaState> MeService<S> {
   }
 }
 
-impl<S: SumidaState> ApiService<ApCondition, Users> for MeService<S> {
-  fn ap(&self) -> ApCondition {
-    self.user_service.ap()
-  }
-
-  fn default_query_with(query: Select<Users>) -> Select<Users> {
-    UserService::<S>::default_query_with(query)
-  }
-
-  fn select(&self, query: Select<Users>) -> Select<Users> {
-    self.user_service.select(query)
-  }
-}

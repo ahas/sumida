@@ -7,7 +7,7 @@
 use api::service::membership::{maintenance, org_manager_emails};
 use api::util::random::generate_url_safe_string;
 use chrono::{Duration, Utc};
-use e2e::ap_test_utils::create_ap;
+use e2e::ap_test_utils::grant_org_scope;
 use e2e::prelude::*;
 use entity::membership::credit_transactions::Column as TxCol;
 use entity::membership::subscription_events::Column as EventCol;
@@ -202,21 +202,13 @@ async fn test_org_manager_emails_resolution() {
 
   let org = TestOrg::create(&db).await.unwrap();
   let manager = TestUser::create_in_org(&db, org.model.id).await.unwrap();
-  create_ap(
-    &db,
-    &manager,
-    "org:subscription",
-    &org.model.id.to_string(),
-    vec!["manage".to_string()],
-    "allow",
-  )
-  .await
-  .unwrap();
+  // 종전 `org:subscription | <org> | {manage}` 정책 행이 뜻하던 층.
+  grant_org_scope(&db, &manager, org.model.id, "subscription_manager").await.unwrap();
 
   let emails = org_manager_emails(org.model.id, &db).await.unwrap();
   assert!(
     emails.iter().any(|e| Some(e.as_str()) == manager.model.email.as_deref()),
-    "the org manager's email resolves from its org:subscription policy"
+    "the org manager's email resolves from its `subscription_manager` grant"
   );
 }
 

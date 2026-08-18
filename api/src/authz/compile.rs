@@ -25,10 +25,10 @@
 //!
 //! Every tuple predicate ANDs `(expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)`.
 //!
-//! It also removes a defect the current design has. `organization_ancestors_subquery` hardcodes the
-//! alias `"ap"."object"` (`util/org.rs:31`), which is why `project_ap.rs:57` carries a warning that
-//! `check_allowed` is incompatible with it and every point check has to go through `try_access`.
-//! Here point check and list check compile from the same tree, so they cannot diverge.
+//! It also removed a defect the old design had. `organization_ancestors_subquery` hardcoded the
+//! alias `"ap"."object"`, which is why `project_ap.rs` carried a warning that the point check and
+//! the list check could not be built from one expression. Here they compile from the same tree, so
+//! they cannot diverge.
 
 use std::cell::Cell;
 use std::collections::HashSet;

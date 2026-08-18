@@ -18,21 +18,81 @@ use sea_orm_crud::Nullable;
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::service::auth::helper::verify_password;
-use crate::util::ap::{self, ApChain, ApGuard};
 use crate::util::pagination::{List, Pagination};
 use crate::util::user::hash_password;
 
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace board_post service = board_post`).
+const RESOURCE: &str = "board_post";
+
 pub struct BoardPostService<S: SumidaState> {
   state: S,
-  #[allow(dead_code)]
   session: UserSession,
 }
 
 impl<S: SumidaState> BoardPostService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
+  }
+
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  fn default_query_with(query: Select<BoardPosts>) -> Select<BoardPosts> {
+    use sea_orm::JoinType::LeftJoin;
+
+    query
+      .select_only()
+      // BoardPostCommon
+      .column_as(BoardPostsColumn::Id, "id")
+      .column_as(BoardPostsColumn::ParentId, "parent_id")
+      .column_as(BoardPostsColumn::Title, "title")
+      .column_as(BoardPostsColumn::Kind, "kind")
+      .column_as(BoardPostsColumn::Status, "status")
+      .column_as(BoardPostsColumn::ContentType, "content_type")
+      .column_as(BoardPostsColumn::ContentVisibility, "content_visibility")
+      .column_as(BoardPostsColumn::CompressionType, "compression_type")
+      .column_as(BoardPostsColumn::Revision, "reivision")
+      .column_as(BoardPostsColumn::Tags, "tags")
+      .column_as(BoardPostsColumn::PublishedAt, "published_at")
+      .column_as(BoardPostsColumn::ScheduledAt, "scheduled_at")
+      .column_as(BoardPostsColumn::CreatedAt, "created_at")
+      .column_as(BoardPostsColumn::UpdatedAt, "updated_at")
+      // BoardPostUser
+      .column_as(UsersColumn::Id, "user_id")
+      .column_as(UsersColumn::Username, "user_username")
+      .column_as(UsersColumn::FullName, "user_full_name")
+      // BoardPostBoard
+      .column_as(BoardsColumn::Id, "board_id")
+      .column_as(BoardsColumn::Name, "board_name")
+      .column_as(BoardsColumn::GroupId, "board_group_id")
+      // BoardPostTopic
+      .column_as(BoardTopicsColumn::Id, "topic_id")
+      .column_as(BoardTopicsColumn::Name, "topic_name")
+      // Joins
+      .join(LeftJoin, BoardPostsRelation::User.def())
+      .join(LeftJoin, BoardPostsRelation::Board.def())
+      .join(LeftJoin, BoardPostsRelation::Topic.def())
+      .join(LeftJoin, BoardsRelation::Group.def())
+      // Soft-deleted posts — and posts under a soft-deleted board — are never returned.
+      .filter(BoardPostsColumn::DeletedAt.is_null())
+      .filter(BoardsColumn::DeletedAt.is_null())
+  }
+
+  /// 행 스코프는 `board_post#view` 술어 하나 — 작성자 본인(`author`,
+  /// `board_posts.user_id` 에서 파생), 게시판의 열람 권한(`board->view`, 그 안에 그룹과의
+  /// 교집합이 들어 있다), 그리고 차단(`blocked`)의 빼기가 전부 그 안에 있다.
+  ///
+  /// 종전에는 `ApChain` 이 `board_group AND board` 를 호출자 쪽에서 조립했다. 교집합은 규칙에
+  /// 그대로 남았지만(`board#edit` 의 `group->edit & editor_or_own_here`), 이제 조립하는 호출자가
+  /// 없으므로 잊을 수도 없다.
+  fn select(&self, query: Select<BoardPosts>) -> Result<Select<BoardPosts>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
   fn apply_pagination(&self, query: Select<BoardPosts>, pagination: Pagination) -> Select<BoardPosts> {
@@ -66,7 +126,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let query = util::with_conditional_post_columns(
       self.session.profile.get_id(),
       self.session.profile.is_admin,
-      self.select(BoardPosts::find()),
+      self.select(BoardPosts::find())?,
     );
     let query = if with_snippet {
       util::with_fts(query, search_text, &filter)
@@ -122,7 +182,7 @@ impl<S: SumidaState> BoardPostService<S> {
     if !items.is_empty() {
       let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
       let mut replies_by_parent = self
-        .load_replies_tree(self.select(BoardPosts::find()), &item_ids, BoardPostKind::Article, db)
+        .load_replies_tree(self.select(BoardPosts::find())?, &item_ids, BoardPostKind::Article, db)
         .await?;
 
       self.attach_list_item_replies(&mut items, &mut replies_by_parent);
@@ -150,7 +210,7 @@ impl<S: SumidaState> BoardPostService<S> {
       let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
       let mut replies_by_parent = self
         .load_replies_tree(
-          self.select(BoardPosts::find()).column_as(BoardPostsColumn::Content, "content"),
+          self.select(BoardPosts::find())?.column_as(BoardPostsColumn::Content, "content"),
           &item_ids,
           BoardPostKind::Comment,
           db,
@@ -181,7 +241,7 @@ impl<S: SumidaState> BoardPostService<S> {
     if !items.is_empty() {
       let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
       let mut replies_by_parent = self
-        .load_replies_tree(self.select(BoardPosts::find()), &item_ids, BoardPostKind::Reply, db)
+        .load_replies_tree(self.select(BoardPosts::find())?, &item_ids, BoardPostKind::Reply, db)
         .await?;
 
       self.attach_list_item_replies(&mut items, &mut replies_by_parent);
@@ -197,7 +257,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let post = util::with_conditional_post_columns(
       self.session.profile.get_id(),
       self.session.profile.is_admin,
-      self.select(BoardPosts::find()).column_as(BoardPostsColumn::Content, "content"),
+      self.select(BoardPosts::find())?.column_as(BoardPostsColumn::Content, "content"),
     )
     .filter(BoardPostsColumn::Id.eq(id))
     .into_model::<GetBoardPost>()
@@ -272,7 +332,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let board_post_query = util::with_conditional_post_columns(
       self.session.profile.get_id(),
       self.session.profile.is_admin,
-      self.select(BoardPosts::find_by_id(id)).column_as(BoardPostsColumn::Content, "content"),
+      self.select(BoardPosts::find_by_id(id))?.column_as(BoardPostsColumn::Content, "content"),
     );
 
     // Existence + per-board read permission (the AP-filtered query yields None when access is denied).
@@ -303,7 +363,7 @@ impl<S: SumidaState> BoardPostService<S> {
 
     if let Some(post) = post {
       let post_ids = [post.common.id];
-      let query = self.select(BoardPosts::find()).column_as(BoardPostsColumn::Content, "content");
+      let query = self.select(BoardPosts::find())?.column_as(BoardPostsColumn::Content, "content");
       let mut comments =
         self.load_replies_tree(query.clone(), &post_ids, BoardPostKind::Comment, &txn).await?;
       let mut replies = self.load_replies_tree(query, &post_ids, BoardPostKind::Reply, &txn).await?;
@@ -402,13 +462,10 @@ impl<S: SumidaState> BoardPostService<S> {
       return Err(SumidaError::NoData("Board".into(), data.board_id.to_string()));
     };
 
-    ap::chain()
-      .push_if(board.group_id, |x| ap::ns("board_group").action("create").object(x))
-      .push(ap::ns("board").action("create").object(board.id))
-      .who(&self.session)
-      .action("create")
-      .try_check_allowed(&txn)
-      .await?;
+    // `board#create = edit`, 그리고 `board#edit` 안에 `group->edit & editor_or_own_here` 라는
+    // 그룹과의 교집합이 이미 들어 있다. 종전의 `ap::chain()` 이 하던 조립이 규칙으로 옮겨간 것이며,
+    // 그룹이 없는 게시판(`boards.group_id IS NULL`)에서 그 갈래가 죽는 것도 그대로다.
+    Authz::try_check("board", board.id, "create", &self.subject(), &txn).await?;
 
     // Store attached file IDs for later processing
     let attached_file_uuids = data.attached_file_uuids.clone();
@@ -443,60 +500,34 @@ impl<S: SumidaState> BoardPostService<S> {
     )
     .await?;
 
-    // Grant the author update/delete ownership on this post (consumed by `authorize_post_mutation`).
-    // Scoped to the user alone — not their role/org — so ownership doesn't leak to teammates.
-    ap::edit()
-      .namespace("board_post")
-      .object(post_id)
-      .action(vec!["update".to_string(), "delete".to_string()])
-      .user(ap::ApUser::User(self.session.profile.id))
-      .effect("allow")
-      .create(&txn)
-      .await?;
-
+    // 작성자 소유권을 정책 행으로 따로 심지 않는다. `board_post#author` 는 바로 위에서 `Set` 한
+    // `board_posts.user_id` 에서 파생되므로, 저장된 행과 어긋날 수 있는 두 번째 사본이 아예 없다.
     txn.commit().await?;
 
     Ok(result)
   }
 
   /// Permission check for editing/deleting a post.
-  /// Allows if either operator permission (board_group (if present) AND board) **or** author ownership
-  /// (board_post namespace, granted on create) is satisfied. Unlike ap() (an AND chain for list/read), this needs OR semantics.
+  ///
+  /// 종전에는 세 번의 `effects()` 결과를 호출자가 직접 조립했다:
+  ///
+  /// ```text
+  /// allowed = (group_allow && board_allow) || owner_allow
+  /// denied  = group_deny  || board_deny   || owner_deny
+  /// result  = allowed && !denied
+  /// ```
+  ///
+  /// 그 산술이 통째로 `board_post#edit` 안으로 들어갔다 — `board->edit` 이 그룹과의 교집합을
+  /// 이미 품고 있고, 차단은 합집합 **바깥**에서 빠지므로 작성자 소유권으로 우회할 수 없다.
+  /// 조립하는 호출자가 없으니 다음 호출자가 빼먹을 수도 없다.
   async fn authorize_post_mutation<C: sea_orm::ConnectionTrait>(
     &self,
     action: &str,
     post_id: i32,
-    board_id: i32,
-    board_group_id: Option<i32>,
     txn: &C,
   ) -> Result<(), SumidaError> {
-    // Allow if operator (board_group AND board) OR author (board_post). Global-deny (policy B):
-    // a matching `deny` on ANY of these namespaces blocks regardless of branch — a deny is absolute
-    // and cannot be circumvented via ownership. `effects()` returns (has_allow, has_deny) per branch.
-    let (group_allow, group_deny) = match board_group_id {
-      Some(group_id) => {
-        ap::ns("board_group")
-          .object(group_id)
-          .who(&self.session)
-          .action(action)
-          .effects(txn)
-          .await
-      }
-      None => (true, false),
-    };
-    let (board_allow, board_deny) =
-      ap::ns("board").object(board_id).who(&self.session).action(action).effects(txn).await;
-    let (owner_allow, owner_deny) = ap::ns("board_post")
-      .object(post_id)
-      .who(&self.session)
-      .action(action)
-      .effects(txn)
-      .await;
-
-    let allowed = (group_allow && board_allow) || owner_allow;
-    let denied = group_deny || board_deny || owner_deny;
-
-    if allowed && !denied { Ok(()) } else { Err(SumidaError::NoAccessPermission) }
+    let permission = if action == "delete" { "remove" } else { "edit" };
+    Authz::try_check(RESOURCE, post_id, permission, &self.subject(), txn).await
   }
 
   pub async fn update(&self, id: i32, data: UpdateBoardPost) -> Result<BoardPostsModel, SumidaError> {
@@ -513,7 +544,7 @@ impl<S: SumidaState> BoardPostService<S> {
       .ok_or_else(|| SumidaError::NoData("Board".to_string(), post.board_id.to_string()))?;
 
     // Operator permission (board_group AND board) OR author ownership (board_post)
-    self.authorize_post_mutation("update", id, board.id, board.group_id, &txn).await?;
+    self.authorize_post_mutation("update", id, &txn).await?;
 
     if board.is_versioned {
       let mut am = post.clone().into_active_model();
@@ -576,18 +607,16 @@ impl<S: SumidaState> BoardPostService<S> {
   pub async fn delete(&self, id: i32) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    let post = BoardPosts::find_by_id(id)
+    // 존재 확인은 그대로 하고, 게시판 행은 더 이상 읽지 않는다. 그룹/게시판 갈래는 규칙이
+    // `board_post#remove` 안에서 스스로 따라간다.
+    BoardPosts::find_by_id(id)
       .filter(BoardPostsColumn::DeletedAt.is_null())
       .one(&txn)
       .await?
       .ok_or_else(|| SumidaError::NoData("Post".to_string(), id.to_string()))?;
-    let board = Boards::find_by_id(post.board_id)
-      .one(&txn)
-      .await?
-      .ok_or_else(|| SumidaError::NoData("Board".to_string(), post.board_id.to_string()))?;
 
     // Operator permission (board_group AND board) OR author ownership (board_post)
-    self.authorize_post_mutation("delete", id, board.id, board.group_id, &txn).await?;
+    self.authorize_post_mutation("delete", id, &txn).await?;
 
     // Soft delete cascades to the comment/reply subtree (the FK cascade no longer fires on a soft delete).
     let ids = util::collect_descendant_post_ids(id, &txn).await?;
@@ -607,11 +636,6 @@ impl<S: SumidaState> BoardPostService<S> {
       .filter(BoardPostsColumn::DeletedAt.is_null())
       .exec(&txn)
       .await?;
-
-    // Revoke the author ownership policy for each now-deleted post.
-    for post_id in &ids {
-      ap::edit().namespace("board_post").object(*post_id).delete(&txn).await?;
-    }
 
     txn.commit().await?;
 
@@ -693,54 +717,3 @@ impl<S: SumidaState> BoardPostService<S> {
   }
 }
 
-impl<S: SumidaState> ApiService<ApChain, BoardPosts> for BoardPostService<S> {
-  fn default_query_with(query: Select<BoardPosts>) -> Select<BoardPosts> {
-    use sea_orm::JoinType::LeftJoin;
-
-    query
-      .select_only()
-      // BoardPostCommon
-      .column_as(BoardPostsColumn::Id, "id")
-      .column_as(BoardPostsColumn::ParentId, "parent_id")
-      .column_as(BoardPostsColumn::Title, "title")
-      .column_as(BoardPostsColumn::Kind, "kind")
-      .column_as(BoardPostsColumn::Status, "status")
-      .column_as(BoardPostsColumn::ContentType, "content_type")
-      .column_as(BoardPostsColumn::ContentVisibility, "content_visibility")
-      .column_as(BoardPostsColumn::CompressionType, "compression_type")
-      .column_as(BoardPostsColumn::Revision, "reivision")
-      .column_as(BoardPostsColumn::Tags, "tags")
-      .column_as(BoardPostsColumn::PublishedAt, "published_at")
-      .column_as(BoardPostsColumn::ScheduledAt, "scheduled_at")
-      .column_as(BoardPostsColumn::CreatedAt, "created_at")
-      .column_as(BoardPostsColumn::UpdatedAt, "updated_at")
-      // BoardPostUser
-      .column_as(UsersColumn::Id, "user_id")
-      .column_as(UsersColumn::Username, "user_username")
-      .column_as(UsersColumn::FullName, "user_full_name")
-      // BoardPostBoard
-      .column_as(BoardsColumn::Id, "board_id")
-      .column_as(BoardsColumn::Name, "board_name")
-      .column_as(BoardsColumn::GroupId, "board_group_id")
-      // BoardPostTopic
-      .column_as(BoardTopicsColumn::Id, "topic_id")
-      .column_as(BoardTopicsColumn::Name, "topic_name")
-      // Joins
-      .join(LeftJoin, BoardPostsRelation::User.def())
-      .join(LeftJoin, BoardPostsRelation::Board.def())
-      .join(LeftJoin, BoardPostsRelation::Topic.def())
-      .join(LeftJoin, BoardsRelation::Group.def())
-      // Soft-deleted posts — and posts under a soft-deleted board — are never returned.
-      .filter(BoardPostsColumn::DeletedAt.is_null())
-      .filter(BoardsColumn::DeletedAt.is_null())
-  }
-
-  fn ap(&self) -> ApChain {
-    ap::chain()
-      .push(ap::ns("board_group").column(BoardsColumn::GroupId))
-      // The object for the board namespace must be the board id, not the post id.
-      // Keep it consistent with create's permission check (`ap::ns("board").object(board.id)`) and the seed policy.
-      .push(ap::ns("board").column(BoardPostsColumn::BoardId))
-      .who(&self.session)
-  }
-}

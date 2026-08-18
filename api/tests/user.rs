@@ -89,21 +89,16 @@ async fn test_user_update_permissions_comprehensive() {
     .expect("Failed to create target user");
 
   // update has a two-stage gate:
-  //   (1) the `service_ap!("user", update)` route layer → needs a `user` service policy
-  //   (2) the in-service org-scoped row guard → needs an `org:user` update policy
-  // Grant both.
-  ap_test_utils::create_ap(&db, &operator, "user", "service", vec!["update".to_string()], "allow")
+  //   (1) the `service_ap!("user", update)` route layer → `service:user#update`
+  //   (2) the row guard → `sumida_user:<id>#edit`, which the caller reaches through
+  //       `org->manage_user` — one tuple on the organization covers it and every descendant,
+  //       which is what the `org:user` policy row used to mean.
+  ap_test_utils::grant_service(&db, &operator, "user", vec!["update".to_string()])
     .await
     .expect("Failed to grant user service permission");
-  ap_test_utils::grant_service_and_resource_access(
-    &db,
-    &operator,
-    "org:user",
-    vec!["update".to_string()],
-    None,
-  )
-  .await
-  .expect("Failed to grant org:user update permission");
+  ap_test_utils::grant_org_scope(&db, &operator, operator.model.organization_id, "user_manager")
+    .await
+    .expect("Failed to grant the organization's user-manager tier");
 
   operator.login(&mock.client).await;
   let resp = mock
@@ -191,34 +186,11 @@ async fn test_user_list_permissions_comprehensive() {
   test_suite.test_list_permission(&mock).await;
 }
 
-#[tokio::test]
-async fn test_user_explicit_deny_comprehensive() {
-  let mock = Mock::new().await;
-  let db = infra::db::connect().await;
-  let target_user = TestUser::create(&db).await.expect("Failed to create target user");
-
-  let random_suffix = api::util::random::generate_url_safe_string(8).unwrap();
-  let crud_data = CrudTestData {
-    create_data: serde_json::json!({
-      "username": format!("newuser-{}@example.com", random_suffix),
-      "password": "password123",
-      "fullName": "New User",
-      "organizationId": target_user.model.organization_id,
-      "roleId": target_user.model.role_id
-    }),
-    update_data: serde_json::json!({
-      "fullName": "Updated Name"
-    }),
-  };
-
-  let config = PermissionTestConfig {
-    namespace: "user",
-    base_url: "/users",
-  };
-
-  let test_suite = PermissionTestSuite::new(config, crud_data);
-  test_suite.test_explicit_deny_precedence(&mock, target_user.model.id).await;
-}
+// `test_*_explicit_deny_comprehensive` 는 없어졌다. 개별 부여에 붙는 `effect = 'deny'` 가
+// 사라졌기 때문이다(설계 §3): 차단은 이제 규칙의 성질이고, 그것을 표현하는 `blocked` 관계는
+// 부정을 다루던 네 정의(`board_group`/`board`/`board_post`/`daqs_site`)만 선언한다. 여기서
+// 다루는 정의에는 차단할 방법이 아예 없으므로, 있는 척하는 테스트를 남기지 않는다.
+// 차단 우선순위 자체는 `api/tests/board.rs::test_board_block_precedence_comprehensive` 가 든다.
 
 #[tokio::test]
 async fn test_user_admin_bypass_comprehensive() {
@@ -260,8 +232,9 @@ async fn test_user_create_permission_debug() {
 
   let user = TestUser::create(&db).await.expect("Failed to create test user");
 
-  // Grant create permission
-  ap_test_utils::grant_service_and_resource_access(&db, &user, "user", vec!["create".to_string()], None)
+  // Grant create permission. `sumida_user` 에는 `create` 권한이 없다 — 만들기 전에는 판정할
+  // 행이 없기 때문이다. 그래서 라우트 게이트가 유일한 층이다.
+  ap_test_utils::grant_service(&db, &user, "user", vec!["create".to_string()])
     .await
     .expect("Failed to grant create permission");
 
@@ -312,16 +285,14 @@ async fn test_user_wildcard_action_comprehensive() {
     .await
     .expect("Failed to create target user");
 
-  // Grant wildcard read on `user` (read/create/list are gated only by the `user` service policy)
-  // and wildcard action on `org:user` (update/delete go through the org-scoped row guard).
+  // 라우트 게이트 전량 + 대상 행 하나에 대한 관리자 관계. 종전 `org:user` 정책이 조직 id 를
+  // 객체로 잡던 자리는 `organization:<id>#user_manager` 튜플이 대신한다.
   ap_test_utils::grant_wildcard_action_permission(&db, &user, "user", Some(target_user.model.id))
     .await
     .expect("Failed to grant wildcard action permission on user");
-  // org:user objects are organization ids (matched via the org-ancestors subquery), so use
-  // a wildcard object here rather than the target user's id.
-  ap_test_utils::grant_wildcard_action_permission(&db, &user, "org:user", None)
+  ap_test_utils::grant_org_scope(&db, &user, user.model.organization_id, "user_manager")
     .await
-    .expect("Failed to grant wildcard action permission on org:user");
+    .expect("Failed to grant the organization's user-manager tier");
 
   let login_resp = user.login(&mock.client).await;
   assert_eq!(login_resp.status(), reqwest::StatusCode::OK, "User login should succeed");
@@ -433,19 +404,18 @@ async fn test_user_list_filtered_by_permission() {
   let denied_user = TestUser::create(&db).await.expect("Failed to create denied user");
 
   // Grant read permission for service and specific user only
-  ap_test_utils::create_access_policy(&db, &user, "user", "service", vec!["read".to_string()], "allow")
+  ap_test_utils::grant_service(&db, &user, "user", vec!["read".to_string()])
     .await
-    .expect("Failed to create service access policy");
-  ap_test_utils::create_access_policy(
+    .expect("Failed to grant the user route gate");
+  ap_test_utils::grant_object(
     &db,
     &user,
     "user",
     &allowed_user.model.id.to_string(),
     vec!["read".to_string()],
-    "allow",
   )
   .await
-  .expect("Failed to create resource access policy");
+  .expect("Failed to grant the per-row tier");
 
   // Login as the user
   user.login(&mock.client).await;
@@ -536,24 +506,8 @@ async fn test_admin_user_bypasses_restrictions() {
   );
   tracing::info!("🎯 Target user ID: {}", target_user.model.id);
 
-  // Check if admin policies exist in DB using SeaORM
-  use entity::prelude::*;
-  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-  let admin_policies = AccessPolicies::find()
-    .filter(entity::access_policies::Column::User.eq("user:admin"))
-    .all(&db)
-    .await
-    .expect("Failed to query admin policies");
-  tracing::info!("🔍 Found {} admin policies in DB", admin_policies.len());
-  for policy in &admin_policies {
-    tracing::info!(
-      "📋 Admin policy: namespace={}, object={}, actions={:?}, effect={}",
-      policy.namespace,
-      policy.object,
-      policy.action,
-      policy.effect
-    );
-  }
+  // 관리자 우회는 `platform:root#superuser` 의 `flagged` 갈래, 즉 `users.is_admin` 자체다.
+  // 심어 둘 행이 없으므로 아무것도 시드하지 않는다.
 
   // Login as admin
   let login_resp = admin_user.login(&mock.client).await;
@@ -601,11 +555,9 @@ async fn test_wildcard_action_permissions() {
   ap_test_utils::grant_wildcard_action_permission(&db, &operator, "user", Some(target_user.model.id))
     .await
     .expect("Failed to grant wildcard action on user");
-  // org:user objects are organization ids (matched via the org-ancestors subquery), so use
-  // a wildcard object here rather than the target user's id.
-  ap_test_utils::grant_wildcard_action_permission(&db, &operator, "org:user", None)
+  ap_test_utils::grant_org_scope(&db, &operator, operator.model.organization_id, "user_manager")
     .await
-    .expect("Failed to grant wildcard action on org:user");
+    .expect("Failed to grant the organization's user-manager tier");
 
   operator.login(&mock.client).await;
 

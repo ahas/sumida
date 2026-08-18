@@ -1,4 +1,28 @@
-use api::util::ap::{ApUser, EditAp};
+//! Grant helpers for the integration suites, written in the vocabulary the evaluator reads.
+//!
+//! Until §14 step 13 these wrote `access_policies` rows, and the row tier was resolved against that
+//! table so they worked. The row tier answers from `relation_tuples` now, and the mirror trigger
+//! deliberately refuses to translate an object-tier policy row (`rebac_mirror.rs`'s final
+//! `RETURN;`) — so a helper left writing policy rows would grant **nothing**, every "should be
+//! forbidden" assertion would keep passing, and the suite would report that a capability still
+//! works on the day it stopped existing. That is why they are rewritten in the same commit as the
+//! routing and not after it.
+//!
+//! Three grants, one per tier, because the tiers stopped being the same thing (§5.2):
+//!
+//! | old | new | means |
+//! |---|---|---|
+//! | `object = 'service'` | [`grant_service`]     | may reach this API at all |
+//! | `object = '*'`       | [`grant_object_wide`] | may act on **everyone's** rows of this namespace |
+//! | `object = '<id>'`    | [`grant_object`]      | may act on that one row |
+//!
+//! Every grant is checked against the compiled rule before it is written ([`assert_rule_reads`]):
+//! a tuple on a relation the rule never consults is authority nobody can use, and a test built on
+//! one passes for the wrong reason.
+
+use api::authz::Authz;
+use api::authz::subject::SubjectSet;
+use api::authz::write::{SubjectKey, TupleWrite};
 use reqwest::StatusCode;
 use sea_orm::DatabaseConnection;
 
@@ -10,39 +34,141 @@ pub struct PermissionTestConfig {
   pub base_url: &'static str,
 }
 
-/// Helper to create access policies
-/// Backward-compatible alias for `create_ap` (older tests reference this name).
-pub async fn create_access_policy(
+/// Writes one tuple, rule-checked but not authority-checked.
+///
+/// The authority check belongs to the write *path* (`Authz::write`, `/relation-tuples`); a fixture
+/// is the operator, so it seeds directly. The rule check is kept — a relation nobody declared, or a
+/// subject type the relation does not accept, is a broken fixture and must say so.
+pub async fn tuple(
   db: &DatabaseConnection,
-  user: &TestUser,
-  namespace: &str,
-  object: &str,
-  actions: Vec<String>,
-  effect: &str,
+  resource_type: &str,
+  resource_id: &str,
+  relation: &str,
+  subject: SubjectKey,
 ) -> anyhow::Result<()> {
-  create_ap(db, user, namespace, object, actions, effect).await
-}
-
-pub async fn create_ap(
-  db: &DatabaseConnection,
-  user: &TestUser,
-  namespace: &str,
-  object: &str,
-  actions: Vec<String>,
-  effect: &str,
-) -> anyhow::Result<()> {
-  EditAp::new()
-    .namespace(namespace)
-    .object(object)
-    .action(actions)
-    .user(ApUser::User(user.model.id))
-    .effect(effect)
-    .create(db)
-    .await?;
+  Authz::write_unchecked(
+    TupleWrite::new(resource_type, resource_id, relation, subject),
+    "e2e",
+    db,
+  )
+  .await?;
   Ok(())
 }
 
-/// Grant both service and resource level access
+/// Route-gate tier — what `object = 'service'` meant. One tuple per action.
+///
+/// `"*"` expands to the four route actions, exactly as `rebac_mirror_map` expands it: on a
+/// `service` object the wildcard never meant object-wide power, because the object *is* `service`.
+pub async fn grant_service(
+  db: &DatabaseConnection,
+  user: &TestUser,
+  namespace: &str,
+  actions: Vec<String>,
+) -> anyhow::Result<()> {
+  for action in expand_actions(&actions) {
+    assert_rule_reads("service", &format!("can_{action}"), &action);
+    tuple(db, "service", namespace, &action, SubjectKey::user(user.model.id)).await?;
+  }
+  Ok(())
+}
+
+/// Object-wide tier — what `object = '*'` meant (§2.3).
+///
+/// `service:<namespace>#op_<action>`, which the definition's own permissions union in as
+/// `service:<namespace>->operate_<action>`. `"*"` becomes `operator`, the single relation that
+/// carries all four.
+///
+/// **Not every definition has this tier.** `board`, `board_group` and everything that resolves
+/// through them (`board_topic`, `board_post`, `board_file`, `board_post_reaction`) union
+/// `service:<ns>->operate_delete` into `own` and nothing into `view` or `edit` — so "read every
+/// board" is not expressible as a service-tier grant at all, only as ownership. Rather than
+/// silently widening a read grant into ownership, this panics and names the gap; those suites grant
+/// per board with [`grant_object`].
+pub async fn grant_object_wide(
+  db: &DatabaseConnection,
+  user: &TestUser,
+  namespace: &str,
+  actions: Vec<String>,
+) -> anyhow::Result<()> {
+  let definition = definition_of(namespace);
+
+  for action in expand_actions(&actions) {
+    // 그 정의에 대응하는 권한 자체가 없으면(예: `sumida_user` 에는 `create` 가 없다) 행 층에
+    // 검사가 없다는 뜻이다. 부여할 것이 없으므로 건너뛴다 — 규칙이 읽지 않는 관계에 튜플을
+    // 쓰는 것과는 다른 경우다.
+    let Some(permission) = permission_of(definition, &action) else { continue };
+    let relation = if actions.iter().any(|a| a == "*") {
+      "operator".to_owned()
+    } else {
+      format!("op_{action}")
+    };
+    assert_rule_reads(definition, permission, &relation);
+    tuple(db, "service", namespace, &relation, SubjectKey::user(user.model.id)).await?;
+  }
+  Ok(())
+}
+
+/// One row — what `object = '<id>'` meant.
+///
+/// The relation is the definition's own, because the tiers are not uniformly named: a board has
+/// `viewer`/`editor`/`owner`, an organization has `manager`, a role has `admin`. A namespace with
+/// no stored relation at that tier panics rather than writing a tuple nobody reads.
+pub async fn grant_object(
+  db: &DatabaseConnection,
+  user: &TestUser,
+  namespace: &str,
+  object_id: &str,
+  actions: Vec<String>,
+) -> anyhow::Result<()> {
+  let definition = definition_of(namespace);
+
+  for action in expand_actions(&actions) {
+    let Some(permission) = permission_of(definition, &action) else { continue };
+    let Some(relation) = object_relation(namespace, &action) else {
+      panic!(
+        "`{namespace}` declares no stored relation for `{action}` on one row — the rules reach \
+         that permission some other way, so this fixture would write a tuple nobody consults"
+      );
+    };
+    assert_rule_reads(definition, permission, relation);
+    tuple(db, definition, object_id, relation, SubjectKey::user(user.model.id)).await?;
+  }
+  Ok(())
+}
+
+/// A block on one row — what `effect = 'deny'` meant, where the rules can express it (§3).
+///
+/// Denial stopped being a property of a grant and became a property of the rule: `blocked` is
+/// subtracted **outside** the whole union, so authorship cannot walk through it. Only the four
+/// definitions whose code contemplated denial declare it (`board_group`, `board`, `board_post`,
+/// `daqs_site`); anywhere else a block is not expressible and this panics rather than pretending.
+pub async fn block_object(
+  db: &DatabaseConnection,
+  user: &TestUser,
+  namespace: &str,
+  object_id: &str,
+) -> anyhow::Result<()> {
+  let definition = definition_of(namespace);
+  assert_rule_reads(definition, "edit", "blocked");
+  tuple(db, definition, object_id, "blocked", SubjectKey::user(user.model.id)).await
+}
+
+/// An organization-tier grant: `organization:<id>#<family>_<tier>`, reaching every descendant.
+///
+/// This is what an `org:<family>` policy row meant — "manages this organization and everything
+/// under it" — with the per-row recursive CTE replaced by the `^` closure over `org_closure`.
+pub async fn grant_org_scope(
+  db: &DatabaseConnection,
+  user: &TestUser,
+  org_id: i32,
+  relation: &str,
+) -> anyhow::Result<()> {
+  tuple(db, "organization", &org_id.to_string(), relation, SubjectKey::user(user.model.id)).await
+}
+
+/// Grant both the route gate and the row tier.
+///
+/// `None` is the old `object = '*'`: every row of the namespace. `Some(id)` is that one row.
 pub async fn grant_service_and_resource_access(
   db: &DatabaseConnection,
   user: &TestUser,
@@ -50,47 +176,133 @@ pub async fn grant_service_and_resource_access(
   actions: Vec<String>,
   target_resource_id: Option<i32>,
 ) -> anyhow::Result<()> {
-  // Grant service-level access
-  create_ap(db, user, namespace, "service", actions.clone(), "allow").await?;
+  grant_service(db, user, namespace, actions.clone()).await?;
 
-  // Grant resource-level access
-  let object = target_resource_id.map(|id| id.to_string()).unwrap_or("*".to_string());
-  create_ap(db, user, namespace, &object, actions, "allow").await?;
-
-  Ok(())
+  match target_resource_id {
+    Some(id) => grant_object(db, user, namespace, &id.to_string(), actions).await,
+    None => grant_object_wide(db, user, namespace, actions).await,
+  }
 }
 
-/// Grant wildcard action permissions (all actions allowed)
+/// Every route action, plus object-wide power on one row.
 pub async fn grant_wildcard_action_permission(
   db: &DatabaseConnection,
   user: &TestUser,
   namespace: &str,
   target_resource_id: Option<i32>,
 ) -> anyhow::Result<()> {
-  // Grant service-level access with wildcard actions
-  create_ap(db, user, namespace, "service", vec!["*".to_string()], "allow").await?;
-
-  // Grant resource-level access with wildcard actions
-  let object = target_resource_id.map(|id| id.to_string()).unwrap_or("*".to_string());
-  create_ap(db, user, namespace, &object, vec!["*".to_string()], "allow").await?;
-
-  Ok(())
+  grant_service_and_resource_access(db, user, namespace, vec!["*".to_string()], target_resource_id)
+    .await
 }
 
-/// Grant wildcard object permissions (all objects allowed)
+/// Object-wide access on every row of a namespace.
 pub async fn grant_wildcard_object_permission(
   db: &DatabaseConnection,
   user: &TestUser,
   namespace: &str,
   actions: Vec<String>,
 ) -> anyhow::Result<()> {
-  // Grant service-level access
-  create_ap(db, user, namespace, "service", actions.clone(), "allow").await?;
+  grant_service(db, user, namespace, actions.clone()).await?;
+  grant_object_wide(db, user, namespace, actions).await
+}
 
-  // Grant wildcard object access (all resources)
-  create_ap(db, user, namespace, "*", actions, "allow").await?;
+// ─── the mapping tables ──────────────────────────────────────────────────────────────────────
 
-  Ok(())
+/// The legacy action vocabulary. `"*"` on a route gate meant the four route actions.
+fn expand_actions(actions: &[String]) -> Vec<String> {
+  let mut out: Vec<String> = Vec::new();
+  for action in actions {
+    if action == "*" {
+      out.extend(["create", "read", "update", "delete"].map(str::to_owned));
+    } else {
+      out.push(action.clone());
+    }
+  }
+  out.sort();
+  out.dedup();
+  out
+}
+
+/// The legacy action → the permission the converted call site now asks for, when the definition
+/// declares one.
+///
+/// `None` is a real answer and not a failure: `sumida_user` has no `create` (a create has no row to
+/// check), `board` has no `remove` (deleting a board is `own`). A fixture must not write a tuple for
+/// a permission that does not exist, and must not pretend it did.
+fn permission_of(definition: &str, action: &str) -> Option<&'static str> {
+  let candidates: &[&'static str] = match action {
+    "create" => &["create"],
+    "update" => &["edit"],
+    "delete" => &["remove", "own"],
+    _ => &["view"],
+  };
+
+  let registry = Authz::registry().expect("the rule set must validate");
+  let declared = registry.require(definition).expect("the definition must exist");
+  candidates.iter().find(|name| declared.permission(name).is_some()).copied()
+}
+
+/// What a namespace's row-level checks resolve to — the `= <definition>` half of the inventory.
+///
+/// Read out of the registry rather than written down here: a table in the fixture is a second copy
+/// of `schema.zed`'s inventory, and the two would drift the first time a namespace moved.
+/// `Registry::global` is memoised for the process, so the name it hands back lives as long as the
+/// process does.
+fn definition_of(namespace: &str) -> &'static str {
+  let registry = Authz::registry().expect("the rule set must validate");
+  let entry = registry
+    .namespace(namespace)
+    .unwrap_or_else(|| panic!("`{namespace}` is not in the namespace inventory"));
+  let definition = entry
+    .definition
+    .as_deref()
+    .unwrap_or_else(|| panic!("`{namespace}` has no row-level definition to grant on"));
+
+  registry
+    .require(definition)
+    .map(|declared| declared.name.as_str())
+    .unwrap_or_else(|e| panic!("`{namespace}` resolves to `{definition}`, which is not declared: {e}"))
+}
+
+/// The stored relation that grants one action on one row, per namespace.
+///
+/// `None` means the definition reaches that permission only through something that is not a
+/// grantable relation — a derived column, a walk into another definition, or the service tier.
+fn object_relation(namespace: &str, action: &str) -> Option<&'static str> {
+  match (namespace, action) {
+    ("board" | "board_group", "read") => Some("viewer"),
+    ("board" | "board_group", "create" | "update") => Some("editor"),
+    ("board" | "board_group", "delete") => Some("owner"),
+    // `file#remove` is `owner | org->manage_file | service:file->operate_delete`; the only
+    // grantable per-file relation is `viewer`, which reaches `view` alone.
+    ("file", "read") => Some("viewer"),
+    ("organization", _) => Some("manager"),
+    ("role", _) => Some("admin"),
+    ("user", _) => Some("manager"),
+    _ => None,
+  }
+}
+
+/// Refuses a grant the rule would never consult.
+///
+/// This is the most important check in this file. A tuple written on a relation that
+/// `<definition>#<permission>` does not read grants nothing at all — the request is refused, the
+/// assertion that expected a refusal still passes, and the suite goes green on the day the
+/// capability disappeared. That is the shape of the false passes this project has already produced.
+///
+/// The compiled predicate is the whole decision as text, so "does the rule read this relation" is
+/// answerable exactly: the relation's name appears as a literal in it, or it does not.
+fn assert_rule_reads(definition: &str, permission: &str, relation: &str) {
+  let probe = SubjectSet::from_parts(vec!["user:0".to_owned()], vec![0]);
+  let sql = Authz::predicate_sql(definition, permission, &probe)
+    .or_else(|_| Authz::object_predicate_sql(definition, "probe", permission, &probe))
+    .unwrap_or_else(|error| panic!("`{definition}#{permission}` does not compile: {error}"));
+
+  assert!(
+    sql.contains(&format!("'{relation}'")),
+    "`{definition}#{permission}` never reads `{relation}`, so a tuple on it would grant nothing \
+     and every refusal this fixture expects would pass for the wrong reason:\n  {sql}"
+  );
 }
 
 /// Test structure for CRUD operations
@@ -116,9 +328,15 @@ impl PermissionTestSuite {
 
     // Test with permission
     let user = TestUser::create(&db).await.expect("Failed to create test user");
-    grant_service_and_resource_access(&db, &user, self.config.namespace, vec!["read".to_string()], None)
-      .await
-      .expect("Failed to grant read permission");
+    grant_service_and_resource_access(
+      &db,
+      &user,
+      self.config.namespace,
+      vec!["read".to_string()],
+      Some(resource_id),
+    )
+    .await
+    .expect("Failed to grant read permission");
 
     user.login(&mock.client).await;
     let resp = mock
@@ -143,12 +361,14 @@ impl PermissionTestSuite {
   }
 
   /// Test CREATE action with and without permission
+  ///
+  /// A create has no row to check, so the route gate is the only tier there is.
   pub async fn test_create_permission(&self, mock: &Mock) {
     // Test with permission
     let db = infra::db::connect().await;
     let user = TestUser::create(&db).await.expect("Failed to create test user");
 
-    grant_service_and_resource_access(&db, &user, self.config.namespace, vec!["create".to_string()], None)
+    grant_service(&db, &user, self.config.namespace, vec!["create".to_string()])
       .await
       .expect("Failed to grant create permission");
 
@@ -182,9 +402,15 @@ impl PermissionTestSuite {
     let db = infra::db::connect().await;
     let user = TestUser::create(&db).await.expect("Failed to create test user");
 
-    grant_service_and_resource_access(&db, &user, self.config.namespace, vec!["update".to_string()], None)
-      .await
-      .expect("Failed to grant update permission");
+    grant_service_and_resource_access(
+      &db,
+      &user,
+      self.config.namespace,
+      vec!["update".to_string()],
+      Some(resource_id),
+    )
+    .await
+    .expect("Failed to grant update permission");
 
     user.login(&mock.client).await;
     let resp = mock
@@ -216,9 +442,15 @@ impl PermissionTestSuite {
     let db = infra::db::connect().await;
     let user = TestUser::create(&db).await.expect("Failed to create test user");
 
-    grant_service_and_resource_access(&db, &user, self.config.namespace, vec!["delete".to_string()], None)
-      .await
-      .expect("Failed to grant delete permission");
+    grant_service_and_resource_access(
+      &db,
+      &user,
+      self.config.namespace,
+      vec!["delete".to_string()],
+      Some(resource_id),
+    )
+    .await
+    .expect("Failed to grant delete permission");
 
     user.login(&mock.client).await;
     let resp = mock
@@ -248,7 +480,7 @@ impl PermissionTestSuite {
     let db = infra::db::connect().await;
     let user = TestUser::create(&db).await.expect("Failed to create test user");
 
-    grant_service_and_resource_access(&db, &user, self.config.namespace, vec!["read".to_string()], None)
+    grant_service(&db, &user, self.config.namespace, vec!["read".to_string()])
       .await
       .expect("Failed to grant read permission");
 
@@ -265,6 +497,10 @@ impl PermissionTestSuite {
   }
 
   /// Test admin bypass functionality
+  ///
+  /// The bypass is `platform:root#superuser`, whose `flagged` branch reads `users.is_admin` — so
+  /// nothing is seeded here on purpose. It is the same flag the admin user screen shows, reached
+  /// through the rule instead of through a direct session read.
   pub async fn test_admin_bypass(&self, mock: &Mock, resource_id: i32) {
     let db = infra::db::connect().await;
     let admin_user = TestUser::create_admin(&db).await.expect("Failed to create admin user");
@@ -274,25 +510,6 @@ impl PermissionTestSuite {
       admin_user.model.id,
       admin_user.model.is_admin
     );
-
-    // Check if admin policies exist in DB using SeaORM
-    use entity::prelude::*;
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-    let admin_policies = AccessPolicies::find()
-      .filter(entity::access_policies::Column::User.eq("user:admin"))
-      .all(&db)
-      .await
-      .expect("Failed to query admin policies");
-    tracing::info!("🔍 Found {} admin policies in DB", admin_policies.len());
-    for policy in &admin_policies {
-      tracing::info!(
-        "📋 Admin policy: namespace={}, object={}, actions={:?}, effect={}",
-        policy.namespace,
-        policy.object,
-        policy.action,
-        policy.effect
-      );
-    }
 
     // Do not grant any explicit permissions - admin should bypass
     let login_resp = admin_user.login(&mock.client).await;
@@ -360,39 +577,54 @@ impl PermissionTestSuite {
     );
   }
 
-  /// Test explicit deny takes precedence over allow
-  pub async fn test_explicit_deny_precedence(&self, mock: &Mock, resource_id: i32) {
+  /// A block overrides a grant on the same row.
+  ///
+  /// The replacement for `test_explicit_deny_precedence`. The old case wrote
+  /// `effect = 'deny'` on any namespace; a block is now a `blocked` relation, and only the
+  /// definitions whose code contemplated denial declare one — so this exists for the board family
+  /// and [`block_object`] refuses anywhere else rather than quietly asserting nothing.
+  pub async fn test_block_precedence(&self, mock: &Mock, resource_id: i32) {
     let db = infra::db::connect().await;
     let user = TestUser::create(&db).await.expect("Failed to create test user");
 
-    // Grant permission first
-    grant_service_and_resource_access(&db, &user, self.config.namespace, vec!["delete".to_string()], None)
-      .await
-      .expect("Failed to grant delete permission");
-
-    // Then explicitly deny for specific resource
-    create_ap(
+    grant_service_and_resource_access(
       &db,
       &user,
       self.config.namespace,
-      &resource_id.to_string(),
-      vec!["delete".to_string()],
-      "deny",
+      vec!["update".to_string()],
+      Some(resource_id),
     )
     .await
-    .expect("Failed to create deny policy");
+    .expect("Failed to grant update permission");
 
     user.login(&mock.client).await;
+
+    // 차단 전에 실제로 통과하는지부터 본다. 이 확인이 없으면 아래 단언이
+    // "원래 못 했다" 로도 통과해 버린다.
     let resp = mock
       .client
-      .delete(&format!("{}/{}", self.config.base_url, resource_id))
+      .patch(&format!("{}/{}", self.config.base_url, resource_id))
+      .json(&self.crud_data.update_data)
       .send()
       .await
-      .expect("Failed to send DELETE request");
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN, "Explicit deny should take precedence over allow");
+      .expect("Failed to send PATCH request");
+    assert_eq!(resp.status(), StatusCode::OK, "the grant must work before the block is written");
+
+    block_object(&db, &user, self.config.namespace, &resource_id.to_string())
+      .await
+      .expect("Failed to write the block");
+
+    let resp = mock
+      .client
+      .patch(&format!("{}/{}", self.config.base_url, resource_id))
+      .json(&self.crud_data.update_data)
+      .send()
+      .await
+      .expect("Failed to send PATCH request");
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN, "a block must override a grant on the same row");
   }
 
-  /// Test wildcard action permissions (action: ['*'] allows all actions)
+  /// Test wildcard action permissions (`action: ['*']` allows all actions)
   pub async fn test_wildcard_action_permissions(&self, mock: &Mock, resource_id: i32) {
     let db = infra::db::connect().await;
     let user = TestUser::create(&db).await.expect("Failed to create test user");
@@ -445,7 +677,11 @@ impl PermissionTestSuite {
     assert_eq!(resp.status(), StatusCode::OK, "Wildcard action should allow delete");
   }
 
-  /// Test wildcard object permissions (object: '*' allows access to all objects)
+  /// Object-wide access reaches **every** row of the namespace — what `object = '*'` meant.
+  ///
+  /// This is the acceptance criterion for §2.3's mapping: the grant is `service:<ns>#op_read`, it
+  /// must open rows the caller has no per-row grant on, and it must not carry the update tier with
+  /// it.
   pub async fn test_wildcard_object_permissions(
     &self,
     mock: &Mock,

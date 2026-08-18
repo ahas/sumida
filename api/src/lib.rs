@@ -1,5 +1,5 @@
-/// Relational Zanzibar — the replacement for `util::ap`. Compiled and boot-validated, and called by
-/// nothing yet, on purpose: see the module docs.
+/// Relational Zanzibar — compiled, boot-validated, and the only evaluator there is. It replaced
+/// `util::ap`, which was deleted at §14 step 14 once lab-app, its last consumer, was routed.
 pub mod authz;
 pub mod capability;
 pub mod controller;
@@ -14,7 +14,6 @@ use controller::ApiController;
 use controller::prelude::*;
 use sea_orm::DatabaseConnection;
 
-use crate::controller::access_policy::AccessPolicyController;
 
 pub trait SumidaState: Clone + Send + Sync + 'static {
   fn db(&self) -> &DatabaseConnection;
@@ -44,7 +43,8 @@ where
     let state = self.state.expect("[SumidaRouter]: state must be set");
 
     let access_log_controller = AccessLogController::<StateT>::new();
-    let access_policy_controller = AccessPolicyController::<StateT>::new();
+    let relation_tuple_controller = RelationTupleController::<StateT>::new();
+    let authz_controller = AuthzController::<StateT>::new();
     let api_key_controller = ApiKeyController::<StateT>::new();
     let dashboard_monitoring_controller = DashboardMonitoringController::<StateT>::new();
     let org_controller = OrganizationController::<StateT>::new();
@@ -100,7 +100,8 @@ where
     let mut router = Router::new()
       .route("/capabilities", axum::routing::get(capabilities_handler))
       .nest("/access-logs", access_log_controller.router(state))
-      .nest("/access-policies", access_policy_controller.router(state))
+      .nest("/relation-tuples", relation_tuple_controller.router(state))
+      .nest("/authz", authz_controller.router(state))
       .nest("/api-keys", api_key_controller.router(state))
       .nest("/dashboard/monitoring", dashboard_monitoring_controller.router(state))
       .nest("/bans", ban_controller.router(state))

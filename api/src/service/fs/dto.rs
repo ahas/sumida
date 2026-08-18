@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::SumidaState;
-use crate::util::ap::ApForUser;
+use crate::service::grants::ApForUser;
 use crate::util::db::wrap_ilike;
 use crate::util::storage::StaticFile;
 

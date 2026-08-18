@@ -7,19 +7,18 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
-use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, Condition, ConnectionTrait, EntityTrait, IntoSimpleExpr, PaginatorTrait, QueryFilter,
+  ColumnTrait, Condition, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
   QuerySelect, QueryTrait, Select, TransactionTrait,
 };
 use serde_json::json;
 
 use self::dto::*;
 use super::coupon::CouponService;
-use super::{gen_code, managed_org_ids, notify_all, recipient_emails, resolve_owner};
+use super::{gen_code, notify_all, recipient_emails, resolve_owner};
 use crate::SumidaState;
-use crate::util::ap::{self, ApGuard};
-use crate::util::org::organization_ancestors_subquery;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 
 fn status_str(status: &SubscriptionStatus) -> &'static str {
@@ -42,21 +41,40 @@ impl<S: SumidaState> SubscriptionService<S> {
     Self { state, session }
   }
 
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
   // ---- authorization & scoping ----
 
-  /// Restrict a list/query to subscriptions the caller may see: admin → all;
-  /// otherwise own personal + own organization + every organization the caller
-  /// manages via an `org:subscription` read policy (including descendants).
+  /// Restrict a list/query to subscriptions the caller may see: 최상위 관리자 → 전체;
+  /// 그 밖에는 본인 개인 구독 + 자기 조직 + `organization#view_subscription` 이 닿는 조직.
+  ///
+  /// 종전의 `managed_org_ids` 는 정책 행에서 조직 id 목록을 Rust 로 실체화한 뒤 재귀 CTE 로
+  /// 후손을 펼쳤다. 단건 판정(`authorize`)과 목록 판정이 서로 다른 구현이었으므로, 하나는
+  /// 통과하고 다른 하나는 막는 어긋남이 구조적으로 가능했다. 이제 둘 다 같은 재작성 트리에서
+  /// 생성되고, 조직 id 목록은 문장 안에 서브쿼리로 남는다 — 페이지네이션도 그대로다.
   async fn scope<C: ConnectionTrait>(
     &self,
     query: Select<Subscriptions>,
     db: &C,
   ) -> Result<Select<Subscriptions>, SumidaError> {
-    if self.session.profile.is_admin {
+    // `organization` 의 구독 층에는 `platform:root->superuser` 갈래가 없다(`schema.zed`의
+    // `scope subscription`). 최상위 관리자의 전량 열람은 그래서 여기 남되, 세션의 `is_admin`
+    // 필드를 직접 읽지 않고 규칙에 묻는다.
+    if Authz::is_superuser(&self.subject(), db).await? {
       return Ok(query);
     }
-    let mut org_ids = managed_org_ids(&self.session, "org:subscription", "read", db).await?;
-    org_ids.push(self.session.profile.organization.id);
+
+    let orgs = Authz::filter(
+      "organization",
+      "view_subscription",
+      &self.subject(),
+      Organizations::find().select_only().column(entity::organizations::Column::Id),
+    )?;
+
     Ok(
       query.filter(
         Condition::any()
@@ -65,10 +83,17 @@ impl<S: SumidaState> SubscriptionService<S> {
               .add(Column::OwnerKind.eq(OwnerKind::Personal))
               .add(Column::OwnerId.eq(self.session.profile.id)),
           )
+          // 자기 조직은 `authorize` 의 "read + 자기 조직" 단축로와 짝을 이룬다. 규칙 쪽
+          // `view_subscription` 에는 `member` 갈래가 없으므로 여기서 명시한다.
           .add(
             Condition::all()
               .add(Column::OwnerKind.eq(OwnerKind::Organization))
-              .add(Column::OwnerId.is_in(org_ids)),
+              .add(Column::OwnerId.eq(self.session.profile.organization.id)),
+          )
+          .add(
+            Condition::all()
+              .add(Column::OwnerKind.eq(OwnerKind::Organization))
+              .add(Column::OwnerId.in_subquery(orgs.into_query())),
           ),
       ),
     )
@@ -81,7 +106,7 @@ impl<S: SumidaState> SubscriptionService<S> {
     action: &str,
     db: &C,
   ) -> Result<(), SumidaError> {
-    if self.session.profile.is_admin {
+    if Authz::is_superuser(&self.subject(), db).await? {
       return Ok(());
     }
     match owner_kind {
@@ -91,17 +116,11 @@ impl<S: SumidaState> SubscriptionService<S> {
         Ok(())
       }
       OwnerKind::Organization => {
-        // Mirror UserService::update org-scoping: evaluate the org-ancestors subquery
-        // against the target organization row (the `"ap"` alias only exists in the
-        // lateral-join path, so this must go through `try_access`, not `check_allowed`).
-        let start =
-          Expr::col((entity::organizations::Entity, entity::organizations::Column::Id)).into_simple_expr();
-        ap::ns("org:subscription")
-          .who(&self.session)
-          .action(action)
-          .object_in_subquery(organization_ancestors_subquery(start))
-          .try_access(Organizations::find_by_id(owner_id), db)
-          .await
+        // 목록(`scope`)과 같은 재작성 트리에서 나온 판정이다 — 조상 조직의 부여가 하위 조직에
+        // 닿는 것은 `subscription_*^` / `manager^` 닫힘이 맡는다.
+        let permission =
+          if action == "read" { "view_subscription" } else { "manage_subscription" };
+        Authz::try_check("organization", owner_id, permission, &self.subject(), db).await
       }
     }
   }

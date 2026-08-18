@@ -5,7 +5,8 @@
 //! hand-parser (`membership/mod.rs:170`, which silently drops `api:` recipients). Four copies of a
 //! rule is four chances for one of them to be wrong, and the audit found that it was.
 //!
-//! Nothing calls this yet. It is here so the compiler has a subject side to bind against.
+//! All five are gone as of §14 step 13: every converted service builds its subject through
+//! `SubjectSet::of`, and `Authz::expand_to_user_ids` replaced the hand-parser.
 
 use infra::session::UserSession;
 

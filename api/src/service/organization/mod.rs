@@ -4,15 +4,18 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Set,
+  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Select, Set,
   TransactionTrait,
 };
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace organization service = organization`).
+const RESOURCE: &str = "organization";
 
 pub struct OrganizationService<S: SumidaState> {
   state: S,
@@ -24,6 +27,18 @@ impl<S: SumidaState> OrganizationService<S> {
     Self { state, session }
   }
 
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  /// 행 스코프는 `organization#view` 술어 하나 — 소속 구성원(`member`)과 상위 조직의
+  /// 관리자(`manager^`)가 규칙 한 줄에 함께 들어 있다.
+  fn select(&self, query: Select<Organizations>) -> Result<Select<Organizations>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
+  }
+
   pub async fn list(
     &self,
     filter: OrganizationFilter,
@@ -32,7 +47,7 @@ impl<S: SumidaState> OrganizationService<S> {
     use entity::organizations::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(Organizations::find()));
+    let mut query = filter.apply(self.select(Organizations::find())?);
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -51,7 +66,7 @@ impl<S: SumidaState> OrganizationService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetOrganization>, SumidaError> {
     Ok(
       self
-        .select(Organizations::find_by_id(id))
+        .select(Organizations::find_by_id(id))?
         .into_model::<GetOrganization>()
         .one(self.state.db())
         .await?,
@@ -71,7 +86,7 @@ impl<S: SumidaState> OrganizationService<S> {
     data: UpdateOrganization,
   ) -> Result<entity::organizations::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", Organizations::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "edit", &self.subject(), &txn).await?;
 
     let mut model = data.into_active_model();
     model.id = Set(id);
@@ -84,23 +99,11 @@ impl<S: SumidaState> OrganizationService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", Organizations::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "remove", &self.subject(), &txn).await?;
 
     let result = Organizations::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, Organizations> for OrganizationService<S> {
-  fn ap(&self) -> ApCondition {
-    use entity::organizations::Column;
-
-    ap::ns("organization").who(&self.session).join(Organizations, Column::Id)
-  }
-
-  fn select(&self, query: sea_orm::Select<Organizations>) -> sea_orm::Select<Organizations> {
-    self.ap().action("read").apply(query)
   }
 }

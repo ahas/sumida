@@ -12,22 +12,38 @@ use uuid::Uuid;
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::service::fs::dto::{DeleteFile, FileUploaded};
 use crate::service::fs::file::FileService;
-use crate::util::ap::{self, ApCondition, ApGuard};
 use crate::util::file_validation::FileValidator;
 use crate::util::pagination::Pagination;
 
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace board_file service = board_file`).
+const RESOURCE: &str = "board_file";
+
 pub struct BoardFileService<S: SumidaState> {
   state: S,
-  #[allow(dead_code)]
   session: UserSession,
 }
 
 impl<S: SumidaState> BoardFileService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
+  }
+
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  /// 행 스코프는 `board_file#view` 술어 하나 — 첨부는 자기 글(`post->view`)이나 원본
+  /// 파일(`file->view`) 중 하나로 열린다. 종전의 `join(BoardFiles, Column::PostId)` 는 첨부의
+  /// 객체를 글 id 로 잡고 있었는데, 정의는 `board_files.file_uuid` 를 키로 삼으므로 그 어긋남도
+  /// 함께 사라진다.
+  fn select(&self, query: Select<BoardFiles>) -> Result<Select<BoardFiles>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
   }
 
   pub async fn list(
@@ -44,7 +60,7 @@ impl<S: SumidaState> BoardFileService<S> {
     // Without this, board_file:read permission alone would let one read attachments across all organizations.
     let mut query = filter.apply(util::with_file_columns(
       self
-        .select(BoardFiles::find())
+        .select(BoardFiles::find())?
         .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
         .column_as(Column::FileUuid, "id")
@@ -80,7 +96,7 @@ impl<S: SumidaState> BoardFileService<S> {
 
     let result = util::with_file_columns(
       self
-        .select(BoardFiles::find())
+        .select(BoardFiles::find())?
         .filter(Column::PostId.eq(post_id))
         .filter(Column::FileUuid.eq(file_uuid))
         .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
@@ -130,15 +146,9 @@ impl<S: SumidaState> BoardFileService<S> {
 
     // Row-level permission check: reject if there is no delete permission for that post's attachment.
     // Without this check, board_file:delete permission alone would let one delete any post's attachment (and the original file).
-    self
-      .try_access(
-        "delete",
-        BoardFiles::find()
-          .filter(BoardFilesColumn::PostId.eq(data.post_id))
-          .filter(BoardFilesColumn::FileUuid.eq(data.file_uuid)),
-        &txn,
-      )
-      .await?;
+    // `board_files` 의 기본 키는 `file_uuid` 하나이고 정의도 그 열을 키로 삼으므로, 종전의
+    // 두 열 필터는 첨부 한 건을 정확히 같은 집합으로 지목한다. `post_id` 는 아래 DELETE 에 그대로 남는다.
+    Authz::try_check(RESOURCE, data.file_uuid, "remove", &self.subject(), &txn).await?;
 
     let result = BoardFiles::delete_many()
       .filter(BoardFilesColumn::PostId.eq(data.post_id))
@@ -194,17 +204,5 @@ impl<S: SumidaState> BoardFileService<S> {
       .await?;
 
     Ok(post_ids)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, BoardFiles> for BoardFileService<S> {
-  fn default_query_with(query: Select<BoardFiles>) -> Select<BoardFiles> {
-    query
-  }
-
-  fn ap(&self) -> ApCondition {
-    use entity::bps::board_files::Column;
-
-    ap::ns("board_file").who(&self.session).join(BoardFiles, Column::PostId)
   }
 }

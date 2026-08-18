@@ -1,7 +1,7 @@
 use anyhow::Context;
-use entity::prelude::*;
+use api::authz::Authz;
 use sea_orm::prelude::*;
-use sea_orm::{Database, DbBackend, Set, Statement};
+use sea_orm::{Database, DbBackend, Statement};
 
 #[allow(dead_code)]
 pub struct TestDb;
@@ -12,18 +12,7 @@ impl TestDb {
 
     Self::find_or_create().await?;
     Self::run_migration_fresh(&db).await?;
-
-    AccessPolicies::insert(entity::access_policies::ActiveModel {
-      namespace: Set("*".to_string()),
-      user: Set("user:admin".to_string()),
-      object: Set("*".to_string()),
-      action: Set(vec!["*".to_string()]),
-      effect: Set("allow".to_string()),
-      ..Default::default()
-    })
-    .exec(&db)
-    .await
-    .expect("Failed to insert the admin access policy");
+    Self::sync_vocabulary(&db).await?;
 
     db.close().await?;
 
@@ -84,21 +73,26 @@ impl TestDb {
   pub async fn reset_database() -> anyhow::Result<()> {
     let db = infra::db::connect().await;
     Self::run_migration_fresh(&db).await?;
-
-    // Re-insert admin policy
-    AccessPolicies::insert(entity::access_policies::ActiveModel {
-      namespace: Set("*".to_string()),
-      user: Set("user:admin".to_string()),
-      object: Set("*".to_string()),
-      action: Set(vec!["*".to_string()]),
-      effect: Set("allow".to_string()),
-      ..Default::default()
-    })
-    .exec(&db)
-    .await
-    .expect("Failed to insert the admin access policy");
+    Self::sync_vocabulary(&db).await?;
 
     db.close().await?;
+    Ok(())
+  }
+
+  /// Brings `relation_definitions` up to date with the compiled rule set.
+  ///
+  /// The `rebac` migration seeds only the handful of relations the backfill can write, and the
+  /// foreign key on `relation_tuples` refuses everything else — so without this a fixture cannot
+  /// grant `service:<ns>#op_read` or `board:<id>#viewer` at all. `Authz::boot` does the same thing
+  /// in a live process.
+  ///
+  /// It also replaces the `* | * | {*} | user:admin` policy row this fixture used to seed. That row
+  /// is superseded rather than migrated: `platform:root#superuser` reaches every rule through its
+  /// `flagged` branch, which is `users.is_admin` itself — the flag `TestUser::create_admin` already
+  /// sets. Keeping the row would put one grant in two places.
+  async fn sync_vocabulary(db: &DatabaseConnection) -> anyhow::Result<()> {
+    Authz::sync_schema(db).await.map_err(|error| anyhow::anyhow!("{error}"))?;
+    tracing::info!("✅ Synced the authz vocabulary projection");
     Ok(())
   }
 

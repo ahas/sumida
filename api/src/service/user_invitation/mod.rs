@@ -7,15 +7,18 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
   ColumnTrait, ConnectionTrait, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
-  TransactionTrait,
+  Select, TransactionTrait,
 };
 use uuid::Uuid;
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace user_invitation service = user_invitation`).
+const RESOURCE: &str = "user_invitation";
 
 pub struct UserInvitationService<S: SumidaState> {
   state: S,
@@ -25,6 +28,18 @@ pub struct UserInvitationService<S: SumidaState> {
 impl<S: SumidaState> UserInvitationService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
+  }
+
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  /// 행 스코프는 `user_invitation#view` 술어 하나 — 초대받은 사람을 볼 수 있는 사람이 곧 그
+  /// 초대를 볼 수 있는 사람이다(`invitee->view`).
+  fn select(&self, query: Select<UserInvitations>) -> Result<Select<UserInvitations>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
   }
 
   pub async fn upsert<C>(user_id: i32, uuid: Uuid, db: &C) -> Result<(), DbErr>
@@ -57,7 +72,7 @@ impl<S: SumidaState> UserInvitationService<S> {
     use entity::user_invitations::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(UserInvitations::find()));
+    let mut query = filter.apply(self.select(UserInvitations::find())?);
     let count = query.clone().select_only().column(Column::Uuid).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -75,7 +90,7 @@ impl<S: SumidaState> UserInvitationService<S> {
   pub async fn get(&self, uuid: Uuid) -> Result<Option<GetUserInvitation>, SumidaError> {
     let txn = self.state.db().begin().await?;
     let item = self
-      .select(UserInvitations::find_by_id(uuid))
+      .select(UserInvitations::find_by_id(uuid))?
       .filter(entity::user_invitations::Column::ExpiresAt.gt(Utc::now()))
       .into_model::<GetUserInvitation>()
       .one(&txn)
@@ -135,23 +150,11 @@ impl<S: SumidaState> UserInvitationService<S> {
 
   pub async fn delete(&self, uuid: Uuid) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", UserInvitations::find_by_id(uuid), &txn).await?;
+    Authz::try_check(RESOURCE, uuid, "remove", &self.subject(), &txn).await?;
 
     let result = UserInvitations::delete_by_id(uuid).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, UserInvitations> for UserInvitationService<S> {
-  fn ap(&self) -> ApCondition {
-    use entity::user_invitations::Column;
-
-    ap::ns("user_invitation").who(&self.session).join(UserInvitations, Column::Uuid)
-  }
-
-  fn select(&self, query: sea_orm::Select<UserInvitations>) -> sea_orm::Select<UserInvitations> {
-    self.ap().action("read").apply(query)
   }
 }

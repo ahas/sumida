@@ -73,7 +73,36 @@ pub const PRODUCTS: &[Product] = &[
 /// It is a `const` rather than configuration on purpose. A routing decision that can change at run
 /// time is a permission model that differs between two processes reading the same database, and
 /// the only way to find out which one a request got is to have been watching.
-pub const ROUTED_PRODUCTS: &[&str] = &["sumida"];
+///
+/// trainer joined at §14 step 8, once `src/migration/joy_service_init.rs` grew the five columns its
+/// rules read. That order is the invariant, not a courtesy: until the columns existed `Authz::boot`
+/// reported trainer's definitions as drift and `boot_or_abort` refused to start, so opting in earlier
+/// would have routed a gate whose row tier could not be evaluated.
+///
+/// site-app joined at §14 step 9. It needed no columns — `antares_acl_init.rs` had already added
+/// `projects.owner_user_id` and `projects.organization_id` for the legacy row scope, and the rule
+/// reads the same two. What it needed instead was for its own writers to stop writing
+/// `access_policies` rows directly (`project/mod.rs`, `project/shares.rs`), because a product that
+/// reads tuples while writing policy rows depends on the mirror trigger in the one direction the
+/// mirror does not run.
+///
+/// **Since §14 step 14 there is nothing to opt out of.** `util/ap.rs` is deleted, so a namespace
+/// that is not routed does not fall back — it simply has no route gate to ask about, and
+/// `unrouted_namespaces` now enumerates exactly the namespaces declared *without* one. The list is
+/// kept because it is still the record of which product declared what, and because the two tests
+/// below read the inventory through it; it is no longer a switch, and adding a fifth product to it
+/// grants nothing on its own.
+///
+/// lab-app joined at §14 step 13, and with it the last consumer of the legacy evaluator went — which
+/// is the point of routing it at all. Its rules were already written (`schema.lab-app.zed`); what it
+/// needed was three things. Its `Migrator` had to register `rebac_columns`, because
+/// `boards.organization_id` is read by the `board` definition that `daqs_inquiry` and
+/// `daqs_inquiry_rating` walk to. Its own writers had to stop writing `access_policies` rows — the
+/// site-sharing grid (`site/mod.rs`) is one of the five writers the mirror was built for, and a
+/// product that reads tuples while writing policy rows is reading a copy that is only as fresh as a
+/// trigger. And its one raw-SQL *reader* of the policy table (the organization filter on the site
+/// list) had to be re-asked of `relation_tuples`.
+pub const ROUTED_PRODUCTS: &[&str] = &["sumida", "trainer", "site-app", "lab-app"];
 
 #[derive(Debug)]
 pub struct Registry {
@@ -158,25 +187,31 @@ impl Registry {
     self.namespaces.iter().find(|entry| entry.namespace == name)
   }
 
-  /// Whether `namespace`'s **route gate** answers from `relation_tuples` instead of from
-  /// `access_policies`.
+  /// Whether `namespace` has a **route gate** for `layer::service_ap` to ask about.
   ///
   /// Three conditions, all necessary:
   ///
   /// * the namespace is in the inventory — validation rule 8 already guarantees every namespace
   ///   that reaches a live call site is, so a `false` here means a namespace nobody declared;
   /// * it declares a route gate, so `service:<namespace>` is a real object;
-  /// * its product has opted in (`ROUTED_PRODUCTS`).
+  /// * its product is in `ROUTED_PRODUCTS`, which all four now are.
+  ///
+  /// A `false` used to mean "answered by the legacy evaluator instead"; with that evaluator gone it
+  /// means "there is no gate here", and the only namespaces it is false for are the four declared
+  /// without one.
   pub fn routes_service_gate(&self, namespace: &str) -> bool {
     self
       .namespace(namespace)
       .is_some_and(|entry| entry.gated && ROUTED_PRODUCTS.contains(&entry.product.as_str()))
   }
 
-  /// Every namespace in the inventory that is **not** routed, with the reason, sorted.
+  /// Every namespace in the inventory that has **no** route gate, with the reason, sorted.
   ///
-  /// This is what the boot log prints. A fallback that nobody can enumerate is a resource nobody
-  /// knows is unmigrated, and that is the state this list exists to make impossible.
+  /// It was written when the alternative was a silent fallback to `access_policies` — a resource
+  /// nobody could enumerate is a resource nobody knows is unmigrated. There is no fallback now, and
+  /// what it enumerates instead is the shape that is easy to misread: a namespace whose row tier is
+  /// checked directly and which therefore cannot be opened by a `service:<name>` grant, however
+  /// plausible one looks written down.
   pub fn unrouted_namespaces(&self) -> Vec<(&str, &'static str)> {
     let mut out: Vec<(&str, &'static str)> = self
       .namespaces
@@ -328,14 +363,16 @@ pub struct ColumnDependency {
 mod routing_tests {
   use super::*;
 
-  /// Exactly sumida's gated namespaces route, and nothing else does.
+  /// Exactly the four products' gated namespaces route, and nothing else does.
   ///
-  /// The list is written out rather than counted. "18 namespaces route" passes just as happily
-  /// when one of trainer's has been swapped in for one of sumida's, and the whole claim of Phase 1 is
-  /// *which* ones — a consumer that has not migrated must be on the code path it is on today, byte
-  /// for byte.
+  /// The list is written out rather than counted. "44 namespaces route" passes just as happily
+  /// when one of lab-app's has been swapped in for one of site-app's, and the whole claim of the phased
+  /// migration is *which* ones — a consumer that has not migrated must be on the code path it is on
+  /// today, byte for byte. With lab-app opted in at §14 step 13 all four are here, and what the list
+  /// now pins is the other direction: the five namespaces below it that still do **not** route, and
+  /// why.
   #[test]
-  fn only_sumidas_route_gates_are_routed() {
+  fn only_the_opted_in_products_route_gates_are_routed() {
     let registry = Registry::load().expect("the rule set must validate");
 
     let routed: Vec<&str> = registry
@@ -348,6 +385,7 @@ mod routing_tests {
     assert_eq!(
       routed,
       vec![
+        // sumida — §14 step 7
         "access_log",
         "access_policy",
         "api_key",
@@ -366,15 +404,51 @@ mod routing_tests {
         "role",
         "user",
         "user_invitation",
+        // trainer — §14 step 8. `trainer:delegate` is absent on purpose: it has no route gate at all, so
+        // there is nothing to route; its object tier is `delegation_scope`, checked directly.
+        "trainer:agent",
+        "trainer:cloud",
+        "trainer:cluster",
+        "trainer:dashboard",
+        "trainer:job",
+        "trainer:system-settings",
+        "trainer:task",
+        "trainer:terminal-session",
+        // site-app — §14 step 9. `site-app:project.row` is absent on purpose, for the same reason
+        // `trainer:delegate` is: it is the row namespace and has no route gate at all. site-app uses a
+        // *different* namespace for the gate deliberately, so a project whose slug is "service"
+        // cannot collide with the role gate seed.
+        "site-app:artifact",
+        "site-app:cache",
+        "site-app:chunk",
+        "site-app:gcp",
+        "site-app:image",
+        "site-app:job",
+        "site-app:project",
+        "site-app:survey",
+        "site-app:system-settings",
+        "site-app:workflow",
+        // lab-app — §14 step 13. `downloadable_asset` is here without a `lab-app:` prefix because
+        // lab-app's row-level check used the unprefixed name while its route gate used the prefixed
+        // one; one definition honours both, so neither existing grant is lost.
+        "lab-app:ai_model",
+        "lab-app:downloadable_asset",
+        "lab-app:inspection",
+        "lab-app:photo",
+        "lab-app:report",
+        "lab-app:site",
+        "lab-app:structure",
+        "downloadable_asset",
       ]
     );
   }
 
-  /// Every namespace that does not route is enumerable, with a reason.
+  /// Every namespace without a route gate is enumerable, with a reason.
   ///
-  /// This is the "never silent" half. A fallback nobody can list is a resource nobody knows is
-  /// unmigrated, so what is asserted is that the two sets **partition** the inventory — no
-  /// namespace is in neither list, which is the only way one could go unreported.
+  /// What is asserted is that the two sets **partition** the inventory — no namespace is in neither
+  /// list. That was the "never silent" half while a fallback existed; it is now the check that
+  /// every declared namespace is classified, so one cannot arrive gateless by accident and be read
+  /// as gated by a call site.
   #[test]
   fn every_unrouted_namespace_is_named_with_a_reason() {
     let registry = Registry::load().expect("the rule set must validate");
@@ -392,12 +466,14 @@ mod routing_tests {
     assert_eq!(
       unrouted.len() + routed.count(),
       registry.namespaces().len(),
-      "a namespace is in neither list, so it would fall back without being reported"
+      "a namespace is in neither list, so nothing here says whether it has a route gate"
     );
 
-    // The three consumers, by name. If one of them starts routing, it is because somebody added it
-    // to `ROUTED_PRODUCTS` — a Phase 2 decision that must not arrive as a side effect.
-    for namespace in ["trainer:task", "site-app:project", "lab-app:site", "org:user"] {
+    // All four products have opted in, so no namespace is unrouted for that reason any more. What
+    // is left is the shape that never routes at all: a namespace declared **without** a route gate,
+    // one per product that has one. Each is a row-level namespace whose object tier is checked
+    // directly, and none of them has a `service:<name>` object for a gate to consult.
+    for namespace in ["org:user", "org:credit", "trainer:delegate", "site-app:project.row"] {
       assert!(
         unrouted.iter().any(|(name, _)| *name == namespace),
         "`{namespace}` is no longer reported as unrouted"

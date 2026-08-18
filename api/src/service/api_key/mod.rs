@@ -13,9 +13,14 @@ use sea_orm::{
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard, ApUser};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
+use crate::authz::write::SubjectKey;
+use crate::service::grants::{from_service_grants, to_service_grants};
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace api_key service = api_key`).
+const RESOURCE: &str = "api_key";
 
 /// Converts an API key into a hash for storage and lookup. The plaintext is exposed only once at issuance; the DB keeps only the hash.
 /// (Prevents key reuse on a DB leak. Must use the same algorithm as the migration's conversion logic.)
@@ -33,6 +38,38 @@ impl<S: SumidaState> ApiKeyService<S> {
     ApiKeyService { state, session }
   }
 
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  /// 키가 부여를 **받는** 쪽으로 등장할 때의 주체 키. 종전 `access_policies."user"` 의
+  /// `api:<hash>` 와 같은 해시다.
+  fn holder(key_hash: &str) -> SubjectKey {
+    SubjectKey::apikey(key_hash)
+  }
+
+  fn default_query_with(query: Select<ApiKeys>) -> Select<ApiKeys> {
+    let user_alias = Alias::new("user");
+    let col_id = Expr::col((user_alias.clone(), "id"));
+    let col_username = Expr::col((user_alias.clone(), "username"));
+    let col_full_name = Expr::col((user_alias.clone(), "full_name"));
+
+    query
+      .expr(Expr::col((entity::api_keys::Entity, Asterisk)))
+      .expr_as(col_id, "user_id")
+      .expr_as(col_username.clone(), "user_username")
+      .expr_as(col_full_name.clone(), "user_full_name")
+      .join_as(JoinType::LeftJoin, entity::api_keys::Relation::User.def(), user_alias.clone())
+  }
+
+  /// 행 스코프는 `api_key#view` 술어 하나 — 키 소유자 본인과 그 사람을 관리하는 조직이 규칙
+  /// 한 줄에 함께 들어 있다.
+  fn select(&self, query: Select<ApiKeys>) -> Result<Select<ApiKeys>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
+  }
+
   pub async fn list(
     &self,
     filter: ApiKeyFilter,
@@ -44,7 +81,7 @@ impl<S: SumidaState> ApiKeyService<S> {
     let col_username = Expr::col("user_username");
     let col_full_name = Expr::col("user_full_name");
 
-    let mut query = filter.apply(self.select(ApiKeys::find()));
+    let mut query = filter.apply(self.select(ApiKeys::find())?);
     let count = query.clone().select_only().column(Column::Key).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -64,14 +101,16 @@ impl<S: SumidaState> ApiKeyService<S> {
     let txn = self.state.db().begin().await?;
 
     let Some(mut api_key) =
-      self.select(ApiKeys::find_by_id(key)).into_model::<GetApiKey>().one(&txn).await?
+      self.select(ApiKeys::find_by_id(key))?.into_model::<GetApiKey>().one(&txn).await?
     else {
       return Ok(None);
     };
 
     if api_key.is_secured {
+      // 보안 키가 보유한 라우트 게이트. 화면이 늘 읽어 온 모양 그대로다(§9.4).
+      let held = SubjectSet::from_parts(vec![Self::holder(key).key()], Vec::new());
       api_key.access_policies =
-        Some(ap::for_users().user(ApUser::ApiKey(key.to_string())).find_all(&txn).await?);
+        Some(from_service_grants(Authz::service_grants(&held, &txn).await?));
     }
 
     txn.commit().await?;
@@ -114,17 +153,16 @@ impl<S: SumidaState> ApiKeyService<S> {
       match ApiKeys::insert(active_model).exec(&txn).await {
         Ok(_) => {
           if let Some(user_aps) = user_aps {
-            for policy in &user_aps {
-              ap::assert_policy_within_authority(
-                self.session.profile.is_admin,
-                &policy.namespace,
-                &policy.object,
-                &policy.action,
-                "",
-                &policy.effect,
-              )?;
-            }
-            ap::for_users().user(ApUser::ApiKey(key_hash.clone())).update(user_aps, &txn).await?;
+            // 권한 검사는 `replace_service_grants` 안에서 네임스페이스마다
+            // `service:<namespace>#grant` 로 이뤄진다.
+            let grants = to_service_grants(&user_aps)?;
+            Authz::replace_service_grants(
+              &Self::holder(&key_hash),
+              &grants,
+              &self.subject(),
+              &txn,
+            )
+            .await?;
           }
 
           txn.commit().await?;
@@ -150,22 +188,13 @@ impl<S: SumidaState> ApiKeyService<S> {
   ) -> Result<entity::api_keys::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    self.try_access("update", ApiKeys::find_by_id(key), &txn).await?;
+    Authz::try_check(RESOURCE, key, "edit", &self.subject(), &txn).await?;
 
     let user_aps = if data.is_secured.0.unwrap_or_default() { data.access_policies.clone() } else { None };
 
     if let Some(user_aps) = user_aps {
-      for policy in &user_aps {
-        ap::assert_policy_within_authority(
-          self.session.profile.is_admin,
-          &policy.namespace,
-          &policy.object,
-          &policy.action,
-          "",
-          &policy.effect,
-        )?;
-      }
-      ap::for_users().user(ApUser::ApiKey(key.to_string())).update(user_aps, &txn).await?;
+      let grants = to_service_grants(&user_aps)?;
+      Authz::replace_service_grants(&Self::holder(key), &grants, &self.subject(), &txn).await?;
     }
 
     let mut model = data.into_active_model();
@@ -179,43 +208,14 @@ impl<S: SumidaState> ApiKeyService<S> {
 
   pub async fn delete(&self, key: &str) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", ApiKeys::find_by_id(key), &txn).await?;
-    ap::for_users().user(ApUser::ApiKey(key.to_owned())).clear(&txn).await?;
+    Authz::try_check(RESOURCE, key, "remove", &self.subject(), &txn).await?;
+    // 키가 사라지면 그 키 앞으로 남은 부여도 전부 사라진다(§1.6).
+    Authz::revoke_all_of(&Self::holder(key), &txn).await?;
 
     let result = ApiKeys::delete_by_id(key).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, ApiKeys> for ApiKeyService<S> {
-  fn default_query_with(query: Select<ApiKeys>) -> Select<ApiKeys> {
-    let user_alias = Alias::new("user");
-    let col_id = Expr::col((user_alias.clone(), "id"));
-    let col_username = Expr::col((user_alias.clone(), "username"));
-    let col_full_name = Expr::col((user_alias.clone(), "full_name"));
-
-    query
-      .expr(Expr::col((entity::api_keys::Entity, Asterisk)))
-      .expr_as(col_id, "user_id")
-      .expr_as(col_username.clone(), "user_username")
-      .expr_as(col_full_name.clone(), "user_full_name")
-      .join_as(JoinType::LeftJoin, entity::api_keys::Relation::User.def(), user_alias.clone())
-  }
-
-  fn ap(&self) -> ApCondition {
-    use entity::api_keys::Column;
-    ap::ns("api_key").who(&self.session).join(ApiKeys, Column::Key)
-  }
-
-  fn select(&self, query: sea_orm::Select<ApiKeys>) -> sea_orm::Select<ApiKeys> {
-    use entity::api_keys::Column;
-    self
-      .ap()
-      .expr(Expr::col((ApiKeys, Column::Key)).cast_as("varchar"))
-      .action("read")
-      .apply(Self::default_query_with(query))
   }
 }
 

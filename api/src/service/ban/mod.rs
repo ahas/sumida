@@ -13,9 +13,12 @@ use sea_orm::{
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace ban service = ban`).
+const RESOURCE: &str = "ban";
 
 pub struct BanService<S: SumidaState> {
   state: S,
@@ -25,6 +28,29 @@ pub struct BanService<S: SumidaState> {
 impl<S: SumidaState> BanService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
+  }
+
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  pub fn default_query_with(query: Select<Bans>) -> Select<Bans> {
+    let user_alias = Alias::new("u");
+    let created_by_alias = Alias::new("c");
+
+    query
+      .select_only()
+      .expr(Expr::col((Bans, Asterisk)))
+      .join_as(JoinType::LeftJoin, BansRelation::User.def(), user_alias.clone())
+      .join_as(JoinType::LeftJoin, BansRelation::CreatedUser.def(), created_by_alias.clone())
+  }
+
+  /// 행 스코프는 `ban#view` 술어 하나로 붙는다 — 대상 사용자를 볼 수 있는 사람과 처분을 남긴
+  /// 본인이 규칙 한 줄에 함께 들어 있다.
+  fn select(&self, query: Select<Bans>) -> Result<Select<Bans>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
   pub fn exists_expr() -> SimpleExpr {
@@ -48,7 +74,7 @@ impl<S: SumidaState> BanService<S> {
   ) -> Result<(Vec<BanListItem>, u64), SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    let mut query = filter.apply(self.select(Bans::find()));
+    let mut query = filter.apply(self.select(Bans::find())?);
 
     let count = query.clone().select_only().column(BansColumn::Id).count(&txn).await?;
 
@@ -68,7 +94,7 @@ impl<S: SumidaState> BanService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetBan>, SumidaError> {
     let txn = self.state.db().begin().await?;
     let item = self
-      .select(Bans::find_by_id(id))
+      .select(Bans::find_by_id(id))?
       .select_only()
       .expr(Expr::col((Bans, Asterisk)))
       .join_as(JoinType::LeftJoin, BansRelation::User.def(), Alias::new("u"))
@@ -102,7 +128,7 @@ impl<S: SumidaState> BanService<S> {
 
   pub async fn update(&self, id: i32, data: UpdateBan) -> Result<BansModel, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", Bans::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "edit", &self.subject(), &txn).await?;
 
     let mut active_model = data.into_active_model();
     active_model.id = Set(id);
@@ -115,32 +141,11 @@ impl<S: SumidaState> BanService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", Bans::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "remove", &self.subject(), &txn).await?;
 
     let result = Bans::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, Bans> for BanService<S> {
-  fn default_query_with(query: Select<Bans>) -> Select<Bans> {
-    let user_alias = Alias::new("u");
-    let created_by_alias = Alias::new("c");
-
-    query
-      .select_only()
-      .expr(Expr::col((Bans, Asterisk)))
-      .join_as(JoinType::LeftJoin, BansRelation::User.def(), user_alias.clone())
-      .join_as(JoinType::LeftJoin, BansRelation::CreatedUser.def(), created_by_alias.clone())
-  }
-
-  fn ap(&self) -> ApCondition {
-    ap::ns("ban").who(&self.session).join(Bans, BansColumn::Id)
-  }
-
-  fn select(&self, query: sea_orm::Select<Bans>) -> sea_orm::Select<Bans> {
-    self.ap().action("read").apply(Self::default_query_with(query))
   }
 }

@@ -230,7 +230,7 @@ fn a_userset_relation_scans_in_the_other_direction() {
 }
 
 /// Intersection is preserved rather than converted to a union — `board_group AND board` is what
-/// `ApChain` composes today and what `board_post`'s create path actually checks.
+/// `ApChain` used to compose at the call site and what `board_post`'s create path checks.
 #[test]
 fn intersection_survives_as_and() {
   let compiled = sql("board", "edit");
@@ -397,6 +397,164 @@ fn daqs_site_has_no_org_branch_and_one_block() {
       r#"AND (NOT EXISTS(SELECT 1 FROM "relation_tuples" AS "_az_t9" WHERE "_az_t9"."resource_type" = 'daqs_site' AND "_az_t9"."relation" = 'blocked' AND "_az_t9"."resource_id" = CAST("sites"."id" AS text) AND ("_az_t9"."subject_key" = {KEYS}) AND ("_az_t9"."expires_at" IS NULL OR "_az_t9"."expires_at" > (CURRENT_TIMESTAMP))))"#
     )),
     "and the block is subtracted last, outside everything: {compiled}"
+  );
+}
+
+/// Every `(definition, permission)` pair a converted call site names, asserted to exist.
+///
+/// `Authz::filter` and `Authz::try_check` take the permission as a `&str` and answer
+/// `UnknownPermission` — a **500 on the first request**, not a compile error. `role` had no `remove`
+/// until this step added one; `board` and `board_group` still have none and their delete paths ask
+/// for `own` instead; `daqs_inquiry` and `daqs_inquiry_rating` had none until §14 step 13 added
+/// one, so lab-app's two delete paths had nothing to name. A typo anywhere in the converted sites
+/// compiles and fails in production.
+///
+/// So this is the list, by hand, one row per site. Maintaining it by hand is its weakness and the
+/// reason it is written out rather than derived: a table generated from the rules would assert that
+/// the rules agree with themselves.
+#[test]
+fn every_converted_call_site_names_a_permission_that_exists() {
+  // `service/<file>` → the permission that file now asks for.
+  let sites: &[(&str, &str, &str)] = &[
+    ("access_log/mod.rs", "access_log", "view"),
+    ("access_log/mod.rs", "access_log", "remove"),
+    ("ban/mod.rs", "ban", "view"),
+    ("ban/mod.rs", "ban", "edit"),
+    ("ban/mod.rs", "ban", "remove"),
+    ("user_invitation/mod.rs", "user_invitation", "view"),
+    ("user_invitation/mod.rs", "user_invitation", "remove"),
+    ("role/mod.rs", "role", "view"),
+    ("role/mod.rs", "role", "edit"),
+    ("role/mod.rs", "role", "remove"),
+    ("api_key/mod.rs", "api_key", "view"),
+    ("api_key/mod.rs", "api_key", "edit"),
+    ("api_key/mod.rs", "api_key", "remove"),
+    ("organization/mod.rs", "organization", "view"),
+    ("organization/mod.rs", "organization", "edit"),
+    ("organization/mod.rs", "organization", "remove"),
+    ("mail_form/mod.rs", "mail_form", "view"),
+    ("mail_form/mod.rs", "mail_form", "edit"),
+    ("mail_form/mod.rs", "mail_form", "remove"),
+    ("membership/plan/mod.rs", "membership_plan", "view"),
+    ("membership/plan/mod.rs", "membership_plan", "edit"),
+    ("membership/plan/mod.rs", "membership_plan", "remove"),
+    ("user/mod.rs", "sumida_user", "view"),
+    ("user/mod.rs", "sumida_user", "edit"),
+    ("user/mod.rs", "sumida_user", "remove"),
+    ("fs/file.rs", "file", "view"),
+    ("fs/file.rs", "file", "remove"),
+    // `board` and `board_group` declare no `remove`; `own` *is* "may delete" (§1.4).
+    ("bps/board/mod.rs", "board", "view"),
+    ("bps/board/mod.rs", "board", "edit"),
+    ("bps/board/mod.rs", "board", "own"),
+    ("bps/board_post/mod.rs", "board", "create"),
+    ("bps/board_group/mod.rs", "board_group", "view"),
+    ("bps/board_group/mod.rs", "board_group", "edit"),
+    ("bps/board_group/mod.rs", "board_group", "own"),
+    ("bps/board_topic/mod.rs", "board_topic", "view"),
+    ("bps/board_topic/mod.rs", "board_topic", "edit"),
+    ("bps/board_topic/mod.rs", "board_topic", "remove"),
+    ("bps/board_file/mod.rs", "board_file", "view"),
+    ("bps/board_file/mod.rs", "board_file", "remove"),
+    ("bps/board_post/mod.rs", "board_post", "view"),
+    ("bps/board_post/mod.rs", "board_post", "edit"),
+    ("bps/board_post/mod.rs", "board_post", "remove"),
+    ("membership/credit/mod.rs", "organization", "manage_credit"),
+    ("membership/credit/mod.rs", "organization", "view_credit"),
+    ("membership/subscription/mod.rs", "organization", "view_subscription"),
+    ("membership/subscription/mod.rs", "organization", "manage_subscription"),
+    ("membership/payment/mod.rs", "organization", "manage_credit"),
+    ("membership/payment/mod.rs", "organization", "manage_subscription"),
+    ("relation_tuple/mod.rs", "relation_tuple", "view"),
+    // The write half: `replace_service_grants` authority-checks `service:<ns>#grant`, and the four
+    // `authorize*` prologues ask `platform:root#superuser`.
+    ("authz/write.rs", "service", "grant"),
+    ("membership/*", "platform", "superuser"),
+    // ── lab-app (§14 step 13) ────────────────────────────────────────────────────────────────
+    //
+    // Paths are `lab-app/server/src/lab-app/…`. lab-app is a separate crate, so its call sites cannot be
+    // reached from a test in this one — which is precisely why they belong in this table: nothing
+    // else in sumida's suite would notice a permission name that lab-app asks for and the rules do
+    // not declare.
+    ("lab-app site/mod.rs", "daqs_site", "view"),
+    ("lab-app site/mod.rs", "daqs_site", "edit"),
+    ("lab-app site/tile_map.rs", "daqs_site", "edit"),
+    // Creating a structure/photo/inspection is a `create` on the **site**: the row being
+    // authorized does not exist yet, so the question can only be asked of its parent.
+    ("lab-app structure/mod.rs", "daqs_site", "create"),
+    ("lab-app photo/mod.rs", "daqs_site", "create"),
+    ("lab-app inspection/mod.rs", "daqs_site", "create"),
+    // The organization branch of `assert_can_change_manager` — `ap::ns("organization")` with
+    // action `update` was `organization#edit`.
+    ("lab-app site/mod.rs", "organization", "edit"),
+    ("lab-app structure/mod.rs", "daqs_structure", "view"),
+    ("lab-app structure/mod.rs", "daqs_structure", "edit"),
+    ("lab-app structure/mod.rs", "daqs_structure", "remove"),
+    ("lab-app photo/mod.rs", "daqs_photo", "view"),
+    ("lab-app photo/mod.rs", "daqs_photo", "edit"),
+    ("lab-app photo/mod.rs", "daqs_photo", "remove"),
+    // Both mutating paths asked for action `update`, the delete one included. Preserved as it
+    // stood rather than promoted to `remove` — this step changes no answer.
+    ("lab-app inspection/mod.rs", "daqs_inspection", "view"),
+    ("lab-app inspection/mod.rs", "daqs_inspection", "edit"),
+    ("lab-app report/mod.rs", "daqs_report", "view"),
+    ("lab-app report/mod.rs", "daqs_report", "remove"),
+    ("lab-app ai_model/mod.rs", "daqs_ai_model", "view"),
+    ("lab-app ai_model/mod.rs", "daqs_ai_model", "edit"),
+    ("lab-app ai_model/mod.rs", "daqs_ai_model", "remove"),
+    ("lab-app downloadable_asset/mod.rs", "daqs_downloadable_asset", "view"),
+    ("lab-app downloadable_asset/mod.rs", "daqs_downloadable_asset", "edit"),
+    ("lab-app downloadable_asset/mod.rs", "daqs_downloadable_asset", "remove"),
+    // `remove` did not exist on either inquiry definition until this step; both delete paths had
+    // no permission to name at all.
+    ("lab-app inquiry/status.rs", "daqs_inquiry", "view"),
+    ("lab-app inquiry/status.rs", "daqs_inquiry", "edit"),
+    ("lab-app inquiry/status.rs", "daqs_inquiry", "remove"),
+    ("lab-app inquiry/rating.rs", "daqs_inquiry_rating", "view"),
+    ("lab-app inquiry/rating.rs", "daqs_inquiry_rating", "remove"),
+  ];
+
+  for (site, definition, permission) in sites {
+    let registry = Authz::registry().expect("the rule set must validate");
+    let declared = registry
+      .require(definition)
+      .unwrap_or_else(|e| panic!("{site} names `{definition}`, which is not declared: {e}"));
+    assert!(
+      declared.permission(permission).is_some(),
+      "{site} asks for `{definition}#{permission}`, which the rules do not declare — that is a 500 \
+       on the first request, not a compile error"
+    );
+
+    // And it has to *compile*, not merely be declared: a permission that parses and cannot become
+    // one statement is the same 500 one layer further in.
+    let probe = match &declared.table {
+      Some(table) if table.kind.is_int() => ObjectKey::Int(1),
+      Some(_) => ObjectKey::Text("probe".to_owned()),
+      None => ObjectKey::Text("probe".to_owned()),
+    };
+    Authz::object_predicate_sql(definition, probe, permission, &caller())
+      .unwrap_or_else(|e| panic!("{site}'s `{definition}#{permission}` does not compile: {e}"));
+  }
+}
+
+/// `role#remove` exists, and it is `operate_delete` rather than `operate_update`.
+///
+/// `RoleService::delete` needed a permission of its own and there was none; `edit` would have done
+/// as a string, and that is exactly the G12 shape — deleting a role revokes every grant it carries,
+/// which is not the authority to rename it. The two must therefore compile differently.
+#[test]
+fn role_remove_is_a_different_grant_from_role_edit() {
+  let edit = check_sql("role", 1, "edit");
+  let remove = check_sql("role", 1, "remove");
+
+  assert_ne!(edit, remove, "`role#edit` and `role#remove` compile to the same predicate");
+  assert!(
+    remove.contains("'op_delete'") && !remove.contains("'op_update'"),
+    "`role#remove` must read the delete tier and not the update tier: {remove}"
+  );
+  assert!(
+    remove.contains("'admin'"),
+    "an explicit `role#admin` grant must still reach removal: {remove}"
   );
 }
 

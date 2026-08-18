@@ -8,17 +8,16 @@ use infra::session::UserSession;
 use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
-use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, IntoSimpleExpr, PaginatorTrait,
+  ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, PaginatorTrait,
   QueryFilter, QueryOrder, QuerySelect, QueryTrait, Statement, TransactionTrait,
 };
 
 use self::dto::*;
 use super::{notify_all, owner_kind_str, recipient_emails, resolve_owner};
 use crate::SumidaState;
-use crate::util::ap::{self, ApGuard};
-use crate::util::org::organization_ancestors_subquery;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 
 /// Outcome of a FIFO debit (consume/refund).
@@ -45,57 +44,59 @@ impl<S: SumidaState> CreditService<S> {
     Self { state, session }
   }
 
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
   // ---- authorization ----
 
-  /// Manage = grant/refund. admin / personal-self / `org:credit` manager (hierarchy-aware).
+  /// Manage = grant/refund. 최상위 관리자 / 본인 / `organization#manage_credit` 보유자(계층 인지).
+  ///
+  /// 개인 지갑 갈래에는 대응하는 규칙이 없다 — `organization` 정의만이 credit 층을 갖는다.
+  /// 그래서 최상위 관리자 판정은 남되, 세션의 `is_admin` 필드를 직접 읽는 대신
+  /// `platform:root#superuser` 로 묻는다. 보안 API 키가 소유자의 관리자 권한을 물려받지 않는
+  /// 것이 그 차이다.
   pub async fn authorize_manage<C: ConnectionTrait>(
     &self,
     owner_kind: &OwnerKind,
     owner_id: i32,
     db: &C,
   ) -> Result<(), SumidaError> {
-    if self.session.profile.is_admin {
+    if Authz::is_superuser(&self.subject(), db).await? {
       return Ok(());
     }
     match owner_kind {
       OwnerKind::Personal if self.session.profile.id == owner_id => Ok(()),
       OwnerKind::Personal => Err(SumidaError::NoAccessPermission),
       OwnerKind::Organization => {
-        let start =
-          Expr::col((entity::organizations::Entity, entity::organizations::Column::Id)).into_simple_expr();
-        ap::ns("org:credit")
-          .who(&self.session)
-          .action("manage")
-          .object_in_subquery(organization_ancestors_subquery(start))
-          .try_access(Organizations::find_by_id(owner_id), db)
-          .await
+        // 조상 조직의 부여가 하위 조직에 닿는 것은 `manager^` / `credit_manager^` 가 맡는다.
+        // 행마다 재귀 CTE 를 돌리던 `organization_ancestors_subquery` 는 그 닫힘으로 대체됐다.
+        Authz::try_check("organization", owner_id, "manage_credit", &self.subject(), db).await
       }
     }
   }
 
-  /// Use = consume/read balance. admin / personal-self / same-org member / `org:credit` user.
+  /// Use = consume/read balance. 최상위 관리자 / 본인 / `organization#view_credit` 보유자.
+  ///
+  /// 종전의 "같은 조직 구성원이면 통과" 단축로는 사라졌다. 없어진 것이 아니라 규칙 안으로
+  /// 들어갔다 — `view_credit = credit_viewer^ | edit_credit | member` 의 `member` 갈래가 바로
+  /// 그것이고, 이제 목록·단건 어느 쪽에서 물어도 같은 답이 나온다.
   pub async fn authorize_use<C: ConnectionTrait>(
     &self,
     owner_kind: &OwnerKind,
     owner_id: i32,
     db: &C,
   ) -> Result<(), SumidaError> {
-    if self.session.profile.is_admin {
+    if Authz::is_superuser(&self.subject(), db).await? {
       return Ok(());
     }
     match owner_kind {
       OwnerKind::Personal if self.session.profile.id == owner_id => Ok(()),
       OwnerKind::Personal => Err(SumidaError::NoAccessPermission),
-      OwnerKind::Organization if self.session.profile.organization.id == owner_id => Ok(()),
       OwnerKind::Organization => {
-        let start =
-          Expr::col((entity::organizations::Entity, entity::organizations::Column::Id)).into_simple_expr();
-        ap::ns("org:credit")
-          .who(&self.session)
-          .action("use")
-          .object_in_subquery(organization_ancestors_subquery(start))
-          .try_access(Organizations::find_by_id(owner_id), db)
-          .await
+        Authz::try_check("organization", owner_id, "view_credit", &self.subject(), db).await
       }
     }
   }

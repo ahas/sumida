@@ -9,14 +9,17 @@ use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
   ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
-  TransactionTrait,
+  Select, TransactionTrait,
 };
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace membership_plan service = membership_plan`).
+const RESOURCE: &str = "membership_plan";
 
 pub struct PlanService<S: SumidaState> {
   state: S,
@@ -28,13 +31,25 @@ impl<S: SumidaState> PlanService<S> {
     Self { state, session }
   }
 
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  /// 요금제는 전역 설정이다 — `membership_plan#view` 는
+  /// `service:membership_plan->operate_read` 하나로만 열린다.
+  fn select(&self, query: Select<MembershipPlans>) -> Result<Select<MembershipPlans>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
+  }
+
   pub async fn list(
     &self,
     filter: PlanFilter,
     pagination: Pagination,
   ) -> Result<(Vec<PlanListItem>, u64), SumidaError> {
     let db = self.state.db();
-    let mut query = filter.apply(self.select(MembershipPlans::find()));
+    let mut query = filter.apply(self.select(MembershipPlans::find())?);
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -53,7 +68,7 @@ impl<S: SumidaState> PlanService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetPlan>, SumidaError> {
     let db = self.state.db();
     let Some(plan) = self
-      .select(MembershipPlans::find_by_id(id))
+      .select(MembershipPlans::find_by_id(id))?
       .into_model::<PlanListItem>()
       .one(db)
       .await?
@@ -128,7 +143,7 @@ impl<S: SumidaState> PlanService<S> {
 
   pub async fn update(&self, id: i32, data: UpdatePlan) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", MembershipPlans::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "edit", &self.subject(), &txn).await?;
 
     let mut am = MembershipPlansActiveModel {
       id: Unchanged(id),
@@ -175,7 +190,7 @@ impl<S: SumidaState> PlanService<S> {
   /// subscriptions/purchases that reference it (FK is ON DELETE RESTRICT).
   pub async fn delete(&self, id: i32) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", MembershipPlans::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "remove", &self.subject(), &txn).await?;
 
     MembershipPlans::update(MembershipPlansActiveModel {
       id: Unchanged(id),
@@ -193,15 +208,9 @@ impl<S: SumidaState> PlanService<S> {
   /// Hard delete, used only by admin tooling/tests when no references exist.
   pub async fn purge(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", MembershipPlans::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "remove", &self.subject(), &txn).await?;
     let result = MembershipPlans::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
     Ok(result)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, MembershipPlans> for PlanService<S> {
-  fn ap(&self) -> ApCondition {
-    ap::ns("membership_plan").who(&self.session).join(MembershipPlans, Column::Id)
   }
 }

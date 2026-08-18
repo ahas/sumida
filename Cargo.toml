@@ -56,7 +56,7 @@ members = ["api", "infra", "entity", "error", "examples/*", "e2e"]
 default-members = ["examples/basic"]
 
 [workspace.dependencies]
-sea-orm-crud = { path = "../sea-orm-crud" }
+sea-orm-crud = { path = "../vendor/rust/sea-orm-crud" }
 
 anyhow = "1.0.98"
 argon2 = "0.5.3"
@@ -120,3 +120,8 @@ cfg-if.workspace = true
 # It is only needed for tests, so isolate it as a dev-dependency.
 [dev-dependencies]
 e2e = { path = "./e2e", default-features = false }
+
+# trainer 와 같은 이유 — 링커가 디버그 정보를 통째로 안고 있느라 빌드가 겹치면 OOM 이 난다.
+# trainer 실측 기준 링크 피크 7.07GB → 3.50GB.
+[profile.dev]
+split-debuginfo = "unpacked"

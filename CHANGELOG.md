@@ -54,6 +54,69 @@ and this project adheres to semantic versioning at the workspace level.
   the row it was about to delete, so read-only access to a file permitted deleting it. It now
   authorizes against `delete`.
 
+### Changed
+
+- **`access_policies` is no longer read at run time.** Authorization is evaluated from a compiled
+  rule set (`api/src/authz/`, ~5,400 lines) over `relation_tuples`, `org_closure` and
+  `board_group_closure`. The rules live in four schema files — `schema.zed` plus one per consumer —
+  and are compiled to SQL predicates rather than assembled per request. `Authz::filter` supplies the
+  `WHERE` clause of a list query and `Authz::try_check` answers a single row, so filter, `COUNT`,
+  `ORDER BY` and `LIMIT` stay in one statement. The table itself is untouched and its mirror trigger
+  still runs; nothing in `api/src` queries it.
+
+- **Boot fails loudly on rule drift.** `Authz::boot_or_abort` validates every rule against the live
+  schema before the server serves. A rule reading a column that does not exist used to mean a
+  predicate that silently selected the wrong rows — authorization wrong while the service reported
+  healthy. It is now a refusal to start.
+
+### Added
+
+- **`POST|GET|DELETE /relation-tuples`** — the grant surface that replaces writing `access_policies`
+  rows. Writing a tuple is itself authorized: the caller must hold `<resource_type>#grant` on the
+  named object, so a capability cannot be granted by someone who does not hold the authority to
+  grant it.
+- **`GET /authz/schema`** — the compiled vocabulary (relations, permissions, subject types) so a
+  client can render a permission form without hardcoding names. Carries no grant and names no table
+  or column; requires only a session.
+- **`GET /me/permissions`** — what the calling subject may do, evaluated through the rules rather
+  than read off raw relations, so one `service:<ns>#operator` tuple reports every verb it confers.
+
+### Breaking
+
+- **`GET|POST|PATCH|DELETE /access-policies` are gone**, along with `AccessPolicyService`. Move
+  grants to `/relation-tuples`. The wire shape differs: there is no `effect` field — deny is a rule
+  construct (`- blocked`), not a row — and no `PATCH`, because the unique constraint makes `POST` an
+  upsert. Impacted: any caller managing permissions through that endpoint.
+
+  ```
+  # Before
+  POST /access-policies
+  { "namespace": "file", "object": "*", "action": ["read"],
+    "user": "user:7", "effect": "allow" }
+
+  # After
+  POST /relation-tuples
+  { "resourceType": "file", "resourceId": "<uuid>",
+    "relation": "viewer", "subject": "user:7" }
+  ```
+
+- **`ApiService<A: ApGuard, E>` and the `ap` module are removed** (`util::ap`, `util::org`,
+  `ApGuard`, `ApCondition`, `ApChain`, `ApOr`, `try_access`, `assert_policy_within_authority`,
+  `managed_org_ids`). Services implement `select()` with `Authz::filter` and check single rows with
+  `Authz::try_check`. Impacted: every service that carried the generic — 26 implementors across
+  sumida and lab-app.
+
+- **A grant that only wildcards is no longer accepted where a concrete authority is required.**
+  `assert_policy_within_authority` refused only rows containing `*`, so a row naming somebody else's
+  resource concretely passed — `access_policies` records no grantor, leaving nothing to compare
+  against. The rule set starts from refusal and names each path to yes
+  (`organization#grant = manage = manager^`, `service#grant = operator | platform:root->superuser`).
+  Impacted: callers that relied on being able to grant beyond their own authority.
+
+- **A secured API key bound to an administrator is no longer a superuser.** `users.is_admin` is now
+  reachable only through the subject set as `platform#flagged`, so a secured key carries what the
+  key holds and not what its owner is. Impacted: any integration depending on the old behaviour.
+
 ## [0.2.0] - 2026-06-10
 
 A security-hardening release covering authentication/session, ReBAC authorization,

@@ -14,7 +14,7 @@ A comprehensive Rust web application framework built with Axum, designed for sca
 
 ### 👥 User Management System
 - **Multi-tenant Organizations**: Complete organization management
-- **Role-Based Access Control (RBAC)**: Fine-grained permissions system
+- **Relationship-Based Access Control (ReBAC)**: Zanzibar-style relation tuples with a compiled rule set, organization-hierarchy closures, and boot-time schema validation
 - **User Lifecycle**: Registration, verification, invitation, and blocking workflows
 - **Activity Tracking**: Comprehensive user logs and audit trails
 
@@ -232,30 +232,42 @@ graph TD
 </details>
 
 <details>
-<summary>Access Policies</summary>
+<summary>Relation Tuples (authorization)</summary>
+
+Authorization is evaluated from a compiled rule set (`api/src/authz/`) over `relation_tuples`,
+not from per-request policy rows. The rules live in `schema.zed` plus one file per consumer, and
+are validated against the live database at boot — a rule reading a column that does not exist is
+a refusal to start, not a wrong answer at request time.
 
 ```mermaid
 graph TD
-  ap_get["GET /access-policies<br/>(read)"] --> ap_ctrl_list["AccessPolicyController::list"]
-  ap_ctrl_list --> ap_srv_list["AccessPolicyService::list"]
-  ap_srv_list --> ap_logic_list{{"AP guard + filter + pagination"}}
-  ap_logic_list --> ap_ret_list[["List<AccessPolicyListItem>"]]
+  rt_get["GET /relation-tuples<br/>(read)"] --> rt_ctrl_list["RelationTupleController::list"]
+  rt_ctrl_list --> rt_srv_list["RelationTupleService::list"]
+  rt_srv_list --> rt_logic_list{{"Authz::filter + pagination"}}
+  rt_logic_list --> rt_ret_list[["List&lt;RelationTupleListItem&gt;"]]
 
-  ap_post["POST /access-policies<br/>(create)"] --> ap_ctrl_create["AccessPolicyController::create"]
-  ap_ctrl_create --> ap_srv_create["AccessPolicyService::create"]
-  ap_srv_create --> ap_logic_create{{"AccessPolicies::insert"}}
-  ap_logic_create --> ap_ret_create[["AccessPolicyCreated (uuid)"]]
+  rt_post["POST /relation-tuples<br/>(create, upsert)"] --> rt_ctrl_create["RelationTupleController::create"]
+  rt_ctrl_create --> rt_srv_create["RelationTupleService::create"]
+  rt_srv_create --> rt_logic_create{{"Authz::write —<br/>requires &lt;type&gt;#grant"}}
+  rt_logic_create --> rt_ret_create[["RelationTupleCreated (id)"]]
 
-  ap_patch["PATCH /access-policies/{uuid}<br/>(update)"] --> ap_ctrl_update["AccessPolicyController::update"]
-  ap_ctrl_update --> ap_srv_update["AccessPolicyService::update"]
-  ap_srv_update --> ap_logic_update{{"txn + try_access +<br/>update policy"}}
-  ap_logic_update --> ap_ret_update[["AccessPolicyUpdated"]]
+  rt_delete["DELETE /relation-tuples/{id}"] --> rt_ctrl_delete["RelationTupleController::delete"]
+  rt_ctrl_delete --> rt_srv_delete["RelationTupleService::delete"]
+  rt_srv_delete --> rt_logic_delete{{"Authz::revoke —<br/>requires &lt;type&gt;#grant"}}
+  rt_logic_delete --> rt_ret_delete[["RelationTupleDeleted"]]
 
-  ap_delete["DELETE /access-policies/{uuid}<br/>(delete)"] --> ap_ctrl_delete["AccessPolicyController::delete"]
-  ap_ctrl_delete --> ap_srv_delete["AccessPolicyService::delete"]
-  ap_srv_delete --> ap_logic_delete{{"txn + try_access +<br/>AccessPolicies::delete_by_id"}}
-  ap_logic_delete --> ap_ret_delete[["AccessPolicyDeleted"]]
+  schema["GET /authz/schema"] --> schema_ctrl["AuthzController::schema"]
+  schema_ctrl --> schema_logic{{"compiled vocabulary —<br/>no grant, no table names"}}
+
+  me["GET /me/permissions"] --> me_ctrl["MeController::permissions"]
+  me_ctrl --> me_logic{{"Authz::effective —<br/>evaluated, not read raw"}}
 ```
+
+There is no `effect` field: deny is a rule construct (`- blocked`), not a row. There is no
+`PATCH`: the tuple's unique constraint makes `POST` an upsert.
+
+Writing a tuple is itself authorized — the caller must hold `<resource_type>#grant` on the named
+object, so a capability cannot be granted by someone lacking the authority to grant it.
 
 </details>
 

@@ -5,10 +5,11 @@ use infra::session::UserSession;
 use serde_json::json;
 
 use crate::authz::Authz;
+use crate::authz::effective::Effective;
 use crate::authz::subject::SubjectSet;
 use crate::controller::ApiController;
+use crate::service::grants::{ApForUser, from_service_grants};
 use crate::service::prelude::*;
-use crate::util::ap::{self, ApForUser};
 use crate::{SumidaState, user_guard};
 
 #[derive(Clone, Debug, Default)]
@@ -59,24 +60,24 @@ impl<S: SumidaState> MeController<S> {
   /// `can(action, `${namespace}:${object}`)`, and because a `service` object's id *is* today's
   /// namespace string, projecting that half from tuples is exact rather than approximate.
   ///
-  /// The payload is assembled tier by tier, and **each tier is read from whichever store actually
-  /// decides it**. That is the only shape that cannot lie to the client during Phase 1:
+  /// The payload has two tiers, and both are read from `relation_tuples` now that the object tier
+  /// routes too:
   ///
-  /// * **route gate** — from `relation_tuples`. `service_ap!` answers from the compiled rule now, so
-  ///   reading this half from `access_policies` would show a capability the server no longer
-  ///   consults (and hide one it does).
-  /// * **object tier** — still from `access_policies`, `deny` rows included, because that is still
-  ///   what the server resolves object-tier checks against (see `util/ap.rs`'s header for why it
-  ///   has not moved). Dropping it would hide UI whose request the server would allow, which is a
-  ///   defect in usage even though it errs "safe".
+  /// * **route gate** — one entry per namespace, `object: ["service"]`.
   /// * **the administrator's `{namespace:"*", object:["*"], action:["*"]}` entry** — synthesised
   ///   from `platform:root#superuser`, which the client's `namespace === "*"` branch
   ///   (`plugin.ts:27`) turns into `can("manage","all")`. Taking it from the rule rather than from
   ///   the catch-all row is what makes platform administration grantable as a tuple, without
   ///   touching `users.is_admin`.
   ///
-  /// The second bullet is what disappears when the object tier routes; nothing about the wire shape
-  /// changes then either.
+  /// The **object tier is deliberately not projected**, and its removal is the visible half of §14
+  /// step 13. It used to be passed through from `access_policies` because that was still what the
+  /// server resolved row-level checks against; the server resolves them from the rules now, and a
+  /// rule is not a list of rows. Synthesising entries for it would mean inventing a flat
+  /// `namespace | object | action` record for a decision that is a predicate over the row under
+  /// test — `board_post#view` reaches a post through its board, its group and its author, and no
+  /// enumeration of objects can say that. `/me/permissions` is the endpoint that answers "what may
+  /// I do" without lying about shape.
   async fn get_access_policies(
     session: UserSession,
     State(state): State<S>,
@@ -84,29 +85,10 @@ impl<S: SumidaState> MeController<S> {
     let db = state.db();
     let subject = SubjectSet::of(&session);
 
-    let mut policies: Vec<ApForUser> = Authz::service_grants(&subject, db)
-      .await?
-      .into_iter()
-      .map(|grant| ApForUser {
-        namespace: grant.namespace,
-        // The literal the client concatenates. A service grant has exactly one object and it is
-        // this string; the legacy `ARRAY_AGG(DISTINCT ap."object")` produced the same one element.
-        object:    vec!["service".to_owned()],
-        action:    grant.action,
-        effect:    "allow".to_owned(),
-      })
-      .collect();
-
-    policies.extend(
-      ap::for_users()
-        .who(&session)
-        .find_all(db)
-        .await?
-        .into_iter()
-        // The route gate is the half above, from tuples. The `*` catch-all is the entry below,
-        // from the rule. Everything else is the object tier, and it is passed through untouched.
-        .filter(|policy| policy.namespace != "*" && policy.object != ["service"]),
-    );
+    // The literal `["service"]` the client concatenates. A service grant has exactly one object and
+    // it is this string; the legacy `ARRAY_AGG(DISTINCT ap."object")` produced the same one element.
+    let mut policies: Vec<ApForUser> =
+      from_service_grants(Authz::service_grants(&subject, db).await?);
 
     if Authz::is_superuser(&subject, db).await? {
       policies.push(ApForUser {
@@ -118,6 +100,30 @@ impl<S: SumidaState> MeController<S> {
     }
 
     Ok(Json(policies))
+  }
+
+  /// What the caller may actually do (design §9.7).
+  ///
+  /// This is the endpoint the post-migration client drives its UI from, and the one thing it does
+  /// that `/access-policies` cannot is separate the two tiers §5.2 made different grants: `services`
+  /// is "may I reach this API at all" and `operates` is "may I act on everyone's rows". The legacy
+  /// payload cannot express that distinction — it reports `object: ["service"]` and `object: ["*"]`
+  /// as two rows in one flat list, and the client's CASL rules collapse them.
+  ///
+  /// Every entry is evaluated through the compiled rule rather than read off the tuples, so one
+  /// `service:trainer:task#operator` tuple reports all eight capabilities and `platform:root#superuser`
+  /// reports every namespace. A client that had to re-derive that from the raw grants would be
+  /// carrying a second copy of `schema.zed` in TypeScript.
+  ///
+  /// It reports the **service tier only**, and now that the object tier routes too that is a
+  /// statement about what can be enumerated rather than about which store decides. A row-level
+  /// decision is a predicate over the row under test; there is no finite map of it to hand a
+  /// client. A screen that needs to know whether *this* row is editable asks for the row.
+  async fn get_permissions(
+    session: UserSession,
+    State(state): State<S>,
+  ) -> Result<Json<Effective>, SumidaError> {
+    Ok(Json(Authz::effective(&SubjectSet::of(&session), state.db()).await?))
   }
 }
 
@@ -132,6 +138,7 @@ where
       .route("/prefs", routing::get(Self::get_prefs))
       .route("/prefs", routing::patch(Self::update_prefs))
       .route("/access-policies", routing::get(Self::get_access_policies))
+      .route("/permissions", routing::get(Self::get_permissions))
       .route_layer(user_guard!(state))
   }
 }

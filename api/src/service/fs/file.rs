@@ -11,11 +11,15 @@ use sea_orm::{DeleteResult, IntoActiveValue, IntoSimpleExpr, QuerySelect, Set, T
 
 use super::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
+use crate::authz::write::TupleFilter;
 use crate::util::file_validation::{FileValidationConfig, FileValidator};
 use crate::util::pagination::Pagination;
 use crate::util::storage::{Storage, SumidaStorage};
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace file service = file`).
+const RESOURCE: &str = "file";
 
 pub struct FileService<S: SumidaState> {
   state: S,
@@ -27,6 +31,25 @@ impl<S: SumidaState> FileService<S> {
     FileService { state, session }
   }
 
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  fn default_query_with(query: Select<Files>) -> Select<Files> {
+    query //
+      .expr(Expr::col((entity::fs::files::Entity, Asterisk)))
+      .left_join(Users)
+  }
+
+  /// 행 스코프는 `file#view` 술어 하나 — 업로더 본인(`owner`, `files.user_id` 에서 파생),
+  /// 명시적 공유(`viewer`), 조직 관리자가 규칙 한 줄에 함께 들어 있다. 같은 술어가 목록과
+  /// `get_stats` 의 집계에 그대로 붙으므로 둘이 갈라질 수 없다(G11).
+  fn select(&self, query: Select<Files>) -> Result<Select<Files>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
+  }
+
   pub async fn list(
     &self,
     filter: FileFilter,
@@ -35,7 +58,7 @@ impl<S: SumidaState> FileService<S> {
     use entity::fs::files::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(Files::find()));
+    let mut query = filter.apply(self.select(Files::find())?);
     let count = query.clone().select_only().column(Column::Uuid).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -60,7 +83,7 @@ impl<S: SumidaState> FileService<S> {
 
   pub async fn get(&self, uuid: Uuid) -> Result<Option<GetFile>, SumidaError> {
     let file = self
-      .select(Files::find_by_id(uuid))
+      .select(Files::find_by_id(uuid))?
       .into_partial_model::<GetFile>()
       .one(self.state.db())
       .await?;
@@ -129,22 +152,13 @@ impl<S: SumidaState> FileService<S> {
 
     result?;
 
-    // Grant the uploader read access to their own file so they can preview/serve it
-    // (e.g. a tiptap inline image while the post is still being composed).
-    ap::edit()
-      .namespace("file")
-      .object(file_uuid)
-      .action(vec!["read".to_string()])
-      .user(ap::ApUser::User(self.session.profile.id))
-      .effect("allow")
-      .create(db)
-      .await?;
-
+    // 업로더 소유권을 정책 행으로 따로 심지 않는다. `file#owner` 는 방금 `Set` 한
+    // `files.user_id` 에서 파생되므로, 저장된 행과 어긋날 수 있는 두 번째 사본이 아예 없다.
     Ok(FileUploaded { uuid: file_uuid })
   }
 
   pub async fn download(&self, uuid: Uuid) -> Result<Response<Body>, SumidaError> {
-    let Some(file) = self.select(Files::find_by_id(uuid)).one(self.state.db()).await? else {
+    let Some(file) = self.select(Files::find_by_id(uuid))?.one(self.state.db()).await? else {
       return Err(SumidaError::NoData("File".to_string(), uuid.to_string()));
     };
     let storage = SumidaStorage::new();
@@ -229,7 +243,7 @@ impl<S: SumidaState> FileService<S> {
     }
 
     // Unattached/generic file: require `file:read` on the object.
-    if self.select(Files::find_by_id(file.uuid)).one(db).await?.is_some() {
+    if self.select(Files::find_by_id(file.uuid))?.one(db).await?.is_some() {
       Ok(())
     } else {
       Err(SumidaError::NoAccessPermission)
@@ -238,8 +252,9 @@ impl<S: SumidaState> FileService<S> {
 
   pub async fn delete(&self, uuid: Uuid, data: DeleteFile) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    // select()는 read 스코프라 읽기 권한만 있는 파일도 통과한다. 삭제는 delete 액션으로 인가한다.
-    self.try_access("delete", Files::find_by_id(uuid), &txn).await?;
+    // `view` 스코프는 읽기 권한만 있는 파일도 통과시킨다. 삭제는 `remove` 로 인가한다 —
+    // 문자열이 다른 것이 아니라 규칙이 다른 별개의 권한이다(G12).
+    Authz::try_check(RESOURCE, uuid, "remove", &self.subject(), &txn).await?;
 
     let Some(file) = Files::find_by_id(uuid).one(&txn).await? else {
       return Err(SumidaError::NoData("File".to_string(), uuid.to_string()));
@@ -251,8 +266,8 @@ impl<S: SumidaState> FileService<S> {
 
     let result = Files::delete_by_id(uuid).exec(&txn).await?;
 
-    // Drop any access policies bound to this file object so they don't outlive the file.
-    ap::edit().namespace("file").object(uuid).delete(&txn).await?;
+    // 이 파일에 걸린 공유 튜플이 파일보다 오래 남지 않게 함께 지운다.
+    Authz::revoke_unchecked(TupleFilter::object(RESOURCE, &uuid.to_string()), &txn).await?;
 
     txn.commit().await?;
 
@@ -268,7 +283,7 @@ impl<S: SumidaState> FileService<S> {
     let db = self.state.db();
     // list()와 동일한 접근 정책 스코프 위에서 집계한다. 스코프 없이 집계하면 합계/분포에
     // 조회 권한이 없는 다른 사용자의 파일 메타데이터가 그대로 새어 나간다.
-    let base_query = filter.apply(self.select(Files::find()));
+    let base_query = filter.apply(self.select(Files::find())?);
 
     let total_result = base_query
       .clone()
@@ -319,27 +334,5 @@ impl<S: SumidaState> FileService<S> {
       by_mime_type: mime_type_stats,
       by_status: status_stats,
     })
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, Files> for FileService<S> {
-  fn default_query_with(query: Select<Files>) -> Select<Files> {
-    query //
-      .expr(Expr::col((entity::fs::files::Entity, Asterisk)))
-      .left_join(Users)
-  }
-
-  fn ap(&self) -> ApCondition {
-    use entity::fs::files::Column;
-    ap::ns("file").who(&self.session).join(Files, Column::Uuid)
-  }
-
-  fn select(&self, query: sea_orm::Select<Files>) -> sea_orm::Select<Files> {
-    use entity::fs::files::Column;
-    self
-      .ap()
-      .expr(Expr::col((Files, Column::Uuid)).cast_as("varchar"))
-      .action("read")
-      .apply(Self::default_query_with(query))
   }
 }

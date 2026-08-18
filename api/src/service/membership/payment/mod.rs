@@ -8,8 +8,7 @@ use infra::payment::{self, PaymentError, WebhookHeaders};
 use infra::session::UserSession;
 use infra::settings;
 use sea_orm::ActiveValue::*;
-use sea_orm::sea_query::Expr;
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, IntoSimpleExpr, QueryFilter, TransactionTrait};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, TransactionTrait};
 
 use self::dto::*;
 use super::coupon::CouponService;
@@ -17,8 +16,8 @@ use super::credit::CreditService;
 use super::subscription::SubscriptionService;
 use super::{gen_code, resolve_owner};
 use crate::SumidaState;
-use crate::util::ap::{self, ApGuard};
-use crate::util::org::organization_ancestors_subquery;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 
 fn map_pay_err(e: PaymentError) -> SumidaError {
   match e {
@@ -72,22 +71,17 @@ impl<S: SumidaState> PaymentService<S> {
     db: &C,
   ) -> Result<(), SumidaError> {
     let session = self.session()?;
-    if session.profile.is_admin {
+    let subject = SubjectSet::of(session);
+    if Authz::is_superuser(&subject, db).await? {
       return Ok(());
     }
     match owner_kind {
       OwnerKind::Personal if session.profile.id == owner_id => Ok(()),
       OwnerKind::Personal => Err(SumidaError::NoAccessPermission),
       OwnerKind::Organization => {
-        let ns = if matches!(kind, PlanKind::Credit) { "org:credit" } else { "org:subscription" };
-        let start =
-          Expr::col((entity::organizations::Entity, entity::organizations::Column::Id)).into_simple_expr();
-        ap::ns(ns)
-          .who(session)
-          .action("manage")
-          .object_in_subquery(organization_ancestors_subquery(start))
-          .try_access(Organizations::find_by_id(owner_id), db)
-          .await
+        let permission =
+          if matches!(kind, PlanKind::Credit) { "manage_credit" } else { "manage_subscription" };
+        Authz::try_check("organization", owner_id, permission, &subject, db).await
       }
     }
   }

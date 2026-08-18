@@ -10,7 +10,7 @@
 
 use api::util::random::generate_url_safe_string;
 use chrono::{Duration, Utc};
-use e2e::ap_test_utils::create_ap;
+use e2e::ap_test_utils::{block_object, grant_object, grant_service};
 use e2e::prelude::*;
 use entity::bps::boards::{BoardPostContentVisibility, BoardPostRecordVisibility};
 use entity::fs::files::FileStatus;
@@ -23,10 +23,15 @@ use uuid::Uuid;
 
 // ---- helpers ---------------------------------------------------------------
 
+/// 종전 `access_policies` 한 행에 해당하는 부여. 객체가 `service` 면 라우트 게이트,
+/// 그 밖이면 그 행 하나에 대한 부여다.
 async fn allow(db: &DatabaseConnection, user: &TestUser, ns: &str, object: &str, actions: &[&str]) {
-  create_ap(db, user, ns, object, actions.iter().map(|s| s.to_string()).collect(), "allow")
-    .await
-    .expect("grant access policy");
+  let actions: Vec<String> = actions.iter().map(|s| (*s).to_string()).collect();
+  if object == "service" {
+    grant_service(db, user, ns, actions).await.expect("grant the route gate");
+  } else {
+    grant_object(db, user, ns, object, actions).await.expect("grant the row");
+  }
 }
 
 /// Grant the bps namespaces a post author needs: `board_post` service-level plus the per-board and
@@ -955,10 +960,14 @@ async fn scenario_board_soft_delete_hides_board_and_posts() {
   assert!(row.deleted_at.is_some(), "board deleted_at is stamped");
 }
 
-async fn deny(db: &DatabaseConnection, user: &TestUser, ns: &str, object: &str, actions: &[&str]) {
-  create_ap(db, user, ns, object, actions.iter().map(|s| s.to_string()).collect(), "deny")
-    .await
-    .expect("create deny policy");
+/// 종전 `effect = 'deny'` 한 행에 해당하는 차단.
+///
+/// 개별 부여에 붙는 부정은 사라졌고(설계 §3), 그 자리를 정의가 선언한 `blocked` 관계가
+/// 대신한다 — 규칙에서 합집합 **바깥**으로 빠지므로 작성자 소유권으로 우회할 수 없다는 성질은
+/// 그대로다. 액션별 차단은 표현할 수 없으므로 인자에서 사라졌다: `blocked` 는 그것을 이름으로
+/// 부르는 모든 권한에서 빠진다.
+async fn deny(db: &DatabaseConnection, user: &TestUser, ns: &str, object: &str) {
+  block_object(db, user, ns, object).await.expect("write the block");
 }
 
 #[tokio::test]
@@ -986,7 +995,7 @@ async fn scenario_global_deny_blocks_owner() {
   assert_eq!(resp.status(), StatusCode::OK);
 
   // a board:update DENY blocks even the author (global-deny: a deny on any branch is absolute)
-  deny(&db, &author, "board", &board.id.to_string(), &["update"]).await;
+  deny(&db, &author, "board", &board.id.to_string()).await;
   let resp = mock
     .client
     .patch(&format!("/board-posts/{post_id}"))
@@ -1030,7 +1039,7 @@ async fn scenario_operator_moderates_then_global_deny() {
   assert_eq!(resp.status(), StatusCode::OK, "operator moderates others' posts");
 
   // a board:update DENY on the moderator blocks the operator path too (global-deny)
-  deny(&db, &moderator, "board", &board.id.to_string(), &["update"]).await;
+  deny(&db, &moderator, "board", &board.id.to_string()).await;
   let resp = mock_m
     .client
     .patch(&format!("/board-posts/{post_id}"))

@@ -12,10 +12,12 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use infra::settings;
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, Statement};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use serde::Serialize;
 
 use crate::SumidaState;
+use crate::authz::Authz;
+use crate::authz::write::SubjectKey;
 use crate::service::mail_form::{MailFormSendOptions, MailFormService};
 use crate::util::random::generate_url_safe_string;
 
@@ -64,68 +66,6 @@ pub fn resolve_owner(
   }
 }
 
-/// Organization ids the session may manage under `namespace`/`action`: every org
-/// the caller holds an allow policy on (matching `action` or `*`), plus all of
-/// their descendant organizations. Used to widen list visibility so a parent-org
-/// manager sees child-org rows (single-row access is already hierarchy-aware via
-/// the org-ancestors lateral join).
-pub async fn managed_org_ids<C: ConnectionTrait>(
-  session: &UserSession,
-  namespace: &str,
-  action: &str,
-  db: &C,
-) -> Result<Vec<i32>, SumidaError> {
-  // The identities the AP system expands `who(&session)` into.
-  let mut identities = vec![
-    format!("user:{}", session.profile.id),
-    format!("role:{}", session.profile.role.id),
-    format!("org:{}", session.profile.organization.id),
-  ];
-  if let Some(key) = &session.profile.api_key {
-    identities.push(format!("api:{key}"));
-  }
-  if session.profile.is_admin {
-    identities.push("user:admin".to_string());
-  }
-
-  let policies = AccessPolicies::find()
-    .filter(AccessPoliciesColumn::Namespace.eq(namespace))
-    .filter(AccessPoliciesColumn::Effect.eq("allow"))
-    .filter(AccessPoliciesColumn::User.is_in(identities))
-    .all(db)
-    .await?;
-
-  let mut seed: Vec<i32> = policies
-    .into_iter()
-    .filter(|p| p.action.iter().any(|a| a == action || a == "*"))
-    .filter_map(|p| p.object.parse::<i32>().ok())
-    .collect();
-  seed.sort_unstable();
-  seed.dedup();
-  if seed.is_empty() {
-    return Ok(vec![]);
-  }
-
-  // Expand seed orgs to all descendants (ints are safe to inline).
-  let list = seed.iter().map(i32::to_string).collect::<Vec<_>>().join(",");
-  #[derive(FromQueryResult)]
-  struct IdRow {
-    id: i32,
-  }
-  let sql = format!(
-    r#"WITH RECURSIVE _mng AS (
-         SELECT id FROM organizations WHERE id = ANY(ARRAY[{list}]::int[])
-         UNION
-         SELECT o.id FROM organizations o JOIN _mng m ON o.parent_id = m.id
-       )
-       SELECT id FROM _mng"#
-  );
-  let rows = IdRow::find_by_statement(Statement::from_string(db.get_database_backend(), sql))
-    .all(db)
-    .await?;
-  Ok(rows.into_iter().map(|r| r.id).collect())
-}
-
 /// Emails to notify for an owner: the user's own email for a personal owner, or
 /// the organization's managers (holders of an `org:subscription` / `org:credit`
 /// allow policy on the org) for an organization owner.
@@ -147,54 +87,41 @@ pub async fn recipient_emails<C: ConnectionTrait>(
   }
 }
 
-/// Emails of the users who manage organization `org_id`'s membership: expanded
-/// from the `user:` / `role:` / `org:` identities on its `org:subscription` /
-/// `org:credit` allow policies (matching `manage` or `*`).
+/// Emails of the users who manage organization `org_id`'s membership.
+///
+/// 종전에는 `org:subscription` / `org:credit` 정책 행의 `"user"` 문자열을 손으로 파싱했는데,
+/// 그 파서는 `api:` 로 시작하는 수신자를 **조용히 버렸다**(설계 §8). 이제 관계 자체를 되짚어
+/// 읽고(`subjects_with`) 주체를 사용자 id 로 펼치므로(`expand_to_user_ids`), 키에 부여된
+/// 권한도 알림을 받는다.
 pub async fn org_manager_emails<C: ConnectionTrait>(
   org_id: i32,
   db: &C,
 ) -> Result<Vec<String>, SumidaError> {
   use std::collections::HashSet;
 
-  let policies = AccessPolicies::find()
-    .filter(AccessPoliciesColumn::Effect.eq("allow"))
-    .filter(AccessPoliciesColumn::Object.eq(org_id.to_string()))
-    .filter(
-      AccessPoliciesColumn::Namespace.is_in(["org:subscription".to_string(), "org:credit".to_string()]),
-    )
-    .all(db)
-    .await?;
+  // 세 관계는 `organization` 의 `scope subscription` / `credit_manager` / 총괄 `manager` 다.
+  // 종전 정책의 `action = {manage, *}` 가 뜻하던 층이 정확히 이 셋이다.
+  let grants = Authz::subjects_with(
+    "organization",
+    &org_id.to_string(),
+    &["subscription_manager", "credit_manager", "manager"],
+    db,
+  )
+  .await?;
 
-  let (mut user_ids, mut role_ids, mut org_ids) = (HashSet::new(), HashSet::new(), HashSet::new());
-  for p in policies {
-    if !p.action.iter().any(|a| a == "manage" || a == "*") {
-      continue;
-    }
-    let u = p.user.as_str();
-    if let Some(n) = u.strip_prefix("user:").and_then(|x| x.parse::<i32>().ok()) {
-      user_ids.insert(n);
-    } else if let Some(n) = u.strip_prefix("role:").and_then(|x| x.parse::<i32>().ok()) {
-      role_ids.insert(n);
-    } else if let Some(n) = u.strip_prefix("org:").and_then(|x| x.parse::<i32>().ok()) {
-      org_ids.insert(n);
-    }
+  let subjects: Vec<SubjectKey> = grants.into_iter().map(|grant| grant.subject).collect();
+  let user_ids = Authz::expand_to_user_ids(&subjects, db).await?;
+  if user_ids.is_empty() {
+    return Ok(Vec::new());
   }
 
   let mut emails: HashSet<String> = HashSet::new();
-  for (col, ids) in [
-    (entity::users::Column::Id, user_ids),
-    (entity::users::Column::RoleId, role_ids),
-    (entity::users::Column::OrganizationId, org_ids),
-  ] {
-    if ids.is_empty() {
-      continue;
-    }
-    for u in Users::find().filter(col.is_in(ids)).all(db).await? {
-      if let Some(e) = u.email {
-        emails.insert(e);
-      }
+  for user in Users::find().filter(entity::users::Column::Id.is_in(user_ids)).all(db).await? {
+    if let Some(email) = user.email {
+      emails.insert(email);
     }
   }
+
   Ok(emails.into_iter().collect())
 }
 

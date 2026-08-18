@@ -10,16 +10,19 @@ use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::{
   ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
-  Set, TransactionTrait,
+  Select, Set, TransactionTrait,
 };
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace mail_form service = mail_form`).
+const RESOURCE: &str = "mail_form";
 
 pub struct MailFormSendOptions {
   pub username: String,
@@ -58,6 +61,18 @@ pub struct MailFormService<S: SumidaState> {
 impl<S: SumidaState> MailFormService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
+  }
+
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  /// 메일 폼은 전역 설정이다 — 만든 사람도 조직도 없으므로 `mail_form#view` 는
+  /// `service:mail_form->operate_read` 하나로만 열린다.
+  fn select(&self, query: Select<MailForms>) -> Result<Select<MailForms>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
   }
 
   pub fn render(model: &entity::mail_forms::Model, context: impl Serialize) -> Result<String, SumidaError> {
@@ -136,7 +151,7 @@ impl<S: SumidaState> MailFormService<S> {
 
     let txn = self.state.db().begin().await?;
 
-    let mut query = filter.apply(self.select(MailForms::find()));
+    let mut query = filter.apply(self.select(MailForms::find())?);
     let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -159,7 +174,7 @@ impl<S: SumidaState> MailFormService<S> {
   {
     Ok(
       self
-        .select(MailForms::find_by_id(kind.as_ref()))
+        .select(MailForms::find_by_id(kind.as_ref()))?
         .into_model::<GetMailForm>()
         .one(self.state.db())
         .await?,
@@ -182,7 +197,7 @@ impl<S: SumidaState> MailFormService<S> {
     K: AsRef<str>,
   {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", MailForms::find_by_id(kind.as_ref()), &txn).await?;
+    Authz::try_check(RESOURCE, kind.as_ref(), "edit", &self.subject(), &txn).await?;
 
     let mut model = data.into_active_model();
     model.kind = Set(kind.as_ref().to_string());
@@ -198,23 +213,11 @@ impl<S: SumidaState> MailFormService<S> {
     K: AsRef<str>,
   {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", MailForms::find_by_id(kind.as_ref()), &txn).await?;
+    Authz::try_check(RESOURCE, kind.as_ref(), "remove", &self.subject(), &txn).await?;
 
     let result = MailForms::delete_by_id(kind.as_ref()).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, MailForms> for MailFormService<S> {
-  fn ap(&self) -> ApCondition {
-    use entity::mail_forms::Column;
-
-    ap::ns("mail_form").who(&self.session).join(MailForms, Column::Kind)
-  }
-
-  fn select(&self, query: sea_orm::Select<MailForms>) -> sea_orm::Select<MailForms> {
-    self.ap().action("read").apply(query)
   }
 }

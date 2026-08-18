@@ -12,9 +12,12 @@ use sea_orm::{
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace board service = board`).
+const RESOURCE: &str = "board";
 
 pub struct BoardService<S: SumidaState> {
   state: S,
@@ -26,6 +29,27 @@ impl<S: SumidaState> BoardService<S> {
     BoardService { state, session }
   }
 
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  fn default_query_with(query: Select<Boards>) -> Select<Boards> {
+    query //
+      .select_only()
+      .expr(Expr::col((Boards, Asterisk)))
+      .left_join(BoardGroups)
+      // Soft-deleted boards are never returned.
+      .filter(entity::bps::boards::Column::DeletedAt.is_null())
+  }
+
+  /// 행 스코프는 `board#view` 술어 하나 — 그룹과의 교집합, 조직 관리자, 차단이 전부 규칙
+  /// 안에 있다.
+  fn select(&self, query: Select<Boards>) -> Result<Select<Boards>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
+  }
+
   pub async fn list(
     &self,
     filter: BoardFilter,
@@ -35,7 +59,7 @@ impl<S: SumidaState> BoardService<S> {
 
     let txn = self.state.db().begin().await?;
 
-    let mut query = filter.apply(self.select(Boards::find()));
+    let mut query = filter.apply(self.select(Boards::find())?);
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -54,7 +78,7 @@ impl<S: SumidaState> BoardService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetBoard>, SumidaError> {
     Ok(
       self
-        .select(Boards::find_by_id(id))
+        .select(Boards::find_by_id(id))?
         .into_partial_model::<GetBoard>()
         .one(self.state.db())
         .await?,
@@ -110,7 +134,7 @@ impl<S: SumidaState> BoardService<S> {
     data: UpdateBoard,
   ) -> Result<entity::bps::boards::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", Boards::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "edit", &self.subject(), &txn).await?;
 
     let topics = data.topics.clone();
     Self::update_topics(id, topics.into(), &txn).await?;
@@ -126,7 +150,9 @@ impl<S: SumidaState> BoardService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", Boards::find_by_id(id), &txn).await?;
+    // `board` 에는 `remove` 가 없다. `own = owner | org->manage_board |
+    // service:board->operate_delete` 자체가 "지울 수 있다"이므로 삭제는 `own` 으로 인가한다(§1.4).
+    Authz::try_check(RESOURCE, id, "own", &self.subject(), &txn).await?;
 
     // Soft delete: hide the board (and, via the post read filter, its posts) without dropping rows.
     Boards::update_many()
@@ -141,20 +167,5 @@ impl<S: SumidaState> BoardService<S> {
     txn.commit().await?;
 
     Ok(())
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, Boards> for BoardService<S> {
-  fn default_query_with(query: Select<Boards>) -> Select<Boards> {
-    query //
-      .select_only()
-      .expr(Expr::col((Boards, Asterisk)))
-      .left_join(BoardGroups)
-      // Soft-deleted boards are never returned.
-      .filter(entity::bps::boards::Column::DeletedAt.is_null())
-  }
-
-  fn ap(&self) -> ApCondition {
-    ap::ns("board").who(&self.session).join(Boards, entity::bps::boards::Column::Id)
   }
 }

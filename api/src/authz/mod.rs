@@ -1,8 +1,14 @@
 //! Relational Zanzibar — the evaluator.
 //!
-//! **Nothing calls any of this yet.** `util/ap.rs` and `access_policies` remain the only authority
-//! for every decision the server makes; this module is dead code that compiles, validates and can
-//! be tested. That isolation is deliberate — it is what makes the phase reviewable and revertible.
+//! **This is the authority, and since §14 step 14 it is the only one.** Both tiers answer from
+//! here: the route gate through `layer::service_ap` and the object tier through every service's
+//! `select` / `Authz::try_check`. `util/ap.rs` — the lateral-join evaluator over `access_policies`
+//! — was deleted when lab-app, its last consumer, was routed.
+//!
+//! `access_policies` itself remains, and is not a second evaluator: `migration/init.rs` still
+//! creates it, `rebac_backfill.rs` reads it to produce the tuples a not-yet-migrated database
+//! needs, and `rebac_mirror.rs`'s trigger keeps translating writes to it for as long as one exists.
+//! Nothing on a request path reads that table.
 //!
 //! ```text
 //! schema*.zed  ──parse──▶  ir  ──validate──▶  registry  ──compile──▶  one SQL predicate
@@ -17,13 +23,19 @@
 //! * `registry` — the rule set, memoised, with the namespace inventory.
 //! * `validate` — the eight boot rules. Failure aborts start-up.
 //! * `compile`  — a rewrite becomes one boolean `SimpleExpr`.
+//! * `write`    — the grants themselves: write, revoke, and "who holds this on this object".
+//! * `effective` — what one caller may do, for `/me/permissions`.
+//! * `schema_view` — the vocabulary, for `GET /authz/schema`.
 
 pub mod compile;
+pub mod effective;
 pub mod ir;
 pub mod parse;
 pub mod registry;
+pub mod schema_view;
 pub mod subject;
 pub mod validate;
+pub mod write;
 
 #[cfg(test)]
 mod golden_sql_tests;
@@ -128,6 +140,26 @@ pub enum ObjectKey {
 }
 
 impl ObjectKey {
+  /// Reads a caller-supplied id string as the type the definition's own key column has.
+  ///
+  /// Needed wherever an id arrives as text and the definition is not text-keyed — the tuple table
+  /// (`resource_id` is `text`), a URL path segment, a JSON body. `Authz::write` is the case that
+  /// found this: it took `TupleWrite::resource_id`, a `String`, straight into the `#grant` point
+  /// check, which then compared `organizations.id` against a text literal and failed the request
+  /// with `operator does not exist: integer = text`. `antares_project` is slug-keyed, so the only
+  /// call site in the tree could not see it.
+  pub fn typed(kind: ir::IdKind, definition: &str, id: &str) -> Result<Self, AuthzError> {
+    let malformed = |what: &str| {
+      AuthzError::Schema(format!("`{definition}` is keyed by {what}, and `{id}` is not one"))
+    };
+
+    match kind {
+      ir::IdKind::Int => id.parse().map(ObjectKey::Int).map_err(|_| malformed("an integer")),
+      ir::IdKind::Uuid => id.parse().map(ObjectKey::Uuid).map_err(|_| malformed("a uuid")),
+      ir::IdKind::Text => Ok(ObjectKey::Text(id.to_owned())),
+    }
+  }
+
   pub(crate) fn as_expr(&self) -> SimpleExpr {
     match self {
       ObjectKey::Int(value) => Expr::val(*value).into(),
@@ -203,6 +235,15 @@ impl Authz {
     let row = Answer::find_by_statement(db.get_database_backend().build(&statement)).one(db).await?;
 
     Ok(row.map(|r| r.allowed).unwrap_or(false))
+  }
+
+  /// A definition's object id, read out of a string in the type its key column has.
+  ///
+  /// The definitions with no backing table (`service`, `platform`, `delegation_scope`) are named by
+  /// string alone, so they are `Text` and this is a no-op for them.
+  pub fn object_key(definition: &str, id: &str) -> Result<ObjectKey, AuthzError> {
+    let kind = Self::registry()?.require(definition)?.table.as_ref().map(|table| table.kind);
+    ObjectKey::typed(kind.unwrap_or(ir::IdKind::Text), definition, id)
   }
 
   pub async fn try_check<C: ConnectionTrait, K: Into<ObjectKey>>(

@@ -62,6 +62,28 @@ impl TestUser {
     Self::create_with_admin(db, true).await
   }
 
+  /// Create a user who is a **member of an existing role**.
+  ///
+  /// `role:<id>#member` is the subject a role's grants are written to, and it is derived from
+  /// `users.role_id` — so "does a grant on a role reach the people in it" can only be asked with a
+  /// user whose `role_id` is that role. Every other constructor makes a role of its own.
+  pub async fn create_in_role<C: ConnectionTrait>(db: &C, role_id: i32) -> anyhow::Result<Self> {
+    let user = Self::create(db).await?;
+
+    Users::update(entity::users::ActiveModel {
+      id: sea_orm::ActiveValue::Unchanged(user.model.id),
+      role_id: Set(role_id),
+      ..Default::default()
+    })
+    .exec(db)
+    .await?;
+
+    Ok(Self {
+      model: Users::find_by_id(user.model.id).one(db).await?.unwrap(),
+      password: user.password,
+    })
+  }
+
   /// Create a user in an existing organization (the operator and target share an org for
   /// org-scoped authorization tests).
   pub async fn create_in_org<C: ConnectionTrait>(db: &C, organization_id: i32) -> anyhow::Result<Self> {

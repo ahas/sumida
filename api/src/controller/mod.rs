@@ -1,7 +1,7 @@
 pub mod access_log;
-pub mod access_policy;
 pub mod api_key;
 pub mod auth;
+pub mod authz;
 pub mod ban;
 #[cfg(feature = "board")]
 pub mod bps;
@@ -14,6 +14,7 @@ pub mod me;
 #[cfg(feature = "membership")]
 pub mod membership;
 pub mod organization;
+pub mod relation_tuple;
 pub mod role;
 pub mod user;
 pub mod user_invitation;

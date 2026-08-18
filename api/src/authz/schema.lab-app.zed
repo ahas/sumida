@@ -112,18 +112,27 @@ definition daqs_downloadable_asset on downloadable_assets.id int {
 
 // lab-app's inquiry screens are boards: both services authorize through `ap::ns("board")` joined on
 // `board_posts.board_id`, so the definitions walk to sumida's `board`.
+//
+// **`remove` was missing and is added here.** Both services delete through
+// `try_access("delete", …)` (`inquiry/status.rs:92`, `inquiry/rating.rs:90`) and the two
+// definitions declared only `view` and `edit`, so those two call sites had no permission to route
+// to. It resolves to `board->edit`, which is what `board_topic#remove` already does: the `board`
+// definition has no per-action delete tier — an object-tier board grant is one of
+// owner/editor/viewer, and deletion of a thing *on* a board is an edit of that board.
 definition daqs_inquiry on inquiries.post_id int {
   relation board: board = column(inquiries.post_id -> board via board_posts.board_id)
 
-  permission view = board->view
-  permission edit = board->edit
+  permission view   = board->view
+  permission edit   = board->edit
+  permission remove = board->edit
 }
 
 definition daqs_inquiry_rating on inquiry_ratings.post_id int {
   relation board: board = column(inquiry_ratings.post_id -> board via board_posts.board_id)
 
-  permission view = board->view
-  permission edit = board->edit
+  permission view   = board->view
+  permission edit   = board->edit
+  permission remove = board->edit
 }
 
 // ─── the namespace inventory ─────────────────────────────────────────────────────────────────

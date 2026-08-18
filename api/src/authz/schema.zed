@@ -142,9 +142,13 @@ definition role on roles.id int {
   relation member: user = column(users.id -> user of users.role_id)
   relation admin:  user | role#member | organization#member
 
-  permission view  = admin | service:role->operate_read
-  permission edit  = admin | service:role->operate_update
-  permission grant = admin | service:role->operate_update
+  permission view   = admin | service:role->operate_read
+  permission edit   = admin | service:role->operate_update
+  // `RoleService::delete` needs a permission of its own. `edit` would have done as a string and
+  // that is exactly the G12 shape — deleting a role revokes every grant it carries, which is not
+  // the same authority as renaming it.
+  permission remove = admin | service:role->operate_delete
+  permission grant  = admin | service:role->operate_update
 }
 
 // The *object* side of a user row. `user` stays the subject type; this is "may I act on that

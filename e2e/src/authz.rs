@@ -140,6 +140,42 @@ impl Session {
     Self { label: "anonymous".into(), user_id: 0, base, http: build_client() }
   }
 
+  /// A caller authenticating with an API key instead of a password login.
+  ///
+  /// It is a separate constructor rather than a flag because the two are not interchangeable
+  /// identities. `user_guard` fills `profile` from the key's owner either way, but a **secured**
+  /// key also sets `profile.api_key`, and `SubjectSet::of` then judges the request
+  /// as `apikey:<hash>` alone — no `user:`, no `role:`, no `organization:`, and therefore never
+  /// `users.is_admin`. So "the owner logged in" and "the owner's key called" can legitimately see
+  /// different rows, and a case about key-created resources has to be able to say which one it
+  /// used.
+  ///
+  /// `user_id` is the key's owner, carried only so a failure message can name a person.
+  pub fn with_api_key(
+    base: SocketAddr,
+    key: &str,
+    user_id: i32,
+    label: impl Into<String>,
+  ) -> Self {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+      reqwest::header::AUTHORIZATION,
+      reqwest::header::HeaderValue::from_str(&format!("ApiKey {key}"))
+        .expect("an api key must be a valid header value"),
+    );
+
+    let http = reqwest::Client::builder()
+      .cookie_store(true)
+      .default_headers(headers)
+      .connect_timeout(Duration::from_secs(30))
+      .timeout(Duration::from_secs(30))
+      .redirect(reqwest::redirect::Policy::none())
+      .build()
+      .expect("failed to build a test http client");
+
+    Self { label: label.into(), user_id, base, http }
+  }
+
   fn request(&self, method: Method, path: &str) -> RequestBuilder {
     self.http.request(method, url(self.base, path))
   }
@@ -539,6 +575,30 @@ impl Probe {
 
   pub fn body(&self) -> &Value {
     &self.body
+  }
+
+  /// Asserts the refusal carries a specific `code`.
+  ///
+  /// [`Access::Forbidden`] is not fine-grained enough where two different checks both answer
+  /// `403`, and on the tuple-write path exactly two do: the route gate (`service_ap!` →
+  /// `NoServiceAvailable`, `E1009`) and the authority check on the object being granted
+  /// (`Authz::write` → `NoAccessPermission`, `E1008`). The gate runs **first**, so a case that
+  /// forgot to grant its caller the service tier gets `E1009` and passes every assertion about
+  /// ownership without the ownership check ever having run. That is the shape of four false passes
+  /// in this project; this is how a case refuses to be one of them.
+  #[track_caller]
+  pub fn assert_code(self, expected: &str) -> Self {
+    let actual = self.body.get("code").and_then(Value::as_str);
+    assert_eq!(
+      actual,
+      Some(expected),
+      "[{}] {} — expected the refusal to carry code {expected}, got {actual:?} (HTTP {}). body: {}",
+      self.label,
+      self.path,
+      self.status,
+      truncate(&self.body)
+    );
+    self
   }
 }
 

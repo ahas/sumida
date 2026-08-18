@@ -13,4 +13,3 @@ pub use super::board_post_report::BoardPostReportService;
 pub use super::board_post_report::dto::*;
 pub use super::board_topic::BoardTopicService;
 pub use super::board_topic::dto::*;
-pub use crate::service::ApiService;

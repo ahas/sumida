@@ -1,6 +1,6 @@
 use api::util::random::generate_url_safe_string;
 use chrono::{Duration, Utc};
-use e2e::ap_test_utils::create_ap;
+use e2e::ap_test_utils::grant_org_scope;
 use e2e::prelude::*;
 use entity::prelude::*;
 use reqwest::StatusCode;
@@ -330,17 +330,8 @@ async fn test_org_subscription_requires_org_admin() {
     .unwrap();
   assert_eq!(resp.status(), StatusCode::FORBIDDEN, "non-admin org member must be denied");
 
-  // Grant the member an org-admin policy for this org and retry.
-  create_ap(
-    &db,
-    &member,
-    "org:subscription",
-    &org.model.id.to_string(),
-    vec!["manage".to_string()],
-    "allow",
-  )
-  .await
-  .unwrap();
+  // Grant the member the organization's subscription-manager tier and retry.
+  grant_org_scope(&db, &member, org.model.id, "subscription_manager").await.unwrap();
 
   let admin_member_mock = Mock::new().await;
   member.login(&admin_member_mock.client).await;

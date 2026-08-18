@@ -7,7 +7,7 @@ use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, JoinType,
+  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, JoinType,
   PaginatorTrait, QueryFilter, QuerySelect, RelationTrait, Select, TransactionTrait, Unchanged,
 };
 use sea_orm_crud::Optional;
@@ -17,12 +17,17 @@ use self::dto::*;
 use super::mail_form::MailFormSendOptions;
 use super::prelude::*;
 use crate::SumidaState;
-use crate::service::ApiService;
 use crate::service::auth::session::AuthSessionService;
-use crate::util::ap::{self, ApCondition, ApGuard};
-use crate::util::org::organization_ancestors_subquery;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace user service = sumida_user`).
+///
+/// 정의 이름이 네임스페이스와 다른 유일한 자리다. `user` 는 주체 타입이고 `sumida_user` 는
+/// "그 사람에게 무언가를 할 수 있는가"라는 객체 쪽이다.
+const RESOURCE: &str = "sumida_user";
 
 pub struct UserService<S: SumidaState> {
   state: S,
@@ -34,6 +39,35 @@ impl<S: SumidaState> UserService<S> {
     Self { state, session }
   }
 
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  pub(crate) fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  pub(crate) fn default_query_with(query: Select<Users>) -> Select<Users> {
+    let org_alias = Alias::new("org");
+    let role_alias = Alias::new("role");
+
+    query
+      .select_only()
+      .expr(Expr::col((entity::users::Entity, Asterisk)))
+      .expr_as(BanService::<S>::exists_expr(), "is_banned")
+      .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
+      .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
+      .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")
+      .expr_as(Expr::col((role_alias.clone(), "name")), "role_name")
+      .join_as(JoinType::LeftJoin, entity::users::Relation::Organization.def(), org_alias.clone())
+      .join_as(JoinType::LeftJoin, entity::users::Relation::Role.def(), role_alias.clone())
+  }
+
+  /// 행 스코프는 `sumida_user#view` 술어 하나 — 상위 조직 관리자의 도달(`org->manage_user`)이
+  /// 목록과 단건 판정에서 같은 규칙으로 나온다. 종전에는 목록만 `ap::ns("user")` 로,
+  /// 단건 수정만 `org:user` + 조상 서브쿼리로 갈라져 있었다.
+  pub(crate) fn select(&self, query: Select<Users>) -> Result<Select<Users>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
+  }
+
   pub async fn list(
     &self,
     filter: UserFilter,
@@ -42,7 +76,7 @@ impl<S: SumidaState> UserService<S> {
     use entity::users::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(Users::find()));
+    let mut query = filter.apply(self.select(Users::find())?);
     let count = query.clone().select_only().column(Column::Username).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -63,7 +97,7 @@ impl<S: SumidaState> UserService<S> {
   pub async fn get(&self, user_id: i32) -> Result<Option<GetUser>, SumidaError> {
     Ok(
       self
-        .select(Users::find_by_id(user_id))
+        .select(Users::find_by_id(user_id))?
         .into_model::<GetUser>()
         .one(self.state.db())
         .await?,
@@ -97,8 +131,11 @@ impl<S: SumidaState> UserService<S> {
 
     // Three-way authorization branch:
     //   (1) is_admin = true                          → full update including security fields
-    //   (2) namespace="org:user", action=update      → limited to users in own org + descendant orgs.
-    //                                                  Security fields (is_admin/role_id/organization_id/is_enabled) locked
+    //   (2) `sumida_user:<id>#edit`                  → limited to users the caller manages, which
+    //                                                  the rule resolves through `org->manage_user`
+    //                                                  (조상 조직의 부여가 하위 조직 사용자에게
+    //                                                  닿는다). Security fields
+    //                                                  (is_admin/role_id/organization_id/is_enabled) locked
     //   (3) otherwise                                 → blocked (NoAccessPermission)
     //
     // Changing one's own profile must go through the /me route (UpdateMe DTO). This route is
@@ -106,15 +143,7 @@ impl<S: SumidaState> UserService<S> {
     let allow_security_fields = if self.session.profile.is_admin {
       true
     } else {
-      let start_org_col =
-        Expr::col((entity::users::Entity, entity::users::Column::OrganizationId)).into_simple_expr();
-      ap::ns("org:user")
-        .who(&self.session)
-        .join(Users, entity::users::Column::Id)
-        .object_in_subquery(organization_ancestors_subquery(start_org_col))
-        .action("update")
-        .try_access(Users::find_by_id(user_id), &txn)
-        .await?;
+      Authz::try_check(RESOURCE, user_id, "edit", &self.subject(), &txn).await?;
       false
     };
 
@@ -144,7 +173,7 @@ impl<S: SumidaState> UserService<S> {
 
   pub async fn delete(&self, user_id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", Users::find_by_id(user_id), &txn).await?;
+    Authz::try_check(RESOURCE, user_id, "remove", &self.subject(), &txn).await?;
 
     let result = Users::delete_by_id(user_id).exec(&txn).await?;
     txn.commit().await?;
@@ -307,29 +336,5 @@ impl<S: SumidaState> UserService<S> {
       .await?;
 
     Ok(())
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, Users> for UserService<S> {
-  fn default_query_with(query: Select<Users>) -> Select<Users> {
-    let org_alias = Alias::new("org");
-    let role_alias = Alias::new("role");
-
-    query
-      .select_only()
-      .expr(Expr::col((entity::users::Entity, Asterisk)))
-      .expr_as(BanService::<S>::exists_expr(), "is_banned")
-      .expr_as(Expr::col((org_alias.clone(), "id")), "org_id")
-      .expr_as(Expr::col((org_alias.clone(), "name")), "org_name")
-      .expr_as(Expr::col((role_alias.clone(), "id")), "role_id")
-      .expr_as(Expr::col((role_alias.clone(), "name")), "role_name")
-      .join_as(JoinType::LeftJoin, entity::users::Relation::Organization.def(), org_alias.clone())
-      .join_as(JoinType::LeftJoin, entity::users::Relation::Role.def(), role_alias.clone())
-  }
-
-  fn ap(&self) -> ApCondition {
-    use entity::users::Column;
-
-    ap::ns("user").who(&self.session).join(Users, Column::Id)
   }
 }

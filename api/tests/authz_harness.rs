@@ -155,6 +155,10 @@ async fn refused_write_leaves_no_row_behind() {
 /// early, or runs the wrong way, is visible.
 #[tokio::test]
 async fn org_tree_has_the_shape_the_rule_needs() {
+  // 이 케이스만 서버가 필요 없어 `Mock::new()` 를 건너뛰는데, 부트스트랩을 여는 것도 그쪽이었다.
+  // 그대로 두면 `.env.e2e` 가 실리기 전에 `settings::get()` 에 닿아 `spin::Once` 를 잘못된 값으로
+  // 굳혀 버리고, 같은 바이너리의 나머지 다섯 케이스가 그 값을 물려받아 병렬 실행에서 전부 죽는다.
+  bootstrap::init_once().await;
   let db = infra::db::connect().await;
   let tree = OrgTree::create(&db).await.expect("tree");
 

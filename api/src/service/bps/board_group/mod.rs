@@ -12,19 +12,37 @@ use sea_orm::{
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace board_group service = board_group`).
+const RESOURCE: &str = "board_group";
 
 pub struct BoardGroupService<S: SumidaState> {
   state: S,
-  #[allow(dead_code)]
   session: UserSession,
 }
 
 impl<S: SumidaState> BoardGroupService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
+  }
+
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  fn default_query_with(query: Select<BoardGroups>) -> Select<BoardGroups> {
+    query.select_only().expr(Expr::col((BoardGroups, Asterisk)))
+  }
+
+  /// 행 스코프는 `board_group#view` 술어 하나 — 상위 그룹의 부여(`viewer^`)와 차단(`blocked^`)이
+  /// 규칙 안에 함께 들어 있다.
+  fn select(&self, query: Select<BoardGroups>) -> Result<Select<BoardGroups>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
   pub async fn list(
@@ -35,7 +53,7 @@ impl<S: SumidaState> BoardGroupService<S> {
     use entity::bps::board_groups::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(BoardGroups::find()));
+    let mut query = filter.apply(self.select(BoardGroups::find())?);
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -52,7 +70,7 @@ impl<S: SumidaState> BoardGroupService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetBoardGroup>, SumidaError> {
     Ok(
       self
-        .select(BoardGroups::find_by_id(id))
+        .select(BoardGroups::find_by_id(id))?
         .into_partial_model::<GetBoardGroup>()
         .one(self.state.db())
         .await?,
@@ -72,7 +90,7 @@ impl<S: SumidaState> BoardGroupService<S> {
     data: UpdateBoardGroup,
   ) -> Result<entity::bps::board_groups::Model, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("update", BoardGroups::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "edit", &self.subject(), &txn).await?;
 
     let mut am = data.into_active_model();
     am.id = Set(id);
@@ -85,20 +103,11 @@ impl<S: SumidaState> BoardGroupService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", BoardGroups::find_by_id(id), &txn).await?;
+    // `board_group` 에는 `remove` 가 없다. `own = owner^ | service:board_group->operate_delete`
+    // 자체가 "지울 수 있다"이므로 삭제는 `own` 으로 인가한다(설계 §1.4).
+    Authz::try_check(RESOURCE, id, "own", &self.subject(), &txn).await?;
     let result = BoardGroups::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
     Ok(result)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, BoardGroups> for BoardGroupService<S> {
-  fn default_query_with(query: Select<BoardGroups>) -> Select<BoardGroups> {
-    query.select_only().expr(Expr::col((BoardGroups, Asterisk)))
-  }
-
-  fn ap(&self) -> ApCondition {
-    use entity::bps::board_groups::Column;
-    ap::ns("board_group").who(&self.session).join(BoardGroups, Column::Id)
   }
 }

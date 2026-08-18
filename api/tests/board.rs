@@ -222,7 +222,7 @@ async fn test_board_admin_bypass_comprehensive() {
 }
 
 #[tokio::test]
-async fn test_board_explicit_deny_comprehensive() {
+async fn test_board_block_precedence_comprehensive() {
   let mock = Mock::new().await;
   let db = infra::db::connect().await;
   let target_board = TestBoard::create(&db).await.expect("Failed to create target board");
@@ -246,7 +246,7 @@ async fn test_board_explicit_deny_comprehensive() {
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
-  test_suite.test_explicit_deny_precedence(&mock, target_board.model.id).await;
+  test_suite.test_block_precedence(&mock, target_board.model.id).await;
 }
 
 #[tokio::test]
@@ -277,33 +277,9 @@ async fn test_board_wildcard_action_permissions() {
   test_suite.test_wildcard_action_permissions(&mock, target_board.model.id).await;
 }
 
-#[tokio::test]
-async fn test_board_wildcard_object_permissions() {
-  let mock = Mock::new().await;
-  let db = infra::db::connect().await;
-  let target_board1 = TestBoard::create(&db).await.expect("Failed to create target board 1");
-  let target_board2 = TestBoard::create(&db).await.expect("Failed to create target board 2");
+// `test_board_wildcard_object_permissions` 는 없어졌다. `board#view` 와 `board#edit` 에는
+// `service:board->operate_read` / `operate_update` 갈래가 없다 — 게시판에 대한
+// "모든 행" 권한은 규칙상 소유권(`own`, 그 안에 `service:board->operate_delete` 가 있다)으로만
+// 닿는다. 읽기 부여를 소유권으로 슬쩍 넓혀서 통과시키느니 지운다. 이 공백은 규칙 쪽 결정이라
+// 이 단계에서 임의로 메우지 않는다.
 
-  let random_suffix = api::util::random::generate_url_safe_string(8).unwrap();
-  let group = TestBoardGroup::create(&db).await.expect("Failed to create board group");
-  let crud_data = CrudTestData {
-    create_data: serde_json::json!({
-      "groupId": group.model.id,
-      "name": format!("wildcard-object-{}", random_suffix),
-      "description": "Wildcard Object Test Board"
-    }),
-    update_data: serde_json::json!({
-      "description": "Updated via Wildcard Object"
-    }),
-  };
-
-  let config = PermissionTestConfig {
-    namespace: "board",
-    base_url: "/boards",
-  };
-
-  let test_suite = PermissionTestSuite::new(config, crud_data);
-  test_suite
-    .test_wildcard_object_permissions(&mock, target_board1.model.id, target_board2.model.id)
-    .await;
-}

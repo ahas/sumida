@@ -2,7 +2,9 @@ use axum::response::IntoResponse;
 use sea_orm::{EntityTrait, IntoSimpleExpr, Order, QueryOrder, QueryTrait, Select};
 use serde::{Deserialize, Deserializer, Serialize};
 
-const MAX_LIMIT: u64 = 500;
+/// Also read by `RelationTupleService`, whose list is a raw statement rather than a
+/// `Select<E>` and therefore has to apply the same ceiling by hand.
+pub(crate) const MAX_LIMIT: u64 = 500;
 
 fn deserialize_order<'de, D>(deserializer: D) -> Result<Order, D::Error>
 where

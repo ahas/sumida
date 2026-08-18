@@ -12,9 +12,12 @@ use sea_orm::{
 
 use self::dto::*;
 use crate::SumidaState;
-use crate::service::ApiService;
-use crate::util::ap::{self, ApCondition, ApGuard};
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.zed`의 `namespace access_log service = access_log`).
+const RESOURCE: &str = "access_log";
 
 pub struct AccessLogService<S: SumidaState> {
   state: S,
@@ -24,6 +27,33 @@ pub struct AccessLogService<S: SumidaState> {
 impl<S: SumidaState> AccessLogService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
+  }
+
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
+  }
+
+  fn default_query_with(query: Select<AccessLogs>) -> Select<AccessLogs> {
+    let user_alias = Alias::new("user");
+    let col_user_id = Expr::col((user_alias.clone(), "id"));
+    let col_username = Expr::col((user_alias.clone(), "username"));
+    let col_full_name = Expr::col((user_alias.clone(), "full_name"));
+
+    query
+      .select_only()
+      .expr(Expr::col((entity::access_logs::Entity, Asterisk)))
+      .expr_as(col_user_id, "user_id")
+      .expr_as(col_username, "user_username")
+      .expr_as(col_full_name, "user_full_name")
+      .join_as(JoinType::LeftJoin, entity::access_logs::Relation::User.def(), user_alias.clone())
+  }
+
+  /// 행 스코프는 `access_log#view` 술어 하나로 붙는다 — filter/COUNT/ORDER BY/LIMIT 이 한
+  /// 문장에 그대로 남는다.
+  fn select(&self, query: Select<AccessLogs>) -> Result<Select<AccessLogs>, SumidaError> {
+    Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
   pub async fn list(
@@ -38,7 +68,7 @@ impl<S: SumidaState> AccessLogService<S> {
     let col_username = Expr::col("user_username");
     let col_full_name = Expr::col("user_full_name");
 
-    let mut query = filter.apply(self.select(AccessLogs::find()));
+    let mut query = filter.apply(self.select(AccessLogs::find())?);
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
     query = pagination.order_by(query, |col| match col {
@@ -57,7 +87,7 @@ impl<S: SumidaState> AccessLogService<S> {
   pub async fn get(&self, id: i32) -> Result<Option<GetAccessLog>, SumidaError> {
     Ok(
       self
-        .select(AccessLogs::find_by_id(id))
+        .select(AccessLogs::find_by_id(id))?
         .into_model::<GetAccessLog>()
         .one(self.state.db())
         .await?,
@@ -66,37 +96,11 @@ impl<S: SumidaState> AccessLogService<S> {
 
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    self.try_access("delete", AccessLogs::find_by_id(id), &txn).await?;
+    Authz::try_check(RESOURCE, id, "remove", &self.subject(), &txn).await?;
 
     let result = AccessLogs::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 
     Ok(result)
-  }
-}
-
-impl<S: SumidaState> ApiService<ApCondition, AccessLogs> for AccessLogService<S> {
-  fn default_query_with(query: Select<AccessLogs>) -> Select<AccessLogs> {
-    let user_alias = Alias::new("user");
-    let col_user_id = Expr::col((user_alias.clone(), "id"));
-    let col_username = Expr::col((user_alias.clone(), "username"));
-    let col_full_name = Expr::col((user_alias.clone(), "full_name"));
-
-    query
-      .select_only()
-      .expr(Expr::col((entity::access_logs::Entity, Asterisk)))
-      .expr_as(col_user_id, "user_id")
-      .expr_as(col_username, "user_username")
-      .expr_as(col_full_name, "user_full_name")
-      .join_as(JoinType::LeftJoin, entity::access_logs::Relation::User.def(), user_alias.clone())
-  }
-
-  fn ap(&self) -> ApCondition {
-    use entity::access_logs::Column;
-    ap::ns("access_log").who(&self.session).join(AccessLogs, Column::Id)
-  }
-
-  fn select(&self, query: sea_orm::Select<AccessLogs>) -> sea_orm::Select<AccessLogs> {
-    self.ap().action("read").apply(Self::default_query_with(query))
   }
 }

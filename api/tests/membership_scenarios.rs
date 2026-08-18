@@ -3,7 +3,7 @@
 use api::service::membership::maintenance;
 use api::util::random::generate_url_safe_string;
 use chrono::{Duration, Utc};
-use e2e::ap_test_utils::create_ap;
+use e2e::ap_test_utils::grant_org_scope;
 use e2e::prelude::*;
 use entity::prelude::*;
 use reqwest::StatusCode;
@@ -225,26 +225,10 @@ async fn scenario_org_admin_hierarchy() {
 
   // Manager in the parent org, with org policies on the PARENT only.
   let manager = TestUser::create_in_org(&db, parent.model.id).await.unwrap();
-  create_ap(
-    &db,
-    &manager,
-    "org:subscription",
-    &parent.model.id.to_string(),
-    vec!["read".into(), "manage".into()],
-    "allow",
-  )
-  .await
-  .unwrap();
-  create_ap(
-    &db,
-    &manager,
-    "org:credit",
-    &parent.model.id.to_string(),
-    vec!["use".into(), "manage".into()],
-    "allow",
-  )
-  .await
-  .unwrap();
+  // 종전 `org:subscription | <parent> | {read,manage}` 와 `org:credit | <parent> | {use,manage}`.
+  // 상위 조직에 붙은 부여가 하위 조직까지 닿는 것은 이제 `^` 닫힘이 맡는다.
+  grant_org_scope(&db, &manager, parent.model.id, "subscription_manager").await.unwrap();
+  grant_org_scope(&db, &manager, parent.model.id, "credit_manager").await.unwrap();
   let mm = Mock::new().await;
   manager.login(&mm.client).await;
 

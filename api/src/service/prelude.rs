@@ -5,13 +5,8 @@ pub use infra::session::{UserOrganization, UserProfile, UserSession};
 pub use tower_sessions::Session;
 
 //
-pub use super::ApiService;
-//
 pub use super::access_log::AccessLogService;
 pub use super::access_log::dto::*;
-//
-pub use super::access_policy::AccessPolicyService;
-pub use super::access_policy::dto::*;
 //
 pub use super::admin::AdminService;
 pub use super::admin::dto::*;
@@ -68,6 +63,9 @@ pub use super::monitoring::dto::*;
 //
 pub use super::organization::OrganizationService;
 pub use super::organization::dto::*;
+//
+pub use super::relation_tuple::RelationTupleService;
+pub use super::relation_tuple::dto::*;
 //
 pub use super::role::RoleService;
 pub use super::role::dto::*;

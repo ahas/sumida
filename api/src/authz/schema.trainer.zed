@@ -1,18 +1,26 @@
 // trainer's rule set — design §5.5.
 //
-// PENDING SCHEMA (design §3.4, §3.5). Four columns these rules read do not exist yet, and trainer folds
-// its schema changes into `src/migration/joy_service_init.rs` rather than into a sumida migration,
-// so they land when trainer registers. Until then `Authz::boot` reports every definition below as
-// drift-blocked against a trainer database and refuses to activate it — which is the intended order:
-// no rule goes live before the column it reads.
+// The columns these rules read landed with trainer's Phase 2 (§14 step 8), in
+// `trainer/server/src/migration/joy_service_init.rs` — trainer folds schema changes into that file rather
+// than adding sumida migrations. That order was the invariant, not a courtesy: before they existed
+// `Authz::boot` reported every definition below as drift and `boot_or_abort` refused to start, so
+// no rule went live ahead of the column it reads.
 //
-//   tasks.owner_user_id           generated from owner_key  ('user:<id>' → <id>)
+//   tasks.owner_user_id           the sumida account that **submitted** the task. Not a projection
+//                                 of owner_key and not derivable from it — for a delegated subject
+//                                 the two name different people — so the write path sets it.
+//                                 NULL for rows created before it existed whose owner is not a
+//                                 plain `user:<id>`.
 //   tasks.owner_scope             generated from owner_key  ('<scope>:user:<extid>' → <scope>)
-//   jobs.owner_key   + projections   `jobs` has no owner column of any kind, so R3 is inexpressible
-//                                    for jobs today
-//   agents.organization_id           `agent_clusters` is M:N, so an agent's organization cannot be
-//                                    derived from its clusters
-//   cloud_instances.owner_user_id generated from owner_key
+//   jobs.owner_key                `jobs` had no owner column of any kind, so R3 was inexpressible
+//                                 for jobs; `jobs.owner_user_id` is its generated `user:<id>`
+//                                 projection, because a job is never submitted on someone's behalf
+//   agents.organization_id        nullable: NULL is the shared pool, a value scopes the agent to
+//                                 that organization and its descendants. `agent_clusters` is M:N,
+//                                 so an agent's organization cannot be derived from its clusters
+//   cloud_instances.owner_user_id generated from owner_key — the burst path copies a task's
+//                                 owner_key with no session behind it, so there is no submitter
+//                                 to record
 //
 // `tasks.owner_key` itself is **not** repurposed and **not** rewritten: it is load-bearing for
 // scheduler fairness (`PARTITION BY owner_key`, `task_dispatch_cursor`). The rules read it as it is.
@@ -25,11 +33,14 @@
 //
 //   user:7               owner_user_id=7, owner_scope=NULL — user 7; managers of user 7's
 //                        organization and its ancestors; service operators; platform admin
-//   svc:site-app:user:42  owner_user_id=NULL, owner_scope='svc:site-app' — holders of
-//                        `delegation_scope:svc:site-app#operator` only. No organization tier: there
-//                        is no sumida user behind the key, so `creator_org` is NULL and the branch
-//                        is statically dead
-//   system               both NULL — service operators and platform admin only, identical to today
+//   svc:site-app:user:42  owner_scope='svc:site-app' — holders of
+//                        `delegation_scope:svc:site-app#operator`, and the organization above
+//                        whoever submitted it: `owner_user_id` is the *submitting* sumida account,
+//                        not the delegated subject, so `creator_org` reaches that account's
+//                        organization managers and nobody else. NULL for rows backfilled from
+//                        before the column existed, and the branch is then dead
+//   system               owner_user_id NULL, owner_scope NULL — service operators and platform
+//                        admin only, identical to today
 definition joy_task on tasks.id uuid {
   relation owner:       user             = column(tasks.owner_key -> subject_key)
   relation scope:       delegation_scope = column(tasks.owner_scope -> delegation_scope
