@@ -29,7 +29,7 @@ impl BoardFilter {
             .add(wrap_ilike(Column::Description.into_expr(), v)),
         )
       })
-      .apply_if(self.name.as_ref(), |q, v| q.filter(Column::Name.eq(v)))
+      .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)))
       .apply_if(self.group_id, |q, v| q.filter(Column::GroupId.eq(v)))
   }
 }

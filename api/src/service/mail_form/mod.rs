@@ -155,6 +155,7 @@ impl<S: SumidaState> MailFormService<S> {
     let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;
 
     query = pagination.order_by(query, |col| match col {
+      "kind" => Column::Kind,
       "sender" => Column::Sender,
       "subject" => Column::Subject,
       _ => Column::Kind,
