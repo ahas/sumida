@@ -5,6 +5,7 @@ pub mod auth;
 pub mod ban;
 #[cfg(feature = "board")]
 pub mod bps;
+pub mod dashboard;
 #[cfg(feature = "file")]
 pub mod fs;
 pub mod grants;

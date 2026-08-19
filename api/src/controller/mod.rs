@@ -6,6 +6,7 @@ pub mod ban;
 #[cfg(feature = "board")]
 pub mod bps;
 pub mod dashboard;
+pub mod dashboard_overview;
 #[cfg(feature = "file")]
 pub mod fs;
 #[cfg(feature = "mail-form")]

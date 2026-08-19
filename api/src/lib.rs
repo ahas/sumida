@@ -65,6 +65,7 @@ where
     let authz_controller = AuthzController::<StateT>::new();
     let api_key_controller = ApiKeyController::<StateT>::new();
     let dashboard_monitoring_controller = DashboardMonitoringController::<StateT>::new();
+    let dashboard_overview_controller = DashboardOverviewController::<StateT>::new();
     let org_controller = OrganizationController::<StateT>::new();
     let role_controller = RoleController::<StateT>::new();
     let auth_session_controller = AuthSessionController::<StateT>::new();
@@ -122,6 +123,7 @@ where
       .nest("/authz", authz_controller.router(state))
       .nest("/api-keys", api_key_controller.router(state))
       .nest("/dashboard/monitoring", dashboard_monitoring_controller.router(state))
+      .nest("/dashboard", dashboard_overview_controller.router(state))
       .nest("/bans", ban_controller.router(state))
       .nest("/organizations", org_controller.router(state))
       .nest("/roles", role_controller.router(state))

@@ -10,6 +10,7 @@ pub use super::ban::BanController;
 #[cfg(feature = "board")]
 pub use super::bps::prelude::*;
 pub use super::dashboard::DashboardMonitoringController;
+pub use super::dashboard_overview::DashboardOverviewController;
 #[cfg(feature = "file")]
 pub use super::fs::prelude::*;
 #[cfg(feature = "mail-form")]
