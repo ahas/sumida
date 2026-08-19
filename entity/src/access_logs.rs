@@ -37,6 +37,35 @@ pub enum AccessResultCode {
   AccountBanned,
 }
 
+/// Reads one segment of a query string as an authentication method. `OneOrMany` runs every
+/// comma-separated piece through this, so an unknown value fails to parse and is refused with a
+/// 400 rather than quietly dropped.
+impl std::str::FromStr for AccessMethod {
+  type Err = DbErr;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    <Self as sea_orm::ActiveEnum>::try_from_value(&s.to_string())
+  }
+}
+
+/// The same, for the result. The stored value is a number, so the names cannot be delegated to the
+/// column's own conversion; they are the ones the wire uses, which is what a caller reads out of
+/// the resource's declaration and sends back.
+impl std::str::FromStr for AccessResultCode {
+  type Err = DbErr;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "success" => Self::Success,
+      "account-not-found" => Self::AccountNotFound,
+      "password-mismatch" => Self::PasswordMismatch,
+      "account-inactive" => Self::AccountInactive,
+      "account-banned" => Self::AccountBanned,
+      other => return Err(DbErr::Type(format!("unknown access result code `{other}`"))),
+    })
+  }
+}
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "access_logs")]
 pub struct Model {

@@ -4,7 +4,7 @@ use entity::access_logs::{AccessMethod, AccessResultCode, Column};
 use sea_orm::prelude::*;
 use sea_orm::sea_query::{Alias, ExprTrait, SimpleExpr};
 use sea_orm::{Condition, FromQueryResult, IntoSimpleExpr, QueryTrait};
-use sea_orm_crud::OneOrMany;
+use sea_orm_crud::{Bounds, OneOrMany};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -23,6 +23,19 @@ pub struct AccessLogFilter {
   pub user_id: Option<OneOrMany<i32>>,
   pub username: Option<String>,
   pub name: Option<String>,
+  /// The log's own columns. Everything above narrows by the account, which is no help on a page
+  /// already pinned to one; these narrow by what the attempt was.
+  pub code: Option<OneOrMany<AccessResultCode>>,
+  pub method: Option<OneOrMany<AccessMethod>>,
+  pub ip_address: Option<String>,
+  pub user_agent: Option<String>,
+  /// When the attempt was made. The first range parameter this crate carries — until now a date
+  /// could only be ordered by, which answers "newest first" and never "that afternoon".
+  ///
+  /// Named as the wire names it. The key was already spoken as `createdAt` because it is what a
+  /// caller orders by, and a key cannot be one word for sorting and another for filtering.
+  #[serde(rename = "createdAt")]
+  pub created_at: Option<Bounds<DateTimeWithTimeZone>>,
 }
 
 impl AccessLogFilter {
@@ -48,6 +61,22 @@ impl AccessLogFilter {
       .apply_if(self.name.as_ref(), |q, v| {
         q.filter(wrap_ilike(actor(entity::users::Column::FullName), v))
       })
+      .apply_if(listed(self.code.as_ref()), |q, v| {
+        q.filter(v.into_simple_expr(entity::access_logs::Column::Code))
+      })
+      .apply_if(listed(self.method.as_ref()), |q, v| {
+        q.filter(v.into_simple_expr(entity::access_logs::Column::Method))
+      })
+      .apply_if(self.ip_address.as_ref(), |q, v| {
+        q.filter(wrap_ilike(entity::access_logs::Column::IpAddress.into_expr(), v))
+      })
+      .apply_if(self.user_agent.as_ref(), |q, v| {
+        q.filter(wrap_ilike(entity::access_logs::Column::UserAgent.into_expr(), v))
+      })
+      // A range that names neither end narrows nothing, so it never reaches the query.
+      .apply_if(self.created_at.as_ref().filter(|v| !v.is_empty()), |q, v| {
+        q.filter(v.into_simple_expr(Column::CreatedAt))
+      })
   }
 }
 
@@ -55,6 +84,9 @@ impl AccessLogFilter {
 ///
 /// `search` widens the acting user's id, username and full name into one predicate, so it reduces
 /// to no single expression; the three keys that stand on those columns one at a time do reduce.
+/// The operators a range notation can carry. A date and a number both read the same way.
+const RANGE_OPS: &[Op] = &[Op::Eq, Op::Gte, Op::Lte, Op::Between];
+
 const ACCESS_LOG_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Contains]),
   FieldSpec::new("user_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
@@ -62,7 +94,21 @@ const ACCESS_LOG_FIELDS: &[FieldSpec] = &[
     .with_sort(),
   FieldSpec::new("username", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
-  FieldSpec::sort_only("createdAt", FieldKind::DateTime),
+  FieldSpec::new("code", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&[
+      "success",
+      "account-not-found",
+      "password-mismatch",
+      "account-inactive",
+      "account-banned",
+    ])
+    .with_sort(),
+  FieldSpec::new("method", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["password", "bearer", "api-key"])
+    .with_sort(),
+  FieldSpec::new("ip_address", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("user_agent", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]),
+  FieldSpec::new("createdAt", FieldKind::DateTime, MatchStrategy::Comparison, RANGE_OPS).with_sort(),
 ];
 
 impl FilterSchema for AccessLogFilter {
@@ -75,6 +121,10 @@ impl FilterSchema for AccessLogFilter {
       "user_id" => actor(entity::users::Column::Id),
       "username" => actor(entity::users::Column::Username),
       "name" => actor(entity::users::Column::FullName),
+      "code" => Column::Code.into_simple_expr(),
+      "method" => Column::Method.into_simple_expr(),
+      "ip_address" => Column::IpAddress.into_simple_expr(),
+      "user_agent" => Column::UserAgent.into_simple_expr(),
       "createdAt" => Column::CreatedAt.into_simple_expr(),
       // `search` spans three columns of the acting user, so it has no single column of its own.
       _ => return None,
@@ -101,8 +151,11 @@ pub struct AccessLogUser {
 #[serde(rename_all = "camelCase")]
 pub struct AccessLogListItem {
   pub id: i32,
+  /// Absent where the attempt names no account this installation holds: a sign-in for a username
+  /// that does not exist is logged too, and an account deleted afterwards leaves its attempts
+  /// behind. Requiring the account here made the whole list fail on the first such row.
   #[sea_orm(nested, alias = "user")]
-  pub user: AccessLogUser,
+  pub user: Option<AccessLogUser>,
   pub method: AccessMethod,
   pub code: AccessResultCode,
 
@@ -126,8 +179,11 @@ pub struct AccessLogListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetAccessLog {
   pub id: i32,
+  /// Absent where the attempt names no account this installation holds: a sign-in for a username
+  /// that does not exist is logged too, and an account deleted afterwards leaves its attempts
+  /// behind. Requiring the account here made the whole list fail on the first such row.
   #[sea_orm(nested, alias = "user")]
-  pub user: AccessLogUser,
+  pub user: Option<AccessLogUser>,
   pub method: AccessMethod,
   pub code: AccessResultCode,
 
