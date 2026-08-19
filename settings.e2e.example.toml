@@ -11,6 +11,16 @@ logging = "info"
 # Must point to a dedicated test DB (e.g. sumida_test), NOT a real one.
 url = "postgres://user:password@localhost:5432/sumida_test"
 logging = "INFO"
+# 케이스마다 서버를 새로 띄우므로 풀도 케이스마다 하나씩 생긴다. 지정하지 않으면 SeaORM 기본값이
+# 풀당 100 이고 postgres 의 max_connections 도 100 이라, 케이스 하나가 상한을 다 먹는다. 그러면
+# 병렬 실행이 `Connection pool timed out` 으로 무작위로 깨지고, 그걸 피하려 `--test-threads=1` 을
+# 쓰면 스위트가 네 배 느려진다.
+#
+# 값은 실측으로 정했다. 가장 큰 테스트 바이너리 기준 5 에서 62 초, 15 에서 53 초, 30 에서 51 초 —
+# 5 는 커넥션을 기다리느라 스스로 병목이 되고, 15 위로는 평평하다. 제품 스위트는 한 번에 하나씩
+# 도니 한 서비스가 서버 상한을 다 써도 된다.
+max_connections = 15
+acquire_timeout = "10s"
 
 [aws]
 region = "ap-northeast-2"
