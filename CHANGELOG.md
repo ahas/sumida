@@ -66,6 +66,27 @@ and this project adheres to semantic versioning at the workspace level.
 
 ### Added
 
+- **The login lockout policy is an operational setting, not a boot-fixed one.** The failed-attempt
+  ceiling, the reset span, the ban span, the ban target, and the switch that turns the whole thing
+  off now live in `system_settings` and are read at the point the policy is applied, so an operator
+  changes them on a running service instead of editing a file and restarting. Each field falls back
+  to its settings-file value independently, and a missing row, a wrong-typed value, or a failed
+  query all take the fallback and log a warning — the login path never fails because of the store.
+  Reading them requires the `system-settings` feature; without it the settings file is the only
+  source, exactly as before.
+
+- **`system_settings.category`.** A setting declares which kind of thing it governs — `auth`,
+  `execution`, `retention`, `storage`, or `general` — so a settings screen can group by that instead
+  of listing every key flat. The column is added by its own migration (`system_settings_category`),
+  which also seeds the framework's own authentication settings; consumers add it to their `Migrator`
+  after the migration that creates the table. Rows that declare nothing get `general`.
+
+  `SystemSettingItem` gains a `category` field, so any client reading `GET /system-settings` sees it.
+
+- **`docs/system-settings.md`** — the canonical statement of the settings mechanism: which values
+  belong in the settings file, which belong in the runtime store, which stay code constants, the
+  category vocabulary, and how a downstream service registers and reads its own settings.
+
 - **An authorization test harness that can see what a status code cannot** (`e2e::authz`,
   `e2e::org_tree`). The pre-existing `ap_test_utils` suite asserts `resp.status()` and nothing
   else, which is the blind spot an authorization audit of this codebase kept falling into: an

@@ -14,3 +14,5 @@ pub mod rebac_columns;
 pub mod rebac_mirror;
 #[cfg(feature = "system-settings")]
 pub mod system_settings;
+#[cfg(feature = "system-settings")]
+pub mod system_settings_category;

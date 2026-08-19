@@ -477,6 +477,11 @@ impl UserSession {
     user_id: Option<i32>,
     db: &C,
   ) -> Result<bool, SumidaError> {
+    // The policy is an operational setting: read it from the system settings store when that
+    // feature is on, and from the settings file otherwise.
+    #[cfg(feature = "system-settings")]
+    let settings = &settings::security::resolve_ban_settings(db).await;
+    #[cfg(not(feature = "system-settings"))]
     let settings = &settings::get().security.ban;
     // Do nothing if the ban feature is disabled.
     if !settings.enabled {

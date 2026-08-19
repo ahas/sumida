@@ -4,10 +4,20 @@ use sea_orm::IntoActiveModel;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+/// sumida 자신이 소유하는 설정 키. 인증 정책(로그인 실패 잠금)은 기반 층의 관심사이므로 여기 산다.
+pub mod keys {
+  pub const SECURITY_BAN_ENABLED: &str = "security.ban.enabled";
+  pub const SECURITY_BAN_MAX_FAILED_ATTEMPTS: &str = "security.ban.max_failed_attempts";
+  pub const SECURITY_BAN_FAILURE_RESET_AFTER: &str = "security.ban.failure_reset_after";
+  pub const SECURITY_BAN_DURATION: &str = "security.ban.duration";
+  pub const SECURITY_BAN_TARGET: &str = "security.ban.target";
+}
+
 /// 시스템 설정(운영 설정 key-value) — 공용 feature `system-settings`.
 ///
-/// key-value 운영 설정 저장소. 앱별 키 상수(예: `<app>.*`, `task.purge.*`)는 각 소비자
-/// 크레이트가 자체 `keys` 모듈로 소유하고, 이 엔티티는 스키마와 접근 헬퍼만 제공한다.
+/// key-value 운영 설정 저장소. 이 엔티티는 스키마·접근 헬퍼와 함께 sumida 자신이 쓰는 키 상수
+/// (`keys` 모듈)만 소유한다. 그 위에 선 서비스의 키 상수는 각 소비자 크레이트가 자체 `keys`
+/// 모듈로 소유하고, 어느 쪽도 상대의 키 목록을 알지 않는다.
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, Serialize, Deserialize, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "system_setting_data_type_enum")]
 pub enum SystemSettingDataType {
@@ -46,6 +56,8 @@ pub struct Model {
   #[sea_orm(column_type = "JsonBinary", nullable)]
   pub max:         Option<Json>,
   pub is_editable: bool,
+  /// 설정이 속한 갈래 — auth·execution·retention·storage·general. 선언하지 않은 행은 general.
+  pub category:    String,
   pub updated_at:  DateTimeWithTimeZone,
   pub updated_by:  Option<i32>,
 }
@@ -151,6 +163,8 @@ impl Entity {
       min:         Set(None),
       max:         Set(None),
       is_editable: Set(false),
+      // 자동등록 setting 은 갈래를 선언하지 않는다 — 컬럼 기본값(general)이 붙는다.
+      category:    NotSet,
       updated_at:  Set(chrono::Utc::now().fixed_offset()),
       updated_by:  Set(updated_by),
     };

@@ -19,6 +19,8 @@ session-store-aws-dynamodb = [
   "tower-sessions-dynamodb-store",
 ]
 jwt = ["jsonwebtoken", "jsonwebtoken/rust_crypto"]
+# Shared operational settings: the login lockout policy is read from the runtime store.
+system-settings = ["entity/system-settings"]
 
 [dependencies]
 entity = { path = "../entity" }
