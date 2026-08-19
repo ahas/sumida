@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::controller::ApiController;
 use crate::service::fs::dto::*;
 use crate::service::fs::prelude::*;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -28,9 +29,10 @@ impl<S: SumidaState> FileController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<FileFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<FileListItem>, SumidaError> {
-    Ok(FileService::new(state, session).list(filter, pagination).await?.into())
+    Ok(FileService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get(
@@ -103,6 +105,7 @@ where
       .route("/stats", routing::get(Self::get_stats))
       .route("/{uuid}/download", routing::get(Self::download))
       .route_layer(service_ap!(state, "file", read));
+    let route_filters = filter_descriptor_router::<S, FileFilter>(state, "file");
 
     let route_create = Router::new()
       .route("/", routing::post(Self::upload))
@@ -121,6 +124,7 @@ where
 
     Router::new()
       .merge(route_read)
+      .merge(route_filters)
       .merge(route_create)
       // .merge(route_update)
       .merge(route_delete)

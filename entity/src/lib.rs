@@ -11,6 +11,7 @@ pub mod mail_forms;
 #[cfg(feature = "membership")]
 pub mod membership;
 pub mod organizations;
+pub mod relation_tuples;
 pub mod roles;
 #[cfg(feature = "system-settings")]
 pub mod system_settings;

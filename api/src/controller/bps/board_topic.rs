@@ -3,6 +3,7 @@ use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
 use crate::service::prelude::*;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -22,9 +23,10 @@ impl<S: SumidaState> BoardTopicController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<BoardTopicFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardTopicListItem>, SumidaError> {
-    Ok(BoardTopicService::new(state, session).list(filter, pagination).await?.into())
+    Ok(BoardTopicService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get(
@@ -77,6 +79,7 @@ where
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(state, "board_topic", read));
+    let route_filters = filter_descriptor_router::<S, BoardTopicFilter>(state, "board_topic");
 
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
@@ -92,6 +95,7 @@ where
 
     Router::new()
       .merge(route_read)
+      .merge(route_filters)
       .merge(route_create)
       .merge(route_update)
       .merge(route_delete)

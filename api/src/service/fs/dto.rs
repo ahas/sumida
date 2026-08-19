@@ -3,18 +3,20 @@ use axum::Json;
 use axum::extract::{FromRequest, Multipart, Request};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use entity::fs::files::FileStatus;
 use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::prelude::*;
-use sea_orm::sea_query::Alias;
-use sea_orm::{Condition, QueryTrait};
-use sea_orm_crud::Nullable;
+use sea_orm::sea_query::{Alias, SimpleExpr};
+use sea_orm::{ActiveEnum, Condition, IntoSimpleExpr, QueryTrait};
+use sea_orm_crud::{Nullable, OneOrMany};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::SumidaState;
 use crate::service::grants::ApForUser;
 use crate::util::db::wrap_ilike;
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 use crate::util::storage::StaticFile;
 
 /// Read-only, access-gated path exposed to clients instead of the raw internal storage URI.
@@ -29,7 +31,7 @@ pub struct FileFilter {
   pub dir: Option<String>,
   pub name: Option<String>,
   pub uri: Option<String>,
-  pub status: Option<String>,
+  pub status: Option<OneOrMany<FileStatus>>,
   pub mime_type: Option<String>,
 }
 
@@ -51,8 +53,51 @@ impl FileFilter {
       .apply_if(self.dir.as_ref(), |q, v| q.filter(wrap_ilike(Column::Dir.into_expr(), v)))
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)))
       .apply_if(self.uri.as_ref(), |q, v| q.filter(wrap_ilike(Column::Uri.into_expr(), v)))
-      .apply_if(self.status.as_ref(), |q, v| q.filter(Column::Status.eq(v)))
+      .apply_if(listed(self.status.as_ref()), |q, v| {
+        q.filter(Column::Status.is_in(v.iter().map(|s| s.clone().into_value())))
+      })
       .apply_if(self.mime_type.as_ref(), |q, v| q.filter(wrap_ilike(Column::MimeType.into_expr(), v)))
+  }
+}
+
+/// What `/files` accepts, declared once.
+///
+/// `user` widens the uploader's username and full name into one predicate, so it reduces to no
+/// single expression and the resource builds it. Everything else stands on one column of the file.
+const FILE_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("user", FieldKind::Text, MatchStrategy::Custom, &[Op::Contains]),
+  FieldSpec::new("dir", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("uri", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["pending", "temporary", "active", "archived", "deleted", "error"])
+    .with_sort(),
+  FieldSpec::new("mime_type", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::sort_only("uuid", FieldKind::Uuid),
+];
+
+impl FilterSchema for FileFilter {
+  fn fields() -> &'static [FieldSpec] {
+    FILE_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    use entity::fs::files::Column;
+
+    Some(match key {
+      "dir" => Column::Dir.into_simple_expr(),
+      "name" => Column::Name.into_simple_expr(),
+      "uri" => Column::Uri.into_simple_expr(),
+      "status" => Column::Status.into_simple_expr(),
+      "mime_type" => Column::MimeType.into_simple_expr(),
+      "uuid" => Column::Uuid.into_simple_expr(),
+      // `user` spans the uploader's username and full name, so it has no single column of its own.
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "uuid"
   }
 }
 
@@ -315,4 +360,77 @@ pub struct FileMimeTypeStats {
 pub struct FileStatusStats {
   pub status: String,
   pub count: i64,
+}
+
+#[cfg(test)]
+mod filter_tests {
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    FileFilter::validate().expect("the file filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
+    let query = "user=a&dir=b&name=c&uri=d&status=active&mime_type=image/png";
+    let filter: FileFilter = serde_urlencoded::from_str(query).expect("the flat filter parses");
+
+    assert!(filter.user.is_some());
+    assert!(filter.dir.is_some());
+    assert!(filter.name.is_some());
+    assert!(filter.uri.is_some());
+    assert!(filter.status.is_some());
+    assert!(filter.mime_type.is_some());
+  }
+
+  #[test]
+  fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
+    let filter: FileFilter =
+      serde_urlencoded::from_str("status=active,archived").expect("a list parses");
+    assert_eq!(filter.status.as_ref().map(OneOrMany::len), Some(2));
+
+    let filter: FileFilter = serde_urlencoded::from_str("status=").expect("an empty value parses");
+    assert!(listed(filter.status.as_ref()).is_none());
+  }
+
+  #[test]
+  fn an_unknown_enum_variant_is_refused() {
+    assert!(serde_urlencoded::from_str::<FileFilter>("status=shredded").is_err());
+    assert!(serde_urlencoded::from_str::<FileFilter>("status=active,shredded").is_err());
+  }
+
+  /// Every variant the flat parameter parses is a variant the declaration names, so the two paths
+  /// cannot disagree about what `status` accepts.
+  #[test]
+  fn the_declared_variants_are_the_ones_the_parameter_parses() {
+    let status = FileFilter::field("status").expect("`status` is declared");
+
+    for variant in status.variants {
+      let filter: FileFilter = serde_urlencoded::from_str(&format!("status={variant}"))
+        .unwrap_or_else(|_| panic!("`{variant}` must parse"));
+      assert!(filter.status.is_some(), "{variant}");
+    }
+  }
+
+  /// Nothing is answered by a refusal before this list runs, so there is no scope-selecting
+  /// parameter to withhold. Every key the resource never declared stays unreachable.
+  #[test]
+  fn an_undeclared_key_resolves_to_nothing() {
+    for spelling in ["user_id", "hash", "mimeType", "tags", "refs", "deleted_at"] {
+      assert!(FileFilter::field(spelling).is_none(), "{spelling}");
+      assert!(FileFilter::resolve(spelling).is_none(), "{spelling}");
+      assert!(FileFilter::sort_column(spelling).is_none(), "{spelling}");
+    }
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    for key in ["dir", "name", "uri", "status", "mime_type", "uuid"] {
+      assert!(FileFilter::sort_column(key).is_some(), "{key}");
+    }
+    // Spans two columns, so it neither resolves nor sorts.
+    assert!(FileFilter::sort_column("user").is_none());
+    assert!(FileFilter::column("user").is_none());
+  }
 }

@@ -9,7 +9,7 @@ use sea_orm_crud::OneOrMany;
 
 use crate::controller::ApiController;
 use crate::service::bps::prelude::*;
-use crate::util::filter::ConditionQuery;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -25,9 +25,10 @@ impl<S: SumidaState> BoardController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<BoardFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardListItem>, SumidaError> {
-    Ok(BoardService::new(state, session).list(filter, pagination).await?.into())
+    Ok(BoardService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get_posts(
@@ -104,6 +105,7 @@ where
       .route("/{id}", routing::get(Self::get))
       .route("/{id}/posts", routing::get(Self::get_posts))
       .route_layer(service_ap!(state, "board", read));
+    let route_filters = filter_descriptor_router::<S, BoardFilter>(state, "board");
 
     let create = Router::new() //
       .route("/", routing::post(Self::create))
@@ -119,6 +121,7 @@ where
 
     Router::new() //
       .merge(read)
+      .merge(route_filters)
       .merge(create)
       .merge(update)
       .merge(delete)

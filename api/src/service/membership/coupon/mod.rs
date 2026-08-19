@@ -17,6 +17,7 @@ use self::dto::*;
 use super::credit::CreditService;
 use super::subscription::SubscriptionService;
 use crate::SumidaState;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 pub struct CouponService<S: SumidaState> {
@@ -105,20 +106,22 @@ impl<S: SumidaState> CouponService<S> {
     Ok(result)
   }
 
+  /// Administrators only, settled from the session before the query. The declared fields narrow
+  /// inside what that decision already opened, and the sort key resolves through `CouponFilter` 's
+  /// own declaration.
   pub async fn list(
     &self,
     filter: CouponFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<CouponItem>, u64), SumidaError> {
     self.require_admin()?;
     let db = self.state.db();
-    let mut query =
-      Coupons::find().apply_if(filter.is_active, |q, v| q.filter(CouponsColumn::IsActive.eq(v)));
+    let mut query = conditions.apply::<CouponFilter, _>(
+      Coupons::find().apply_if(filter.is_active, |q, v| q.filter(CouponsColumn::IsActive.eq(v))),
+    )?;
     let count = query.clone().select_only().column(CouponsColumn::Id).count(db).await?;
-    query = pagination.order_by(query, |col| match col {
-      "code" => CouponsColumn::Code,
-      _ => CouponsColumn::Id,
-    });
+    query = pagination.order_by_schema::<CouponFilter, _>(query);
     query = pagination.paginate(query);
     let items = query.into_model::<CouponItem>().all(db).await?;
     Ok((items, count))

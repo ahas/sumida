@@ -833,3 +833,34 @@ async fn test_free_subscribe_applies_coupon() {
   assert_eq!(purchase.subtotal, 1000);
   assert_eq!(purchase.amount, 750, "25% off 1000");
 }
+
+// ---------------------------------------------------------------------------
+// The descriptor of a list whose only gate is the session guard.
+// ---------------------------------------------------------------------------
+
+/// Coupons, purchases and subscriptions gate their list with the session guard alone, so their
+/// descriptor is mounted with no gate of its own and merged into the branch that guard covers.
+/// It has to be reachable exactly where the list is, and refused exactly where the list is.
+#[tokio::test]
+async fn test_session_gated_descriptor_stands_where_its_list_stands() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let anon = Mock::new().await;
+
+  for path in ["/coupons", "/membership-purchases", "/subscriptions"] {
+    let list = anon.client.get(path).send().await.unwrap().status();
+    let descriptor = anon.client.get(&format!("{path}/filters")).send().await.unwrap().status();
+
+    assert_ne!(list, StatusCode::OK, "{path} must refuse an unauthenticated caller");
+    assert_eq!(list, descriptor, "{path}/filters must refuse exactly where the list refuses");
+
+    let resp = am.client.get(&format!("{path}/filters")).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "{path}/filters is served to a caller who may list");
+
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["defaultSort"].as_str().is_some(), "{path}: {body}");
+    assert!(!body["fields"].as_array().unwrap().is_empty(), "{path}: {body}");
+    assert!(body["limits"]["maxConditionNodes"].as_u64().is_some(), "{path}: {body}");
+  }
+}

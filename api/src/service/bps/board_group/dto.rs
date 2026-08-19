@@ -3,17 +3,22 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bps::board_groups::*;
 use sea_orm::prelude::*;
-use sea_orm::{DeriveIntoActiveModel, EntityTrait, QueryTrait};
-use sea_orm_crud::{Nullable, Optional};
+use sea_orm::sea_query::SimpleExpr;
+use sea_orm::{DeriveIntoActiveModel, EntityTrait, IntoSimpleExpr, QueryTrait};
+use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::db::wrap_ilike;
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardGroupFilter {
   pub search: Option<String>,
-  pub name: Option<String>,
+  pub name: Option<OneOrMany<String>>,
+  /// Which level of the tree is read. Saying nothing means the roots, not "every group", so it
+  /// carries a meaning a declared key cannot have — an unmentioned key is unfiltered. It stays a
+  /// parameter of the list and never a field.
   pub parent_id: Option<i32>,
 }
 
@@ -27,7 +32,35 @@ impl BoardGroupFilter {
 
     query
       .apply_if(self.search.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)))
-      .apply_if(self.name.as_ref(), |q, v| q.filter(Column::Name.eq(v)))
+      .apply_if(listed(self.name.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::Name)))
+  }
+}
+
+/// What `/board-groups` accepts, declared once.
+///
+/// `search` and `name` both stand on the group name and differ only in how they match it — one
+/// wraps an `ILIKE`, the other compares.
+const BOARD_GROUP_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("search", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]),
+  FieldSpec::new("name", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
+  FieldSpec::sort_only("created_at", FieldKind::DateTime),
+];
+
+impl FilterSchema for BoardGroupFilter {
+  fn fields() -> &'static [FieldSpec] {
+    BOARD_GROUP_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    Some(match key {
+      "search" | "name" => Column::Name.into_simple_expr(),
+      "created_at" => Column::CreatedAt.into_simple_expr(),
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "created_at"
   }
 }
 
@@ -110,5 +143,53 @@ pub struct BoardGroupDeleted;
 impl IntoResponse for BoardGroupDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    BoardGroupFilter::validate().expect("the board group filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
+    let filter: BoardGroupFilter =
+      serde_urlencoded::from_str("search=a&name=b").expect("the flat filter parses");
+
+    assert!(filter.search.is_some());
+    assert!(filter.name.is_some());
+  }
+
+  #[test]
+  fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
+    let filter: BoardGroupFilter = serde_urlencoded::from_str("name=a,b").expect("a list parses");
+    assert_eq!(filter.name.as_ref().map(OneOrMany::len), Some(2));
+
+    let filter: BoardGroupFilter =
+      serde_urlencoded::from_str("name=").expect("an empty value parses");
+    assert!(listed(filter.name.as_ref()).is_none());
+  }
+
+  /// `parent_id` picks which level of the tree is read — its absence means the roots, which is not
+  /// what an unmentioned key means — so it is not a field. Nothing may reach it, and the reserved
+  /// `order` key that drives the display sequence is not reachable either.
+  #[test]
+  fn the_non_field_parameters_resolve_to_nothing() {
+    for spelling in ["parent_id", "parentId", "parent", "order", "id"] {
+      assert!(BoardGroupFilter::field(spelling).is_none(), "{spelling}");
+      assert!(BoardGroupFilter::resolve(spelling).is_none(), "{spelling}");
+      assert!(BoardGroupFilter::sort_column(spelling).is_none(), "{spelling}");
+    }
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    assert!(BoardGroupFilter::sort_column("name").is_some());
+    assert!(BoardGroupFilter::sort_column("created_at").is_some());
+    assert!(BoardGroupFilter::sort_column("search").is_none());
   }
 }

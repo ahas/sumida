@@ -3,17 +3,50 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::organizations::*;
 use sea_orm::prelude::*;
-use sea_orm::{DeriveIntoActiveModel, FromQueryResult, QueryTrait};
+use sea_orm::sea_query::SimpleExpr;
+use sea_orm::{DeriveIntoActiveModel, FromQueryResult, IntoSimpleExpr, QueryTrait};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::db::wrap_ilike;
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct OrganizationFilter {
   pub name: Option<String>,
+  /// Which level of the tree is read. Saying nothing means the roots, not "every organization", so
+  /// it carries a meaning a declared key cannot have — an unmentioned key is unfiltered. It stays a
+  /// parameter of the list and never a field.
   pub parent_id: Option<i32>,
+}
+
+/// What `/organizations` accepts, declared once.
+const ORGANIZATION_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::sort_only("id", FieldKind::Integer),
+  FieldSpec::sort_only("createdAt", FieldKind::DateTime),
+  FieldSpec::sort_only("updatedAt", FieldKind::DateTime),
+];
+
+impl FilterSchema for OrganizationFilter {
+  fn fields() -> &'static [FieldSpec] {
+    ORGANIZATION_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    Some(match key {
+      "name" => Column::Name.into_simple_expr(),
+      "id" => Column::Id.into_simple_expr(),
+      "createdAt" => Column::CreatedAt.into_simple_expr(),
+      "updatedAt" => Column::UpdatedAt.into_simple_expr(),
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "id"
+  }
 }
 
 impl OrganizationFilter {
@@ -106,5 +139,40 @@ pub struct OrganizationDeleted;
 impl IntoResponse for OrganizationDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    OrganizationFilter::validate().expect("the organization filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
+    let filter: OrganizationFilter =
+      serde_urlencoded::from_str("name=a").expect("the flat filter parses");
+    assert!(filter.name.is_some());
+  }
+
+  /// `parent_id` picks which level of the tree is read — its absence means the roots, which is not
+  /// what an unmentioned key means — so it is not a field. Nothing may reach it.
+  #[test]
+  fn the_non_field_parameters_resolve_to_nothing() {
+    for spelling in ["parent_id", "parentId", "parent", "created_at"] {
+      assert!(OrganizationFilter::field(spelling).is_none(), "{spelling}");
+      assert!(OrganizationFilter::resolve(spelling).is_none(), "{spelling}");
+      assert!(OrganizationFilter::sort_column(spelling).is_none(), "{spelling}");
+    }
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    for key in ["name", "id", "createdAt", "updatedAt"] {
+      assert!(OrganizationFilter::sort_column(key).is_some(), "{key}");
+    }
   }
 }

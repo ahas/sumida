@@ -20,6 +20,7 @@ use crate::SumidaState;
 use crate::service::auth::session::AuthSessionService;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 use crate::util::user::hash_password;
 
@@ -68,25 +69,21 @@ impl<S: SumidaState> UserService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `UserFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: UserFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<UserListItem>, u64), SumidaError> {
     use entity::users::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(Users::find())?);
+    let mut query = conditions.apply::<UserFilter, _>(filter.apply(self.select(Users::find())?))?;
     let count = query.clone().select_only().column(Column::Username).count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "username" => Column::Username,
-      "name" => Column::FullName,
-      "email" => Column::Email,
-      "createdAt" => Column::CreatedAt,
-      "updatedAt" => Column::UpdatedAt,
-      _ => Column::Username,
-    });
+    query = pagination.order_by_schema::<UserFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_model::<UserListItem>().all(db).await?;

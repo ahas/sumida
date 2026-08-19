@@ -7,7 +7,7 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::{NotSet, Unchanged};
 use sea_orm::prelude::*;
 use sea_orm::sea_query::{Asterisk, Expr, Func};
-use sea_orm::{DeleteResult, IntoActiveValue, IntoSimpleExpr, QuerySelect, Set, TransactionTrait};
+use sea_orm::{DeleteResult, IntoActiveValue, QuerySelect, Set, TransactionTrait};
 
 use super::dto::*;
 use crate::SumidaState;
@@ -15,6 +15,7 @@ use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::authz::write::TupleFilter;
 use crate::util::file_validation::{FileValidationConfig, FileValidator};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 use crate::util::storage::{Storage, SumidaStorage};
 
@@ -50,26 +51,21 @@ impl<S: SumidaState> FileService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `FileFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: FileFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<FileListItem>, u64), SumidaError> {
     use entity::fs::files::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(Files::find())?);
+    let mut query = conditions.apply::<FileFilter, _>(filter.apply(self.select(Files::find())?))?;
     let count = query.clone().select_only().column(Column::Uuid).count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "user" => Column::UserId.into_simple_expr(),
-      "dir" => Column::Dir.into_simple_expr(),
-      "name" => Column::Name.into_simple_expr(),
-      "uri" => Column::Uri.into_simple_expr(),
-      "status" => Column::Status.into_simple_expr(),
-      "mimeType" => Column::MimeType.into_simple_expr(),
-      _ => Column::Uuid.into_simple_expr(),
-    });
+    query = pagination.order_by_schema::<FileFilter, _>(query);
     query = pagination.paginate(query);
 
     let mut items: Vec<FileListItem> = query.into_partial_model().all(db).await?;

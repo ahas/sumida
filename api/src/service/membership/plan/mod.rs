@@ -16,6 +16,7 @@ use self::dto::*;
 use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace membership_plan service = membership_plan`).
@@ -43,22 +44,20 @@ impl<S: SumidaState> PlanService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `PlanFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: PlanFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<PlanListItem>, u64), SumidaError> {
     let db = self.state.db();
-    let mut query = filter.apply(self.select(MembershipPlans::find())?);
+    let mut query =
+      conditions.apply::<PlanFilter, _>(filter.apply(self.select(MembershipPlans::find())?))?;
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "code" => Column::Code,
-      "name" => Column::Name,
-      "price" => Column::Price,
-      "createdAt" => Column::CreatedAt,
-      _ => Column::Id,
-    });
+    query = pagination.order_by_schema::<PlanFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_model::<PlanListItem>().all(db).await?;

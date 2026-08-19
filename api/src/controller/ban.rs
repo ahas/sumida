@@ -3,6 +3,7 @@ use axum::{Json, Router, routing};
 
 use super::ApiController;
 use crate::service::prelude::*;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -22,9 +23,10 @@ impl<S: SumidaState> BanController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<BanFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BanListItem>, SumidaError> {
-    Ok(BanService::new(state, session).list(filter, pagination).await?.into())
+    Ok(BanService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get(
@@ -77,6 +79,7 @@ where
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(state, "ban", read));
+    let route_filters = filter_descriptor_router::<S, BanFilter>(state, "ban");
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
       .route_layer(service_ap!(state, "ban", create));
@@ -89,6 +92,7 @@ where
 
     Router::new()
       .merge(route_read)
+      .merge(route_filters)
       .merge(route_create)
       .merge(route_update)
       .merge(route_delete)

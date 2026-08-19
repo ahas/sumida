@@ -8,7 +8,7 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
-  ColumnTrait, Condition, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
+  ActiveEnum, ColumnTrait, Condition, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
   QuerySelect, QueryTrait, Select, TransactionTrait,
 };
 use serde_json::json;
@@ -19,6 +19,7 @@ use super::{gen_code, notify_all, recipient_emails, resolve_owner};
 use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
+use crate::util::filter::{ConditionQuery, listed};
 use crate::util::pagination::Pagination;
 
 fn status_str(status: &SubscriptionStatus) -> &'static str {
@@ -212,27 +213,36 @@ impl<S: SumidaState> SubscriptionService<S> {
 
   // ---- public API ----
 
+  /// The owner scope first, the declared fields inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `SubscriptionFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: SubscriptionFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<SubscriptionListItem>, u64), SumidaError> {
     let db = self.state.db();
-    let mut query = self
+    let query = self
       .scope(Subscriptions::find(), db)
       .await?
-      .apply_if(filter.owner_kind.clone(), |q, v| q.filter(Column::OwnerKind.eq(v)))
-      .apply_if(filter.owner_id, |q, v| q.filter(Column::OwnerId.eq(v)))
-      .apply_if(filter.status.clone(), |q, v| q.filter(Column::Status.eq(v)))
-      .apply_if(filter.plan_code.clone(), |q, v| q.filter(Column::PlanCode.eq(v)));
+      .apply_if(listed(filter.owner_kind.as_ref()), |q, v| {
+        q.filter(Column::OwnerKind.is_in(v.iter().map(|k| k.clone().into_value())))
+      })
+      .apply_if(listed(filter.owner_id.as_ref()), |q, v| {
+        q.filter(v.into_simple_expr(Column::OwnerId))
+      })
+      .apply_if(listed(filter.status.as_ref()), |q, v| {
+        q.filter(Column::Status.is_in(v.iter().map(|k| k.clone().into_value())))
+      })
+      .apply_if(listed(filter.plan_code.as_ref()), |q, v| {
+        q.filter(v.into_simple_expr(Column::PlanCode))
+      });
+
+    let mut query = conditions.apply::<SubscriptionFilter, _>(query)?;
 
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "createdAt" => Column::CreatedAt,
-      "currentPeriodEnd" => Column::CurrentPeriodEnd,
-      _ => Column::Id,
-    });
+    query = pagination.order_by_schema::<SubscriptionFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_model::<SubscriptionListItem>().all(db).await?;

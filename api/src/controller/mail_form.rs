@@ -7,6 +7,7 @@ use serde_json::json;
 
 use super::ApiController;
 use crate::service::prelude::*;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
@@ -28,9 +29,10 @@ impl<S: SumidaState> MailFormController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<MailFormFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<MailFormListItem>, SumidaError> {
-    Ok(MailFormService::new(state, session).list(filter, pagination).await?.into())
+    Ok(MailFormService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get(
@@ -131,6 +133,7 @@ where
       .route("/", routing::get(Self::list))
       .route("/{kind}", routing::get(Self::get))
       .route_layer(service_ap!(state, "mail_form", read));
+    let route_filters = filter_descriptor_router::<S, MailFormFilter>(state, "mail_form");
     let route_create = Router::new()
       .route("/", routing::post(Self::create))
       .route("/files", routing::post(Self::upload_files))
@@ -144,6 +147,7 @@ where
 
     Router::<S>::new()
       .merge(route_read)
+      .merge(route_filters)
       .merge(route_create)
       .merge(route_update)
       .merge(route_delete)

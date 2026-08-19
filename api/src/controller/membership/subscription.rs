@@ -5,6 +5,7 @@ use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
 use crate::service::prelude::*;
+use crate::util::filter::{ConditionQuery, filter_descriptor_route};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, user_guard};
 
@@ -20,9 +21,15 @@ impl<S: SumidaState> SubscriptionController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<SubscriptionFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<SubscriptionListItem>, SumidaError> {
-    Ok(SubscriptionService::new(state, session).list(filter, pagination).await?.into())
+    Ok(
+      SubscriptionService::new(state, session)
+        .list(filter, conditions, pagination)
+        .await?
+        .into(),
+    )
   }
 
   async fn get(
@@ -96,7 +103,10 @@ impl<S: SumidaState> ApiController<S> for SubscriptionController<S> {
   fn router(self, state: &S) -> Router<S> {
     // Authorization is enforced inside the service (owner / org-admin via ReBAC),
     // so the route layer only requires an authenticated user.
+    // 서술은 목록과 같은 게이트를 받아야 하고, 이 목록이 서 있는 것은 아래 `user_guard!` 하나뿐
+    // 이므로 게이트를 스스로 달지 않는 라우트를 그 안에 합친다.
     Router::new()
+      .merge(filter_descriptor_route::<S, SubscriptionFilter>())
       .route("/", routing::get(Self::list).post(Self::subscribe))
       .route("/{id}", routing::get(Self::get))
       .route("/{id}/cancel", routing::post(Self::cancel))

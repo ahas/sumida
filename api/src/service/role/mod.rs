@@ -15,6 +15,7 @@ use crate::authz::subject::SubjectSet;
 use crate::authz::write::SubjectKey;
 use crate::authz::Authz;
 use crate::service::grants::{from_service_grants, to_service_grants};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace role service = role`).
@@ -50,23 +51,21 @@ impl<S: SumidaState> RoleService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `RoleFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: RoleFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<RoleListItem>, u64), SumidaError> {
     use entity::roles::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(Roles::find())?);
+    let mut query = conditions.apply::<RoleFilter, _>(filter.apply(self.select(Roles::find())?))?;
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "name" => Column::Name,
-      "createdAt" => Column::CreatedAt,
-      "updatedAt" => Column::UpdatedAt,
-      _ => Column::Id,
-    });
+    query = pagination.order_by_schema::<RoleFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_model::<RoleListItem>().all(db).await?;

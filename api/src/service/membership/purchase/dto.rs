@@ -1,16 +1,65 @@
+use entity::membership::membership_purchases::Column;
 use entity::membership::{OwnerKind, PlanKind, PurchaseStatus};
-use sea_orm::FromQueryResult;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::SimpleExpr;
+use sea_orm::{FromQueryResult, IntoSimpleExpr};
+use sea_orm_crud::OneOrMany;
 use serde::{Deserialize, Serialize};
+
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseFilter {
-  pub owner_kind: Option<OwnerKind>,
-  pub owner_id: Option<i32>,
-  pub kind: Option<PlanKind>,
-  pub status: Option<PurchaseStatus>,
-  pub plan_code: Option<String>,
+  pub owner_kind: Option<OneOrMany<OwnerKind>>,
+  pub owner_id: Option<OneOrMany<i32>>,
+  pub kind: Option<OneOrMany<PlanKind>>,
+  pub status: Option<OneOrMany<PurchaseStatus>>,
+  pub plan_code: Option<OneOrMany<String>>,
+}
+
+/// What `/membership-purchases` accepts, declared once.
+///
+/// The owner scope is a condition emitted into the list statement — everything for an
+/// administrator, otherwise the caller's own rows and their organization's — so `ownerKind` and
+/// `ownerId` narrow inside it rather than choosing it.
+///
+/// `ownerId` carries no relation hint: what it points at depends on `ownerKind`, and a hint names
+/// exactly one resource. A picker would have to branch on another key, which the hint cannot say.
+const PURCHASE_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("ownerKind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["personal", "organization"]),
+  FieldSpec::new("ownerId", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
+  FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["subscription", "credit"]),
+  FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["pending", "completed", "failed", "refunded"]),
+  FieldSpec::new("planCode", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
+  FieldSpec::sort_only("createdAt", FieldKind::DateTime),
+  FieldSpec::sort_only("id", FieldKind::Integer),
+];
+
+impl FilterSchema for PurchaseFilter {
+  fn fields() -> &'static [FieldSpec] {
+    PURCHASE_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    Some(match key {
+      "ownerKind" => Column::OwnerKind.into_simple_expr(),
+      "ownerId" => Column::OwnerId.into_simple_expr(),
+      "kind" => Column::Kind.into_simple_expr(),
+      "status" => Column::Status.into_simple_expr(),
+      "planCode" => Column::PlanCode.into_simple_expr(),
+      "createdAt" => Column::CreatedAt.into_simple_expr(),
+      "id" => Column::Id.into_simple_expr(),
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "id"
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
@@ -32,4 +81,92 @@ pub struct PurchaseListItem {
   pub currency: String,
   pub paid_at: Option<DateTimeWithTimeZone>,
   pub created_at: DateTimeWithTimeZone,
+}
+
+#[cfg(test)]
+mod filter_tests {
+  use crate::util::filter::listed;
+
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    PurchaseFilter::validate().expect("the purchase filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
+    let query = "ownerKind=personal&ownerId=1&kind=credit&status=completed&planCode=pro";
+    let filter: PurchaseFilter = serde_urlencoded::from_str(query).expect("the flat filter parses");
+
+    assert!(filter.owner_kind.is_some());
+    assert!(filter.owner_id.is_some());
+    assert!(filter.kind.is_some());
+    assert!(filter.status.is_some());
+    assert!(filter.plan_code.is_some());
+  }
+
+  #[test]
+  fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
+    let filter: PurchaseFilter = serde_urlencoded::from_str(
+      "ownerKind=personal,organization&ownerId=1,2&kind=subscription,credit       &status=pending,completed&planCode=pro,lite",
+    )
+    .expect("a list parses");
+
+    assert_eq!(filter.owner_kind.as_ref().map(OneOrMany::len), Some(2));
+    assert_eq!(filter.owner_id.as_ref().map(OneOrMany::len), Some(2));
+    assert_eq!(filter.kind.as_ref().map(OneOrMany::len), Some(2));
+    assert_eq!(filter.status.as_ref().map(OneOrMany::len), Some(2));
+    assert_eq!(filter.plan_code.as_ref().map(OneOrMany::len), Some(2));
+
+    let filter: PurchaseFilter =
+      serde_urlencoded::from_str("ownerKind=&ownerId=&kind=&status=&planCode=")
+        .expect("an empty value parses");
+
+    assert!(listed(filter.owner_kind.as_ref()).is_none());
+    assert!(listed(filter.owner_id.as_ref()).is_none());
+    assert!(listed(filter.kind.as_ref()).is_none());
+    assert!(listed(filter.status.as_ref()).is_none());
+    assert!(listed(filter.plan_code.as_ref()).is_none());
+  }
+
+  #[test]
+  fn an_unknown_enum_variant_is_refused() {
+    assert!(serde_urlencoded::from_str::<PurchaseFilter>("status=disputed").is_err());
+    assert!(serde_urlencoded::from_str::<PurchaseFilter>("ownerKind=personal,corporate").is_err());
+  }
+
+  /// Every variant the flat parameters parse is a variant the declaration names.
+  #[test]
+  fn the_declared_variants_are_the_ones_the_parameters_parse() {
+    for key in ["ownerKind", "kind", "status"] {
+      let field = PurchaseFilter::field(key).unwrap_or_else(|| panic!("`{key}` is declared"));
+
+      for variant in field.variants {
+        serde_urlencoded::from_str::<PurchaseFilter>(&format!("{key}={variant}"))
+          .unwrap_or_else(|_| panic!("`{key}={variant}` must parse"));
+      }
+    }
+  }
+
+  /// The owner scope is a condition emitted into the list statement, not a refusal answered before
+  /// it, so no parameter here picks a scope. Every key the resource never declared stays
+  /// unreachable.
+  #[test]
+  fn an_undeclared_key_resolves_to_nothing() {
+    for spelling in ["owner_kind", "owner_id", "plan_code", "amount", "coupon_code", "paid_at"] {
+      assert!(PurchaseFilter::field(spelling).is_none(), "{spelling}");
+      assert!(PurchaseFilter::resolve(spelling).is_none(), "{spelling}");
+      assert!(PurchaseFilter::sort_column(spelling).is_none(), "{spelling}");
+    }
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    assert!(PurchaseFilter::sort_column("createdAt").is_some());
+    assert!(PurchaseFilter::sort_column("id").is_some());
+    for key in ["ownerKind", "ownerId", "kind", "status", "planCode"] {
+      assert!(PurchaseFilter::sort_column(key).is_none(), "{key}");
+    }
+  }
 }

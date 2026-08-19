@@ -6,7 +6,7 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr, PaginatorTrait,
+  ColumnTrait, ConnectionTrait, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait,
   QueryFilter, QuerySelect, Select, TransactionTrait,
 };
 
@@ -14,6 +14,7 @@ use self::dto::*;
 use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace board service = board`).
@@ -50,22 +51,23 @@ impl<S: SumidaState> BoardService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `BoardFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: BoardFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<BoardListItem>, u64), SumidaError> {
     use entity::bps::boards::Column;
 
     let txn = self.state.db().begin().await?;
 
-    let mut query = filter.apply(self.select(Boards::find())?);
+    let mut query =
+      conditions.apply::<BoardFilter, _>(filter.apply(self.select(Boards::find())?))?;
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "name" => Column::Name.into_simple_expr(),
-      _ => Column::CreatedAt.into_simple_expr(),
-    });
+    query = pagination.order_by_schema::<BoardFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_partial_model::<BoardListItem>().all(&txn).await?;

@@ -15,6 +15,8 @@
 //! against the same declaration, and added to the query as one condition — so it narrows on exactly
 //! the terms the flat parameters do.
 
+use sea_orm_crud::OneOrMany;
+
 pub mod condition;
 pub mod descriptor;
 pub mod schema;
@@ -34,7 +36,13 @@ pub use condition::{
   MAX_CONDITION_TEXT_LENGTH,
   MAX_CONDITION_VALUES,
 };
-pub use descriptor::{DESCRIPTOR_PATH, FilterDescriptor, FilterLimits, filter_descriptor_router};
+pub use descriptor::{
+  DESCRIPTOR_PATH,
+  FilterDescriptor,
+  FilterLimits,
+  filter_descriptor_route,
+  filter_descriptor_router,
+};
 pub use schema::FilterSchema;
 pub use spec::{
   Arity,
@@ -48,3 +56,12 @@ pub use spec::{
   RESERVED_KEYS,
   RelationHint,
 };
+
+/// A multi-value parameter that actually names something.
+///
+/// An empty value (`?id=`) is an empty list, and an empty list means unfiltered — a form that
+/// submits its untouched boxes must not narrow the page to nothing. Reading a parameter through
+/// this is what keeps that spelling from reaching the query as an `IN ()`.
+pub fn listed<T>(values: Option<&OneOrMany<T>>) -> Option<&OneOrMany<T>> {
+  values.filter(|v| !v.is_empty())
+}

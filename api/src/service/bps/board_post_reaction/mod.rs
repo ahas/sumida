@@ -13,6 +13,7 @@ use sea_orm::{
 use self::dto::*;
 use crate::SumidaState;
 use crate::service::prelude::BoardPostService;
+use crate::util::filter::{ConditionQuery, listed};
 use crate::util::pagination::Pagination;
 
 type ReactionEntity = entity::bps::board_post_reactions::Entity;
@@ -85,9 +86,13 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     }
   }
 
+  /// The read scope first — the post the caller named, plus the board's reaction visibility — and
+  /// the declared fields inside it. `post_id` is answered above the query and can refuse; the
+  /// declared keys can only narrow what that refusal already let through.
   pub async fn list(
     &self,
     filter: BoardPostReactionFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<BoardPostReactionListItem>, u64), SumidaError> {
     let txn = self.state.db().begin().await?;
@@ -102,19 +107,23 @@ impl<S: SumidaState> BoardPostReactionService<S> {
 
     let mut query = ReactionEntity::find().filter(ReactionColumn::PostId.eq(post_id));
     if private_to_self {
+      // The caller's own rows, pinned before any declared key is read: `user_id` narrows inside
+      // this, never in place of it.
       query = query.filter(ReactionColumn::UserId.eq(self.session.profile.id));
     }
     if let Some(value) = filter.value.as_ref() {
       query = query.filter(ReactionColumn::Value.eq(value));
     }
+    if let Some(user_id) = listed(filter.user_id.as_ref()) {
+      query = query.filter(user_id.into_simple_expr(ReactionColumn::UserId));
+    }
+
+    // Last, and only ever as one more `AND`.
+    let mut query = conditions.apply::<BoardPostReactionFilter, _>(query)?;
 
     let count = query.clone().select_only().column(ReactionColumn::Id).count(&txn).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "value" => ReactionColumn::Value,
-      "createdAt" => ReactionColumn::CreatedAt,
-      _ => ReactionColumn::CreatedAt,
-    });
+    query = pagination.order_by_schema::<BoardPostReactionFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_model::<BoardPostReactionListItem>().all(&txn).await?;

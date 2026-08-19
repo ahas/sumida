@@ -8,6 +8,7 @@ use crate::controller::ApiController;
 use crate::service::bps::board_file::BoardFileService;
 use crate::service::bps::board_file::dto::*;
 use crate::service::fs::dto::{FileUploadTrait, FileUploaded};
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -23,9 +24,10 @@ impl<S: SumidaState> BoardFileController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<BoardFileFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardFileListItem>, SumidaError> {
-    Ok(BoardFileService::new(state, session).list(filter, pagination).await?.into())
+    Ok(BoardFileService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get(
@@ -70,6 +72,7 @@ where
       .route("/", routing::get(Self::list))
       .route("/file", routing::get(Self::get))
       .route_layer(service_ap!(state, "board_file", read));
+    let route_filters = filter_descriptor_router::<S, BoardFileFilter>(state, "board_file");
 
     let create = Router::new() //
       .route("/", routing::post(Self::upload))
@@ -81,6 +84,7 @@ where
 
     Router::new() //
       .merge(read)
+      .merge(route_filters)
       .merge(create)
       .merge(delete)
       .route_layer(user_guard!(state))

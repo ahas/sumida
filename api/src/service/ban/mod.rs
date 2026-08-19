@@ -7,14 +7,15 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Alias, Asterisk, Expr, SimpleExpr};
 use sea_orm::{
-  ColumnTrait, Condition, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, IntoSimpleExpr,
-  JoinType, PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, RelationTrait, Select, TransactionTrait,
+  ColumnTrait, Condition, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, JoinType,
+  PaginatorTrait, QueryFilter, QuerySelect, QueryTrait, RelationTrait, Select, TransactionTrait,
 };
 
 use self::dto::*;
 use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace ban service = ban`).
@@ -67,22 +68,21 @@ impl<S: SumidaState> BanService<S> {
     )
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `BanFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: BanFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<BanListItem>, u64), SumidaError> {
     let txn = self.state.db().begin().await?;
 
-    let mut query = filter.apply(self.select(Bans::find())?);
+    let mut query = conditions.apply::<BanFilter, _>(filter.apply(self.select(Bans::find())?))?;
 
     let count = query.clone().select_only().column(BansColumn::Id).count(&txn).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "user_id" => BansColumn::UserId.into_simple_expr(),
-      "fullName" => Expr::col((Alias::new("u"), UsersColumn::FullName)).into_simple_expr(),
-      _ => BansColumn::CreatedAt.into_simple_expr(),
-    });
+    query = pagination.order_by_schema::<BanFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_partial_model::<BanListItem>().all(&txn).await?;

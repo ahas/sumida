@@ -3,13 +3,14 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::users::*;
 use sea_orm::prelude::*;
-use sea_orm::sea_query::{Alias, CommonTableExpression, Query, UnionType, WithClause};
-use sea_orm::{Condition, FromQueryResult, JoinType, QueryTrait};
+use sea_orm::sea_query::{Alias, CommonTableExpression, Query, SimpleExpr, UnionType, WithClause};
+use sea_orm::{Condition, FromQueryResult, IntoSimpleExpr, JoinType, QueryTrait};
 use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::db::wrap_ilike;
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserFilter {
@@ -17,7 +18,10 @@ pub struct UserFilter {
   pub username: Option<String>,
   pub name: Option<String>,
   pub organization_id: Option<OneOrMany<i32>>,
-  pub role_id: Option<i32>,
+  pub role_id: Option<OneOrMany<i32>>,
+  /// Whether `organization_id` matches by equality or through the organization tree. It has no
+  /// expression of its own — it selects which mechanism the other key uses — so it is a modifier of
+  /// that key rather than a field.
   pub recursive: Option<bool>,
 }
 
@@ -33,7 +37,9 @@ impl UserFilter {
       })
       .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike(Column::Username.into_expr(), v)))
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::FullName.into_expr(), v)))
-      .apply_if(self.role_id, |q, v| q.filter(Column::RoleId.eq(v)));
+      .apply_if(listed(self.role_id.as_ref()), |q, v| {
+        q.filter(v.into_simple_expr(Column::RoleId))
+      });
 
     // An empty list means unfiltered, so it never narrows the query.
     if let Some(org_id) = self.organization_id.as_ref().filter(|v| !v.is_empty()) {
@@ -73,6 +79,49 @@ impl UserFilter {
     }
 
     query
+  }
+}
+
+/// What `/users` accepts, declared once.
+///
+/// `search` widens the username and the full name into one predicate, and `organization_id` matches
+/// either by equality or through a recursive walk of the organization tree depending on a second
+/// parameter. Neither reduces to one expression under one operator, so both are the resource's own
+/// to build; the keys that do reduce say so.
+const USER_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Contains]),
+  FieldSpec::new("username", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("organization_id", FieldKind::Integer, MatchStrategy::Custom, &[Op::Eq, Op::In])
+    .with_relation("/organizations", "name"),
+  FieldSpec::new("role_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/roles", "name"),
+  FieldSpec::sort_only("email", FieldKind::Text),
+  FieldSpec::sort_only("createdAt", FieldKind::DateTime),
+  FieldSpec::sort_only("updatedAt", FieldKind::DateTime),
+];
+
+impl FilterSchema for UserFilter {
+  fn fields() -> &'static [FieldSpec] {
+    USER_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    Some(match key {
+      "username" => Column::Username.into_simple_expr(),
+      "name" => Column::FullName.into_simple_expr(),
+      "role_id" => Column::RoleId.into_simple_expr(),
+      "email" => Column::Email.into_simple_expr(),
+      "createdAt" => Column::CreatedAt.into_simple_expr(),
+      "updatedAt" => Column::UpdatedAt.into_simple_expr(),
+      // `search` spans two columns and `organization_id` spans two matching mechanisms, so neither
+      // has a single column of its own.
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "username"
   }
 }
 
@@ -233,4 +282,73 @@ pub struct UserActivation {
   pub user_id: i32,
   pub password: String,
   pub uuid: Uuid,
+}
+
+#[cfg(test)]
+mod filter_tests {
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    UserFilter::validate().expect("the user filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
+    let query = "search=a&username=b&name=c&organization_id=1&role_id=2";
+    let filter: UserFilter = serde_urlencoded::from_str(query).expect("the flat filter parses");
+
+    assert!(filter.search.is_some());
+    assert!(filter.username.is_some());
+    assert!(filter.name.is_some());
+    assert!(filter.organization_id.is_some());
+    assert!(filter.role_id.is_some());
+  }
+
+  #[test]
+  fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
+    let filter: UserFilter =
+      serde_urlencoded::from_str("organization_id=1,2&role_id=3,4").expect("a list parses");
+
+    assert_eq!(filter.organization_id.as_ref().map(OneOrMany::len), Some(2));
+    assert_eq!(filter.role_id.as_ref().map(OneOrMany::len), Some(2));
+
+    let filter: UserFilter =
+      serde_urlencoded::from_str("organization_id=&role_id=").expect("an empty value parses");
+
+    assert!(listed(filter.organization_id.as_ref()).is_none());
+    assert!(listed(filter.role_id.as_ref()).is_none());
+  }
+
+  /// `recursive` modifies how `organization_id` matches and has no expression of its own, so it is
+  /// not a field. Nothing may reach it, and neither may any key the resource never declared.
+  #[test]
+  fn the_non_field_parameters_resolve_to_nothing() {
+    for spelling in ["recursive", "password", "is_admin", "organizationId", "roleId"] {
+      assert!(UserFilter::field(spelling).is_none(), "{spelling}");
+      assert!(UserFilter::resolve(spelling).is_none(), "{spelling}");
+      assert!(UserFilter::sort_column(spelling).is_none(), "{spelling}");
+    }
+  }
+
+  /// The two keys whose predicate spans several mechanisms reduce to no expression, so the base has
+  /// nothing to compile for them; their flat parameters are untouched.
+  #[test]
+  fn the_custom_fields_have_no_column() {
+    for key in ["search", "organization_id"] {
+      let field = UserFilter::field(key).unwrap_or_else(|| panic!("`{key}` is declared"));
+      assert!(matches!(field.strategy, MatchStrategy::Custom), "{key}");
+      assert!(UserFilter::column(key).is_none(), "{key}");
+    }
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    for key in ["username", "name", "email", "createdAt", "updatedAt"] {
+      assert!(UserFilter::sort_column(key).is_some(), "{key}");
+    }
+    for key in ["search", "organization_id", "role_id"] {
+      assert!(UserFilter::sort_column(key).is_none(), "{key}");
+    }
+  }
 }

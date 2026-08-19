@@ -1,30 +1,55 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use entity::bps::board_post_reactions::ActiveModel;
+use entity::bps::board_post_reactions::{ActiveModel, Column};
+use sea_orm::IntoSimpleExpr;
 use sea_orm::prelude::*;
-use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, QueryTrait, Set};
-use sea_orm_crud::{Nullable, Optional};
+use sea_orm::sea_query::SimpleExpr;
+use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, Set};
+use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::util::db::wrap_ilike;
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostReactionFilter {
+  /// Which post's reactions are read. It is answered **before** the list query — a missing value is
+  /// a bad request and the board's reaction visibility can refuse outright — so it chooses a scope
+  /// rather than narrowing one, and it is deliberately not a declared field. Declared, its refusal
+  /// would become an empty page, which tells the caller the post exists and carries no reactions.
   pub post_id: Option<i32>,
-  pub user_id: Option<i32>,
+  pub user_id: Option<OneOrMany<i32>>,
   pub value: Option<String>,
 }
 
-impl BoardPostReactionFilter {
-  pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
-    use entity::bps::board_post_reactions::Column;
+/// What `/board-post-reactions` accepts, declared once.
+///
+/// `user_id` narrows within the rows the post's visibility already opened. Under a private board
+/// the list has already pinned the caller's own id, so naming it here can only narrow further.
+const BOARD_POST_REACTION_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("value", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq]).with_sort(),
+  FieldSpec::new("user_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/users", "username"),
+  FieldSpec::sort_only("createdAt", FieldKind::DateTime),
+];
 
-    query
-      .apply_if(self.post_id, |q, v| q.filter(Column::PostId.eq(v)))
-      .apply_if(self.user_id, |q, v| q.filter(Column::UserId.eq(v)))
-      .apply_if(self.value.as_ref(), |q, v| q.filter(wrap_ilike(Column::Value.into_expr(), v)))
+impl FilterSchema for BoardPostReactionFilter {
+  fn fields() -> &'static [FieldSpec] {
+    BOARD_POST_REACTION_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    Some(match key {
+      "value" => Column::Value.into_simple_expr(),
+      "user_id" => Column::UserId.into_simple_expr(),
+      "createdAt" => Column::CreatedAt.into_simple_expr(),
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "createdAt"
   }
 }
 
@@ -123,5 +148,54 @@ pub struct BoardPostReactionDeleted;
 impl IntoResponse for BoardPostReactionDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    BoardPostReactionFilter::validate().expect("the reaction filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
+    let filter: BoardPostReactionFilter =
+      serde_urlencoded::from_str("value=like&user_id=7").expect("the flat filter parses");
+
+    assert!(filter.value.is_some());
+    assert!(filter.user_id.is_some());
+  }
+
+  #[test]
+  fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
+    let filter: BoardPostReactionFilter =
+      serde_urlencoded::from_str("user_id=1,2").expect("a list parses");
+    assert_eq!(filter.user_id.as_ref().map(OneOrMany::len), Some(2));
+
+    let filter: BoardPostReactionFilter =
+      serde_urlencoded::from_str("user_id=").expect("an empty value parses");
+    assert!(crate::util::filter::listed(filter.user_id.as_ref()).is_none());
+  }
+
+  /// `post_id` picks which post is read and is answered by a refusal before the query runs, so it
+  /// is not a field. Nothing may reach it — not the tree, not the sort key, under any spelling.
+  #[test]
+  fn the_scope_selecting_parameter_resolves_to_nothing() {
+    for spelling in ["post_id", "postId", "post"] {
+      assert!(BoardPostReactionFilter::field(spelling).is_none(), "{spelling}");
+      assert!(BoardPostReactionFilter::resolve(spelling).is_none(), "{spelling}");
+      assert!(BoardPostReactionFilter::sort_column(spelling).is_none(), "{spelling}");
+    }
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    assert!(BoardPostReactionFilter::sort_column("value").is_some());
+    assert!(BoardPostReactionFilter::sort_column("createdAt").is_some());
+    // Declared, but not sortable.
+    assert!(BoardPostReactionFilter::sort_column("user_id").is_none());
   }
 }

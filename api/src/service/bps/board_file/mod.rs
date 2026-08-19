@@ -5,8 +5,8 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
-  QuerySelect, RelationTrait, Select, TransactionTrait,
+  ColumnTrait, DeleteResult, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
+  RelationTrait, Select, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -17,6 +17,7 @@ use crate::authz::subject::SubjectSet;
 use crate::service::fs::dto::{DeleteFile, FileUploaded};
 use crate::service::fs::file::FileService;
 use crate::util::file_validation::FileValidator;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace board_file service = board_file`).
@@ -46,38 +47,32 @@ impl<S: SumidaState> BoardFileService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `BoardFileFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: BoardFileFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<BoardFileListItem>, u64), SumidaError> {
     use entity::bps::board_files::Column;
-    use entity::fs::files::Column as FileColumn;
 
     let db = self.state.db();
 
     // Apply the board_file read ReBAC filter via self.select(...).
     // Without this, board_file:read permission alone would let one read attachments across all organizations.
-    let mut query = filter.apply(util::with_file_columns(
+    let mut query = conditions.apply::<BoardFileFilter, _>(filter.apply(util::with_file_columns(
       self
         .select(BoardFiles::find())?
         .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
         .select_only()
         .column_as(Column::FileUuid, "id")
         .column_as(Column::PostId, "post_id"),
-    ));
+    )))?;
 
     let count = query.clone().count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "dir" => FileColumn::Dir.into_simple_expr(),
-      "name" => FileColumn::Name.into_simple_expr(),
-      "size" => FileColumn::Size.into_simple_expr(),
-      "mime_type" => FileColumn::MimeType.into_simple_expr(),
-      "status" => FileColumn::Status.into_simple_expr(),
-      "created_at" => FileColumn::CreatedAt.into_simple_expr(),
-      _ => FileColumn::CreatedAt.into_simple_expr(),
-    });
+    query = pagination.order_by_schema::<BoardFileFilter, _>(query);
     query = pagination.paginate(query);
 
     let mut items = query.into_model::<BoardFileListItem>().all(db).await?;

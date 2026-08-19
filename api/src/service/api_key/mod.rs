@@ -7,7 +7,7 @@ use sea_orm::ActiveValue::Unchanged;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{
-  DbErr, DeleteResult, EntityTrait, IntoActiveModel, IntoSimpleExpr, JoinType, PaginatorTrait, QuerySelect,
+  DbErr, DeleteResult, EntityTrait, IntoActiveModel, JoinType, PaginatorTrait, QuerySelect,
   RelationTrait, Select, Set, SqlErr, TransactionTrait,
 };
 
@@ -17,6 +17,7 @@ use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::authz::write::SubjectKey;
 use crate::service::grants::{from_service_grants, to_service_grants};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace api_key service = api_key`).
@@ -70,26 +71,23 @@ impl<S: SumidaState> ApiKeyService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `ApiKeyFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: ApiKeyFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<ApiKeyListItem>, u64), SumidaError> {
     use entity::api_keys::Column;
 
     let db = self.state.db();
-    let col_username = Expr::col("user_username");
-    let col_full_name = Expr::col("user_full_name");
 
-    let mut query = filter.apply(self.select(ApiKeys::find())?);
+    let mut query =
+      conditions.apply::<ApiKeyFilter, _>(filter.apply(self.select(ApiKeys::find())?))?;
     let count = query.clone().select_only().column(Column::Key).count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "key" => Column::Key.into_simple_expr(),
-      "username" => col_username.into_simple_expr(),
-      "name" => col_full_name.into_simple_expr(),
-      _ => Column::Key.into_simple_expr(),
-    });
+    query = pagination.order_by_schema::<ApiKeyFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_model::<ApiKeyListItem>().all(db).await?;

@@ -448,6 +448,84 @@ async fn scenario_reaction_lifecycle_and_security() {
   assert_eq!(resp.status(), StatusCode::OK, "owner deletes their reaction");
 }
 
+/// `post_id` chooses which post's reactions are read, and the board's reaction visibility answers
+/// it *before* the list query. Declaring it would turn that refusal into a `200` with an empty
+/// list, which tells the caller the post exists and carries no reactions — so the descriptor must
+/// not name it, and asking for someone else's post must still refuse.
+#[tokio::test]
+async fn scenario_reaction_scope_selector_refuses_rather_than_emptying_the_page() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board = make_board(
+    &db,
+    BoardPostContentVisibility::Public,
+    BoardPostRecordVisibility::AuthorOnly,
+    false,
+  )
+  .await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  allow(&db, &author, "board_post_reaction", "service", &["read", "create"]).await;
+  author.login(&mock.client).await;
+  let post_id = create_published_article(&mock, board.id, "author-only reactions").await;
+
+  let resp = mock
+    .client
+    .post("/board-post-reactions")
+    .json(&json!({ "postId": post_id, "value": "like" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::CREATED);
+
+  // The author reads their own post's reactions.
+  let resp = mock
+    .client
+    .get(&format!("/board-post-reactions?post_id={post_id}"))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::OK, "the author may read their own post's reactions");
+  assert_eq!(resp.json::<Value>().await.unwrap()["count"].as_i64(), Some(1));
+
+  // A stranger who may read the post and may list reactions still may not read *this* post's.
+  let mock_x = Mock::new().await;
+  let stranger = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &stranger, &board, &["read"]).await;
+  allow(&db, &stranger, "board_post_reaction", "service", &["read"]).await;
+  stranger.login(&mock_x.client).await;
+
+  let resp = mock_x
+    .client
+    .get(&format!("/board-post-reactions?post_id={post_id}"))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(
+    resp.status(),
+    StatusCode::FORBIDDEN,
+    "naming another author's post must refuse, not answer an empty page"
+  );
+
+  // Naming no post at all is a bad request, not an unfiltered listing of every post's reactions.
+  let resp = mock_x.client.get("/board-post-reactions").send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+  // The descriptor sits behind the same read gate and never names the scope selector.
+  let resp = mock_x.client.get("/board-post-reactions/filters").send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK, "the descriptor is served to a caller who may list");
+
+  let descriptor: Value = resp.json().await.unwrap();
+  let keys: Vec<&str> =
+    descriptor["fields"].as_array().unwrap().iter().map(|f| f["key"].as_str().unwrap()).collect();
+
+  assert!(keys.contains(&"value"), "{keys:?}");
+  assert!(keys.contains(&"user_id"), "{keys:?}");
+  assert!(!keys.iter().any(|key| key.contains("post")), "{keys:?}");
+  assert_eq!(descriptor["defaultSort"].as_str(), Some("createdAt"));
+}
+
 #[tokio::test]
 async fn scenario_file_upload_claim_and_orphan_reap() {
   let mock = Mock::new().await;

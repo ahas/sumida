@@ -236,3 +236,28 @@ tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullab
 - ~~스케줄러 다중 인스턴스 advisory lock~~ — 완료: `run_once`가 Postgres advisory lock으로 단일 러너 보장
 - ~~쿠폰은 PG checkout 경로에만 적용(무료 subscribe 경로 제외)~~ — ✅ 완료: `POST /subscriptions`도
   `couponCode`/`couponCodes`를 받아 첫 기간 청구액 할인(무료 trial은 미소비). 테스트 `test_free_subscribe_applies_coupon`.
+
+## 목록 필터 계약 — 남은 리소스와 후속 (정본: `docs/list-filters.md`)
+
+sumida 의 최상위 목록 리소스는 전부 선언을 들고 `GET <리소스>/filters` 를 내주며, 정렬과 조건
+트리를 그 선언 하나로 푼다. 아래는 이번에 닿지 않은 부분이다.
+
+### 지갑 하위 목록 세 개가 아직 선언을 갖지 않는다
+- `/coupons/{id}/grants`, `/coupons/mine`, 크레딧 원장(`credit_transactions`)과 예약
+  (`credit_reservations`) 목록은 손으로 적은 정렬 whitelist 를 그대로 쓰고 서술을 내주지 않는다.
+- 원장·예약의 `walletId` 는 **질의 앞에서 답해지는 스코프 선택자**다(월렛 소유자 확인이 거절로
+  끝난다). 선언에 넣으면 그 거절이 빈 목록이 되므로, 계약에 넣을 때도 이 파라미터는 필드가
+  아니어야 한다.
+
+### 범위 파라미터가 없어 날짜·숫자 키가 전부 정렬 전용이다
+- 선언에서 `between`/`gte`/`lte` 를 여는 순간 호출자는 `a..b` 표기를 보내는데, sumida 의 필터
+  구조체 중 `Bounds` 를 든 것이 없다. 접근 로그의 기간 조회처럼 실제 수요가 생기면 **먼저
+  파라미터를 `Bounds` 로 바꾸고** 그다음 연산자를 연다.
+
+### 표시 순서를 나르는 `order` 컬럼은 이름을 바꾸지 않으면 선언할 수 없다
+- boards / board_topics / board_groups 가 `order` 컬럼으로 화면 순서를 정하는데 `order` 는 목록
+  봉투가 이미 가진 예약 키다. 정렬을 열려면 다른 키 이름을 붙여야 한다.
+
+### 정렬 키 표기가 코어와 bps 에서 snake_case, 그 밖에서 camelCase 로 갈려 있다
+- 한 컬럼에 키는 하나이므로, 다른 표기로 보낸 `sort` 는 오류 없이 기본 정렬로 떨어진다. 표기를
+  한쪽으로 모으는 것은 클라이언트와 함께 움직여야 하는 별도 작업이다.

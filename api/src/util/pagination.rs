@@ -4,8 +4,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::util::filter::FilterSchema;
 
-/// Also read by `RelationTupleService`, whose list is a raw statement rather than a
-/// `Select<E>` and therefore has to apply the same ceiling by hand.
+/// The ceiling on a page. The descriptor endpoint serves it so a client can cap its own request
+/// instead of discovering the limit by being silently clamped.
 pub(crate) const MAX_LIMIT: u64 = 500;
 
 fn deserialize_order<'de, D>(deserializer: D) -> Result<Order, D::Error>

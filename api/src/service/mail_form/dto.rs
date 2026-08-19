@@ -3,17 +3,46 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::mail_forms::*;
 use sea_orm::prelude::*;
-use sea_orm::{DeriveIntoActiveModel, FromQueryResult, QueryTrait};
+use sea_orm::sea_query::SimpleExpr;
+use sea_orm::{DeriveIntoActiveModel, FromQueryResult, IntoSimpleExpr, QueryTrait};
 use sea_orm_crud::Optional;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::util::db::wrap_ilike;
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct MailFormFilter {
   pub sender: Option<String>,
   pub subject: Option<String>,
+}
+
+/// What `/mail-forms` accepts, declared once. `kind` is the form's primary key and the order the
+/// page reads in, but it is not offered as a filter: the screen picks a form by following its link.
+const MAIL_FORM_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("sender", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("subject", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::sort_only("kind", FieldKind::Text),
+];
+
+impl FilterSchema for MailFormFilter {
+  fn fields() -> &'static [FieldSpec] {
+    MAIL_FORM_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    Some(match key {
+      "sender" => Column::Sender.into_simple_expr(),
+      "subject" => Column::Subject.into_simple_expr(),
+      "kind" => Column::Kind.into_simple_expr(),
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "kind"
+  }
 }
 
 impl MailFormFilter {
@@ -100,5 +129,42 @@ pub struct MailFormDeleted;
 impl IntoResponse for MailFormDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    MailFormFilter::validate().expect("the mail form filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
+    let filter: MailFormFilter =
+      serde_urlencoded::from_str("sender=a&subject=b").expect("the flat filter parses");
+
+    assert!(filter.sender.is_some());
+    assert!(filter.subject.is_some());
+  }
+
+  /// Nothing is answered by a refusal before this list runs, so there is no scope-selecting
+  /// parameter to withhold. Every key the resource never declared stays unreachable.
+  #[test]
+  fn an_undeclared_key_resolves_to_nothing() {
+    for spelling in ["content", "created_at", "updated_at", "createdAt"] {
+      assert!(MailFormFilter::field(spelling).is_none(), "{spelling}");
+      assert!(MailFormFilter::resolve(spelling).is_none(), "{spelling}");
+      assert!(MailFormFilter::sort_column(spelling).is_none(), "{spelling}");
+    }
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    for key in ["sender", "subject", "kind"] {
+      assert!(MailFormFilter::sort_column(key).is_some(), "{key}");
+    }
   }
 }

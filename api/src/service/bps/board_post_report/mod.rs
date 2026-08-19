@@ -12,6 +12,7 @@ use sea_orm::{
 use self::dto::*;
 use crate::SumidaState;
 use crate::service::prelude::BoardPostService;
+use crate::util::filter::{ConditionQuery, listed};
 use crate::util::pagination::Pagination;
 
 type ReportEntity = entity::bps::board_post_reports::Entity;
@@ -27,28 +28,31 @@ impl<S: SumidaState> BoardPostReportService<S> {
     Self { state, session }
   }
 
-  /// Moderator listing (the route is gated by `board_post_report:read`); optional post/user filter.
+  /// Moderator listing: the route gate `board_post_report:read` is the whole access decision, and
+  /// the declared keys narrow inside it. The sort key resolves through `BoardPostReportFilter` 's
+  /// own declaration.
   pub async fn list(
     &self,
     filter: BoardPostReportFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<BoardPostReportListItem>, u64), SumidaError> {
     let db = self.state.db();
 
     let mut query = ReportEntity::find();
-    if let Some(post_id) = filter.post_id {
-      query = query.filter(ReportColumn::PostId.eq(post_id));
+    if let Some(post_id) = listed(filter.post_id.as_ref()) {
+      query = query.filter(post_id.into_simple_expr(ReportColumn::PostId));
     }
-    if let Some(user_id) = filter.user_id {
-      query = query.filter(ReportColumn::UserId.eq(user_id));
+    if let Some(user_id) = listed(filter.user_id.as_ref()) {
+      query = query.filter(user_id.into_simple_expr(ReportColumn::UserId));
     }
+
+    // Last, and only ever as one more `AND`.
+    let mut query = conditions.apply::<BoardPostReportFilter, _>(query)?;
 
     let count = query.clone().select_only().column(ReportColumn::Id).count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "createdAt" => ReportColumn::CreatedAt,
-      _ => ReportColumn::CreatedAt,
-    });
+    query = pagination.order_by_schema::<BoardPostReportFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_model::<BoardPostReportListItem>().all(db).await?;

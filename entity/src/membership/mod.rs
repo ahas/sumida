@@ -27,6 +27,16 @@ pub enum OwnerKind {
   Organization,
 }
 
+/// 목록 필터가 값을 나열해 올 때 조각 하나하나를 이 구현이 읽는다. 모르는 값은 여기서 거절되어
+/// 400 이 된다 — 조용히 버리면 걸리지 않은 필터가 걸린 것처럼 보인다.
+impl std::str::FromStr for OwnerKind {
+  type Err = DbErr;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    <Self as sea_orm::ActiveEnum>::try_from_value(&s.to_string())
+  }
+}
+
 /// Billing model of a plan.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
@@ -34,6 +44,16 @@ pub enum OwnerKind {
 pub enum PlanKind {
   Subscription,
   Credit,
+}
+
+/// 목록 필터가 값을 나열해 올 때 조각 하나하나를 이 구현이 읽는다. 모르는 값은 여기서 거절되어
+/// 400 이 된다 — 조용히 버리면 걸리지 않은 필터가 걸린 것처럼 보인다.
+impl std::str::FromStr for PlanKind {
+  type Err = DbErr;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    <Self as sea_orm::ActiveEnum>::try_from_value(&s.to_string())
+  }
 }
 
 /// UX-facing label for a subscription plan's billing cadence.
@@ -61,6 +81,16 @@ pub enum SubscriptionStatus {
   Expired,
 }
 
+/// 목록 필터가 값을 나열해 올 때 조각 하나하나를 이 구현이 읽는다. 모르는 값은 여기서 거절되어
+/// 400 이 된다 — 조용히 버리면 걸리지 않은 필터가 걸린 것처럼 보인다.
+impl std::str::FromStr for SubscriptionStatus {
+  type Err = DbErr;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    <Self as sea_orm::ActiveEnum>::try_from_value(&s.to_string())
+  }
+}
+
 /// Append-only audit events for subscription state transitions.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
@@ -83,6 +113,16 @@ pub enum PurchaseStatus {
   Completed,
   Failed,
   Refunded,
+}
+
+/// 목록 필터가 값을 나열해 올 때 조각 하나하나를 이 구현이 읽는다. 모르는 값은 여기서 거절되어
+/// 400 이 된다 — 조용히 버리면 걸리지 않은 필터가 걸린 것처럼 보인다.
+impl std::str::FromStr for PurchaseStatus {
+  type Err = DbErr;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    <Self as sea_orm::ActiveEnum>::try_from_value(&s.to_string())
+  }
 }
 
 /// Kind of credit ledger entry.

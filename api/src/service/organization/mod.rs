@@ -12,6 +12,7 @@ use self::dto::*;
 use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace organization service = organization`).
@@ -39,23 +40,22 @@ impl<S: SumidaState> OrganizationService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `OrganizationFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: OrganizationFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<OrganizationListItem>, u64), SumidaError> {
     use entity::organizations::Column;
 
     let db = self.state.db();
-    let mut query = filter.apply(self.select(Organizations::find())?);
+    let mut query =
+      conditions.apply::<OrganizationFilter, _>(filter.apply(self.select(Organizations::find())?))?;
     let count = query.clone().select_only().column(Column::Id).count(db).await?;
 
-    query = pagination.order_by(query, |col| match col {
-      "name" => Column::Name,
-      "createdAt" => Column::CreatedAt,
-      "updatedAt" => Column::UpdatedAt,
-      _ => Column::Id,
-    });
+    query = pagination.order_by_schema::<OrganizationFilter, _>(query);
     query = pagination.paginate(query);
 
     let items = query.into_model::<OrganizationListItem>().all(db).await?;

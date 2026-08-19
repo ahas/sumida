@@ -25,6 +25,7 @@ use crate::util::filter::{
   FilterSchema,
   MatchStrategy,
   Op,
+  listed,
 };
 
 pub trait Reply {
@@ -108,11 +109,6 @@ impl BoardPostFilter {
         q.filter(Column::Status.is_in(v.iter().map(|s| s.clone().into_value())))
       })
   }
-}
-
-/// An empty list means unfiltered, so it never reaches the query.
-fn listed<T>(values: Option<&OneOrMany<T>>) -> Option<&OneOrMany<T>> {
-  values.filter(|v| !v.is_empty())
 }
 
 /// What `/board-posts` accepts, declared once.

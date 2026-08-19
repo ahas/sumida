@@ -165,7 +165,9 @@ DTO `IntoActiveModel`에서 `.into_active_value()` 한 줄로 변환.
 - 페이지네이션: `Pagination{page,limit,sort,order}` → `.paginate(q)` / `.order_by(q, |c| match c { "name"=>Col::Name, .. })` + 응답 `List::from((items, count))`
 - 목록 필터 선언: 리소스가 자기 `Filter` 옆에서 `util::filter::FilterSchema` 를 구현하면 정렬 키
   해석(`.order_by_schema::<MyFilter, _>(q)`)과 서술 엔드포인트(`GET <리소스>/filters`)가 같은
-  선언을 읽는다. 어휘·예약 키·전략은 [`docs/list-filters.md`](docs/list-filters.md)가 정본
+  선언을 읽는다. 서술 라우트는 `filter_descriptor_router`(네임스페이스로 게이트하는 목록) 또는
+  `filter_descriptor_route`(세션 가드만 걸린 목록 — 게이트 없이 받아 읽기 묶음에 머지)로 붙인다.
+  어휘·예약 키·전략은 [`docs/list-filters.md`](docs/list-filters.md)가 정본
 - 다중 값 파라미터: `sea_orm_crud::OneOrMany` 하나로 통일 — `?id=1` / `?id=1,2` / `?id=1&id=2`,
   빈 값은 빈 목록(=필터 안 걸림), 모르는 값은 400
 - 범위 파라미터: `sea_orm_crud::Bounds` 하나로 통일 — `?p=3`(eq) / `?p=3..7`(between) /
@@ -207,7 +209,8 @@ room 자동 가입 규칙: 접속 사용자는 `org:N`, `user:N`, `admin`(관리
 1. `entity/`에 SeaORM 엔티티 + prelude 노출 (다운스트림이 자체 entity면 자체 prelude)
 2. 마이그레이션 추가 (`sea_orm_migration`)
 3. DTO 5종 세트 작성 — `Optional`/`Nullable`로 PATCH 시멘틱 정리, 목록이 있으면 `Filter` 옆에
-   `FilterSchema` 선언 + 컨트롤러 읽기 묶음에 `filter_descriptor_router` 머지
+   `FilterSchema` 선언 + 컨트롤러 읽기 묶음에 서술 라우트 머지(`filter_descriptor_router` /
+   세션 가드만 있으면 `filter_descriptor_route`)
 4. `.sz` 에 정의를 추가하고 서비스에 리스트 스코프와 단건 점검을 붙인다 — 부모 종속은 규칙 쪽에서 부모 관계로 푼다
 5. `Controller`에 list/get/create/update/delete + 액션별 `service_ap!` + `user_guard!`
 6. 라우터 nest 추가

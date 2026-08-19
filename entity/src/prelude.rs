@@ -73,6 +73,10 @@ pub use super::organizations::{
   ActiveModel as OrganizationsActiveModel, Column as OrganizationsColumn, Entity as Organizations,
   Model as OrganizationsModel, Relation as OrganizationsRelation,
 };
+pub use super::relation_tuples::{
+  ActiveModel as RelationTuplesActiveModel, Column as RelationTuplesColumn, Entity as RelationTuples,
+  Model as RelationTuplesModel, Relation as RelationTuplesRelation,
+};
 pub use super::roles::{
   ActiveModel as RolesActiveModel, Column as RolesColumn, Entity as Roles, Model as RolesModel,
   Relation as RolesRelation,

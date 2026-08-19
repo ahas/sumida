@@ -5,18 +5,22 @@ use entity::bps::boards::*;
 use entity::prelude::*;
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::*;
-use sea_orm::{Condition, EntityTrait, IntoActiveModel, IntoActiveValue, QueryTrait};
-use sea_orm_crud::{Nullable, Optional};
+use sea_orm::sea_query::SimpleExpr;
+use sea_orm::{
+  Condition, EntityTrait, IntoActiveModel, IntoActiveValue, IntoSimpleExpr, QueryTrait,
+};
+use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 
 use crate::util::db::wrap_ilike;
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFilter {
   pub search: Option<String>,
   pub name: Option<String>,
-  pub group_id: Option<i32>,
+  pub group_id: Option<OneOrMany<i32>>,
 }
 
 impl BoardFilter {
@@ -30,7 +34,40 @@ impl BoardFilter {
         )
       })
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)))
-      .apply_if(self.group_id, |q, v| q.filter(Column::GroupId.eq(v)))
+      .apply_if(listed(self.group_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::GroupId)))
+  }
+}
+
+/// What `/boards` accepts, declared once.
+///
+/// `search` spans the name and the description, so it reduces to no single expression and the
+/// resource builds its predicate itself; `name` is the same match against one column and reduces
+/// to it, which is why the two carry different strategies.
+const BOARD_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Contains]),
+  FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("group_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/board-groups", "name"),
+  FieldSpec::sort_only("created_at", FieldKind::DateTime),
+];
+
+impl FilterSchema for BoardFilter {
+  fn fields() -> &'static [FieldSpec] {
+    BOARD_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    Some(match key {
+      "name" => Column::Name.into_simple_expr(),
+      "group_id" => Column::GroupId.into_simple_expr(),
+      "created_at" => Column::CreatedAt.into_simple_expr(),
+      // `search` spans the name and the description, so it has no single column of its own.
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "created_at"
   }
 }
 
@@ -201,5 +238,65 @@ pub struct BoardDeleted;
 impl IntoResponse for BoardDeleted {
   fn into_response(self) -> axum::response::Response {
     Json(json!({})).into_response()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    BoardFilter::validate().expect("the board filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
+    let filter: BoardFilter =
+      serde_urlencoded::from_str("search=a&name=b&group_id=1").expect("the flat filter parses");
+
+    assert!(filter.search.is_some());
+    assert!(filter.name.is_some());
+    assert!(filter.group_id.is_some());
+  }
+
+  #[test]
+  fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
+    let filter: BoardFilter = serde_urlencoded::from_str("group_id=1,2").expect("a list parses");
+    assert_eq!(filter.group_id.as_ref().map(OneOrMany::len), Some(2));
+
+    let filter: BoardFilter =
+      serde_urlencoded::from_str("group_id=").expect("an empty value parses");
+    assert!(listed(filter.group_id.as_ref()).is_none());
+  }
+
+  /// Nothing is answered by a refusal before this list runs, so there is no scope-selecting
+  /// parameter to withhold. The reserved `order` key that drives the display sequence cannot be a
+  /// field either, and every undeclared key stays unreachable.
+  #[test]
+  fn the_non_field_keys_resolve_to_nothing() {
+    for spelling in ["order", "description", "id", "groupId", "is_enabled"] {
+      assert!(BoardFilter::field(spelling).is_none(), "{spelling}");
+      assert!(BoardFilter::resolve(spelling).is_none(), "{spelling}");
+      assert!(BoardFilter::sort_column(spelling).is_none(), "{spelling}");
+    }
+  }
+
+  /// The integrated search spans two columns, so it reduces to no expression and the base has
+  /// nothing to compile; its flat parameter is untouched.
+  #[test]
+  fn the_integrated_search_field_has_no_column() {
+    let search = BoardFilter::field("search").expect("`search` is declared");
+
+    assert!(matches!(search.strategy, MatchStrategy::Custom));
+    assert!(BoardFilter::column("search").is_none());
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    assert!(BoardFilter::sort_column("name").is_some());
+    assert!(BoardFilter::sort_column("created_at").is_some());
+    assert!(BoardFilter::sort_column("search").is_none());
+    assert!(BoardFilter::sort_column("group_id").is_none());
   }
 }

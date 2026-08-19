@@ -3,6 +3,7 @@ use axum::{Router, routing};
 
 use super::ApiController;
 use crate::service::prelude::*;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -22,9 +23,10 @@ impl<S: SumidaState> AccessLogController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<AccessLogFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<AccessLogListItem>, SumidaError> {
-    Ok(AccessLogService::new(state, session).list(filter, pagination).await?.into())
+    Ok(AccessLogService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get(
@@ -57,12 +59,14 @@ where
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(state, "access_log", read));
+    let route_filters = filter_descriptor_router::<S, AccessLogFilter>(state, "access_log");
     let route_delete = Router::new() //
       .route("/{id}", routing::delete(Self::delete))
       .route_layer(service_ap!(state, "access_log", delete));
 
     Router::new() //
       .merge(route_read)
+      .merge(route_filters)
       .merge(route_delete)
       .route_layer(user_guard!(state))
   }

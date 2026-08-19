@@ -1,15 +1,20 @@
 pub mod dto;
 
+use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
-use sea_orm::{ConnectionTrait, FromQueryResult, Statement, Value};
+use sea_orm::{
+  ConnectionTrait, EntityTrait, FromQueryResult, PaginatorTrait, QueryOrder, QuerySelect, Select,
+  Statement,
+};
 
 use self::dto::*;
 use crate::SumidaState;
 use crate::authz::subject::SubjectSet;
 use crate::authz::write::{SubjectKey, TupleFilter, TupleWrite, validate_write};
 use crate::authz::{Authz, AuthzError};
-use crate::util::pagination::{MAX_LIMIT, Pagination};
+use crate::util::filter::ConditionQuery;
+use crate::util::pagination::Pagination;
 
 /// The CRUD surface over `relation_tuples` — what replaces direct `access_policies` writes
 /// (design §9.6).
@@ -39,11 +44,6 @@ pub struct RelationTupleService<S: SumidaState> {
   session: UserSession,
 }
 
-/// The columns every read of this table projects. `subject_key` is the generated column, renamed to
-/// the wire's `subject`.
-const COLUMNS: &str = r#"id, resource_type, resource_id, relation, subject_key AS subject,
-     expires_at, created_at, created_by"#;
-
 impl<S: SumidaState> RelationTupleService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
@@ -51,6 +51,21 @@ impl<S: SumidaState> RelationTupleService<S> {
 
   fn subject(&self) -> SubjectSet {
     SubjectSet::of(&self.session)
+  }
+
+  /// The columns every read of this table projects. `subject_key` is the generated column, renamed
+  /// to the wire's `subject`.
+  fn default_query_with(query: Select<RelationTuples>) -> Select<RelationTuples> {
+    query
+      .select_only()
+      .column(RelationTuplesColumn::Id)
+      .column(RelationTuplesColumn::ResourceType)
+      .column(RelationTuplesColumn::ResourceId)
+      .column(RelationTuplesColumn::Relation)
+      .column_as(RelationTuplesColumn::SubjectKey, "subject")
+      .column(RelationTuplesColumn::ExpiresAt)
+      .column(RelationTuplesColumn::CreatedAt)
+      .column(RelationTuplesColumn::CreatedBy)
   }
 
   /// The row scope, as the compiled rule renders it.
@@ -61,91 +76,42 @@ impl<S: SumidaState> RelationTupleService<S> {
   /// the statement** rather than evaluated once and branched on, because that is what makes the rule
   /// the only thing deciding: the day `relation_tuple#view` grows a row-dependent branch, this list
   /// narrows with it and no code here changes.
-  fn scope(&self, permission: &str) -> Result<String, AuthzError> {
-    Authz::predicate_sql("relation_tuple", permission, &self.subject())
+  fn select(&self, query: Select<RelationTuples>) -> Result<Select<RelationTuples>, SumidaError> {
+    Ok(Authz::filter("relation_tuple", "view", &self.subject(), Self::default_query_with(query))?)
   }
 
+  /// The read scope first, the flat parameters inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `RelationTupleFilter` 's own declaration, so what the
+  /// descriptor offers and what this statement orders by cannot part company.
   pub async fn list(
     &self,
     filter: RelationTupleFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<RelationTupleListItem>, u64), SumidaError> {
     let db = self.state.db();
-    let mut values: Vec<Value> = Vec::new();
-    let mut wheres: Vec<String> = vec![format!("({})", self.scope("view")?)];
+    let mut query =
+      conditions.apply::<RelationTupleFilter, _>(filter.apply(self.select(RelationTuples::find())?))?;
 
-    for (column, value) in [
-      ("resource_type", filter.resource_type),
-      ("resource_id", filter.resource_id),
-      ("relation", filter.relation),
-      ("subject_key", filter.subject),
-    ] {
-      if let Some(value) = value {
-        values.push(value.into());
-        wheres.push(format!("{column} = ${}", values.len()));
-      }
-    }
-    let wheres = wheres.join(" AND ");
+    let count = query.clone().count(db).await?;
 
-    let count = Count::find_by_statement(Statement::from_sql_and_values(
-      db.get_database_backend(),
-      &format!("SELECT count(*)::bigint AS n FROM relation_tuples WHERE {wheres}"),
-      values.clone(),
-    ))
-    .one(db)
-    .await?
-    .map(|row| row.n)
-    .unwrap_or(0);
+    query = pagination.order_by_schema::<RelationTupleFilter, _>(query);
+    // A stable tiebreaker under LIMIT: several tuples can share any declared sort key.
+    query = query.order_by(RelationTuplesColumn::Id, pagination.order.clone());
+    query = pagination.paginate(query);
 
-    // The sort column is chosen from a fixed set and never interpolated from the request, which is
-    // the same rule `Pagination::order_by`'s `col_getter` enforces by type for a SeaORM `Select`.
-    // This query is raw, so the whitelist has to be written out.
-    let sort = match pagination.sort.as_deref() {
-      Some("resourceType") => "resource_type",
-      Some("resourceId") => "resource_id",
-      Some("relation") => "relation",
-      Some("subject") => "subject_key",
-      Some("expiresAt") => "expires_at",
-      _ => "created_at",
-    };
-    let order = match pagination.order {
-      sea_orm::Order::Desc => "DESC",
-      _ => "ASC",
-    };
+    let items = query.into_model::<RelationTupleListItem>().all(db).await?;
 
-    // `i64` and not `u64`: sea-orm renders an unsigned integer as `BigUnsigned`, which Postgres has
-    // no type for. The ceiling is `Pagination`'s own, applied by hand because this list is a raw
-    // statement rather than a `Select<E>`.
-    values.push((pagination.limit.min(MAX_LIMIT) as i64).into());
-    let limit = values.len();
-    values.push(((pagination.page.saturating_sub(1) * pagination.limit) as i64).into());
-    let offset = values.len();
-
-    let items = RelationTupleListItem::find_by_statement(Statement::from_sql_and_values(
-      db.get_database_backend(),
-      &format!(
-        "SELECT {COLUMNS} FROM relation_tuples WHERE {wheres}
-          ORDER BY {sort} {order}, id {order} LIMIT ${limit} OFFSET ${offset}"
-      ),
-      values,
-    ))
-    .all(db)
-    .await?;
-
-    Ok((items, count as u64))
+    Ok((items, count))
   }
 
   pub async fn get(&self, id: i64) -> Result<Option<RelationTupleListItem>, SumidaError> {
-    let db = self.state.db();
-
     Ok(
-      RelationTupleListItem::find_by_statement(Statement::from_sql_and_values(
-        db.get_database_backend(),
-        &format!("SELECT {COLUMNS} FROM relation_tuples WHERE ({}) AND id = $1", self.scope("view")?),
-        [id.into()],
-      ))
-      .one(db)
-      .await?,
+      self
+        .select(RelationTuples::find_by_id(id))?
+        .into_model::<RelationTupleListItem>()
+        .one(self.state.db())
+        .await?,
     )
   }
 
@@ -261,11 +227,6 @@ fn malformed(error: AuthzError) -> SumidaError {
     | AuthzError::NotCompilable(_) => SumidaError::BadRequest(error.to_string()),
     _ => error.into(),
   }
-}
-
-#[derive(FromQueryResult)]
-struct Count {
-  n: i64,
 }
 
 #[derive(FromQueryResult)]

@@ -10,8 +10,8 @@
 //!
 //! **The declaration is not authority.** Every field here is one a caller *may name*; whether any
 //! row comes back is settled before the filter is applied, by the read scope on the list route. The
-//! route sits behind the same session guard and the same read access-policy layer as the list it
-//! describes, so it cannot enumerate a resource its caller could not list.
+//! route sits behind whatever gate the list route already stands behind, so it cannot enumerate a
+//! resource its caller could not list.
 
 use axum::{Json, Router, routing};
 use serde::Serialize;
@@ -100,11 +100,13 @@ where
   Json(FilterDescriptor::of::<F>())
 }
 
-/// `GET <resource>/filters` for any resource that declares a `FilterSchema`.
+/// `GET <resource>/filters` for any resource that declares a `FilterSchema`, carrying no gate of
+/// its own.
 ///
-/// Merge it into the controller's router alongside the read routes, before the session guard the
-/// controller applies at its top level — it is the same pair of gates the list route sits behind,
-/// and the namespace passed here is the one the list route already gates on.
+/// Merge it into the branch that already holds the resource's read routes. Whatever that branch is
+/// gated with is what the descriptor is gated with, which is the property the contract asks for: a
+/// caller who cannot list cannot read the field list either. The base states the requirement and
+/// mounts the route; which gate answers for it is the resource's own business.
 ///
 /// # Panics
 ///
@@ -112,16 +114,31 @@ where
 /// Every such failure is a wiring mistake — a reserved key, an operator the field cannot mean, a
 /// default sort that is not sortable — and it is the same class of failure as a rule that does not
 /// compile: it must stop the process, not the request that happens to trip over it.
-pub fn filter_descriptor_router<S, F>(state: &S, namespace: &str) -> Router<S>
+pub fn filter_descriptor_route<S, F>() -> Router<S>
 where
-  S: SumidaState,
+  S: Clone + Send + Sync + 'static,
   F: FilterSchema + Send + Sync + 'static,
 {
   if let Err(error) = F::validate() {
     panic!("[FilterSchema]: {error}");
   }
 
-  Router::new()
-    .route(DESCRIPTOR_PATH, routing::get(get_descriptor::<F>))
-    .route_layer(ServiceApLayer::new(state.clone(), namespace, "read"))
+  Router::new().route(DESCRIPTOR_PATH, routing::get(get_descriptor::<F>))
+}
+
+/// The same route with one read access-policy layer applied, for a resource whose list route is
+/// gated on a namespace.
+///
+/// Pass the namespace the list route already gates on, and merge the result beside the read routes
+/// so the controller's own top-level session guard covers it too.
+///
+/// # Panics
+///
+/// As [`filter_descriptor_route`], and for the same reason.
+pub fn filter_descriptor_router<S, F>(state: &S, namespace: &str) -> Router<S>
+where
+  S: SumidaState,
+  F: FilterSchema + Send + Sync + 'static,
+{
+  filter_descriptor_route::<S, F>().route_layer(ServiceApLayer::new(state.clone(), namespace, "read"))
 }

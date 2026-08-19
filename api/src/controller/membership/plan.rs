@@ -5,6 +5,7 @@ use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
 use crate::service::prelude::*;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -20,9 +21,10 @@ impl<S: SumidaState> PlanController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<PlanFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<PlanListItem>, SumidaError> {
-    Ok(PlanService::new(state, session).list(filter, pagination).await?.into())
+    Ok(PlanService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get(
@@ -74,6 +76,7 @@ impl<S: SumidaState> ApiController<S> for PlanController<S> {
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(state, "membership_plan", read));
+    let route_filters = filter_descriptor_router::<S, PlanFilter>(state, "membership_plan");
     let create = Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!(
       state,
       "membership_plan",
@@ -92,6 +95,7 @@ impl<S: SumidaState> ApiController<S> for PlanController<S> {
 
     Router::new()
       .merge(read)
+      .merge(route_filters)
       .merge(create)
       .merge(update)
       .merge(delete)

@@ -3,6 +3,7 @@ use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
 use crate::service::prelude::*;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -22,9 +23,15 @@ impl<S: SumidaState> BoardPostReactionController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<BoardPostReactionFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardPostReactionListItem>, SumidaError> {
-    Ok(BoardPostReactionService::new(state, session).list(filter, pagination).await?.into())
+    Ok(
+      BoardPostReactionService::new(state, session)
+        .list(filter, conditions, pagination)
+        .await?
+        .into(),
+    )
   }
 
   async fn get(
@@ -77,6 +84,10 @@ where
       .route("/", routing::get(Self::list))
       .route("/{id}", routing::get(Self::get))
       .route_layer(service_ap!(state, "board_post_reaction", read));
+    // 이 목록이 무엇을 받는지 알려 주는 서술. 목록과 같은 읽기 게이트 뒤에 있고, 아래 최상위
+    // `user_guard!` 를 함께 받는다.
+    let route_filters =
+      filter_descriptor_router::<S, BoardPostReactionFilter>(state, "board_post_reaction");
     let route_create = Router::new() //
       .route("/", routing::post(Self::create))
       .route_layer(service_ap!(state, "board_post_reaction", create));
@@ -89,6 +100,7 @@ where
 
     Router::new() //
       .merge(route_read)
+      .merge(route_filters)
       .merge(route_create)
       .merge(route_update)
       .merge(route_delete)
