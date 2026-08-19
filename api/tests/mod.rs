@@ -1,6 +1,7 @@
 pub use e2e::prelude::*;
 
 mod board;
+mod board_post;
 mod board_scenario;
 mod coupon;
 mod dashboard;

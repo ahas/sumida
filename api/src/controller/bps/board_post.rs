@@ -5,6 +5,7 @@ use infra::session::UserSession;
 
 use crate::controller::ApiController;
 use crate::service::bps::prelude::*;
+use crate::util::filter::filter_descriptor_router;
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -112,6 +113,10 @@ where
       .route("/{id}/viewers", routing::get(Self::viewers))
       .route_layer(service_ap!(state, "board_post", read));
 
+    // 이 목록이 무엇을 받는지 알려 주는 서술. 목록과 같은 읽기 게이트 뒤에 있고, 아래 최상위
+    // `user_guard!` 를 함께 받는다 — 목록을 못 부르는 호출자가 필드 목록만 받아 가지 못한다.
+    let filters = filter_descriptor_router::<S, BoardPostFilter>(state, "board_post");
+
     // Write operations - board-level permissions checked in handlers
     let create = Router::new() //
       .route("/", routing::post(Self::create))
@@ -130,6 +135,7 @@ where
 
     Router::new() //
       .merge(read)
+      .merge(filters)
       .merge(create)
       .merge(update)
       .merge(delete)

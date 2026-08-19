@@ -6,8 +6,11 @@ use entity::bps::boards::BoardPostContentVisibility;
 use error::SumidaError;
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::*;
-use sea_orm::{Condition, EntityTrait, FromQueryResult, IntoActiveValue, QueryTrait};
-use sea_orm_crud::{Nullable, Optional};
+use sea_orm::sea_query::SimpleExpr;
+use sea_orm::{
+  Condition, EntityTrait, FromQueryResult, IntoActiveValue, IntoSimpleExpr, QueryTrait,
+};
+use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 
@@ -15,6 +18,7 @@ use super::util;
 use crate::service::auth::helper::verify_password;
 use crate::service::prelude::BoardFileListItem;
 use crate::util::db::{tsquery, wrap_ilike};
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
 pub trait Reply {
   fn get_id(&self) -> i32;
@@ -28,7 +32,7 @@ pub struct BoardPostFilter {
   pub title: Option<String>,
   pub text: Option<String>,
   pub kind: Option<BoardPostKind>,
-  pub status: Option<BoardPostStatus>,
+  pub status: Option<OneOrMany<BoardPostStatus>>,
 
   // FTS
   pub with_snippet: bool,
@@ -43,9 +47,9 @@ pub struct BoardPostFilter {
   pub snippet_highlight_all: bool,
 
   // Foreign Keys
-  pub topic_id: Option<i32>,
-  pub board_id: Option<i32>,
-  pub parent_id: Option<i32>,
+  pub topic_id: Option<OneOrMany<i32>>,
+  pub board_id: Option<OneOrMany<i32>>,
+  pub parent_id: Option<OneOrMany<i32>>,
 }
 
 impl Default for BoardPostFilter {
@@ -87,11 +91,75 @@ impl BoardPostFilter {
       })
       .apply_if(self.title.as_ref(), |q, v| q.filter(wrap_ilike(Column::Title.into_expr(), v)))
       .apply_if(self.text.as_ref(), |q, v| q.filter(tsquery(Column::TextTsv, v)))
-      .apply_if(self.topic_id, |q, v| q.filter(Column::TopicId.eq(v)))
-      .apply_if(self.board_id, |q, v| q.filter(Column::BoardId.eq(v)))
-      .apply_if(self.parent_id, |q, v| q.filter(Column::ParentId.eq(v)))
+      .apply_if(listed(self.topic_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::TopicId)))
+      .apply_if(listed(self.board_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::BoardId)))
+      .apply_if(listed(self.parent_id.as_ref()), |q, v| {
+        q.filter(v.into_simple_expr(Column::ParentId))
+      })
       .apply_if(self.kind.as_ref(), |q, v| q.filter(Column::Kind.eq(v.clone().into_value())))
-      .apply_if(self.status.as_ref(), |q, v| q.filter(Column::Status.eq(v.clone().into_value())))
+      .apply_if(listed(self.status.as_ref()), |q, v| {
+        q.filter(Column::Status.is_in(v.iter().map(|s| s.clone().into_value())))
+      })
+  }
+}
+
+/// An empty list means unfiltered, so it never reaches the query.
+fn listed<T>(values: Option<&OneOrMany<T>>) -> Option<&OneOrMany<T>> {
+  values.filter(|v| !v.is_empty())
+}
+
+/// What `/board-posts` accepts, declared once.
+///
+/// The keys are the query-string names the list already reads, so the descriptor names exactly what
+/// a caller may send. Two of them are full text — `text` runs against the post's tsvector, and
+/// `search` widens that to the title as well — and both say so, because neither can be served by a
+/// substring `ILIKE` over the same column.
+const BOARD_POST_FIELDS: &[FieldSpec] = &[
+  // Title `ILIKE` unioned with a tsquery over the body: two mechanisms in one predicate, which is
+  // what `Custom` is for.
+  FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Matches]),
+  FieldSpec::new("title", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("text", FieldKind::Text, MatchStrategy::FullText, &[Op::Matches]),
+  FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq]).with_variants(&[
+    "notice",
+    "article",
+    "comment",
+    "reply",
+  ]),
+  FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["draft", "published", "archived", "deleted", "scheduled", "suspended"]),
+  FieldSpec::new("board_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/boards", "name"),
+  FieldSpec::new("topic_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/board-topics", "name"),
+  FieldSpec::new("parent_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/board-posts", "title"),
+  FieldSpec::sort_only("created_at", FieldKind::DateTime),
+];
+
+impl FilterSchema for BoardPostFilter {
+  fn fields() -> &'static [FieldSpec] {
+    BOARD_POST_FIELDS
+  }
+
+  fn column(key: &str) -> Option<SimpleExpr> {
+    Some(match key {
+      "title" => Column::Title.into_simple_expr(),
+      // The tsvector, not the body: full text matches what the index holds.
+      "text" => Column::TextTsv.into_simple_expr(),
+      "kind" => Column::Kind.into_simple_expr(),
+      "status" => Column::Status.into_simple_expr(),
+      "board_id" => Column::BoardId.into_simple_expr(),
+      "topic_id" => Column::TopicId.into_simple_expr(),
+      "parent_id" => Column::ParentId.into_simple_expr(),
+      "created_at" => Column::CreatedAt.into_simple_expr(),
+      // `search` spans the title and the body, so it has no single column of its own.
+      _ => return None,
+    })
+  }
+
+  fn default_sort() -> &'static str {
+    "created_at"
   }
 }
 
@@ -376,5 +444,75 @@ pub struct BoardPostPublished {
 impl IntoResponse for BoardPostPublished {
   fn into_response(self) -> axum::response::Response {
     Json(self).into_response()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn the_declaration_is_sound() {
+    BoardPostFilter::validate().expect("the board post filter declaration must be servable");
+  }
+
+  #[test]
+  fn every_declared_key_is_a_query_parameter_the_list_reads() {
+    let query = "search=a&title=b&text=c&kind=notice&status=draft&board_id=1&topic_id=2&parent_id=3";
+    let filter: BoardPostFilter = serde_urlencoded::from_str(query).expect("the flat filter parses");
+
+    assert!(filter.search.is_some());
+    assert!(filter.title.is_some());
+    assert!(filter.text.is_some());
+    assert!(filter.kind.is_some());
+    assert!(filter.status.is_some());
+    assert!(filter.board_id.is_some());
+    assert!(filter.topic_id.is_some());
+    assert!(filter.parent_id.is_some());
+  }
+
+  #[test]
+  fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
+    let filter: BoardPostFilter =
+      serde_urlencoded::from_str("status=draft,published&board_id=1,2").expect("a list parses");
+
+    assert_eq!(filter.status.as_ref().map(OneOrMany::len), Some(2));
+    assert_eq!(filter.board_id.as_ref().map(OneOrMany::len), Some(2));
+
+    let filter: BoardPostFilter =
+      serde_urlencoded::from_str("status=&board_id=").expect("an empty value parses");
+
+    assert!(listed(filter.status.as_ref()).is_none());
+    assert!(listed(filter.board_id.as_ref()).is_none());
+  }
+
+  #[test]
+  fn an_unknown_enum_variant_is_refused() {
+    assert!(serde_urlencoded::from_str::<BoardPostFilter>("status=shredded").is_err());
+    assert!(serde_urlencoded::from_str::<BoardPostFilter>("status=draft,shredded").is_err());
+  }
+
+  #[test]
+  fn only_declared_sortable_keys_resolve() {
+    assert!(BoardPostFilter::sort_column("title").is_some());
+    assert!(BoardPostFilter::sort_column("created_at").is_some());
+    // Declared, but not sortable.
+    assert!(BoardPostFilter::sort_column("status").is_none());
+    // Not declared at all — a password column cannot be reached by naming it.
+    assert!(BoardPostFilter::sort_column("password").is_none());
+    assert!(BoardPostFilter::resolve("password").is_none());
+  }
+
+  #[test]
+  fn the_full_text_fields_are_declared_as_such() {
+    let text = BoardPostFilter::field("text").expect("`text` is declared");
+
+    assert!(matches!(text.strategy, MatchStrategy::FullText));
+    assert!(!text.allows(Op::Contains));
+
+    let search = BoardPostFilter::field("search").expect("`search` is declared");
+
+    assert!(matches!(search.strategy, MatchStrategy::Custom));
+    assert!(BoardPostFilter::column("search").is_none());
   }
 }

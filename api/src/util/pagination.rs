@@ -2,6 +2,8 @@ use axum::response::IntoResponse;
 use sea_orm::{EntityTrait, IntoSimpleExpr, Order, QueryOrder, QueryTrait, Select};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::util::filter::FilterSchema;
+
 /// Also read by `RelationTupleService`, whose list is a raw statement rather than a
 /// `Select<E>` and therefore has to apply the same ceiling by hand.
 pub(crate) const MAX_LIMIT: u64 = 500;
@@ -48,6 +50,39 @@ impl Pagination {
     C: IntoSimpleExpr + Sized,
   {
     query.order_by(col_getter(self.sort.as_deref().unwrap_or("")), self.order.clone())
+  }
+
+  /// Orders by `sort` resolved through the resource's own declaration, falling back to the key that
+  /// declaration states as its default.
+  ///
+  /// A `sort` naming a field the resource does not declare, or declares but does not mark sortable,
+  /// is not an error and not a column either — it falls back, exactly as a hand-written match arm
+  /// did. What it can no longer do is order by something the descriptor never offered.
+  ///
+  /// Direction is the request's `order` in both cases; the declaration states a default key, not a
+  /// default direction.
+  pub fn order_by_schema<F, E>(&self, query: Select<E>) -> Select<E>
+  where
+    F: FilterSchema,
+    E: EntityTrait,
+  {
+    let column = self
+      .sort
+      .as_deref()
+      .and_then(F::sort_column)
+      .or_else(|| F::sort_column(F::default_sort()));
+
+    match column {
+      Some(column) => query.order_by(column, self.order.clone()),
+      // `FilterSchema::validate` runs where the resource mounts its routes and refuses a default
+      // sort that cannot resolve, so reaching this is a wiring failure rather than a bad request.
+      // Ordering is dropped rather than guessed: a wrong `ORDER BY` under `LIMIT` silently returns
+      // the wrong page.
+      None => {
+        tracing::error!("filter: default sort `{}` did not resolve to a column", F::default_sort());
+        query
+      }
+    }
   }
 }
 

@@ -5,6 +5,7 @@ use axum::{Json, Router, routing};
 use entity::bps::board_posts::BoardPostKind;
 use error::SumidaError;
 use infra::session::UserSession;
+use sea_orm_crud::OneOrMany;
 
 use crate::controller::ApiController;
 use crate::service::bps::prelude::*;
@@ -36,7 +37,7 @@ impl<S: SumidaState> BoardController<S> {
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     // The route is `/boards/{id}/posts`; scope to that board regardless of any query `boardId`.
-    filter.board_id = Some(board_id);
+    filter.board_id = Some(OneOrMany::One(board_id));
 
     let service = BoardPostService::new(state, session);
 

@@ -35,7 +35,8 @@ impl UserFilter {
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::FullName.into_expr(), v)))
       .apply_if(self.role_id, |q, v| q.filter(Column::RoleId.eq(v)));
 
-    if let Some(org_id) = &self.organization_id {
+    // An empty list means unfiltered, so it never narrows the query.
+    if let Some(org_id) = self.organization_id.as_ref().filter(|v| !v.is_empty()) {
       if self.recursive.unwrap_or_default() {
         let mut base =
           org_id.into_select_statement(entity::organizations::Entity, entity::organizations::Column::Id);

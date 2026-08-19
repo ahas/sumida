@@ -11,7 +11,7 @@ use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
   ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, InsertResult, IntoActiveModel,
-  IntoSimpleExpr, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
+  Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
   TransactionTrait,
 };
 use sea_orm_crud::Nullable;
@@ -95,13 +95,11 @@ impl<S: SumidaState> BoardPostService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
+  /// 정렬 키는 `BoardPostFilter` 가 선언한 필드 목록에서 풀린다 — 손으로 적은 match 가 아니라
+  /// `/board-posts/filters` 가 내보내는 그 목록이라, 클라이언트에 알려 준 것과 서버가 실제로
+  /// 정렬하는 것이 어긋날 수 없다. 선언에 없는 키는 기본 정렬로 떨어진다.
   fn apply_pagination(&self, query: Select<BoardPosts>, pagination: Pagination) -> Select<BoardPosts> {
-    let query = pagination.order_by(query, |col| match col {
-      "title" => BoardPostsColumn::Title.into_simple_expr(),
-      _ => BoardPostsColumn::CreatedAt.into_simple_expr(),
-    });
-
-    pagination.paginate(query)
+    pagination.paginate(pagination.order_by_schema::<BoardPostFilter, _>(query))
   }
 
   pub async fn list(

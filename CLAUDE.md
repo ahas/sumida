@@ -163,6 +163,11 @@ DTO `IntoActiveModel`에서 `.into_active_value()` 한 줄로 변환.
 - S3: `sumida::api::util::s3::{get_bucket, get_bytes, get_json, get_image, delete, IntoS3Uri, static_uri, parse_uri}`
 - 파일 다운로드: `SumidaStorage::new().download(DownloadFile{...}, with_original_name)` — 로컬/S3 백엔드 추상화
 - 페이지네이션: `Pagination{page,limit,sort,order}` → `.paginate(q)` / `.order_by(q, |c| match c { "name"=>Col::Name, .. })` + 응답 `List::from((items, count))`
+- 목록 필터 선언: 리소스가 자기 `Filter` 옆에서 `util::filter::FilterSchema` 를 구현하면 정렬 키
+  해석(`.order_by_schema::<MyFilter, _>(q)`)과 서술 엔드포인트(`GET <리소스>/filters`)가 같은
+  선언을 읽는다. 어휘·예약 키·전략은 [`docs/list-filters.md`](docs/list-filters.md)가 정본
+- 다중 값 파라미터: `sea_orm_crud::OneOrMany` 하나로 통일 — `?id=1` / `?id=1,2` / `?id=1&id=2`,
+  빈 값은 빈 목록(=필터 안 걸림), 모르는 값은 400
 - 검색: `util::db::wrap_ilike(Col.into_expr(), text)`, FTS는 `tsquery(col, search)`
 - 직렬화 충돌 감지: `util::db::is_serialization_failure(&err)` — 트랜잭션 재시도 판단
 
@@ -199,7 +204,8 @@ room 자동 가입 규칙: 접속 사용자는 `org:N`, `user:N`, `admin`(관리
 
 1. `entity/`에 SeaORM 엔티티 + prelude 노출 (다운스트림이 자체 entity면 자체 prelude)
 2. 마이그레이션 추가 (`sea_orm_migration`)
-3. DTO 5종 세트 작성 — `Optional`/`Nullable`로 PATCH 시멘틱 정리
+3. DTO 5종 세트 작성 — `Optional`/`Nullable`로 PATCH 시멘틱 정리, 목록이 있으면 `Filter` 옆에
+   `FilterSchema` 선언 + 컨트롤러 읽기 묶음에 `filter_descriptor_router` 머지
 4. `.sz` 에 정의를 추가하고 서비스에 리스트 스코프와 단건 점검을 붙인다 — 부모 종속은 규칙 쪽에서 부모 관계로 푼다
 5. `Controller`에 list/get/create/update/delete + 액션별 `service_ap!` + `user_guard!`
 6. 라우터 nest 추가

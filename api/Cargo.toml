@@ -47,6 +47,9 @@ e2e = { path = "../e2e" }
 # 옆 케이스가 방금 만료시켜 둔 구독까지 처리해 버려서, 옆 케이스의 단언이 무작위로 깨진다.
 # `#[serial]` 을 단 케이스끼리만 줄을 세우고 나머지 스위트는 병렬로 둔다.
 serial_test = "3"
+# 플랫 필터 파라미터를 실제 쿼리스트링 그대로 파싱해 보기 위한 것. axum 이 `Query` 에 쓰는 것과
+# 같은 파서라, 테스트가 통과하면 라우트에서도 같게 읽힌다.
+serde_urlencoded = "0.7.1"
 
 [dependencies]
 # default-features=false: if infra's default (session-store-redis) is force-enabled,

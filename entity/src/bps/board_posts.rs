@@ -17,6 +17,16 @@ pub enum BoardPostStatus {
   Suspended,
 }
 
+/// 목록 필터가 `?status=draft,published` 처럼 값을 나열해 올 때 조각 하나하나를 이 구현이 읽는다.
+/// 모르는 값은 여기서 거절되어 400 이 된다 — 조용히 버리면 걸리지 않은 필터가 걸린 것처럼 보인다.
+impl std::str::FromStr for BoardPostStatus {
+  type Err = DbErr;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    <Self as sea_orm::ActiveEnum>::try_from_value(&s.to_string())
+  }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
