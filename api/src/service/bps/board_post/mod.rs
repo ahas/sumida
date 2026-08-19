@@ -21,6 +21,7 @@ use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::service::auth::helper::verify_password;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
 use crate::util::user::hash_password;
 
@@ -105,10 +106,11 @@ impl<S: SumidaState> BoardPostService<S> {
   pub async fn list(
     &self,
     filter: BoardPostFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     let db = self.state.db();
-    let mut query = self.get_list_query(filter)?;
+    let mut query = self.get_list_query(filter, &conditions)?;
     let count = query.clone().count(db).await?;
 
     query = self.apply_pagination(query, pagination);
@@ -118,7 +120,14 @@ impl<S: SumidaState> BoardPostService<S> {
     Ok(List::new(items, count))
   }
 
-  pub fn get_list_query(&self, filter: BoardPostFilter) -> Result<Select<BoardPosts>, SumidaError> {
+  /// The list query: the read scope first, the flat parameters inside it, and the condition tree
+  /// added last as one more conjunct. Every list path shares it, so what narrows one narrows all
+  /// five and the count is taken from the same query.
+  pub fn get_list_query(
+    &self,
+    filter: BoardPostFilter,
+    conditions: &ConditionQuery,
+  ) -> Result<Select<BoardPosts>, SumidaError> {
     let search_text = filter.search.clone().unwrap_or_else(|| filter.text.clone().unwrap_or_default());
     let with_snippet = filter.with_snippet;
     let query = util::with_conditional_post_columns(
@@ -141,16 +150,19 @@ impl<S: SumidaState> BoardPostService<S> {
       query.filter(util::content_visible_filter(self.session.profile.get_id()))
     };
 
-    Ok(query)
+    // Last, and only ever as one more `AND`. An `OR` among the tree's own nodes is a conjunct of
+    // this WHERE, never an alternative to the scope above it.
+    conditions.apply::<BoardPostFilter, _>(query)
   }
 
   pub async fn get_notices(
     &self,
     filter: BoardPostFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     let db = self.state.db();
-    let mut query = self.get_list_query(filter)?;
+    let mut query = self.get_list_query(filter, &conditions)?;
     query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Notice));
 
     let count = query.clone().count(db).await?;
@@ -165,10 +177,11 @@ impl<S: SumidaState> BoardPostService<S> {
   pub async fn get_articles(
     &self,
     filter: BoardPostFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     let db = self.state.db();
-    let mut query = self.get_list_query(filter)?;
+    let mut query = self.get_list_query(filter, &conditions)?;
     query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Article));
 
     let count = query.clone().count(db).await?;
@@ -192,10 +205,11 @@ impl<S: SumidaState> BoardPostService<S> {
   pub async fn get_comments(
     &self,
     filter: BoardPostFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     let db = self.state.db();
-    let mut query = self.get_list_query(filter)?;
+    let mut query = self.get_list_query(filter, &conditions)?;
     query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Comment));
 
     let count = query.clone().count(db).await?;
@@ -224,10 +238,11 @@ impl<S: SumidaState> BoardPostService<S> {
   pub async fn get_replies(
     &self,
     filter: BoardPostFilter,
+    conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     let db = self.state.db();
-    let mut query = self.get_list_query(filter)?;
+    let mut query = self.get_list_query(filter, &conditions)?;
     query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Reply));
 
     let count = query.clone().count(db).await?;

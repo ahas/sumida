@@ -1049,3 +1049,129 @@ async fn scenario_operator_moderates_then_global_deny() {
     .unwrap();
   assert_eq!(resp.status(), StatusCode::FORBIDDEN, "global deny blocks the operator too");
 }
+
+/// Percent-encodes a condition tree for the `where` parameter, the way a client would.
+fn encoded(tree: &Value) -> String {
+  tree
+    .to_string()
+    .bytes()
+    .map(|byte| match byte {
+      b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+        String::from(byte as char)
+      }
+      other => format!("%{other:02X}"),
+    })
+    .collect()
+}
+
+async fn list_titles(mock: &Mock, query: &str) -> Vec<String> {
+  let resp = mock.client.get(&format!("/board-posts?{query}")).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK, "the list must answer: {query}");
+
+  resp.json::<Value>().await.unwrap()["items"]
+    .as_array()
+    .cloned()
+    .unwrap_or_default()
+    .iter()
+    .map(|post| post["title"].as_str().unwrap_or_default().to_string())
+    .collect()
+}
+
+/// Full text under a condition tree: the same tsvector, and the snippet still driven by the flat
+/// parameter alone.
+///
+/// The three things that have to hold together are the tsquery predicate, the `ts_headline`
+/// snippet, and the integrated `search` field being absent from the tree — a field whose predicate
+/// spans a title `ILIKE` unioned with a body tsquery reduces to no single expression, so a tree
+/// has nothing to compile for it.
+#[tokio::test]
+async fn scenario_full_text_under_a_condition_tree() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  author.login(&mock.client).await;
+
+  let marker = generate_url_safe_string(8).unwrap().to_lowercase();
+  let alpha = format!("alpha-{marker}");
+  let beta = format!("beta-{marker}");
+
+  for (title, body) in [(&alpha, "the quick brown fox"), (&beta, "a lazy dog sleeps")] {
+    let resp = create_post(
+      &mock,
+      json!({
+        "boardId": board.id, "title": title, "content": format!("<p>{body} {marker}</p>"),
+        "contentType": "text/html", "kind": "article", "status": "published",
+        "contentVisibility": "public"
+      }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::CREATED, "create the post");
+  }
+
+  // The flat full-text parameter reaches the tsvector and nothing else.
+  let titles = list_titles(&mock, &format!("text=brown+{marker}")).await;
+  assert_eq!(titles, vec![alpha.clone()], "the flat full-text parameter selects one post");
+
+  // The snippet is still built, and still from the flat parameter.
+  let resp = mock
+    .client
+    .get(&format!("/board-posts?with_snippet=true&search=brown+{marker}"))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+  let items = resp.json::<Value>().await.unwrap()["items"].as_array().cloned().unwrap_or_default();
+  let post = items.iter().find(|post| post["title"] == alpha.as_str()).expect("the post is listed");
+  assert!(
+    post["snippet"].as_str().unwrap_or_default().contains("<mark>"),
+    "the flat parameter must still highlight: {post}"
+  );
+
+  // A `matches` leaf reaches the same tsvector.
+  let tree = json!({ "type": "field", "key": "text", "op": "matches", "value": format!("brown {marker}") });
+  let titles = list_titles(&mock, &format!("where={}", encoded(&tree))).await;
+  assert_eq!(titles, vec![alpha.clone()], "a `matches` leaf selects the same post");
+
+  // A row matched only through the tree comes back without a snippet — the tree contributes
+  // nothing to it, so there is no query for `ts_headline` to have been built from.
+  let resp = mock
+    .client
+    .get(&format!("/board-posts?with_snippet=true&where={}", encoded(&tree)))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+  let items = resp.json::<Value>().await.unwrap()["items"].as_array().cloned().unwrap_or_default();
+  let post = items.iter().find(|post| post["title"] == alpha.as_str()).expect("the post is listed");
+  assert!(post["snippet"].is_null(), "the tree must not drive the snippet: {post}");
+
+  // An `any` group mixes the tsvector with a substring match on the title.
+  let tree = json!({
+    "type": "any",
+    "of": [
+      { "type": "field", "key": "text", "op": "matches", "value": format!("brown {marker}") },
+      { "type": "field", "key": "title", "op": "contains", "value": beta.clone() },
+    ]
+  });
+  let mut titles = list_titles(&mock, &format!("where={}", encoded(&tree))).await;
+  titles.sort();
+  assert_eq!(titles, vec![alpha.clone(), beta.clone()], "both branches of the group hold");
+
+  // The integrated `search` field spans two mechanisms and is refused from a tree; its flat
+  // parameter is untouched.
+  let tree = json!({ "type": "field", "key": "search", "op": "matches", "value": marker.clone() });
+  let resp = mock
+    .client
+    .get(&format!("/board-posts?where={}", encoded(&tree)))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "a custom field has nothing to compile");
+
+  let titles = list_titles(&mock, &format!("search={marker}")).await;
+  assert_eq!(titles.len(), 2, "the flat integrated search still spans both posts");
+}

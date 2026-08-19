@@ -25,6 +25,33 @@ async fn board_post_filters_describe_the_declared_surface() {
   assert_eq!(body["defaultSort"], "created_at");
   assert!(body["limits"]["maxLimit"].as_u64().unwrap() > 0);
 
+  // The condition caps, so a client can refuse an over-sized tree instead of sending one.
+  for cap in [
+    "maxConditionBytes",
+    "maxConditionDepth",
+    "maxConditionNodes",
+    "maxConditionValues",
+    "maxConditionTextLength",
+    "maxConditionFullText",
+    "maxConditionSubstring",
+  ] {
+    assert!(body["limits"][cap].as_u64().unwrap() > 0, "`{cap}` must be served");
+  }
+
+  // The operator vocabulary with each operator's arity — keyed by operator, the same for every
+  // resource, so a client never has to hand-copy the table.
+  let operators = body["operators"].as_array().expect("the descriptor carries the vocabulary");
+  let arity = |op: &str| {
+    operators.iter().find(|entry| entry["op"] == op).unwrap_or_else(|| panic!("`{op}` is served"))
+      ["arity"]
+      .clone()
+  };
+
+  assert_eq!(arity("eq"), "one");
+  assert_eq!(arity("in"), "many");
+  assert_eq!(arity("between"), "range");
+  assert_eq!(arity("isNull"), "nullary");
+
   let fields = body["fields"].as_array().expect("the descriptor carries a field list");
   let field =
     |key: &str| fields.iter().find(|f| f["key"] == key).unwrap_or_else(|| panic!("`{key}` is declared"));
@@ -44,7 +71,7 @@ async fn board_post_filters_describe_the_declared_surface() {
   assert_eq!(field("board_id")["relation"]["resource"], "/boards");
 
   // No declared key collides with what the list envelope already owns.
-  for reserved in ["page", "limit", "sort", "order", "filter", "count"] {
+  for reserved in ["page", "limit", "sort", "order", "filter", "count", "where"] {
     assert!(
       !fields.iter().any(|f| f["key"] == reserved),
       "`{reserved}` is reserved and may not be a field key"

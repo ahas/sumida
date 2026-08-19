@@ -1,9 +1,9 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::sea_query::extension::postgres::{PgBinOper, PgExpr};
 use sea_orm::sea_query::{Expr, SimpleExpr};
-use sea_orm::{ColumnTrait, DbErr};
+use sea_orm::DbErr;
 use serde::{Deserialize, Deserializer, de};
 
 pub fn is_serialization_failure(error: &DbErr) -> bool {
@@ -15,24 +15,52 @@ pub fn is_serialization_failure(error: &DbErr) -> bool {
   }
 }
 
-pub fn wrap_ilike<S>(col: Expr, text: S) -> SimpleExpr
-where
-  S: AsRef<str>,
-{
-  // Treat LIKE wildcards (%, _) and the escape character (\) as literals.
-  // Without escaping, %/_ in user input would be interpreted as patterns and cause over-matching.
-  let escaped = text.as_ref().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-  col.ilike(format!("%{escaped}%"))
+/// Treat LIKE wildcards (%, _) and the escape character (\) as literals.
+/// Without escaping, %/_ in user input would be interpreted as patterns and cause over-matching.
+fn escape_like(text: &str) -> String {
+  text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
 }
 
-pub fn tsquery<C, S>(col: C, search: S) -> SimpleExpr
+/// `ILIKE '%text%'` — the text anywhere inside the expression.
+pub fn wrap_ilike<C, S>(col: C, text: S) -> SimpleExpr
 where
-  C: ColumnTrait,
+  C: Into<SimpleExpr>,
   S: AsRef<str>,
 {
-  let col_name = format!(r#""{}""#, col.to_string());
+  col.into().ilike(format!("%{}%", escape_like(text.as_ref())))
+}
 
-  Expr::cust_with_values(format!(r#"{col_name} @@ plainto_tsquery('simple', $1)"#), [search.as_ref()])
+/// `ILIKE 'text%'` — the expression begins with the text.
+pub fn starts_with_ilike<C, S>(col: C, text: S) -> SimpleExpr
+where
+  C: Into<SimpleExpr>,
+  S: AsRef<str>,
+{
+  col.into().ilike(format!("{}%", escape_like(text.as_ref())))
+}
+
+/// `ILIKE '%text'` — the expression ends with the text.
+pub fn ends_with_ilike<C, S>(col: C, text: S) -> SimpleExpr
+where
+  C: Into<SimpleExpr>,
+  S: AsRef<str>,
+{
+  col.into().ilike(format!("%{}", escape_like(text.as_ref())))
+}
+
+/// `<tsvector> @@ plainto_tsquery('simple', $1)`.
+///
+/// The expression is the tsvector the GIN index sits on, so a full-text match reads the index
+/// rather than the text it was built from. The term binds as a parameter.
+pub fn tsquery<C, S>(col: C, search: S) -> SimpleExpr
+where
+  C: Into<SimpleExpr>,
+  S: AsRef<str>,
+{
+  col.into().binary(
+    PgBinOper::Matches,
+    Expr::cust_with_values(r#"plainto_tsquery('simple', $1)"#, [search.as_ref()]),
+  )
 }
 
 pub fn i32_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>

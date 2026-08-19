@@ -15,11 +15,12 @@
 //! the value points at another resource, which is what narrows the operator vocabulary to the
 //! identity set and what lets a client render a picker instead of a number box.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Query-string keys the list envelope already owns. A field may not claim one: `?sort=` would then
 /// mean two things at once, and nothing in the request says which one the caller meant.
-pub const RESERVED_KEYS: &[&str] = &["page", "limit", "sort", "order", "filter", "count"];
+pub const RESERVED_KEYS: &[&str] =
+  &["page", "limit", "sort", "order", "filter", "count", "where"];
 
 /// What a value *is*. It fixes the operator vocabulary and tells a client which input to render.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -51,7 +52,7 @@ pub enum MatchStrategy {
 
 /// The operator vocabulary. Which of these a field accepts is declared per field and checked
 /// against what its kind and strategy can mean.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Op {
   Eq,
@@ -80,11 +81,51 @@ pub enum Arity {
   /// The operator is the whole predicate — `isNull`, `isNotNull`.
   Nullary,
   One,
-  /// A list. Empty means unfiltered.
+  /// A list of values.
   Many,
   /// A lower and an upper bound.
   Range,
 }
+
+/// One operator and how many operands it takes, as the descriptor serves it.
+///
+/// Keyed by operator and nothing else — the same fifteen for every resource, because arity is a
+/// property of the operator. What a *field* accepts is the field's own declaration.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperatorSpec {
+  pub op:    Op,
+  pub arity: Arity,
+}
+
+impl OperatorSpec {
+  const fn of(op: Op) -> Self {
+    Self {
+      op,
+      arity: op.arity(),
+    }
+  }
+}
+
+/// The whole operator vocabulary. A client reads it to know how many inputs an operator needs
+/// without hand-copying a table the server would then be free to change.
+pub const OPERATORS: &[OperatorSpec] = &[
+  OperatorSpec::of(Op::Eq),
+  OperatorSpec::of(Op::Ne),
+  OperatorSpec::of(Op::Lt),
+  OperatorSpec::of(Op::Lte),
+  OperatorSpec::of(Op::Gt),
+  OperatorSpec::of(Op::Gte),
+  OperatorSpec::of(Op::Between),
+  OperatorSpec::of(Op::Contains),
+  OperatorSpec::of(Op::StartsWith),
+  OperatorSpec::of(Op::EndsWith),
+  OperatorSpec::of(Op::In),
+  OperatorSpec::of(Op::Nin),
+  OperatorSpec::of(Op::Matches),
+  OperatorSpec::of(Op::IsNull),
+  OperatorSpec::of(Op::IsNotNull),
+];
 
 impl Op {
   pub const TEXT: &'static [Op] = &[
@@ -484,6 +525,21 @@ mod tests {
     assert_eq!(text("board.id").validate(), Err(FilterSchemaError::InvalidKey("board.id")));
     assert_eq!(text("1st").validate(), Err(FilterSchemaError::InvalidKey("1st")));
     assert!(text("board_id").validate().is_ok());
+  }
+
+  #[test]
+  fn the_served_vocabulary_holds_every_operator_a_kind_can_mean() {
+    let served: Vec<Op> = OPERATORS.iter().map(|entry| entry.op).collect();
+
+    for family in [Op::TEXT, Op::NUMBER, Op::BOOL, Op::ENUM, Op::DATE, Op::ID, Op::FULL_TEXT] {
+      for op in family {
+        assert!(served.contains(op), "`{op}` is declarable but not served");
+      }
+    }
+
+    for entry in OPERATORS {
+      assert_eq!(entry.arity, entry.op.arity());
+    }
   }
 
   #[test]

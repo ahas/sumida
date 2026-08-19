@@ -9,11 +9,31 @@
 //! scope first; the declared fields are applied inside it. Nothing here grants access to a row, and
 //! nothing here can widen a scope — a key that is not declared has no expression at all, so a filter
 //! cannot name a column the resource did not open.
+//!
+//! The same declaration also compiles a condition tree, which says how several comparisons combine
+//! rather than only ANDing one per key. It is read from the reserved `where` parameter, checked
+//! against the same declaration, and added to the query as one condition — so it narrows on exactly
+//! the terms the flat parameters do.
 
+pub mod condition;
 pub mod descriptor;
 pub mod schema;
 pub mod spec;
 
+pub use condition::{
+  CONDITION_KEY,
+  ConditionError,
+  ConditionNode,
+  ConditionQuery,
+  ConditionTree,
+  MAX_CONDITION_BYTES,
+  MAX_CONDITION_DEPTH,
+  MAX_CONDITION_FULL_TEXT,
+  MAX_CONDITION_NODES,
+  MAX_CONDITION_SUBSTRING,
+  MAX_CONDITION_TEXT_LENGTH,
+  MAX_CONDITION_VALUES,
+};
 pub use descriptor::{DESCRIPTOR_PATH, FilterDescriptor, FilterLimits, filter_descriptor_router};
 pub use schema::FilterSchema;
 pub use spec::{
@@ -22,7 +42,9 @@ pub use spec::{
   FieldSpec,
   FilterSchemaError,
   MatchStrategy,
+  OPERATORS,
   Op,
+  OperatorSpec,
   RESERVED_KEYS,
   RelationHint,
 };

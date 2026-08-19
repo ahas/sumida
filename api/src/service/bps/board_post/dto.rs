@@ -18,7 +18,14 @@ use super::util;
 use crate::service::auth::helper::verify_password;
 use crate::service::prelude::BoardFileListItem;
 use crate::util::db::{tsquery, wrap_ilike};
-use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
+use crate::util::filter::{
+  ConditionTree,
+  FieldKind,
+  FieldSpec,
+  FilterSchema,
+  MatchStrategy,
+  Op,
+};
 
 pub trait Reply {
   fn get_id(&self) -> i32;
@@ -86,11 +93,11 @@ impl BoardPostFilter {
         q.filter(
           Condition::any()
             .add(wrap_ilike(Column::Title.into_expr(), v))
-            .add(tsquery(Column::TextTsv, v)),
+            .add(tsquery(Column::TextTsv.into_simple_expr(), v)),
         )
       })
       .apply_if(self.title.as_ref(), |q, v| q.filter(wrap_ilike(Column::Title.into_expr(), v)))
-      .apply_if(self.text.as_ref(), |q, v| q.filter(tsquery(Column::TextTsv, v)))
+      .apply_if(self.text.as_ref(), |q, v| q.filter(tsquery(Column::TextTsv.into_simple_expr(), v)))
       .apply_if(listed(self.topic_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::TopicId)))
       .apply_if(listed(self.board_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::BoardId)))
       .apply_if(listed(self.parent_id.as_ref()), |q, v| {
@@ -501,6 +508,74 @@ mod tests {
     // Not declared at all — a password column cannot be reached by naming it.
     assert!(BoardPostFilter::sort_column("password").is_none());
     assert!(BoardPostFilter::resolve("password").is_none());
+  }
+
+  /// The list query as the service builds it: the read scope first, the tree added afterwards.
+  fn scoped_sql(raw: &str) -> String {
+    use sea_orm::sea_query::PostgresQueryBuilder;
+    use sea_orm::{QueryFilter, QueryTrait};
+
+    let tree = ConditionTree::parse(raw).expect("the tree parses");
+
+    Entity::find()
+      .filter(Column::DeletedAt.is_null())
+      .filter(tree.compile::<BoardPostFilter>().expect("the tree compiles"))
+      .as_query()
+      .to_string(PostgresQueryBuilder)
+  }
+
+  #[test]
+  fn a_tree_reaches_the_tsvector_and_never_a_substring_scan() {
+    let sql = scoped_sql(r#"{"type":"field","key":"text","op":"matches","value":"rust"}"#);
+
+    assert!(sql.contains("plainto_tsquery"), "{sql}");
+    assert!(!sql.to_uppercase().contains("ILIKE"), "{sql}");
+  }
+
+  #[test]
+  fn the_integrated_search_field_is_refused_from_a_tree() {
+    // It spans a title `ILIKE` unioned with a body tsquery, so it reduces to no single expression.
+    // Its flat parameter is untouched; only the tree refuses it.
+    let tree = ConditionTree::parse(r#"{"type":"field","key":"search","op":"matches","value":"a"}"#)
+      .expect("the tree parses");
+
+    assert!(tree.compile::<BoardPostFilter>().is_err());
+  }
+
+  #[test]
+  fn an_undeclared_key_and_an_undeclared_operator_are_refused() {
+    for raw in [
+      r#"{"type":"field","key":"password","op":"eq","value":"x"}"#,
+      r#"{"type":"field","key":"title","op":"matches","value":"x"}"#,
+    ] {
+      let tree = ConditionTree::parse(raw).expect("the tree parses");
+      assert!(tree.compile::<BoardPostFilter>().is_err(), "{raw}");
+    }
+  }
+
+  #[test]
+  fn an_or_inside_a_tree_stays_a_conjunct_of_the_scope() {
+    let sql = scoped_sql(
+      r#"{"type":"any","of":[
+        {"type":"field","key":"title","op":"contains","value":"rust"},
+        {"type":"field","key":"status","op":"in","value":["draft","published"]}
+      ]}"#,
+    );
+
+    assert!(sql.contains("IS NULL AND ("), "the scope must stay a conjunct: {sql}");
+    assert!(sql.contains(" OR "), "{sql}");
+  }
+
+  /// The status column stores text, so a bound value needs no cast. A resource whose column is a
+  /// database enum names its type instead.
+  #[test]
+  fn a_text_backed_enum_binds_without_a_cast() {
+    let sql = scoped_sql(r#"{"type":"field","key":"status","op":"eq","value":"draft"}"#);
+    let predicate = sql.split_once(" WHERE ").expect("a WHERE clause").1;
+
+    assert!(BoardPostFilter::enum_type("status").is_none());
+    assert!(predicate.contains("'draft'"), "{predicate}");
+    assert!(!predicate.contains("CAST("), "{predicate}");
   }
 
   #[test]

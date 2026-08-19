@@ -5,7 +5,7 @@ use infra::session::UserSession;
 
 use crate::controller::ApiController;
 use crate::service::bps::prelude::*;
-use crate::util::filter::filter_descriptor_router;
+use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -21,9 +21,10 @@ impl<S: SumidaState> BoardPostController<S> {
     session: UserSession,
     State(state): State<S>,
     Query(filter): Query<BoardPostFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
-    Ok(BoardPostService::new(state, session).list(filter, pagination).await?.into())
+    Ok(BoardPostService::new(state, session).list(filter, conditions, pagination).await?.into())
   }
 
   async fn get(

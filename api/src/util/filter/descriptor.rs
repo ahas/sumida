@@ -16,8 +16,17 @@
 use axum::{Json, Router, routing};
 use serde::Serialize;
 
+use super::condition::{
+  MAX_CONDITION_BYTES,
+  MAX_CONDITION_DEPTH,
+  MAX_CONDITION_FULL_TEXT,
+  MAX_CONDITION_NODES,
+  MAX_CONDITION_SUBSTRING,
+  MAX_CONDITION_TEXT_LENGTH,
+  MAX_CONDITION_VALUES,
+};
 use super::schema::FilterSchema;
-use super::spec::FieldSpec;
+use super::spec::{FieldSpec, OPERATORS, OperatorSpec};
 use crate::SumidaState;
 use crate::layer::ServiceApLayer;
 use crate::util::pagination::{MAX_LIMIT, Pagination};
@@ -26,19 +35,34 @@ use crate::util::pagination::{MAX_LIMIT, Pagination};
 pub const DESCRIPTOR_PATH: &str = "/filters";
 
 /// What the list envelope will accept, so a client can cap its own page size instead of discovering
-/// the ceiling by being silently clamped.
+/// the ceiling by being silently clamped, and refuse a condition tree it has already built rather
+/// than sending one the server would answer with a bad request.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FilterLimits {
-  pub max_limit:     u64,
-  pub default_limit: u64,
+  pub max_limit:                 u64,
+  pub default_limit:             u64,
+  pub max_condition_bytes:       usize,
+  pub max_condition_depth:       usize,
+  pub max_condition_nodes:       usize,
+  pub max_condition_values:      usize,
+  pub max_condition_text_length: usize,
+  pub max_condition_full_text:   usize,
+  pub max_condition_substring:   usize,
 }
 
 impl Default for FilterLimits {
   fn default() -> Self {
     Self {
-      max_limit:     MAX_LIMIT,
-      default_limit: Pagination::default().limit,
+      max_limit:                 MAX_LIMIT,
+      default_limit:             Pagination::default().limit,
+      max_condition_bytes:       MAX_CONDITION_BYTES,
+      max_condition_depth:       MAX_CONDITION_DEPTH,
+      max_condition_nodes:       MAX_CONDITION_NODES,
+      max_condition_values:      MAX_CONDITION_VALUES,
+      max_condition_text_length: MAX_CONDITION_TEXT_LENGTH,
+      max_condition_full_text:   MAX_CONDITION_FULL_TEXT,
+      max_condition_substring:   MAX_CONDITION_SUBSTRING,
     }
   }
 }
@@ -49,6 +73,9 @@ pub struct FilterDescriptor {
   pub fields:       &'static [FieldSpec],
   /// The key this resource orders by when the request names none.
   pub default_sort: &'static str,
+  /// Every operator and how many operands it takes. The same list for every resource, because
+  /// arity belongs to the operator; what a field accepts is the field's own declaration.
+  pub operators:    &'static [OperatorSpec],
   pub limits:       FilterLimits,
 }
 
@@ -60,6 +87,7 @@ impl FilterDescriptor {
     Self {
       fields:       F::fields(),
       default_sort: F::default_sort(),
+      operators:    OPERATORS,
       limits:       FilterLimits::default(),
     }
   }

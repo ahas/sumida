@@ -30,6 +30,16 @@ pub trait FilterSchema {
   /// declare as sortable. Direction stays the request's `order`, ascending unless asked otherwise.
   fn default_sort() -> &'static str;
 
+  /// The database enum type behind an `Enum` key, when the column is one.
+  ///
+  /// `None` means the column stores text and the value binds as a string. A key backed by a
+  /// database enum has to name its type here: the expression `column` hands back has lost the
+  /// column type sea-orm otherwise uses to cast a bound value, so without it the comparison binds
+  /// text against an enum column and the database refuses the statement.
+  fn enum_type(_key: &str) -> Option<&'static str> {
+    None
+  }
+
   fn field(key: &str) -> Option<&'static FieldSpec> {
     Self::fields().iter().find(|field| field.key == key)
   }

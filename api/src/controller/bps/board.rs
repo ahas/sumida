@@ -9,6 +9,7 @@ use sea_orm_crud::OneOrMany;
 
 use crate::controller::ApiController;
 use crate::service::bps::prelude::*;
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
@@ -34,6 +35,7 @@ impl<S: SumidaState> BoardController<S> {
     State(state): State<S>,
     Path(board_id): Path<i32>,
     Query(mut filter): Query<BoardPostFilter>,
+    Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     // The route is `/boards/{id}/posts`; scope to that board regardless of any query `boardId`.
@@ -42,10 +44,10 @@ impl<S: SumidaState> BoardController<S> {
     let service = BoardPostService::new(state, session);
 
     let post_list = match filter.kind.as_ref().unwrap_or(&BoardPostKind::Article) {
-      BoardPostKind::Comment => service.get_comments(filter, pagination).await?,
-      BoardPostKind::Reply => service.get_replies(filter, pagination).await?,
-      BoardPostKind::Notice => service.get_notices(filter, pagination).await?,
-      _ => service.get_articles(filter, pagination).await?,
+      BoardPostKind::Comment => service.get_comments(filter, conditions, pagination).await?,
+      BoardPostKind::Reply => service.get_replies(filter, conditions, pagination).await?,
+      BoardPostKind::Notice => service.get_notices(filter, conditions, pagination).await?,
+      _ => service.get_articles(filter, conditions, pagination).await?,
     };
 
     Ok(post_list)
