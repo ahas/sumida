@@ -13,11 +13,14 @@ pub trait FilterSchema {
   /// Every field this resource opens to filtering, ordering, or both.
   fn fields() -> &'static [FieldSpec];
 
-  /// The column expression behind one key, over this resource's own entity or over a table its list
-  /// query has already joined.
+  /// The expression behind one key: a column of this resource's own entity, a column of a table its
+  /// list query has already joined, or a value the query computes.
   ///
-  /// A field whose match does not reduce to a single column — a `Custom` strategy spanning several
-  /// columns, say — returns `None`; its expression is the resource's own to build.
+  /// Whatever it is, it is one expression, so the value a list returns, the value a filter narrows
+  /// by and the value it orders by cannot come apart.
+  ///
+  /// A field whose match does not reduce to a single expression — a `Custom` strategy spanning
+  /// several mechanisms, say — returns `None`; its predicate is the resource's own to build.
   ///
   /// Callers do not reach this directly. `resolve` does, and only after the key has been found in
   /// the declaration, so an undeclared key can never arrive here.

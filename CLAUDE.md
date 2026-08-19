@@ -168,6 +168,8 @@ DTO `IntoActiveModel`에서 `.into_active_value()` 한 줄로 변환.
   선언을 읽는다. 어휘·예약 키·전략은 [`docs/list-filters.md`](docs/list-filters.md)가 정본
 - 다중 값 파라미터: `sea_orm_crud::OneOrMany` 하나로 통일 — `?id=1` / `?id=1,2` / `?id=1&id=2`,
   빈 값은 빈 목록(=필터 안 걸림), 모르는 값은 400
+- 범위 파라미터: `sea_orm_crud::Bounds` 하나로 통일 — `?p=3`(eq) / `?p=3..7`(between) /
+  `?p=3..`(gte) / `?p=..7`(lte), 빈 값은 필터 안 걸림, 읽을 수 없는 값은 400
 - 검색: `util::db::wrap_ilike(Col.into_expr(), text)`, FTS는 `tsquery(col, search)`
 - 직렬화 충돌 감지: `util::db::is_serialization_failure(&err)` — 트랜잭션 재시도 판단
 
