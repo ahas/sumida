@@ -4,6 +4,10 @@ publish = false
 version = "0.2.0"
 edition = "2024"
 
+[features]
+# Mirrors the api feature of the same name, so the harness builds the schema that feature expects.
+system-settings = ["api/system-settings", "entity/system-settings"]
+
 [dependencies]
 api = { path = "../api", features = ["full-local"] }
 infra = { path = "../infra" }

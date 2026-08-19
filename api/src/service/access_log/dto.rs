@@ -253,7 +253,7 @@ mod tests {
   /// declared stays unreachable, the earlier camelCase sort spelling included.
   #[test]
   fn an_undeclared_key_resolves_to_nothing() {
-    for spelling in ["userId", "ip_address", "user_agent", "method", "code", "created_at"] {
+    for spelling in ["userId", "created_at", "ipAddress", "userAgent", "os_family", "device_family"] {
       assert!(AccessLogFilter::field(spelling).is_none(), "{spelling}");
       assert!(AccessLogFilter::resolve(spelling).is_none(), "{spelling}");
       assert!(AccessLogFilter::sort_column(spelling).is_none(), "{spelling}");

@@ -34,51 +34,61 @@ impl Default for BanSettings {
 /// fallback. A database problem must never break the login path, so a failed query is logged at
 /// warn level and nothing else. This is read at the point of use rather than cached at boot —
 /// caching would hide an operator's edit until the process is rebuilt.
+///
+/// The five rows are fetched together. This runs on the failed-login path, which is exactly the
+/// one an attacker drives hardest, so it costs one round trip rather than five — and when the
+/// store is unreachable it says so once instead of five times.
 #[cfg(feature = "system-settings")]
 pub async fn resolve_ban_settings<C: sea_orm::ConnectionTrait>(db: &C) -> BanSettings {
-  use entity::prelude::SystemSettings;
+  use std::collections::HashMap;
+
+  use entity::prelude::{SystemSettings, SystemSettingsColumn};
   use entity::system_settings::keys;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
   let fallback = &crate::settings::get().security.ban;
 
-  BanSettings {
-    enabled:             read(
-      keys::SECURITY_BAN_ENABLED,
-      SystemSettings::get_bool(keys::SECURITY_BAN_ENABLED, db).await,
-    )
-    .unwrap_or(fallback.enabled),
-    max_failed_attempts: read(
-      keys::SECURITY_BAN_MAX_FAILED_ATTEMPTS,
-      SystemSettings::get_i64(keys::SECURITY_BAN_MAX_FAILED_ATTEMPTS, db).await,
-    )
-    .and_then(|value| u32::try_from(value).ok())
-    .unwrap_or(fallback.max_failed_attempts),
-    failure_reset_after: read(
-      keys::SECURITY_BAN_FAILURE_RESET_AFTER,
-      SystemSettings::get_string(keys::SECURITY_BAN_FAILURE_RESET_AFTER, db).await,
-    )
-    .unwrap_or_else(|| fallback.failure_reset_after.clone()),
-    duration:            read(
-      keys::SECURITY_BAN_DURATION,
-      SystemSettings::get_string(keys::SECURITY_BAN_DURATION, db).await,
-    )
-    .unwrap_or_else(|| fallback.duration.clone()),
-    target:              read(
-      keys::SECURITY_BAN_TARGET,
-      SystemSettings::get_string(keys::SECURITY_BAN_TARGET, db).await,
-    )
-    .unwrap_or_else(|| fallback.target.clone()),
-  }
-}
+  let keys_wanted = [
+    keys::SECURITY_BAN_ENABLED,
+    keys::SECURITY_BAN_MAX_FAILED_ATTEMPTS,
+    keys::SECURITY_BAN_FAILURE_RESET_AFTER,
+    keys::SECURITY_BAN_DURATION,
+    keys::SECURITY_BAN_TARGET,
+  ];
 
-/// Turn a store read into `Option`, warning when the store itself could not answer.
-#[cfg(feature = "system-settings")]
-fn read<T>(key: &str, result: Result<Option<T>, error::SumidaError>) -> Option<T> {
-  match result {
-    Ok(value) => value,
+  let stored: HashMap<String, sea_orm::JsonValue> = match SystemSettings::find()
+    .filter(SystemSettingsColumn::Key.is_in(keys_wanted))
+    .all(db)
+    .await
+  {
+    Ok(rows) => rows.into_iter().map(|row| (row.key, row.value)).collect(),
     Err(err) => {
-      tracing::warn!("system setting `{key}` is unreadable, using the settings-file value: {err}");
-      None
+      tracing::warn!("the system settings store is unreadable, using the settings-file ban policy: {err}");
+      HashMap::new()
     }
+  };
+
+  BanSettings {
+    enabled:             stored
+      .get(keys::SECURITY_BAN_ENABLED)
+      .and_then(|value| value.as_bool())
+      .unwrap_or(fallback.enabled),
+    max_failed_attempts: stored
+      .get(keys::SECURITY_BAN_MAX_FAILED_ATTEMPTS)
+      .and_then(|value| value.as_i64())
+      .and_then(|value| u32::try_from(value).ok())
+      .unwrap_or(fallback.max_failed_attempts),
+    failure_reset_after: stored
+      .get(keys::SECURITY_BAN_FAILURE_RESET_AFTER)
+      .and_then(|value| value.as_str())
+      .map_or_else(|| fallback.failure_reset_after.clone(), String::from),
+    duration:            stored
+      .get(keys::SECURITY_BAN_DURATION)
+      .and_then(|value| value.as_str())
+      .map_or_else(|| fallback.duration.clone(), String::from),
+    target:              stored
+      .get(keys::SECURITY_BAN_TARGET)
+      .and_then(|value| value.as_str())
+      .map_or_else(|| fallback.target.clone(), String::from),
   }
 }

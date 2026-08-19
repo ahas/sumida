@@ -7,6 +7,12 @@ impl MigratorTrait for Migrator {
   fn migrations() -> Vec<Box<dyn MigrationTrait>> {
     vec![
       Box::new(entity::migration::init::Migration), //
+      // Shared operational settings. After init — the row that records who last edited a setting
+      // points at users.
+      #[cfg(feature = "system-settings")]
+      Box::new(entity::migration::system_settings::Migration),
+      #[cfg(feature = "system-settings")]
+      Box::new(entity::migration::system_settings_category::Migration),
       Box::new(entity::migration::file_system::Migration),
       Box::new(entity::migration::board_system::Migration),
       Box::new(entity::migration::membership::Migration),
