@@ -5,15 +5,21 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Select,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QuerySelect,
+  Select,
   TransactionTrait,
 };
 
 use self::dto::*;
 use crate::SumidaState;
+use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::authz::write::SubjectKey;
-use crate::authz::Authz;
 use crate::service::grants::{from_service_grants, to_service_grants};
 use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
@@ -22,7 +28,7 @@ use crate::util::pagination::Pagination;
 const RESOURCE: &str = "role";
 
 pub struct RoleService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -101,13 +107,8 @@ impl<S: SumidaState> RoleService<S> {
     // 그대로 통과했다.
     let grants = to_service_grants(&data.access_policies)?;
     let result = Roles::insert(data.into_active_model()).exec(&txn).await?;
-    Authz::replace_service_grants(
-      &Self::holder(result.last_insert_id),
-      &grants,
-      &self.subject(),
-      &txn,
-    )
-    .await?;
+    Authz::replace_service_grants(&Self::holder(result.last_insert_id), &grants, &self.subject(), &txn)
+      .await?;
     txn.commit().await?;
 
     Ok(result)

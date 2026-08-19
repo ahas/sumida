@@ -20,7 +20,7 @@ async fn test_role_read_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "role",
-    base_url: "/roles",
+    base_url:  "/roles",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -47,7 +47,7 @@ async fn test_role_create_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "role",
-    base_url: "/roles",
+    base_url:  "/roles",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -74,7 +74,7 @@ async fn test_role_update_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "role",
-    base_url: "/roles",
+    base_url:  "/roles",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -101,7 +101,7 @@ async fn test_role_delete_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "role",
-    base_url: "/roles",
+    base_url:  "/roles",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -128,7 +128,7 @@ async fn test_role_list_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "role",
-    base_url: "/roles",
+    base_url:  "/roles",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -155,7 +155,7 @@ async fn test_role_admin_bypass_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "role",
-    base_url: "/roles",
+    base_url:  "/roles",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -188,7 +188,7 @@ async fn test_role_wildcard_action_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "role",
-    base_url: "/roles",
+    base_url:  "/roles",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -216,7 +216,7 @@ async fn test_role_wildcard_object_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "role",
-    base_url: "/roles",
+    base_url:  "/roles",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);

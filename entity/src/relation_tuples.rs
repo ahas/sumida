@@ -9,23 +9,23 @@ use sea_orm::prelude::*;
 #[sea_orm(table_name = "relation_tuples")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i64,
-  pub resource_type: String,
-  pub resource_id: String,
-  pub relation: String,
-  pub subject_type: String,
-  pub subject_id: String,
+  pub id:               i64,
+  pub resource_type:    String,
+  pub resource_id:      String,
+  pub relation:         String,
+  pub subject_type:     String,
+  pub subject_id:       String,
   pub subject_relation: String,
   /// `<subject_type>:<subject_id>[#<subject_relation>]`, the form every other surface speaks.
-  pub subject_key: String,
+  pub subject_key:      String,
   #[sea_orm(nullable)]
-  pub resource_id_int: Option<i32>,
+  pub resource_id_int:  Option<i32>,
   #[sea_orm(nullable)]
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at:       Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:       DateTimeWithTimeZone,
   #[sea_orm(default_value = "'system'")]
-  pub created_by: String,
+  pub created_by:       String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -110,7 +110,7 @@ pub struct CouponItem {
 pub struct GrantCoupon {
   #[serde(default = "default_owner_kind")]
   pub owner_kind: OwnerKind,
-  pub owner_id: i32,
+  pub owner_id:   i32,
 }
 
 /// Issue a coupon to many owners at once.
@@ -124,9 +124,9 @@ pub struct BulkGrantCoupon {
 #[serde(rename_all = "camelCase")]
 pub struct BulkGrantResult {
   /// Newly issued or re-issued.
-  pub granted: usize,
+  pub granted:   usize,
   /// Already held an issued grant (idempotent no-op).
-  pub skipped: usize,
+  pub skipped:   usize,
   /// Already redeemed — not re-issued (revoke first).
   pub conflicts: usize,
 }
@@ -139,9 +139,9 @@ impl IntoResponse for BulkGrantResult {
 
 /// Result of applying one coupon during checkout.
 pub struct AppliedCoupon {
-  pub code: String,
-  pub discount: i64,
-  pub stackable: bool,
+  pub code:          String,
+  pub discount:      i64,
+  pub stackable:     bool,
   /// The redemption row created — checkout links it to the purchase afterwards.
   pub redemption_id: i32,
 }
@@ -170,26 +170,26 @@ impl IntoResponse for CouponRevoked {
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct CouponGrantItem {
-  pub id: i32,
-  pub coupon_id: i32,
-  pub owner_kind: OwnerKind,
-  pub owner_id: i32,
+  pub id:          i32,
+  pub coupon_id:   i32,
+  pub owner_kind:  OwnerKind,
+  pub owner_id:    i32,
   pub redeemed_at: Option<DateTimeWithTimeZone>,
-  pub revoked_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
+  pub revoked_at:  Option<DateTimeWithTimeZone>,
+  pub created_at:  DateTimeWithTimeZone,
 }
 
 /// A coupon available to the calling owner ("my coupons").
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct MyCouponItem {
-  pub id: i32,
-  pub code: String,
-  pub percent_off: Option<i32>,
-  pub grant_credits: Option<i64>,
+  pub id:             i32,
+  pub code:           String,
+  pub percent_off:    Option<i32>,
+  pub grant_credits:  Option<i64>,
   pub free_plan_code: Option<String>,
-  pub currency: Option<String>,
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub currency:       Option<String>,
+  pub expires_at:     Option<DateTimeWithTimeZone>,
 }
 
 /// Redeem a reward coupon (credits / free plan) for the calling user.
@@ -203,7 +203,7 @@ pub struct RedeemCoupon {
 #[serde(rename_all = "camelCase")]
 pub struct RedeemResult {
   /// How the coupon was redeemed: "credits" or "free-plan".
-  pub reward: String,
+  pub reward:          String,
   pub credits_granted: Option<i64>,
   pub subscription_id: Option<i32>,
 }
@@ -217,7 +217,7 @@ impl IntoResponse for RedeemResult {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CouponCreated {
-  pub id: i32,
+  pub id:   i32,
   pub code: String,
 }
 
@@ -233,17 +233,17 @@ impl IntoResponse for CouponCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCoupon {
   #[serde(default)]
-  pub is_active: Option<bool>,
+  pub is_active:                 Option<bool>,
   #[serde(default)]
-  pub max_redemptions: Option<i32>,
+  pub max_redemptions:           Option<i32>,
   #[serde(default)]
   pub max_redemptions_per_owner: Option<i32>,
   #[serde(default)]
-  pub requires_grant: Option<bool>,
+  pub requires_grant:            Option<bool>,
   #[serde(default)]
-  pub stackable: Option<bool>,
+  pub stackable:                 Option<bool>,
   #[serde(default)]
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at:                Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -275,8 +275,7 @@ mod filter_tests {
 
   #[test]
   fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
-    let filter: CouponFilter =
-      serde_urlencoded::from_str("isActive=true").expect("the flat filter parses");
+    let filter: CouponFilter = serde_urlencoded::from_str("isActive=true").expect("the flat filter parses");
     assert_eq!(filter.is_active, Some(true));
   }
 

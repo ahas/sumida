@@ -5,8 +5,16 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
-  RelationTrait, Select, TransactionTrait,
+  ColumnTrait,
+  DeleteResult,
+  EntityTrait,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -24,7 +32,7 @@ use crate::util::pagination::Pagination;
 const RESOURCE: &str = "board_file";
 
 pub struct BoardFileService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -61,14 +69,16 @@ impl<S: SumidaState> BoardFileService<S> {
 
     // Apply the board_file read ReBAC filter via self.select(...).
     // Without this, board_file:read permission alone would let one read attachments across all organizations.
-    let mut query = conditions.apply::<BoardFileFilter, _>(filter.apply(util::with_file_columns(
-      self
-        .select(BoardFiles::find())?
-        .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
-        .select_only()
-        .column_as(Column::FileUuid, "id")
-        .column_as(Column::PostId, "post_id"),
-    )))?;
+    let mut query = conditions.apply::<BoardFileFilter, _>(
+      filter.apply(util::with_file_columns(
+        self
+          .select(BoardFiles::find())?
+          .join(JoinType::InnerJoin, entity::bps::board_files::Relation::File.def())
+          .select_only()
+          .column_as(Column::FileUuid, "id")
+          .column_as(Column::PostId, "post_id"),
+      )),
+    )?;
 
     let count = query.clone().count(db).await?;
 

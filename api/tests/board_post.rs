@@ -42,8 +42,10 @@ async fn board_post_filters_describe_the_declared_surface() {
   // resource, so a client never has to hand-copy the table.
   let operators = body["operators"].as_array().expect("the descriptor carries the vocabulary");
   let arity = |op: &str| {
-    operators.iter().find(|entry| entry["op"] == op).unwrap_or_else(|| panic!("`{op}` is served"))
-      ["arity"]
+    operators
+      .iter()
+      .find(|entry| entry["op"] == op)
+      .unwrap_or_else(|| panic!("`{op}` is served"))["arity"]
       .clone()
   };
 

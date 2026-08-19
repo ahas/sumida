@@ -9,7 +9,7 @@ pub struct Model {
   #[sea_orm(primary_key, auto_increment = false)]
   pub file_uuid: Uuid,
   #[sea_orm(indexed, nullable)]
-  pub post_id: Option<i32>,
+  pub post_id:   Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

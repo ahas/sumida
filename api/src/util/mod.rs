@@ -1,9 +1,9 @@
 pub mod board;
 pub mod db;
-pub mod filter;
 #[cfg(feature = "file")]
 pub mod file_lifecycle;
 pub mod file_validation;
+pub mod filter;
 pub mod storage;
 pub mod user;
 

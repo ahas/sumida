@@ -9,19 +9,19 @@ use super::OwnerKind;
 #[sea_orm(table_name = "coupon_grants")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
+  pub id:          i32,
   #[sea_orm(indexed)]
-  pub coupon_id: i32,
-  pub owner_kind: OwnerKind,
-  pub owner_id: i32,
+  pub coupon_id:   i32,
+  pub owner_kind:  OwnerKind,
+  pub owner_id:    i32,
   /// Set when consumed at checkout (one grant = one use for grant-gated coupons).
   #[sea_orm(nullable)]
   pub redeemed_at: Option<DateTimeWithTimeZone>,
   /// Set on recall. A revoked grant cannot be redeemed; re-granting re-issues it.
   #[sea_orm(nullable)]
-  pub revoked_at: Option<DateTimeWithTimeZone>,
+  pub revoked_at:  Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:  DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

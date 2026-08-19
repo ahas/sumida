@@ -60,20 +60,20 @@ pub struct MembershipSettings {
 pub struct PaymentSettings {
   /// "none" (disabled, default) | "portone" | "mock" (tests).
   #[serde(default = "default_provider")]
-  pub provider: String,
+  pub provider:       String,
   /// API base override (PortOne default: https://api.portone.io).
   #[serde(default)]
-  pub api_base: Option<String>,
+  pub api_base:       Option<String>,
   /// PortOne V2 API secret (used to obtain a Bearer access token).
   #[serde(default)]
-  pub api_secret: Option<String>,
+  pub api_secret:     Option<String>,
   /// Optional PortOne store id.
   #[serde(default)]
-  pub store_id: Option<String>,
+  pub store_id:       Option<String>,
   /// Optional PortOne channel key, used for billing-key (recurring) payments when
   /// the store has multiple channels.
   #[serde(default)]
-  pub channel_key: Option<String>,
+  pub channel_key:    Option<String>,
   /// Webhook signing secret (Standard Webhooks, e.g. `whsec_...`).
   #[serde(default)]
   pub webhook_secret: Option<String>,
@@ -94,11 +94,11 @@ fn default_provider() -> String {
 impl Default for PaymentSettings {
   fn default() -> Self {
     Self {
-      provider: default_provider(),
-      api_base: None,
-      api_secret: None,
-      store_id: None,
-      channel_key: None,
+      provider:       default_provider(),
+      api_base:       None,
+      api_secret:     None,
+      store_id:       None,
+      channel_key:    None,
       webhook_secret: None,
     }
   }

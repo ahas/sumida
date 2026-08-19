@@ -87,8 +87,7 @@ impl<S: SumidaState> MeController<S> {
 
     // The literal `["service"]` the client concatenates. A service grant has exactly one object and
     // it is this string; the legacy `ARRAY_AGG(DISTINCT ap."object")` produced the same one element.
-    let mut policies: Vec<ApForUser> =
-      from_service_grants(Authz::service_grants(&subject, db).await?);
+    let mut policies: Vec<ApForUser> = from_service_grants(Authz::service_grants(&subject, db).await?);
 
     if Authz::is_superuser(&subject, db).await? {
       policies.push(ApForUser {

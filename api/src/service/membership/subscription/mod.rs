@@ -8,8 +8,17 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
-  ActiveEnum, ColumnTrait, Condition, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-  QuerySelect, QueryTrait, Select, TransactionTrait,
+  ActiveEnum,
+  ColumnTrait,
+  Condition,
+  ConnectionTrait,
+  EntityTrait,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  QueryTrait,
+  Select,
+  TransactionTrait,
 };
 use serde_json::json;
 
@@ -33,7 +42,7 @@ fn status_str(status: &SubscriptionStatus) -> &'static str {
 }
 
 pub struct SubscriptionService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -119,8 +128,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       OwnerKind::Organization => {
         // 목록(`scope`)과 같은 재작성 트리에서 나온 판정이다 — 조상 조직의 부여가 하위 조직에
         // 닿는 것은 `subscription_*^` / `manager^` 닫힘이 맡는다.
-        let permission =
-          if action == "read" { "view_subscription" } else { "manage_subscription" };
+        let permission = if action == "read" { "view_subscription" } else { "manage_subscription" };
         Authz::try_check("organization", owner_id, permission, &self.subject(), db).await
       }
     }
@@ -228,15 +236,11 @@ impl<S: SumidaState> SubscriptionService<S> {
       .apply_if(listed(filter.owner_kind.as_ref()), |q, v| {
         q.filter(Column::OwnerKind.is_in(v.iter().map(|k| k.clone().into_value())))
       })
-      .apply_if(listed(filter.owner_id.as_ref()), |q, v| {
-        q.filter(v.into_simple_expr(Column::OwnerId))
-      })
+      .apply_if(listed(filter.owner_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::OwnerId)))
       .apply_if(listed(filter.status.as_ref()), |q, v| {
         q.filter(Column::Status.is_in(v.iter().map(|k| k.clone().into_value())))
       })
-      .apply_if(listed(filter.plan_code.as_ref()), |q, v| {
-        q.filter(v.into_simple_expr(Column::PlanCode))
-      });
+      .apply_if(listed(filter.plan_code.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::PlanCode)));
 
     let mut query = conditions.apply::<SubscriptionFilter, _>(query)?;
 
@@ -290,7 +294,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       {
         txn.commit().await?;
         return Ok(SubscriptionCreated {
-          id: existing.id,
+          id:   existing.id,
           code: existing.code,
         });
       }

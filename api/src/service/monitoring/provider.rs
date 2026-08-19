@@ -16,11 +16,11 @@ pub trait MetricsProvider: Send + Sync {
 
 #[derive(Clone, Debug)]
 pub struct SystemMetrics {
-  pub uptime_seconds: u64,
-  pub cpu_usage_percent: f32,
-  pub memory_used_bytes: u64,
+  pub uptime_seconds:     u64,
+  pub cpu_usage_percent:  f32,
+  pub memory_used_bytes:  u64,
   pub memory_total_bytes: u64,
-  pub load_average: LoadAverage,
+  pub load_average:       LoadAverage,
 }
 
 #[derive(Clone)]
@@ -63,8 +63,8 @@ impl MetricsProvider for SysinfoMetricsProvider {
       memory_used_bytes,
       memory_total_bytes,
       load_average: LoadAverage {
-        one: load_average.one,
-        five: load_average.five,
+        one:     load_average.one,
+        five:    load_average.five,
         fifteen: load_average.fifteen,
       },
     })

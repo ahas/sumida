@@ -2,10 +2,9 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bps::board_post_reactions::{ActiveModel, Column};
-use sea_orm::IntoSimpleExpr;
 use sea_orm::prelude::*;
 use sea_orm::sea_query::SimpleExpr;
-use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, Set};
+use sea_orm::{FromQueryResult, IntoActiveModel, IntoActiveValue, IntoSimpleExpr, Set};
 use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -20,7 +19,7 @@ pub struct BoardPostReactionFilter {
   /// would become an empty page, which tells the caller the post exists and carries no reactions.
   pub post_id: Option<i32>,
   pub user_id: Option<OneOrMany<i32>>,
-  pub value: Option<String>,
+  pub value:   Option<String>,
 }
 
 /// What `/board-post-reactions` accepts, declared once.
@@ -56,20 +55,20 @@ impl FilterSchema for BoardPostReactionFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostReactionListItem {
-  pub id: i32,
-  pub post_id: i32,
-  pub user_id: Option<i32>,
-  pub value: String,
+  pub id:         i32,
+  pub post_id:    i32,
+  pub user_id:    Option<i32>,
+  pub value:      String,
   pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPostReaction {
-  pub id: i32,
-  pub post_id: i32,
-  pub user_id: Option<i32>,
-  pub value: String,
+  pub id:         i32,
+  pub post_id:    i32,
+  pub user_id:    Option<i32>,
+  pub value:      String,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -82,10 +81,10 @@ impl IntoResponse for GetBoardPostReaction {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPostReaction {
-  pub id: Optional<i32>,
+  pub id:      Optional<i32>,
   pub post_id: i32,
   pub user_id: Nullable<i32>,
-  pub value: String,
+  pub value:   String,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateBoardPostReaction {
@@ -117,7 +116,7 @@ impl IntoResponse for BoardPostReactionCreated {
 pub struct UpdateBoardPostReaction {
   pub post_id: Optional<i32>,
   pub user_id: Nullable<i32>,
-  pub value: Optional<String>,
+  pub value:   Optional<String>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateBoardPostReaction {
@@ -171,8 +170,7 @@ mod tests {
 
   #[test]
   fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
-    let filter: BoardPostReactionFilter =
-      serde_urlencoded::from_str("user_id=1,2").expect("a list parses");
+    let filter: BoardPostReactionFilter = serde_urlencoded::from_str("user_id=1,2").expect("a list parses");
     assert_eq!(filter.user_id.as_ref().map(OneOrMany::len), Some(2));
 
     let filter: BoardPostReactionFilter =

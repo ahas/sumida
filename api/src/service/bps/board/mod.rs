@@ -6,8 +6,16 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait,
-  QueryFilter, QuerySelect, Select, TransactionTrait,
+  ColumnTrait,
+  ConnectionTrait,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  Select,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -21,7 +29,7 @@ use crate::util::pagination::Pagination;
 const RESOURCE: &str = "board";
 
 pub struct BoardService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -63,8 +71,7 @@ impl<S: SumidaState> BoardService<S> {
 
     let txn = self.state.db().begin().await?;
 
-    let mut query =
-      conditions.apply::<BoardFilter, _>(filter.apply(self.select(Boards::find())?))?;
+    let mut query = conditions.apply::<BoardFilter, _>(filter.apply(self.select(Boards::find())?))?;
     let count = query.clone().select_only().column(Column::Id).count(&txn).await?;
 
     query = pagination.order_by_schema::<BoardFilter, _>(query);

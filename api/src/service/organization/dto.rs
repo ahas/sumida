@@ -14,7 +14,7 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op}
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct OrganizationFilter {
-  pub name: Option<String>,
+  pub name:      Option<String>,
   /// Which level of the tree is read. Saying nothing means the roots, not "every organization", so
   /// it carries a meaning a declared key cannot have — an unmentioned key is unfiltered. It stays a
   /// parameter of the list and never a field.
@@ -69,10 +69,10 @@ impl OrganizationFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizationListItem {
-  pub id: i32,
-  pub name: String,
+  pub id:         i32,
+  pub name:       String,
   #[serde(default)]
-  pub parent_id: Nullable<i32>,
+  pub parent_id:  Nullable<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -80,9 +80,9 @@ pub struct OrganizationListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetOrganization {
-  pub id: i32,
-  pub name: String,
-  pub parent_id: Option<i32>,
+  pub id:         i32,
+  pub name:       String,
+  pub parent_id:  Option<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
@@ -96,8 +96,8 @@ impl IntoResponse for GetOrganization {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateOrganization {
-  pub id: Optional<i32>,
-  pub name: String,
+  pub id:        Optional<i32>,
+  pub name:      String,
   #[serde(default)]
   pub parent_id: Nullable<i32>,
 }
@@ -117,7 +117,7 @@ impl IntoResponse for OrganizationCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateOrganization {
-  pub name: Optional<String>,
+  pub name:      Optional<String>,
   #[serde(default)]
   pub parent_id: Nullable<i32>,
 }
@@ -153,8 +153,7 @@ mod tests {
 
   #[test]
   fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
-    let filter: OrganizationFilter =
-      serde_urlencoded::from_str("name=a").expect("the flat filter parses");
+    let filter: OrganizationFilter = serde_urlencoded::from_str("name=a").expect("the flat filter parses");
     assert!(filter.name.is_some());
   }
 

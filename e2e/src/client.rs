@@ -12,7 +12,7 @@ pub async fn use_client(addr: SocketAddr) -> &'static TestClient {
 
 pub struct TestClient {
   base_url: SocketAddr,
-  _client: reqwest::Client,
+  _client:  reqwest::Client,
 }
 
 impl TestClient {

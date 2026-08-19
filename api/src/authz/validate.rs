@@ -487,7 +487,10 @@ mod tests {
   /// check nobody has watched fail is a boot check nobody knows works — and this one's whole job is
   /// to turn a silent authorization defect into a process that will not start.
   fn errors_in(text: &'static str) -> Vec<String> {
-    let file = RuleFile { name: "test.sz", text };
+    let file = RuleFile {
+      name: "test.sz",
+      text,
+    };
     match Registry::from_sources(std::slice::from_ref(&file)) {
       Ok(_) => Vec::new(),
       Err(AuthzError::Validation(errors)) => errors,

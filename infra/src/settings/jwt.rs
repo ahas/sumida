@@ -6,20 +6,20 @@ use tower_sessions::Expiry;
 #[allow(dead_code)]
 pub struct JwtSettings {
   /// Plaintext secret used with the `jwt-secret-store-static` feature.
-  pub secret: Option<String>,
+  pub secret:   Option<String>,
   /// SSM parameter path used with the `jwt-secret-store-aws-ssm` feature.
   /// Defaults to `/sumida/{stage}/jwt-secret` when unspecified.
   pub ssm_path: Option<String>,
   #[serde(default)]
-  pub expiry: JwtExpirySettings,
+  pub expiry:   JwtExpirySettings,
 }
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct JwtExpirySettings {
-  access_token: String,
+  access_token:  String,
   refresh_token: String,
-  remember_me: String,
+  remember_me:   String,
 }
 
 impl JwtExpirySettings {
@@ -42,9 +42,9 @@ impl JwtExpirySettings {
 impl Default for JwtExpirySettings {
   fn default() -> Self {
     Self {
-      access_token: "1hour".to_owned(),
+      access_token:  "1hour".to_owned(),
       refresh_token: "1week".to_owned(),
-      remember_me: "1month".to_owned(),
+      remember_me:   "1month".to_owned(),
     }
   }
 }

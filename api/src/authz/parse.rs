@@ -306,9 +306,10 @@ impl<'a> Parser<'a> {
     // `on` and `closure` are the definition's identity, not members of it. An extension that could
     // move a definition's table, id kind or hierarchy would be redeclaring it under another name.
     if self.eat_keyword("on") {
-      return self
-        .err(format!("`extend {target}` cannot declare `on`; where a definition's objects live is \
-                      part of the definition, and only the file that declares it may say"));
+      return self.err(format!(
+        "`extend {target}` cannot declare `on`; where a definition's objects live is \
+                      part of the definition, and only the file that declares it may say"
+      ));
     }
 
     self.expect(b'{')?;
@@ -802,8 +803,7 @@ mod tests {
     let on = parse("t.sz", "extend organization on orgs.id int { scope widget }").unwrap_err();
     assert!(on.message.contains("cannot declare `on`"), "{on}");
 
-    let closure =
-      parse("t.sz", "extend organization { closure parent via org_closure }").unwrap_err();
+    let closure = parse("t.sz", "extend organization { closure parent via org_closure }").unwrap_err();
     assert!(closure.message.contains("cannot declare a closure"), "{closure}");
   }
 

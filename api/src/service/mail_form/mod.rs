@@ -9,8 +9,16 @@ use lettre::message::header::ContentType;
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{SmtpTransport, Transport};
 use sea_orm::{
-  ConnectionTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect,
-  Select, Set, TransactionTrait,
+  ConnectionTrait,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QuerySelect,
+  Select,
+  Set,
+  TransactionTrait,
 };
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
@@ -28,10 +36,10 @@ const RESOURCE: &str = "mail_form";
 pub struct MailFormSendOptions {
   pub username: String,
   pub password: String,
-  pub auth: String,
-  pub server: String,
-  pub port: u16,
-  pub tls: SmtpTlsMode,
+  pub auth:     String,
+  pub server:   String,
+  pub port:     u16,
+  pub tls:      SmtpTlsMode,
 }
 
 impl MailFormSendOptions {
@@ -55,7 +63,7 @@ impl MailFormSendOptions {
 }
 
 pub struct MailFormService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -155,8 +163,7 @@ impl<S: SumidaState> MailFormService<S> {
 
     let txn = self.state.db().begin().await?;
 
-    let mut query =
-      conditions.apply::<MailFormFilter, _>(filter.apply(self.select(MailForms::find())?))?;
+    let mut query = conditions.apply::<MailFormFilter, _>(filter.apply(self.select(MailForms::find())?))?;
     let count = query.clone().select_only().column(Column::Kind).count(&txn).await?;
 
     query = pagination.order_by_schema::<MailFormFilter, _>(query);

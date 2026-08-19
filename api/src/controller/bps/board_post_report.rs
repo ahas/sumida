@@ -26,7 +26,12 @@ impl<S: SumidaState> BoardPostReportController<S> {
     Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardPostReportListItem>, SumidaError> {
-    Ok(BoardPostReportService::new(state, session).list(filter, conditions, pagination).await?.into())
+    Ok(
+      BoardPostReportService::new(state, session)
+        .list(filter, conditions, pagination)
+        .await?
+        .into(),
+    )
   }
 
   async fn get(

@@ -8,8 +8,15 @@ use infra::session::UserSession;
 use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DeleteResult, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
-  Select, TransactionTrait,
+  ColumnTrait,
+  ConnectionTrait,
+  DeleteResult,
+  EntityTrait,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  Select,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -23,7 +30,7 @@ use crate::util::pagination::Pagination;
 const RESOURCE: &str = "membership_plan";
 
 pub struct PlanService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 

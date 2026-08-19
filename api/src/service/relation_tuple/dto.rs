@@ -36,12 +36,8 @@ impl RelationTupleFilter {
       .apply_if(listed(self.resource_id.as_ref()), |q, v| {
         q.filter(v.into_simple_expr(Column::ResourceId))
       })
-      .apply_if(listed(self.relation.as_ref()), |q, v| {
-        q.filter(v.into_simple_expr(Column::Relation))
-      })
-      .apply_if(listed(self.subject.as_ref()), |q, v| {
-        q.filter(v.into_simple_expr(Column::SubjectKey))
-      })
+      .apply_if(listed(self.relation.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::Relation)))
+      .apply_if(listed(self.subject.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::SubjectKey)))
   }
 }
 
@@ -51,14 +47,10 @@ impl RelationTupleFilter {
 /// substring search over identifiers is how `user:1` finds `user:12` and a support engineer revokes
 /// the wrong grant. The one thing this screen exists to make precise is *which* row.
 const RELATION_TUPLE_FIELDS: &[FieldSpec] = &[
-  FieldSpec::new("resourceType", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_sort(),
-  FieldSpec::new("resourceId", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_sort(),
-  FieldSpec::new("relation", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_sort(),
-  FieldSpec::new("subject", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_sort(),
+  FieldSpec::new("resourceType", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
+  FieldSpec::new("resourceId", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
+  FieldSpec::new("relation", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
+  FieldSpec::new("subject", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
   FieldSpec::sort_only("expiresAt", FieldKind::DateTime),
   FieldSpec::sort_only("createdAt", FieldKind::DateTime),
 ];
@@ -160,8 +152,7 @@ mod tests {
   #[test]
   fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
     let query = "resourceType=board&resourceId=1&relation=viewer&subject=user:7";
-    let filter: RelationTupleFilter =
-      serde_urlencoded::from_str(query).expect("the flat filter parses");
+    let filter: RelationTupleFilter = serde_urlencoded::from_str(query).expect("the flat filter parses");
 
     assert!(filter.resource_type.is_some());
     assert!(filter.resource_id.is_some());

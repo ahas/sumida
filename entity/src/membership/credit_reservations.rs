@@ -12,24 +12,24 @@ use super::ReservationStatus;
 #[sea_orm(table_name = "credit_reservations")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
+  pub id:              i32,
   #[sea_orm(indexed)]
-  pub wallet_id: i32,
-  pub amount: i64,
-  pub status: ReservationStatus,
+  pub wallet_id:       i32,
+  pub amount:          i64,
+  pub status:          ReservationStatus,
   #[sea_orm(nullable)]
-  pub action: Option<String>,
+  pub action:          Option<String>,
   #[sea_orm(nullable)]
-  pub reference_code: Option<String>,
+  pub reference_code:  Option<String>,
   #[sea_orm(nullable)]
   pub idempotency_key: Option<String>,
   /// Optional auto-release deadline; the maintenance job releases held rows past it.
   #[sea_orm(nullable)]
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at:      Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:      DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at: DateTimeWithTimeZone,
+  pub updated_at:      DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -15,14 +15,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::service::fs::dto::{
-  FileListItem, FileUploadData, FileUploadOptions, FileUploadTrait, GetFile, UploadFile,
+  FileListItem,
+  FileUploadData,
+  FileUploadOptions,
+  FileUploadTrait,
+  GetFile,
+  UploadFile,
 };
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFileFilter {
   /// The attachment's file uuid — `board_files.file_uuid`, which is what identifies the row.
-  pub id: Option<OneOrMany<Uuid>>,
+  pub id:      Option<OneOrMany<Uuid>>,
   pub post_id: Option<OneOrMany<i32>>,
 }
 
@@ -89,7 +94,7 @@ impl FilterSchema for BoardFileFilter {
 pub struct BoardFileListItem {
   #[sea_orm(nested)]
   #[serde(flatten)]
-  pub file: FileListItem,
+  pub file:    FileListItem,
   pub post_id: i32,
   // pub path:          String,
   // pub original_name: String,
@@ -109,7 +114,7 @@ pub struct BoardFileListItem {
 pub struct GetBoardFile {
   #[sea_orm(nested)]
   #[serde(flatten)]
-  pub file: GetFile,
+  pub file:    GetFile,
   pub post_id: i32,
   // pub id:            i32,
   // pub user_id:       Option<i32>,
@@ -136,8 +141,8 @@ impl IntoResponse for GetBoardFile {
 #[serde(rename_all = "camelCase")]
 pub struct UploadBoardFile {
   pub board_id: i32,
-  pub file: FileUploadData,
-  pub options: FileUploadOptions,
+  pub file:     FileUploadData,
+  pub options:  FileUploadOptions,
 }
 
 #[async_trait]
@@ -191,8 +196,8 @@ impl FileUploadTrait for UploadBoardFile {
 
           file_data = Some(FileUploadData {
             original_name: filename,
-            bytes: data.to_vec(),
-            mime_type: content_type,
+            bytes:         data.to_vec(),
+            mime_type:     content_type,
           });
         }
         _ => {}
@@ -201,8 +206,8 @@ impl FileUploadTrait for UploadBoardFile {
 
     Ok(Self {
       board_id: board_id.ok_or_else(|| SumidaError::BadRequest("Missing field: board_id".into()))?,
-      file: file_data.ok_or_else(|| SumidaError::BadRequest("Missing field: file".into()))?,
-      options: options.ok_or_else(|| SumidaError::BadRequest("Missing field: metadata".into()))?,
+      file:     file_data.ok_or_else(|| SumidaError::BadRequest("Missing field: file".into()))?,
+      options:  options.ok_or_else(|| SumidaError::BadRequest("Missing field: metadata".into()))?,
     })
   }
 }
@@ -210,7 +215,7 @@ impl FileUploadTrait for UploadBoardFile {
 impl From<UploadBoardFile> for UploadFile {
   fn from(value: UploadBoardFile) -> Self {
     UploadFile {
-      file: value.file,
+      file:    value.file,
       options: value.options,
     }
   }
@@ -219,7 +224,7 @@ impl From<UploadBoardFile> for UploadFile {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardFileCreated {
-  pub id: i32,
+  pub id:      i32,
   pub post_id: i32,
 }
 
@@ -243,8 +248,8 @@ impl IntoResponse for BoardFileUpdated {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteBoardFile {
   #[serde(default)]
-  pub hard: bool,
-  pub post_id: i32,
+  pub hard:      bool,
+  pub post_id:   i32,
   pub file_uuid: Uuid,
 }
 
@@ -261,14 +266,14 @@ impl IntoResponse for BoardFileDeleted {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachFileToPost {
-  pub id: i32,
+  pub id:      i32,
   pub post_id: i32,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetachFileFromPost {
-  pub id: i32,
+  pub id:      i32,
   pub post_id: i32,
 }
 

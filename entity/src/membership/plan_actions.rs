@@ -10,12 +10,12 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "plan_actions")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
+  pub id:               i32,
   #[sea_orm(indexed)]
-  pub plan_id: i32,
-  pub action: String,
+  pub plan_id:          i32,
+  pub action:           String,
   #[sea_orm(nullable)]
-  pub credit_cost: Option<i64>,
+  pub credit_cost:      Option<i64>,
   #[sea_orm(nullable)]
   pub quota_per_period: Option<i32>,
 }

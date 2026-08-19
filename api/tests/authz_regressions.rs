@@ -29,7 +29,14 @@ use api::authz::subject::SubjectSet;
 use e2e::prelude::*;
 use entity::prelude::*;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, PaginatorTrait, Statement};
+use sea_orm::{
+  ConnectionTrait,
+  DatabaseConnection,
+  EntityTrait,
+  FromQueryResult,
+  PaginatorTrait,
+  Statement,
+};
 use uuid::Uuid;
 
 // ─── harness ─────────────────────────────────────────────────────────────────────────────────
@@ -129,7 +136,9 @@ async fn g9_minting_a_key_in_another_name_needs_edit_over_that_account() {
   let victim_id = victim.user.model.id;
 
   assert!(
-    !Authz::check("sumida_user", victim_id, "edit", &attacker_subject, &db).await.expect("runs"),
+    !Authz::check("sumida_user", victim_id, "edit", &attacker_subject, &db)
+      .await
+      .expect("runs"),
     "a plain member holds `sumida_user#edit` over another account — G9 is re-opened"
   );
   // The self case is pinned too, because "refuse everything" would satisfy the line above while
@@ -165,7 +174,9 @@ async fn g9_minting_a_key_in_another_name_needs_edit_over_that_account() {
   )
   .await;
   assert!(
-    Authz::check("sumida_user", victim_id, "edit", &attacker_subject, &db).await.expect("runs"),
+    Authz::check("sumida_user", victim_id, "edit", &attacker_subject, &db)
+      .await
+      .expect("runs"),
     "an organization manager cannot edit a user one level down — R2 does not reach"
   );
 }
@@ -250,10 +261,9 @@ async fn g11_the_file_aggregate_and_the_file_list_are_one_predicate() {
   let shared = seed_file(&db, &owner.model).await;
   tuple(&db, "file", &shared.to_string(), "viewer", "user", &outsider.model.id.to_string(), "").await;
 
-  for (label, user, expected) in [
-    ("the owner", &owner, 3_u64),
-    ("an outsider holding one share", &outsider, 1),
-  ] {
+  for (label, user, expected) in
+    [("the owner", &owner, 3_u64), ("an outsider holding one share", &outsider, 1)]
+  {
     let subject = subject_of(&user.model);
 
     let listed = Authz::filter("file", "view", &subject, Files::find())
@@ -379,8 +389,26 @@ async fn the_point_check_and_the_list_filter_agree_for_every_converted_definitio
   let stranger = TestUser::create(&db).await.expect("somebody with no relationship to the caller");
 
   // R2: 자기 조직과 그 아래 전부에 닿는 관리자 튜플 하나.
-  tuple(&db, "organization", &tree.subject.to_string(), "manager", "user", &caller.user.model.id.to_string(), "").await;
-  tuple(&db, "organization", &tree.subject.to_string(), "user_manager", "user", &caller.user.model.id.to_string(), "").await;
+  tuple(
+    &db,
+    "organization",
+    &tree.subject.to_string(),
+    "manager",
+    "user",
+    &caller.user.model.id.to_string(),
+    "",
+  )
+  .await;
+  tuple(
+    &db,
+    "organization",
+    &tree.subject.to_string(),
+    "user_manager",
+    "user",
+    &caller.user.model.id.to_string(),
+    "",
+  )
+  .await;
 
   let inside = Member::create(&db, tree.grandchild).await.expect("a user two levels down");
   let outside = Member::create(&db, tree.aunt).await.expect("a user in another branch");
@@ -392,15 +420,42 @@ async fn the_point_check_and_the_list_filter_agree_for_every_converted_definitio
     seed_board_world(&db, &caller.user.model).await;
   let (other_group, other_board, other_post, other_attachment) =
     seed_board_world(&db, &stranger.model).await;
-  tuple(&db, "board", &reachable_board.to_string(), "viewer", "user", &caller.user.model.id.to_string(), "").await;
-  tuple(&db, "board_group", &reachable_group.to_string(), "viewer", "user", &caller.user.model.id.to_string(), "").await;
+  tuple(
+    &db,
+    "board",
+    &reachable_board.to_string(),
+    "viewer",
+    "user",
+    &caller.user.model.id.to_string(),
+    "",
+  )
+  .await;
+  tuple(
+    &db,
+    "board_group",
+    &reachable_group.to_string(),
+    "viewer",
+    "user",
+    &caller.user.model.id.to_string(),
+    "",
+  )
+  .await;
 
   let reachable_topic = seed_topic(&db, reachable_board).await;
   let unreachable_topic = seed_topic(&db, other_board).await;
 
   let reachable_role = TestRole::create(&db).await.expect("a role the caller may see");
   let unreachable_role = TestRole::create(&db).await.expect("a role the caller may not see");
-  tuple(&db, "role", &reachable_role.model.id.to_string(), "admin", "user", &caller.user.model.id.to_string(), "").await;
+  tuple(
+    &db,
+    "role",
+    &reachable_role.model.id.to_string(),
+    "admin",
+    "user",
+    &caller.user.model.id.to_string(),
+    "",
+  )
+  .await;
 
   // 전역 설정 셋은 행에 붙일 관계가 없다 — 서비스 층이 유일한 도달 경로다.
   tuple(&db, "service", "mail_form", "op_read", "user", &caller.user.model.id.to_string(), "").await;
@@ -419,20 +474,64 @@ async fn the_point_check_and_the_list_filter_agree_for_every_converted_definitio
   let unreachable_log = seed_access_log(&db, stranger.model.id).await;
 
   // (definition, permission) 마다 "닿아야 하는 행"과 "닿으면 안 되는 행".
-  agree::<Users, _>(&db, "sumida_user", "view", &subject, inside.user.model.id, outside.user.model.id, |m| m.id).await;
+  agree::<Users, _>(
+    &db,
+    "sumida_user",
+    "view",
+    &subject,
+    inside.user.model.id,
+    outside.user.model.id,
+    |m| m.id,
+  )
+  .await;
   agree::<Organizations, _>(&db, "organization", "view", &subject, tree.child, tree.aunt, |m| m.id).await;
   agree::<Organizations, _>(&db, "organization", "edit", &subject, tree.child, tree.parent, |m| m.id).await;
-  agree::<Roles, _>(&db, "role", "view", &subject, reachable_role.model.id, unreachable_role.model.id, |m| m.id).await;
+  agree::<Roles, _>(
+    &db,
+    "role",
+    "view",
+    &subject,
+    reachable_role.model.id,
+    unreachable_role.model.id,
+    |m| m.id,
+  )
+  .await;
   agree::<Files, _>(&db, "file", "view", &subject, reachable_file, unreachable_file, |m| m.uuid).await;
-  agree::<BoardGroups, _>(&db, "board_group", "view", &subject, reachable_group, other_group, |m| m.id).await;
+  agree::<BoardGroups, _>(&db, "board_group", "view", &subject, reachable_group, other_group, |m| m.id)
+    .await;
   agree::<Boards, _>(&db, "board", "view", &subject, reachable_board, other_board, |m| m.id).await;
-  agree::<BoardTopics, _>(&db, "board_topic", "view", &subject, reachable_topic, unreachable_topic, |m| m.id).await;
+  agree::<BoardTopics, _>(&db, "board_topic", "view", &subject, reachable_topic, unreachable_topic, |m| {
+    m.id
+  })
+  .await;
   agree::<BoardPosts, _>(&db, "board_post", "view", &subject, reachable_post, other_post, |m| m.id).await;
-  agree::<BoardFiles, _>(&db, "board_file", "view", &subject, reachable_attachment, other_attachment, |m| m.file_uuid).await;
+  agree::<BoardFiles, _>(
+    &db,
+    "board_file",
+    "view",
+    &subject,
+    reachable_attachment,
+    other_attachment,
+    |m| m.file_uuid,
+  )
+  .await;
   agree::<Bans, _>(&db, "ban", "view", &subject, reachable_ban, unreachable_ban, |m| m.id).await;
-  agree::<ApiKeys, _>(&db, "api_key", "view", &subject, reachable_key.clone(), unreachable_key, |m| m.key.clone()).await;
-  agree::<UserInvitations, _>(&db, "user_invitation", "view", &subject, reachable_invitation, unreachable_invitation, |m| m.uuid).await;
-  agree::<AccessLogs, _>(&db, "access_log", "view", &subject, reachable_log, unreachable_log, |m| m.id).await;
+  agree::<ApiKeys, _>(&db, "api_key", "view", &subject, reachable_key.clone(), unreachable_key, |m| {
+    m.key.clone()
+  })
+  .await;
+  agree::<UserInvitations, _>(
+    &db,
+    "user_invitation",
+    "view",
+    &subject,
+    reachable_invitation,
+    unreachable_invitation,
+    |m| m.uuid,
+  )
+  .await;
+  agree::<AccessLogs, _>(&db, "access_log", "view", &subject, reachable_log, unreachable_log, |m| m.id)
+    .await;
 
   // `mail_form` and `membership_plan` are reachable only through the service tier, so the
   // "unreachable" half is a second caller rather than a second row.
@@ -447,7 +546,9 @@ async fn the_point_check_and_the_list_filter_agree_for_every_converted_definitio
     .collect();
   assert!(listed.contains(&reachable_form), "the object-wide grant did not open `mail_form`");
   assert!(
-    Authz::check("mail_form", reachable_form.as_str(), "view", &subject, &db).await.expect("runs"),
+    Authz::check("mail_form", reachable_form.as_str(), "view", &subject, &db)
+      .await
+      .expect("runs"),
     "`mail_form`'s point check disagrees with its list"
   );
   assert!(
@@ -459,7 +560,6 @@ async fn the_point_check_and_the_list_filter_agree_for_every_converted_definitio
       .is_empty(),
     "a caller with no service-tier grant listed mail forms"
   );
-
 }
 
 /// One definition's list and point check, over one row that must be reachable and one that must not.
@@ -537,8 +637,7 @@ async fn replacing_a_roles_service_grants_leaves_its_object_grants_alone() {
   }];
 
   // (1) 권한 없는 호출자는 거절당하고, **아무것도 지우지 못한다**.
-  let refused =
-    Authz::replace_service_grants(&holder, &grants, &subject_of(&ordinary.model), &db).await;
+  let refused = Authz::replace_service_grants(&holder, &grants, &subject_of(&ordinary.model), &db).await;
   assert!(refused.is_err(), "a caller with no `service:ban#grant` replaced a role's grants");
   assert_eq!(
     held_by(&db, &holder.key()).await,
@@ -552,7 +651,11 @@ async fn replacing_a_roles_service_grants_leaves_its_object_grants_alone() {
     .expect("an administrator may grant");
   assert_eq!(
     held_by(&db, &holder.key()).await,
-    vec!["board:7#editor".to_owned(), "service:ban#delete".to_owned(), "service:ban#read".to_owned()],
+    vec![
+      "board:7#editor".to_owned(),
+      "service:ban#delete".to_owned(),
+      "service:ban#read".to_owned()
+    ],
     "the object-tier grant did not survive a submit of the permission grid (§9.4), or the old \
      route gate was left behind"
   );
@@ -598,7 +701,7 @@ async fn expanding_subjects_to_user_ids_includes_api_keys() {
 
   let key = format!("expand-{}", uuid::Uuid::new_v4().simple());
   ApiKeys::insert(entity::api_keys::ActiveModel {
-    key:     Set(key.clone()),
+    key: Set(key.clone()),
     user_id: Set(key_owner.model.id),
     ..Default::default()
   })
@@ -664,10 +767,7 @@ async fn held_by(db: &DatabaseConnection, subject_key: &str) -> Vec<String> {
 // ─── seeds for the agreement case ────────────────────────────────────────────────────────────
 
 /// A board group, a board in it, a post by `author`, and a file attached to that post.
-async fn seed_board_world(
-  db: &DatabaseConnection,
-  author: &entity::users::Model,
-) -> (i32, i32, i32, Uuid) {
+async fn seed_board_world(db: &DatabaseConnection, author: &entity::users::Model) -> (i32, i32, i32, Uuid) {
   let suffix = Uuid::new_v4();
 
   let group_id = BoardGroups::insert(entity::bps::board_groups::ActiveModel {
@@ -708,7 +808,7 @@ async fn seed_board_world(
   let file_uuid = seed_file(db, author).await;
   BoardFiles::insert(entity::bps::board_files::ActiveModel {
     file_uuid: Set(file_uuid),
-    post_id:   Set(Some(post_id)),
+    post_id: Set(Some(post_id)),
     ..Default::default()
   })
   .exec(db)
@@ -721,8 +821,8 @@ async fn seed_board_world(
 async fn seed_topic(db: &DatabaseConnection, board_id: i32) -> i32 {
   BoardTopics::insert(entity::bps::board_topics::ActiveModel {
     board_id: Set(board_id),
-    name:     Set(format!("agree-t-{}", Uuid::new_v4())),
-    order:    Set(0),
+    name: Set(format!("agree-t-{}", Uuid::new_v4())),
+    order: Set(0),
     ..Default::default()
   })
   .exec(db)
@@ -734,8 +834,8 @@ async fn seed_topic(db: &DatabaseConnection, board_id: i32) -> i32 {
 async fn seed_mail_form(db: &DatabaseConnection) -> String {
   let kind = format!("agree-{}", Uuid::new_v4());
   MailForms::insert(entity::mail_forms::ActiveModel {
-    kind:    Set(kind.clone()),
-    sender:  Set("agree@example.com".to_owned()),
+    kind: Set(kind.clone()),
+    sender: Set("agree@example.com".to_owned()),
     subject: Set("agree".to_owned()),
     content: Set("agree".to_owned()),
     ..Default::default()
@@ -751,9 +851,9 @@ async fn seed_mail_form(db: &DatabaseConnection) -> String {
 /// under test does not care either way.
 async fn seed_ban(db: &DatabaseConnection, target: i32, author: i32) -> i32 {
   Bans::insert(entity::bans::ActiveModel {
-    user_id:    Set(Some(target)),
+    user_id: Set(Some(target)),
     created_by: Set(Some(author)),
-    lifted_at:  Set(Some(chrono::Utc::now().fixed_offset())),
+    lifted_at: Set(Some(chrono::Utc::now().fixed_offset())),
     ..Default::default()
   })
   .exec(db)
@@ -765,7 +865,7 @@ async fn seed_ban(db: &DatabaseConnection, target: i32, author: i32) -> i32 {
 async fn seed_api_key(db: &DatabaseConnection, owner: i32) -> String {
   let key = format!("agree-{}", Uuid::new_v4().simple());
   ApiKeys::insert(entity::api_keys::ActiveModel {
-    key:     Set(key.clone()),
+    key: Set(key.clone()),
     user_id: Set(owner),
     ..Default::default()
   })
@@ -778,8 +878,8 @@ async fn seed_api_key(db: &DatabaseConnection, owner: i32) -> String {
 async fn seed_invitation(db: &DatabaseConnection, invitee: i32) -> Uuid {
   let uuid = Uuid::new_v4();
   UserInvitations::insert(entity::user_invitations::ActiveModel {
-    uuid:       Set(uuid),
-    user_id:    Set(invitee),
+    uuid: Set(uuid),
+    user_id: Set(invitee),
     expires_at: Set((chrono::Utc::now() + chrono::Duration::days(30)).fixed_offset()),
     ..Default::default()
   })
@@ -791,12 +891,12 @@ async fn seed_invitation(db: &DatabaseConnection, invitee: i32) -> Uuid {
 
 async fn seed_access_log(db: &DatabaseConnection, user_id: i32) -> i32 {
   AccessLogs::insert(entity::access_logs::ActiveModel {
-    user_id:       Set(user_id),
-    method:        Set(entity::access_logs::AccessMethod::Password),
-    code:          Set(entity::access_logs::AccessResultCode::Success),
-    ip_address:    Set("127.0.0.1".to_owned()),
-    user_agent:    Set("agree".to_owned()),
-    os_family:     Set("agree".to_owned()),
+    user_id: Set(user_id),
+    method: Set(entity::access_logs::AccessMethod::Password),
+    code: Set(entity::access_logs::AccessResultCode::Success),
+    ip_address: Set("127.0.0.1".to_owned()),
+    user_agent: Set("agree".to_owned()),
+    os_family: Set("agree".to_owned()),
     device_family: Set("agree".to_owned()),
     ..Default::default()
   })

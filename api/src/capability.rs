@@ -8,7 +8,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub struct Capability {
   /// 안정적 키(와이어/클라 식별자). 예: "board", "cloud".
-  pub key: &'static str,
+  pub key:   &'static str,
   /// 소유 그룹. 예: "sumida", 또는 소비 서비스의 이름.
   pub group: &'static str,
   /// 사람이 읽는 라벨.
@@ -29,10 +29,26 @@ pub fn has(key: &str) -> bool {
 
 // --- sumida 자체 기능 능력(각 feature가 켜졌을 때만 등록) ---
 #[cfg(feature = "board")]
-inventory::submit!(Capability { key: "board", group: "sumida", label: "Board System" });
+inventory::submit!(Capability {
+  key:   "board",
+  group: "sumida",
+  label: "Board System",
+});
 #[cfg(feature = "file")]
-inventory::submit!(Capability { key: "file", group: "sumida", label: "File System" });
+inventory::submit!(Capability {
+  key:   "file",
+  group: "sumida",
+  label: "File System",
+});
 #[cfg(feature = "membership")]
-inventory::submit!(Capability { key: "membership", group: "sumida", label: "Membership / Billing" });
+inventory::submit!(Capability {
+  key:   "membership",
+  group: "sumida",
+  label: "Membership / Billing",
+});
 #[cfg(feature = "mail-form")]
-inventory::submit!(Capability { key: "mail-form", group: "sumida", label: "Mail Form" });
+inventory::submit!(Capability {
+  key:   "mail-form",
+  group: "sumida",
+  label: "Mail Form",
+});

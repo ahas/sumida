@@ -6,8 +6,15 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QueryFilter,
-  QuerySelect, TransactionTrait,
+  ColumnTrait,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -20,7 +27,7 @@ type ReactionEntity = entity::bps::board_post_reactions::Entity;
 use entity::bps::board_post_reactions::Column as ReactionColumn;
 
 pub struct BoardPostReactionService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -151,10 +158,10 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     }
 
     let result = GetBoardPostReaction {
-      id: reaction.id,
-      post_id: reaction.post_id,
-      user_id: reaction.user_id,
-      value: reaction.value,
+      id:         reaction.id,
+      post_id:    reaction.post_id,
+      user_id:    reaction.user_id,
+      value:      reaction.value,
       created_at: reaction.created_at,
     };
     txn.commit().await?;

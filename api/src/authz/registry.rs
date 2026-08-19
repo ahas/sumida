@@ -57,8 +57,7 @@ impl Registry {
   /// processes reading the same database.
   pub fn install(files: &'static [RuleFile]) -> Result<(), AuthzError> {
     fn same(a: &[RuleFile], b: &[RuleFile]) -> bool {
-      a.len() == b.len()
-        && a.iter().zip(b).all(|(x, y)| x.name == y.name && x.text == y.text)
+      a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.name == y.name && x.text == y.text)
     }
 
     fn names(files: &[RuleFile]) -> String {
@@ -479,11 +478,9 @@ mod registry_tests {
   /// the definition had declared them.
   #[test]
   fn an_extension_adds_members_to_a_definition_from_another_file() {
-    let registry = Registry::from_sources(&[
-      SUMIDA_RULES,
-      rule("consumer.sz", "extend organization { scope widget }"),
-    ])
-    .expect("the extension must validate");
+    let registry =
+      Registry::from_sources(&[SUMIDA_RULES, rule("consumer.sz", "extend organization { scope widget }")])
+        .expect("the extension must validate");
 
     let organization = registry.get("organization").expect("organization is declared");
     for tier in ["widget_viewer", "widget_editor", "widget_manager"] {
@@ -501,11 +498,9 @@ mod registry_tests {
   /// dropping it would mean a consumer's whole resource family quietly does not exist.
   #[test]
   fn an_extension_of_a_missing_definition_is_refused() {
-    let error = Registry::from_sources(&[
-      SUMIDA_RULES,
-      rule("consumer.sz", "extend nonexistent { scope widget }"),
-    ])
-    .expect_err("must refuse");
+    let error =
+      Registry::from_sources(&[SUMIDA_RULES, rule("consumer.sz", "extend nonexistent { scope widget }")])
+        .expect_err("must refuse");
     let message = error.to_string();
     assert!(
       message.contains("`extend nonexistent` in consumer.sz"),
@@ -529,11 +524,9 @@ mod registry_tests {
       "the failure must name the colliding member: {message}"
     );
 
-    let error = Registry::from_sources(&[
-      SUMIDA_RULES,
-      rule("consumer.sz", "extend organization { scope user }"),
-    ])
-    .expect_err("a `scope` that collides is the same failure");
+    let error =
+      Registry::from_sources(&[SUMIDA_RULES, rule("consumer.sz", "extend organization { scope user }")])
+        .expect_err("a `scope` that collides is the same failure");
     assert!(error.to_string().contains("user_viewer"), "{error}");
   }
 

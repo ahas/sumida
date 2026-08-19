@@ -49,7 +49,7 @@ impl TestRole {
 }
 
 pub struct TestUser {
-  pub model: entity::users::Model,
+  pub model:    entity::users::Model,
   pub password: String,
 }
 
@@ -79,7 +79,7 @@ impl TestUser {
     .await?;
 
     Ok(Self {
-      model: Users::find_by_id(user.model.id).one(db).await?.unwrap(),
+      model:    Users::find_by_id(user.model.id).one(db).await?.unwrap(),
       password: user.password,
     })
   }
@@ -155,8 +155,8 @@ impl TestUser {
     client
       .post(path)
       .json(&LoginSession {
-        username: self.model.username.clone(),
-        password: self.password.clone(),
+        username:    self.model.username.clone(),
+        password:    self.password.clone(),
         remember_me: Some(false),
       })
       .send()

@@ -6,11 +6,11 @@ use super::users::Entity as Users;
 #[sea_orm(table_name = "user_verifications")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub user_id: i32,
+  pub user_id:    i32,
   #[sea_orm(primary_key)]
-  pub kind: String,
-  pub method: String,
-  pub code: String,
+  pub kind:       String,
+  pub method:     String,
+  pub code:       String,
   pub expires_at: DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,

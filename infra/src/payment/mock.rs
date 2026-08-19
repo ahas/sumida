@@ -2,8 +2,17 @@ use chrono::Utc;
 use serde_json::Value;
 
 use super::{
-  AuthorizeResult, CaptureResult, CardCredential, PaymentError, PaymentProvider, PaymentStatus,
-  PaymentVerification, RefundResult, VoidResult, WebhookEvent, WebhookHeaders,
+  AuthorizeResult,
+  CaptureResult,
+  CardCredential,
+  PaymentError,
+  PaymentProvider,
+  PaymentStatus,
+  PaymentVerification,
+  RefundResult,
+  VoidResult,
+  WebhookEvent,
+  WebhookHeaders,
 };
 
 /// Deterministic provider for tests. The merchant order id encodes the outcome:
@@ -65,9 +74,9 @@ impl PaymentProvider for MockProvider {
     _reason: &str,
   ) -> Result<RefundResult, PaymentError> {
     Ok(RefundResult {
-      status: PaymentStatus::Cancelled,
+      status:           PaymentStatus::Cancelled,
       cancelled_amount: amount.unwrap_or(0),
-      raw_status: "CANCELLED".to_string(),
+      raw_status:       "CANCELLED".to_string(),
     })
   }
 
@@ -118,17 +127,17 @@ impl PaymentProvider for MockProvider {
 
   async fn capture(&self, payment_id: &str, amount: Option<i64>) -> Result<CaptureResult, PaymentError> {
     Ok(CaptureResult {
-      payment_id: payment_id.to_string(),
-      status: PaymentStatus::Paid,
+      payment_id:      payment_id.to_string(),
+      status:          PaymentStatus::Paid,
       captured_amount: amount.unwrap_or(0),
-      raw_status: "PAID".to_string(),
+      raw_status:      "PAID".to_string(),
     })
   }
 
   async fn void(&self, payment_id: &str) -> Result<VoidResult, PaymentError> {
     Ok(VoidResult {
       payment_id: payment_id.to_string(),
-      status: PaymentStatus::Cancelled,
+      status:     PaymentStatus::Cancelled,
       raw_status: "CANCELLED".to_string(),
     })
   }

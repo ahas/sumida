@@ -10,8 +10,19 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, InsertResult, IntoActiveModel,
-  Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
+  ColumnTrait,
+  ConnectionTrait,
+  EntityTrait,
+  FromQueryResult,
+  InsertResult,
+  IntoActiveModel,
+  Order,
+  PaginatorTrait,
+  QueryFilter,
+  QueryOrder,
+  QuerySelect,
+  RelationTrait,
+  Select,
   TransactionTrait,
 };
 use sea_orm_crud::Nullable;
@@ -29,7 +40,7 @@ use crate::util::user::hash_password;
 const RESOURCE: &str = "board_post";
 
 pub struct BoardPostService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -729,4 +740,3 @@ impl<S: SumidaState> BoardPostService<S> {
     }
   }
 }
-

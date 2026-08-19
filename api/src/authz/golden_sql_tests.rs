@@ -70,7 +70,9 @@ fn check_sql(definition: &str, id: impl Into<ObjectKey>, permission: &str) -> St
 fn demo_sql(definition: &str, permission: &str) -> String {
   let caller = caller();
   render(
-    Compiler::new(demo(), &caller).filter_predicate(definition, permission).expect("compiles"),
+    Compiler::new(demo(), &caller)
+      .filter_predicate(definition, permission)
+      .expect("compiles"),
   )
 }
 
@@ -191,8 +193,7 @@ fn same_shape_closure_branches_are_flattened() {
 fn an_extended_scope_compiles_exactly_as_a_declared_one_does() {
   let compiled = demo_check_sql("organization", 100, "view_widget");
   assert!(
-    compiled
-      .contains(r#""relation" IN ('widget_viewer', 'widget_editor', 'widget_manager', 'manager')"#),
+    compiled.contains(r#""relation" IN ('widget_viewer', 'widget_editor', 'widget_manager', 'manager')"#),
     "a scope added by `extend` must flatten like any other: {compiled}"
   );
   assert_eq!(compiled.matches("SELECT").count(), 1, "and exactly one subquery: {compiled}");
@@ -421,8 +422,7 @@ fn a_slug_keyed_definition_scopes_to_its_org_without_a_recursive_cte() {
     "the widget's own organization enters the closure: {compiled}"
   );
   assert!(
-    compiled
-      .contains(r#""relation" IN ('widget_viewer', 'widget_editor', 'widget_manager', 'manager')"#),
+    compiled.contains(r#""relation" IN ('widget_viewer', 'widget_editor', 'widget_manager', 'manager')"#),
     "read maps to the viewer tier, which the editor and manager tiers imply: {compiled}"
   );
   assert!(
@@ -479,9 +479,8 @@ fn a_definition_without_an_org_branch_keeps_none_and_blocks_last() {
 fn a_via_hop_resolves_the_targets_own_key() {
   let compiled = demo_sql("demo_run", "view");
   assert!(
-    compiled.contains(
-      r#"EXISTS(SELECT 1 FROM "widgets" AS "_az_h0" WHERE "_az_h0"."id" = "runs"."widget_id""#
-    ),
+    compiled
+      .contains(r#"EXISTS(SELECT 1 FROM "widgets" AS "_az_h0" WHERE "_az_h0"."id" = "runs"."widget_id""#),
     "the hop joins the target's table on its row id: {compiled}"
   );
   assert!(

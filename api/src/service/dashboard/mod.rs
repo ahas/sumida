@@ -1,10 +1,9 @@
 pub mod dto;
 
-pub use self::dto::*;
-
+use error::SumidaError;
 use sea_orm::ConnectionTrait;
 
-use error::SumidaError;
+pub use self::dto::*;
 
 /// Reads that summarise the whole installation rather than one resource. Each answers a question a
 /// list cannot: a list shows rows, these show shape.

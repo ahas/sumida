@@ -14,8 +14,8 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op,
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardTopicFilter {
-  pub search: Option<String>,
-  pub name: Option<OneOrMany<String>>,
+  pub search:   Option<String>,
+  pub name:     Option<OneOrMany<String>>,
   pub board_id: Option<OneOrMany<i32>>,
 }
 
@@ -64,26 +64,26 @@ impl FilterSchema for BoardTopicFilter {
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardTopicListItem {
-  pub id: i32,
-  pub board_id: i32,
-  pub name: String,
+  pub id:          i32,
+  pub board_id:    i32,
+  pub name:        String,
   pub description: Option<String>,
-  pub order: i32,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub order:       i32,
+  pub created_at:  DateTimeWithTimeZone,
+  pub updated_at:  DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardTopic {
-  pub id: i32,
-  pub board_id: i32,
-  pub name: String,
+  pub id:          i32,
+  pub board_id:    i32,
+  pub name:        String,
   pub description: Option<String>,
-  pub order: i32,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub order:       i32,
+  pub created_at:  DateTimeWithTimeZone,
+  pub updated_at:  DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetBoardTopic {
@@ -95,11 +95,11 @@ impl IntoResponse for GetBoardTopic {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardTopic {
-  pub id: Optional<i32>,
-  pub name: String,
+  pub id:          Optional<i32>,
+  pub name:        String,
   pub description: Optional<String>,
-  pub order: Optional<i32>,
-  pub board_id: i32,
+  pub order:       Optional<i32>,
+  pub board_id:    i32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -117,11 +117,11 @@ impl IntoResponse for BoardTopicCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardTopic {
-  pub name: Optional<String>,
+  pub name:        Optional<String>,
   #[serde(default)]
   pub description: Nullable<String>,
-  pub order: Optional<i32>,
-  pub board_id: Optional<i32>,
+  pub order:       Optional<i32>,
+  pub board_id:    Optional<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -19,8 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Query-string keys the list envelope already owns. A field may not claim one: `?sort=` would then
 /// mean two things at once, and nothing in the request says which one the caller meant.
-pub const RESERVED_KEYS: &[&str] =
-  &["page", "limit", "sort", "order", "filter", "count", "where"];
+pub const RESERVED_KEYS: &[&str] = &["page", "limit", "sort", "order", "filter", "count", "where"];
 
 /// What a value *is*. It fixes the operator vocabulary and tells a client which input to render.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

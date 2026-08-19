@@ -14,8 +14,15 @@ use entity::membership::subscription_events::Column as EventCol;
 use entity::prelude::*;
 use reqwest::StatusCode;
 use sea_orm::{
-  ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
-  Statement, TransactionTrait,
+  ActiveModelTrait,
+  ColumnTrait,
+  ConnectionTrait,
+  EntityTrait,
+  IntoActiveModel,
+  QueryFilter,
+  Set,
+  Statement,
+  TransactionTrait,
 };
 use serde_json::{Value, json};
 

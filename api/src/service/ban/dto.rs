@@ -3,8 +3,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bans::*;
 use sea_orm::prelude::*;
-use sea_orm::sea_query::{Alias, SimpleExpr};
-use sea_orm::sea_query::ExprTrait;
+use sea_orm::sea_query::{Alias, ExprTrait, SimpleExpr};
 use sea_orm::{Condition, DeriveIntoActiveModel, IntoSimpleExpr, QueryTrait};
 use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
@@ -20,13 +19,13 @@ fn banned_user(column: entity::users::Column) -> SimpleExpr {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BanFilter {
-  pub search: Option<String>,
-  pub user_id: Option<OneOrMany<i32>>,
-  pub username: Option<String>,
-  pub name: Option<String>,
+  pub search:     Option<String>,
+  pub user_id:    Option<OneOrMany<i32>>,
+  pub username:   Option<String>,
+  pub name:       Option<String>,
   pub ip_address: Option<String>,
-  pub reason: Option<String>,
-  pub note: Option<String>,
+  pub reason:     Option<String>,
+  pub note:       Option<String>,
 }
 
 impl BanFilter {
@@ -51,9 +50,7 @@ impl BanFilter {
       .apply_if(self.name.as_ref(), |q, v| {
         q.filter(wrap_ilike(banned_user(entity::users::Column::FullName), v))
       })
-      .apply_if(self.ip_address.as_ref(), |q, v| {
-        q.filter(wrap_ilike(Column::IpAddress.into_expr(), v))
-      })
+      .apply_if(self.ip_address.as_ref(), |q, v| q.filter(wrap_ilike(Column::IpAddress.into_expr(), v)))
       .apply_if(self.reason.as_ref(), |q, v| q.filter(wrap_ilike(Column::Reason.into_expr(), v)))
       .apply_if(self.note.as_ref(), |q, v| q.filter(wrap_ilike(Column::Note.into_expr(), v)))
   }
@@ -103,16 +100,16 @@ impl FilterSchema for BanFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "entity::users::Entity", alias = "u", from_query_result)]
 pub struct BanUser {
-  pub id: i32,
-  pub username: String,
+  pub id:        i32,
+  pub username:  String,
   pub full_name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "entity::users::Entity", alias = "c", from_query_result)]
 pub struct BanCreatedBy {
-  pub id: i32,
-  pub username: String,
+  pub id:        i32,
+  pub username:  String,
   pub full_name: String,
 }
 
@@ -120,16 +117,16 @@ pub struct BanCreatedBy {
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct BanListItem {
-  pub id: i32,
+  pub id:         i32,
   #[sea_orm(nested, alias = "u")]
-  pub user: Option<BanUser>,
+  pub user:       Option<BanUser>,
   pub ip_address: Option<String>,
   pub created_at: DateTimeWithTimeZone,
   #[sea_orm(nested, alias = "c")]
   pub created_by: Option<BanCreatedBy>,
   // pub reason: String,
   pub expires_at: Option<DateTimeWithTimeZone>,
-  pub lifted_at: Option<DateTimeWithTimeZone>,
+  pub lifted_at:  Option<DateTimeWithTimeZone>,
   // pub note: Option<String>,
 }
 
@@ -137,17 +134,17 @@ pub struct BanListItem {
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBan {
-  pub id: i32,
+  pub id:         i32,
   #[sea_orm(nested, alias = "u")]
-  pub user: Option<BanUser>,
+  pub user:       Option<BanUser>,
   pub ip_address: Option<String>,
   pub created_at: DateTimeWithTimeZone,
   #[sea_orm(nested, alias = "c")]
   pub created_by: Option<BanUser>,
-  pub reason: Option<String>,
+  pub reason:     Option<String>,
   pub expires_at: Option<DateTimeWithTimeZone>,
-  pub lifted_at: Option<DateTimeWithTimeZone>,
-  pub note: Option<String>,
+  pub lifted_at:  Option<DateTimeWithTimeZone>,
+  pub note:       Option<String>,
 }
 
 impl IntoResponse for GetBan {
@@ -160,20 +157,20 @@ impl IntoResponse for GetBan {
 #[serde(rename_all = "camelCase")]
 pub struct BanSettings {
   #[serde(default)]
-  pub reason: Nullable<String>,
+  pub reason:     Nullable<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
-  pub note: Optional<String>,
+  pub note:       Optional<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBan {
-  pub user_id: Nullable<i32>,
+  pub user_id:    Nullable<i32>,
   pub ip_address: Nullable<String>,
   #[serde(default)]
-  pub reason: Nullable<String>,
+  pub reason:     Nullable<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
-  pub note: Optional<String>,
+  pub note:       Optional<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -191,12 +188,12 @@ impl IntoResponse for BanCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBan {
-  pub user_id: Nullable<i32>,
+  pub user_id:    Nullable<i32>,
   pub ip_address: Nullable<String>,
   #[serde(default)]
-  pub reason: Nullable<String>,
+  pub reason:     Nullable<String>,
   pub expires_at: Nullable<DateTimeWithTimeZone>,
-  pub note: Optional<String>,
+  pub note:       Optional<String>,
 }
 
 impl IntoResponse for UpdateBan {

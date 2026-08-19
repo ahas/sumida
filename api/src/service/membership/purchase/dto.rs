@@ -12,10 +12,10 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op}
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseFilter {
   pub owner_kind: Option<OneOrMany<OwnerKind>>,
-  pub owner_id: Option<OneOrMany<i32>>,
-  pub kind: Option<OneOrMany<PlanKind>>,
-  pub status: Option<OneOrMany<PurchaseStatus>>,
-  pub plan_code: Option<OneOrMany<String>>,
+  pub owner_id:   Option<OneOrMany<i32>>,
+  pub kind:       Option<OneOrMany<PlanKind>>,
+  pub status:     Option<OneOrMany<PurchaseStatus>>,
+  pub plan_code:  Option<OneOrMany<String>>,
 }
 
 /// What `/membership-purchases` accepts, declared once.
@@ -26,18 +26,19 @@ pub struct PurchaseFilter {
 ///
 /// `ownerId` carries no relation hint: what it points at depends on `ownerKind`, and a hint names
 /// exactly one resource. A picker would have to branch on another key, which the hint cannot say.
-const PURCHASE_FIELDS: &[FieldSpec] = &[
-  FieldSpec::new("ownerKind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_variants(&["personal", "organization"]),
-  FieldSpec::new("ownerId", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
-  FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_variants(&["subscription", "credit"]),
-  FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_variants(&["pending", "completed", "failed", "refunded"]),
-  FieldSpec::new("planCode", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
-  FieldSpec::sort_only("createdAt", FieldKind::DateTime),
-  FieldSpec::sort_only("id", FieldKind::Integer),
-];
+const PURCHASE_FIELDS: &[FieldSpec] =
+  &[
+    FieldSpec::new("ownerKind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+      .with_variants(&["personal", "organization"]),
+    FieldSpec::new("ownerId", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
+    FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+      .with_variants(&["subscription", "credit"]),
+    FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+      .with_variants(&["pending", "completed", "failed", "refunded"]),
+    FieldSpec::new("planCode", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
+    FieldSpec::sort_only("createdAt", FieldKind::DateTime),
+    FieldSpec::sort_only("id", FieldKind::Integer),
+  ];
 
 impl FilterSchema for PurchaseFilter {
   fn fields() -> &'static [FieldSpec] {
@@ -65,29 +66,28 @@ impl FilterSchema for PurchaseFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseListItem {
-  pub id: i32,
-  pub code: String,
-  pub kind: PlanKind,
-  pub plan_id: i32,
-  pub plan_code: String,
-  pub owner_kind: OwnerKind,
-  pub owner_id: i32,
-  pub status: PurchaseStatus,
-  pub amount: i64,
-  pub subtotal: i64,
+  pub id:              i32,
+  pub code:            String,
+  pub kind:            PlanKind,
+  pub plan_id:         i32,
+  pub plan_code:       String,
+  pub owner_kind:      OwnerKind,
+  pub owner_id:        i32,
+  pub status:          PurchaseStatus,
+  pub amount:          i64,
+  pub subtotal:        i64,
   pub discount_amount: i64,
-  pub tax_amount: i64,
-  pub coupon_code: Option<String>,
-  pub currency: String,
-  pub paid_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
+  pub tax_amount:      i64,
+  pub coupon_code:     Option<String>,
+  pub currency:        String,
+  pub paid_at:         Option<DateTimeWithTimeZone>,
+  pub created_at:      DateTimeWithTimeZone,
 }
 
 #[cfg(test)]
 mod filter_tests {
-  use crate::util::filter::listed;
-
   use super::*;
+  use crate::util::filter::listed;
 
   #[test]
   fn the_declaration_is_sound() {
@@ -119,9 +119,8 @@ mod filter_tests {
     assert_eq!(filter.status.as_ref().map(OneOrMany::len), Some(2));
     assert_eq!(filter.plan_code.as_ref().map(OneOrMany::len), Some(2));
 
-    let filter: PurchaseFilter =
-      serde_urlencoded::from_str("ownerKind=&ownerId=&kind=&status=&planCode=")
-        .expect("an empty value parses");
+    let filter: PurchaseFilter = serde_urlencoded::from_str("ownerKind=&ownerId=&kind=&status=&planCode=")
+      .expect("an empty value parses");
 
     assert!(listed(filter.owner_kind.as_ref()).is_none());
     assert!(listed(filter.owner_id.as_ref()).is_none());

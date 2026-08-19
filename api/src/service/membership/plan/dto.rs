@@ -20,10 +20,10 @@ fn default_true() -> bool {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanFilter {
-  pub search: Option<String>,
-  pub kind: Option<OneOrMany<PlanKind>>,
-  pub scope: Option<OneOrMany<OwnerKind>>,
-  pub is_enabled: Option<bool>,
+  pub search:          Option<String>,
+  pub kind:            Option<OneOrMany<PlanKind>>,
+  pub scope:           Option<OneOrMany<OwnerKind>>,
+  pub is_enabled:      Option<bool>,
   /// Include soft-deleted (retired) plans. Defaults to false.
   ///
   /// It toggles whether the soft-delete predicate is emitted at all, so it reduces to no expression
@@ -101,28 +101,28 @@ impl FilterSchema for PlanFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanListItem {
-  pub id: i32,
-  pub code: String,
-  pub name: String,
-  pub description: Option<String>,
-  pub kind: PlanKind,
-  pub scope: OwnerKind,
-  pub price: i64,
-  pub currency: String,
+  pub id:               i32,
+  pub code:             String,
+  pub name:             String,
+  pub description:      Option<String>,
+  pub kind:             PlanKind,
+  pub scope:            OwnerKind,
+  pub price:            i64,
+  pub currency:         String,
   pub billing_interval: Option<BillingInterval>,
-  pub duration_days: Option<i32>,
-  pub trial_days: Option<i32>,
-  pub credit_amount: Option<i64>,
-  pub is_enabled: bool,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub duration_days:    Option<i32>,
+  pub trial_days:       Option<i32>,
+  pub credit_amount:    Option<i64>,
+  pub is_enabled:       bool,
+  pub created_at:       DateTimeWithTimeZone,
+  pub updated_at:       DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanActionItem {
-  pub action: String,
-  pub credit_cost: Option<i64>,
+  pub action:           String,
+  pub credit_cost:      Option<i64>,
   pub quota_per_period: Option<i32>,
 }
 
@@ -130,7 +130,7 @@ pub struct PlanActionItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetPlan {
   #[serde(flatten)]
-  pub plan: PlanListItem,
+  pub plan:    PlanListItem,
   pub actions: Vec<PlanActionItem>,
 }
 
@@ -143,9 +143,9 @@ impl IntoResponse for GetPlan {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanActionInput {
-  pub action: String,
+  pub action:           String,
   #[serde(default)]
-  pub credit_cost: Option<i64>,
+  pub credit_cost:      Option<i64>,
   #[serde(default)]
   pub quota_per_period: Option<i32>,
 }
@@ -153,34 +153,34 @@ pub struct PlanActionInput {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatePlan {
-  pub code: String,
-  pub name: String,
+  pub code:             String,
+  pub name:             String,
   #[serde(default)]
-  pub description: Option<String>,
-  pub kind: PlanKind,
-  pub scope: OwnerKind,
+  pub description:      Option<String>,
+  pub kind:             PlanKind,
+  pub scope:            OwnerKind,
   #[serde(default)]
-  pub price: i64,
+  pub price:            i64,
   #[serde(default)]
-  pub currency: Option<String>,
+  pub currency:         Option<String>,
   #[serde(default)]
   pub billing_interval: Option<BillingInterval>,
   #[serde(default)]
-  pub duration_days: Option<i32>,
+  pub duration_days:    Option<i32>,
   #[serde(default)]
-  pub trial_days: Option<i32>,
+  pub trial_days:       Option<i32>,
   #[serde(default)]
-  pub credit_amount: Option<i64>,
+  pub credit_amount:    Option<i64>,
   #[serde(default = "default_true")]
-  pub is_enabled: bool,
+  pub is_enabled:       bool,
   #[serde(default)]
-  pub actions: Vec<PlanActionInput>,
+  pub actions:          Vec<PlanActionInput>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanCreated {
-  pub id: i32,
+  pub id:   i32,
   pub code: String,
 }
 
@@ -194,26 +194,26 @@ impl IntoResponse for PlanCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePlan {
   #[serde(default)]
-  pub name: Option<String>,
+  pub name:             Option<String>,
   #[serde(default)]
-  pub description: Option<String>,
+  pub description:      Option<String>,
   #[serde(default)]
-  pub price: Option<i64>,
+  pub price:            Option<i64>,
   #[serde(default)]
-  pub currency: Option<String>,
+  pub currency:         Option<String>,
   #[serde(default)]
   pub billing_interval: Option<BillingInterval>,
   #[serde(default)]
-  pub duration_days: Option<i32>,
+  pub duration_days:    Option<i32>,
   #[serde(default)]
-  pub trial_days: Option<i32>,
+  pub trial_days:       Option<i32>,
   #[serde(default)]
-  pub credit_amount: Option<i64>,
+  pub credit_amount:    Option<i64>,
   #[serde(default)]
-  pub is_enabled: Option<bool>,
+  pub is_enabled:       Option<bool>,
   /// When present, replaces the full action set.
   #[serde(default)]
-  pub actions: Option<Vec<PlanActionInput>>,
+  pub actions:          Option<Vec<PlanActionInput>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -256,14 +256,14 @@ mod filter_tests {
 
   #[test]
   fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
-    let filter: PlanFilter = serde_urlencoded::from_str("kind=subscription,credit&scope=personal,organization")
-      .expect("a list parses");
+    let filter: PlanFilter =
+      serde_urlencoded::from_str("kind=subscription,credit&scope=personal,organization")
+        .expect("a list parses");
 
     assert_eq!(filter.kind.as_ref().map(OneOrMany::len), Some(2));
     assert_eq!(filter.scope.as_ref().map(OneOrMany::len), Some(2));
 
-    let filter: PlanFilter =
-      serde_urlencoded::from_str("kind=&scope=").expect("an empty value parses");
+    let filter: PlanFilter = serde_urlencoded::from_str("kind=&scope=").expect("an empty value parses");
 
     assert!(listed(filter.kind.as_ref()).is_none());
     assert!(listed(filter.scope.as_ref()).is_none());

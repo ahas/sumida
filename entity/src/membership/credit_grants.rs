@@ -7,19 +7,19 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "credit_grants")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
+  pub id:               i32,
   #[sea_orm(indexed)]
-  pub wallet_id: i32,
+  pub wallet_id:        i32,
   #[sea_orm(nullable)]
   pub source_plan_code: Option<String>,
-  pub amount_granted: i64,
+  pub amount_granted:   i64,
   pub amount_remaining: i64,
   #[sea_orm(nullable)]
-  pub expiry_at: Option<DateTimeWithTimeZone>,
+  pub expiry_at:        Option<DateTimeWithTimeZone>,
   #[sea_orm(nullable)]
-  pub reference_code: Option<String>,
+  pub reference_code:   Option<String>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:       DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

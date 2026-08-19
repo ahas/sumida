@@ -15,17 +15,17 @@ const TOP_MIME_LIMIT: i64 = 6;
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthDailyItem {
-  pub date: chrono::NaiveDate,
+  pub date:      chrono::NaiveDate,
   pub succeeded: i64,
-  pub refused: i64,
+  pub refused:   i64,
 }
 
 /// An address that has been refused repeatedly, and what it was refused for.
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthOffender {
-  pub ip_address: String,
-  pub refused: i64,
+  pub ip_address:   String,
+  pub refused:      i64,
   pub last_attempt: DateTime<FixedOffset>,
 }
 
@@ -40,10 +40,10 @@ pub struct AuthOffender {
 pub struct AuthActivity {
   /// The first and last day the series covers, so the client draws the window that was asked for
   /// rather than the days that happened to have an attempt.
-  pub from: chrono::NaiveDate,
-  pub to: chrono::NaiveDate,
-  pub daily: Vec<AuthDailyItem>,
-  pub offenders: Vec<AuthOffender>,
+  pub from:       chrono::NaiveDate,
+  pub to:         chrono::NaiveDate,
+  pub daily:      Vec<AuthDailyItem>,
+  pub offenders:  Vec<AuthOffender>,
   pub created_at: DateTime<FixedOffset>,
 }
 
@@ -109,14 +109,14 @@ impl AuthActivity {
 #[serde(rename_all = "camelCase")]
 pub struct StorageKind {
   pub mime_type: String,
-  pub files: i64,
-  pub bytes: i64,
+  pub files:     i64,
+  pub bytes:     i64,
 }
 
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 struct StorageTotal {
-  files: i64,
-  bytes: i64,
+  files:        i64,
+  bytes:        i64,
   unreferenced: i64,
 }
 
@@ -128,11 +128,11 @@ struct StorageTotal {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageUsage {
-  pub files: i64,
-  pub bytes: i64,
+  pub files:        i64,
+  pub bytes:        i64,
   pub unreferenced: i64,
-  pub kinds: Vec<StorageKind>,
-  pub created_at: DateTime<FixedOffset>,
+  pub kinds:        Vec<StorageKind>,
+  pub created_at:   DateTime<FixedOffset>,
 }
 
 impl IntoResponse for StorageUsage {
@@ -158,7 +158,11 @@ impl StorageUsage {
     ))
     .one(db)
     .await?
-    .unwrap_or(StorageTotal { files: 0, bytes: 0, unreferenced: 0 });
+    .unwrap_or(StorageTotal {
+      files:        0,
+      bytes:        0,
+      unreferenced: 0,
+    });
 
     let kinds = StorageKind::find_by_statement(Statement::from_sql_and_values(
       backend,
@@ -188,17 +192,17 @@ impl StorageUsage {
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct SignupDailyItem {
-  pub date: chrono::NaiveDate,
+  pub date:    chrono::NaiveDate,
   pub signups: i64,
 }
 
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 struct AccountTotals {
-  users: i64,
+  users:         i64,
   organizations: i64,
-  roles: i64,
-  api_keys: i64,
-  bans: i64,
+  roles:         i64,
+  api_keys:      i64,
+  bans:          i64,
 }
 
 /// How many accounts exist and how fast they arrive.
@@ -209,15 +213,15 @@ struct AccountTotals {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountActivity {
-  pub from: chrono::NaiveDate,
-  pub to: chrono::NaiveDate,
-  pub daily: Vec<SignupDailyItem>,
-  pub users: i64,
+  pub from:          chrono::NaiveDate,
+  pub to:            chrono::NaiveDate,
+  pub daily:         Vec<SignupDailyItem>,
+  pub users:         i64,
   pub organizations: i64,
-  pub roles: i64,
-  pub api_keys: i64,
-  pub bans: i64,
-  pub created_at: DateTime<FixedOffset>,
+  pub roles:         i64,
+  pub api_keys:      i64,
+  pub bans:          i64,
+  pub created_at:    DateTime<FixedOffset>,
 }
 
 impl IntoResponse for AccountActivity {
@@ -260,7 +264,13 @@ impl AccountActivity {
     ))
     .one(db)
     .await?
-    .unwrap_or(AccountTotals { users: 0, organizations: 0, roles: 0, api_keys: 0, bans: 0 });
+    .unwrap_or(AccountTotals {
+      users:         0,
+      organizations: 0,
+      roles:         0,
+      api_keys:      0,
+      bans:          0,
+    });
 
     let today = Utc::now().date_naive();
 

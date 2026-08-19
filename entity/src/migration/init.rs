@@ -789,11 +789,15 @@ pub async fn hash_legacy_api_keys<C: ConnectionTrait>(db: &C) -> Result<(), DbEr
 
   // 구버전 스키마로 올라온 DB(key_prefix 컬럼 부재)에서도 자립하도록 컬럼을 보장한다. init로 생성된
   // DB엔 이미 있어 무해(IF NOT EXISTS).
-  db.execute(Statement::from_string(backend, "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_prefix VARCHAR"))
-    .await?;
+  db.execute(Statement::from_string(
+    backend,
+    "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_prefix VARCHAR",
+  ))
+  .await?;
 
-  let rows =
-    ApiKeyRow::find_by_statement(Statement::from_string(backend, "SELECT key FROM api_keys")).all(db).await?;
+  let rows = ApiKeyRow::find_by_statement(Statement::from_string(backend, "SELECT key FROM api_keys"))
+    .all(db)
+    .await?;
 
   for row in rows {
     let plaintext = row.key;

@@ -74,7 +74,7 @@ async fn test_board_read_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url: "/boards",
+    base_url:  "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -102,7 +102,7 @@ async fn test_board_create_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url: "/boards",
+    base_url:  "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -130,7 +130,7 @@ async fn test_board_update_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url: "/boards",
+    base_url:  "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -158,7 +158,7 @@ async fn test_board_delete_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url: "/boards",
+    base_url:  "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -186,7 +186,7 @@ async fn test_board_list_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url: "/boards",
+    base_url:  "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -214,7 +214,7 @@ async fn test_board_admin_bypass_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url: "/boards",
+    base_url:  "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -242,7 +242,7 @@ async fn test_board_block_precedence_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url: "/boards",
+    base_url:  "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -270,7 +270,7 @@ async fn test_board_wildcard_action_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "board",
-    base_url: "/boards",
+    base_url:  "/boards",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -282,4 +282,3 @@ async fn test_board_wildcard_action_permissions() {
 // "모든 행" 권한은 규칙상 소유권(`own`, 그 안에 `service:board->operate_delete` 가 있다)으로만
 // 닿는다. 읽기 부여를 소유권으로 슬쩍 넓혀서 통과시키느니 지운다. 이 공백은 규칙 쪽 결정이라
 // 이 단계에서 임의로 메우지 않는다.
-

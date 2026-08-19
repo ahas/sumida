@@ -27,11 +27,11 @@ pub fn inline_uri(uuid: Uuid) -> String {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct FileFilter {
-  pub user: Option<String>,
-  pub dir: Option<String>,
-  pub name: Option<String>,
-  pub uri: Option<String>,
-  pub status: Option<OneOrMany<FileStatus>>,
+  pub user:      Option<String>,
+  pub dir:       Option<String>,
+  pub name:      Option<String>,
+  pub uri:       Option<String>,
+  pub status:    Option<OneOrMany<FileStatus>>,
   pub mime_type: Option<String>,
 }
 
@@ -104,55 +104,55 @@ impl FilterSchema for FileFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Users", from_query_result)]
 pub struct FileUser {
-  pub id: i32,
+  pub id:       i32,
   pub username: String,
   #[sea_orm(from_col = "full_name")]
-  pub name: String,
+  pub name:     String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Files", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct FileListItem {
-  pub uuid: Uuid,
+  pub uuid:          Uuid,
   #[sea_orm(nested)]
-  pub user: FileUser,
+  pub user:          FileUser,
   pub original_name: String,
-  pub dir: String,
-  pub name: String,
-  pub uri: Option<String>,
-  pub size: i64,
-  pub mime_type: String,
-  pub status: String,
-  pub tags: Option<Vec<String>>,
-  pub refs: i32,
-  pub expires_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
-  pub deleted_at: Option<DateTimeWithTimeZone>,
+  pub dir:           String,
+  pub name:          String,
+  pub uri:           Option<String>,
+  pub size:          i64,
+  pub mime_type:     String,
+  pub status:        String,
+  pub tags:          Option<Vec<String>>,
+  pub refs:          i32,
+  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub created_at:    DateTimeWithTimeZone,
+  pub updated_at:    DateTimeWithTimeZone,
+  pub deleted_at:    Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Files", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetFile {
-  pub uuid: Uuid,
+  pub uuid:          Uuid,
   #[sea_orm(nested)]
-  pub user: FileUser,
+  pub user:          FileUser,
   pub original_name: String,
-  pub dir: String,
-  pub name: String,
-  pub uri: Option<String>,
-  pub size: i64,
-  pub mime_type: String,
-  pub hash: Option<String>,
-  pub tags: Option<Vec<String>>,
-  pub status: String,
-  pub refs: i32,
-  pub expires_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
-  pub deleted_at: Option<DateTimeWithTimeZone>,
+  pub dir:           String,
+  pub name:          String,
+  pub uri:           Option<String>,
+  pub size:          i64,
+  pub mime_type:     String,
+  pub hash:          Option<String>,
+  pub tags:          Option<Vec<String>>,
+  pub status:        String,
+  pub refs:          i32,
+  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub created_at:    DateTimeWithTimeZone,
+  pub updated_at:    DateTimeWithTimeZone,
+  pub deleted_at:    Option<DateTimeWithTimeZone>,
 
   #[sea_orm(skip)]
   pub access_policies: Option<Vec<ApForUser>>,
@@ -168,9 +168,9 @@ impl IntoResponse for GetFile {
 #[serde(rename_all = "camelCase")]
 pub struct FileUploadOptions {
   #[serde(default)]
-  pub tags: Option<Vec<String>>,
+  pub tags:       Option<Vec<String>>,
   #[serde(default)]
-  pub dir: String,
+  pub dir:        String,
   #[serde(default)]
   pub expires_at: Nullable<DateTimeWithTimeZone>,
 }
@@ -179,8 +179,8 @@ pub struct FileUploadOptions {
 #[serde(rename_all = "camelCase")]
 pub struct FileUploadData {
   pub original_name: String,
-  pub bytes: Vec<u8>,
-  pub mime_type: String,
+  pub bytes:         Vec<u8>,
+  pub mime_type:     String,
 }
 
 impl FileUploadData {
@@ -232,12 +232,12 @@ pub trait FileUploadTrait: Sized {
     };
 
     StaticFile {
-      name: unique_filename,
-      dir: options.dir,
+      name:          unique_filename,
+      dir:           options.dir,
       original_name: file.original_name,
-      mime_type: file.mime_type,
-      bytes: file.bytes,
-      extension: file_extension,
+      mime_type:     file.mime_type,
+      bytes:         file.bytes,
+      extension:     file_extension,
     }
   }
 }
@@ -245,7 +245,7 @@ pub trait FileUploadTrait: Sized {
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadFile {
-  pub file: FileUploadData,
+  pub file:    FileUploadData,
   pub options: FileUploadOptions,
 }
 
@@ -287,8 +287,8 @@ impl FileUploadTrait for UploadFile {
 
           file_data = Some(FileUploadData {
             original_name: filename,
-            bytes: data.to_vec(),
-            mime_type: content_type,
+            bytes:         data.to_vec(),
+            mime_type:     content_type,
           });
         }
         _ => {}
@@ -341,17 +341,17 @@ impl IntoResponse for FileDeleted {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStats {
-  pub total_files: i64,
-  pub total_size: i64,
+  pub total_files:  i64,
+  pub total_size:   i64,
   pub by_mime_type: Vec<FileMimeTypeStats>,
-  pub by_status: Vec<FileStatusStats>,
+  pub by_status:    Vec<FileStatusStats>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMimeTypeStats {
-  pub mime_type: String,
-  pub count: i64,
+  pub mime_type:  String,
+  pub count:      i64,
   pub total_size: i64,
 }
 
@@ -359,7 +359,7 @@ pub struct FileMimeTypeStats {
 #[serde(rename_all = "camelCase")]
 pub struct FileStatusStats {
   pub status: String,
-  pub count: i64,
+  pub count:  i64,
 }
 
 #[cfg(test)]
@@ -386,8 +386,7 @@ mod filter_tests {
 
   #[test]
   fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
-    let filter: FileFilter =
-      serde_urlencoded::from_str("status=active,archived").expect("a list parses");
+    let filter: FileFilter = serde_urlencoded::from_str("status=active,archived").expect("a list parses");
     assert_eq!(filter.status.as_ref().map(OneOrMany::len), Some(2));
 
     let filter: FileFilter = serde_urlencoded::from_str("status=").expect("an empty value parses");

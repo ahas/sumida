@@ -23,9 +23,9 @@ where
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
 pub struct Pagination {
-  pub page: u64,
+  pub page:  u64,
   pub limit: u64,
-  pub sort: Option<String>,
+  pub sort:  Option<String>,
   #[serde(deserialize_with = "deserialize_order")]
   pub order: Order,
 }
@@ -89,9 +89,9 @@ impl Pagination {
 impl Default for Pagination {
   fn default() -> Self {
     Self {
-      page: 1,
+      page:  1,
       limit: MAX_LIMIT,
-      sort: None,
+      sort:  None,
       order: Order::Asc,
     }
   }

@@ -9,24 +9,24 @@ use super::CreditTxKind;
 #[sea_orm(table_name = "credit_transactions")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i64,
+  pub id:              i64,
   #[sea_orm(indexed)]
-  pub wallet_id: i32,
+  pub wallet_id:       i32,
   #[sea_orm(nullable)]
-  pub grant_id: Option<i32>,
+  pub grant_id:        Option<i32>,
   #[sea_orm(nullable)]
   pub subscription_id: Option<i32>,
-  pub kind: CreditTxKind,
-  pub amount: i64,
+  pub kind:            CreditTxKind,
+  pub amount:          i64,
   #[sea_orm(nullable)]
-  pub action: Option<String>,
+  pub action:          Option<String>,
   #[sea_orm(nullable)]
-  pub reference_code: Option<String>,
+  pub reference_code:  Option<String>,
   #[sea_orm(nullable)]
   pub idempotency_key: Option<String>,
-  pub balance_after: i64,
+  pub balance_after:   i64,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:      DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

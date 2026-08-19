@@ -7,8 +7,18 @@ use sea_orm::ActiveValue::Unchanged;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, Asterisk};
 use sea_orm::{
-  DbErr, DeleteResult, EntityTrait, IntoActiveModel, JoinType, PaginatorTrait, QuerySelect,
-  RelationTrait, Select, Set, SqlErr, TransactionTrait,
+  DbErr,
+  DeleteResult,
+  EntityTrait,
+  IntoActiveModel,
+  JoinType,
+  PaginatorTrait,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  Set,
+  SqlErr,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -30,7 +40,7 @@ pub fn hash_api_key(key: &str) -> String {
 }
 
 pub struct ApiKeyService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -83,8 +93,7 @@ impl<S: SumidaState> ApiKeyService<S> {
 
     let db = self.state.db();
 
-    let mut query =
-      conditions.apply::<ApiKeyFilter, _>(filter.apply(self.select(ApiKeys::find())?))?;
+    let mut query = conditions.apply::<ApiKeyFilter, _>(filter.apply(self.select(ApiKeys::find())?))?;
     let count = query.clone().select_only().column(Column::Key).count(db).await?;
 
     query = pagination.order_by_schema::<ApiKeyFilter, _>(query);
@@ -107,8 +116,7 @@ impl<S: SumidaState> ApiKeyService<S> {
     if api_key.is_secured {
       // 보안 키가 보유한 라우트 게이트. 화면이 늘 읽어 온 모양 그대로다(§9.4).
       let held = SubjectSet::from_parts(vec![Self::holder(key).key()], Vec::new());
-      api_key.access_policies =
-        Some(from_service_grants(Authz::service_grants(&held, &txn).await?));
+      api_key.access_policies = Some(from_service_grants(Authz::service_grants(&held, &txn).await?));
     }
 
     txn.commit().await?;
@@ -154,13 +162,7 @@ impl<S: SumidaState> ApiKeyService<S> {
             // 권한 검사는 `replace_service_grants` 안에서 네임스페이스마다
             // `service:<namespace>#grant` 로 이뤄진다.
             let grants = to_service_grants(&user_aps)?;
-            Authz::replace_service_grants(
-              &Self::holder(&key_hash),
-              &grants,
-              &self.subject(),
-              &txn,
-            )
-            .await?;
+            Authz::replace_service_grants(&Self::holder(&key_hash), &grants, &self.subject(), &txn).await?;
           }
 
           txn.commit().await?;

@@ -24,7 +24,7 @@ use crate::service::membership::entitlement::EntitlementService;
 /// instead.
 #[derive(Clone)]
 pub struct EntitlementLayer<S> {
-  state: S,
+  state:  S,
   action: String,
 }
 
@@ -54,9 +54,9 @@ where
 
 #[derive(Clone)]
 pub struct EntitlementGuardService<S, T> {
-  state: S,
+  state:  S,
   action: String,
-  inner: T,
+  inner:  T,
 }
 
 impl<S, T> Service<Request<Body>> for EntitlementGuardService<S, T>

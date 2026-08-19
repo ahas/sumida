@@ -6,7 +6,13 @@ use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Asterisk, Expr};
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Select,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QuerySelect,
+  Select,
   TransactionTrait,
 };
 
@@ -21,7 +27,7 @@ use crate::util::pagination::Pagination;
 const RESOURCE: &str = "board_topic";
 
 pub struct BoardTopicService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 

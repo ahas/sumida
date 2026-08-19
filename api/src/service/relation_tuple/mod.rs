@@ -4,7 +4,13 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  ConnectionTrait, EntityTrait, FromQueryResult, PaginatorTrait, QueryOrder, QuerySelect, Select,
+  ConnectionTrait,
+  EntityTrait,
+  FromQueryResult,
+  PaginatorTrait,
+  QueryOrder,
+  QuerySelect,
+  Select,
   Statement,
 };
 
@@ -77,7 +83,12 @@ impl<S: SumidaState> RelationTupleService<S> {
   /// the only thing deciding: the day `relation_tuple#view` grows a row-dependent branch, this list
   /// narrows with it and no code here changes.
   fn select(&self, query: Select<RelationTuples>) -> Result<Select<RelationTuples>, SumidaError> {
-    Ok(Authz::filter("relation_tuple", "view", &self.subject(), Self::default_query_with(query))?)
+    Ok(Authz::filter(
+      "relation_tuple",
+      "view",
+      &self.subject(),
+      Self::default_query_with(query),
+    )?)
   }
 
   /// The read scope first, the flat parameters inside it, and the condition tree last as one more

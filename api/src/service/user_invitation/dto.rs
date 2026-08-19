@@ -14,7 +14,7 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op,
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserInvitationFilter {
   pub user_id: Option<OneOrMany<i32>>,
-  pub uuid: Option<OneOrMany<Uuid>>,
+  pub uuid:    Option<OneOrMany<Uuid>>,
 }
 
 impl UserInvitationFilter {
@@ -57,7 +57,7 @@ impl FilterSchema for UserInvitationFilter {
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationListItem {
   pub user_id: i32,
-  pub uuid: Uuid,
+  pub uuid:    Uuid,
 
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
@@ -67,7 +67,7 @@ pub struct UserInvitationListItem {
 #[serde(rename_all = "camelCase")]
 pub struct GetUserInvitation {
   pub user_id: i32,
-  pub uuid: Uuid,
+  pub uuid:    Uuid,
 
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
@@ -86,7 +86,7 @@ pub struct CreateUserInvitation {}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationCreated {
-  pub uuid: Uuid,
+  pub uuid:       Uuid,
   pub expires_at: DateTimeWithTimeZone,
 }
 
@@ -103,7 +103,7 @@ pub struct UpdateUserInvitation {}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationUpdated {
-  pub uuid: Uuid,
+  pub uuid:       Uuid,
   pub expires_at: DateTimeWithTimeZone,
 }
 

@@ -13,21 +13,11 @@ pub use self::dto::*;
 // 컨트롤러가 소유한다. 세션은 갱신자 기록(updated_by)용으로만 컨트롤러에서 넘어온다.
 
 pub async fn list<C: ConnectionTrait>(db: &C) -> Result<Vec<SystemSettingItem>, SumidaError> {
-  Ok(
-    SystemSettings::find()
-      .into_model::<SystemSettingItem>()
-      .all(db)
-      .await?,
-  )
+  Ok(SystemSettings::find().into_model::<SystemSettingItem>().all(db).await?)
 }
 
 pub async fn get<C: ConnectionTrait>(db: &C, key: &str) -> Result<Option<SystemSettingItem>, SumidaError> {
-  Ok(
-    SystemSettings::find_by_id(key)
-      .into_model::<SystemSettingItem>()
-      .one(db)
-      .await?,
-  )
+  Ok(SystemSettings::find_by_id(key).into_model::<SystemSettingItem>().one(db).await?)
 }
 
 /// 값 갱신 — data_type 정합성·min/max 범위 검증 후 entity `set_value` 위임
@@ -43,12 +33,7 @@ pub async fn update<C: ConnectionTrait>(
   };
 
   validate_value_type(&existing.data_type, &value)?;
-  validate_range(
-    &existing.data_type,
-    &value,
-    existing.min.as_ref(),
-    existing.max.as_ref(),
-  )?;
+  validate_range(&existing.data_type, &value, existing.min.as_ref(), existing.max.as_ref())?;
 
   SystemSettings::set_value(key, value, updated_by, db).await
 }

@@ -8,7 +8,13 @@ use infra::session::UserSession;
 use infra::settings;
 use rand::RngExt;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
+  ColumnTrait,
+  ConnectionTrait,
+  EntityTrait,
+  IntoActiveModel,
+  PaginatorTrait,
+  QueryFilter,
+  Set,
   TransactionTrait,
 };
 
@@ -22,7 +28,7 @@ use crate::service::prelude::MailFormService;
 use crate::service::user::mail_form_context::*;
 
 pub struct UserVerificationService<S: SumidaState> {
-  pub state: S,
+  pub state:   S,
   pub session: UserSession,
 }
 
@@ -144,10 +150,10 @@ impl<S: SumidaState> UserVerificationService<S> {
       let opts = settings::get().smtp.as_ref().map(|opts| MailFormSendOptions {
         username: opts.username.clone(),
         password: opts.password.clone(),
-        server: opts.server.clone(),
-        auth: opts.auth.clone(),
-        port: opts.resolved_port(),
-        tls: opts.tls,
+        server:   opts.server.clone(),
+        auth:     opts.auth.clone(),
+        port:     opts.resolved_port(),
+        tls:      opts.tls,
       });
 
       MailFormService::<S>::send(

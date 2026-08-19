@@ -19,14 +19,14 @@ fn actor(column: entity::users::Column) -> SimpleExpr {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct AccessLogFilter {
-  pub search: Option<String>,
-  pub user_id: Option<OneOrMany<i32>>,
-  pub username: Option<String>,
-  pub name: Option<String>,
+  pub search:     Option<String>,
+  pub user_id:    Option<OneOrMany<i32>>,
+  pub username:   Option<String>,
+  pub name:       Option<String>,
   /// The log's own columns. Everything above narrows by the account, which is no help on a page
   /// already pinned to one; these narrow by what the attempt was.
-  pub code: Option<OneOrMany<AccessResultCode>>,
-  pub method: Option<OneOrMany<AccessMethod>>,
+  pub code:       Option<OneOrMany<AccessResultCode>>,
+  pub method:     Option<OneOrMany<AccessMethod>>,
   pub ip_address: Option<String>,
   pub user_agent: Option<String>,
   /// When the attempt was made. The first range parameter this crate carries — until now a date
@@ -140,9 +140,9 @@ impl FilterSchema for AccessLogFilter {
 #[serde(rename_all = "camelCase")]
 pub struct AccessLogUser {
   #[sea_orm(from_alias = "user_id")]
-  pub id: i32,
+  pub id:        i32,
   #[sea_orm(from_alias = "user_username")]
-  pub username: String,
+  pub username:  String,
   #[sea_orm(from_alias = "user_full_name")]
   pub full_name: String,
 }
@@ -150,27 +150,27 @@ pub struct AccessLogUser {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessLogListItem {
-  pub id: i32,
+  pub id:     i32,
   /// Absent where the attempt names no account this installation holds: a sign-in for a username
   /// that does not exist is logged too, and an account deleted afterwards leaves its attempts
   /// behind. Requiring the account here made the whole list fail on the first such row.
   #[sea_orm(nested, alias = "user")]
-  pub user: Option<AccessLogUser>,
+  pub user:   Option<AccessLogUser>,
   pub method: AccessMethod,
-  pub code: AccessResultCode,
+  pub code:   AccessResultCode,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family: String,
-  pub os_major: Option<String>,
-  pub os_minor: Option<String>,
-  pub os_patch: Option<String>,
+  pub os_family:      String,
+  pub os_major:       Option<String>,
+  pub os_minor:       Option<String>,
+  pub os_patch:       Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand: Option<String>,
-  pub device_model: Option<String>,
+  pub device_brand:  Option<String>,
+  pub device_model:  Option<String>,
 
   pub created_at: DateTimeWithTimeZone,
 }
@@ -178,27 +178,27 @@ pub struct AccessLogListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetAccessLog {
-  pub id: i32,
+  pub id:     i32,
   /// Absent where the attempt names no account this installation holds: a sign-in for a username
   /// that does not exist is logged too, and an account deleted afterwards leaves its attempts
   /// behind. Requiring the account here made the whole list fail on the first such row.
   #[sea_orm(nested, alias = "user")]
-  pub user: Option<AccessLogUser>,
+  pub user:   Option<AccessLogUser>,
   pub method: AccessMethod,
-  pub code: AccessResultCode,
+  pub code:   AccessResultCode,
 
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family: String,
-  pub os_major: Option<String>,
-  pub os_minor: Option<String>,
-  pub os_patch: Option<String>,
+  pub os_family:      String,
+  pub os_major:       Option<String>,
+  pub os_minor:       Option<String>,
+  pub os_patch:       Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand: Option<String>,
-  pub device_model: Option<String>,
+  pub device_brand:  Option<String>,
+  pub device_model:  Option<String>,
 
   pub created_at: DateTimeWithTimeZone,
 }
@@ -230,8 +230,8 @@ mod tests {
 
   #[test]
   fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
-    let filter: AccessLogFilter = serde_urlencoded::from_str("search=a&user_id=1&username=b&name=c")
-      .expect("the flat filter parses");
+    let filter: AccessLogFilter =
+      serde_urlencoded::from_str("search=a&user_id=1&username=b&name=c").expect("the flat filter parses");
 
     assert!(filter.search.is_some());
     assert!(filter.user_id.is_some());
@@ -241,12 +241,10 @@ mod tests {
 
   #[test]
   fn a_multi_value_key_takes_a_list_and_an_empty_value_means_unfiltered() {
-    let filter: AccessLogFilter =
-      serde_urlencoded::from_str("user_id=1,2").expect("a list parses");
+    let filter: AccessLogFilter = serde_urlencoded::from_str("user_id=1,2").expect("a list parses");
     assert_eq!(filter.user_id.as_ref().map(OneOrMany::len), Some(2));
 
-    let filter: AccessLogFilter =
-      serde_urlencoded::from_str("user_id=").expect("an empty value parses");
+    let filter: AccessLogFilter = serde_urlencoded::from_str("user_id=").expect("an empty value parses");
     assert!(listed(filter.user_id.as_ref()).is_none());
   }
 

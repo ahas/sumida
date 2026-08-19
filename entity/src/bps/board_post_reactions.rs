@@ -4,12 +4,12 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "board_post_reactions")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id: i32,
+  pub id:         i32,
   #[sea_orm(indexed)]
-  pub post_id: i32,
+  pub post_id:    i32,
   #[sea_orm(indexed, nullable)]
-  pub user_id: Option<i32>,
-  pub value: String,
+  pub user_id:    Option<i32>,
+  pub value:      String,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,
 }

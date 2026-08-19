@@ -26,7 +26,12 @@ impl<S: SumidaState> BoardTopicController<S> {
     Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardTopicListItem>, SumidaError> {
-    Ok(BoardTopicService::new(state, session).list(filter, conditions, pagination).await?.into())
+    Ok(
+      BoardTopicService::new(state, session)
+        .list(filter, conditions, pagination)
+        .await?
+        .into(),
+    )
   }
 
   async fn get(

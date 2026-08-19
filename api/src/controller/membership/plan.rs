@@ -45,7 +45,7 @@ impl<S: SumidaState> PlanController<S> {
   ) -> Result<PlanCreated, SumidaError> {
     let model = PlanService::new(state, session).create(body).await?;
     Ok(PlanCreated {
-      id: model.id,
+      id:   model.id,
       code: model.code,
     })
   }

@@ -6,8 +6,15 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  ActiveEnum, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
-  QueryTrait, Select,
+  ActiveEnum,
+  ColumnTrait,
+  Condition,
+  EntityTrait,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  QueryTrait,
+  Select,
 };
 
 use self::dto::*;
@@ -16,7 +23,7 @@ use crate::util::filter::{ConditionQuery, listed};
 use crate::util::pagination::Pagination;
 
 pub struct PurchaseService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -59,18 +66,14 @@ impl<S: SumidaState> PurchaseService<S> {
       .apply_if(listed(filter.owner_kind.as_ref()), |q, v| {
         q.filter(Column::OwnerKind.is_in(v.iter().map(|k| k.clone().into_value())))
       })
-      .apply_if(listed(filter.owner_id.as_ref()), |q, v| {
-        q.filter(v.into_simple_expr(Column::OwnerId))
-      })
+      .apply_if(listed(filter.owner_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::OwnerId)))
       .apply_if(listed(filter.kind.as_ref()), |q, v| {
         q.filter(Column::Kind.is_in(v.iter().map(|k| k.clone().into_value())))
       })
       .apply_if(listed(filter.status.as_ref()), |q, v| {
         q.filter(Column::Status.is_in(v.iter().map(|k| k.clone().into_value())))
       })
-      .apply_if(listed(filter.plan_code.as_ref()), |q, v| {
-        q.filter(v.into_simple_expr(Column::PlanCode))
-      });
+      .apply_if(listed(filter.plan_code.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::PlanCode)));
 
     let mut query = conditions.apply::<PurchaseFilter, _>(query)?;
 

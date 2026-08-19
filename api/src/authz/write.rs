@@ -266,9 +266,7 @@ impl Authz {
     db: &C,
   ) -> Result<u64, SumidaError> {
     let Some(id) = filter.resource_id.clone() else {
-      return Err(SumidaError::BadRequest(
-        "a revocation must name the object it revokes on".to_owned(),
-      ));
+      return Err(SumidaError::BadRequest("a revocation must name the object it revokes on".to_owned()));
     };
     let object = Self::object_key(&filter.resource_type, &id)?;
     Self::try_check(&filter.resource_type, object, "grant", subject, db).await?;
@@ -462,10 +460,7 @@ impl Authz {
   /// already happened on that row. Requiring `#grant` on every object the subject happens to hold
   /// would make deleting a role impossible for anyone but a superuser, and would leave the deleted
   /// role's grants behind when it was refused.
-  pub async fn revoke_all_of<C: ConnectionTrait>(
-    holder: &SubjectKey,
-    db: &C,
-  ) -> Result<u64, AuthzError> {
+  pub async fn revoke_all_of<C: ConnectionTrait>(holder: &SubjectKey, db: &C) -> Result<u64, AuthzError> {
     let result = db
       .execute(Statement::from_sql_and_values(
         db.get_database_backend(),
@@ -489,8 +484,7 @@ impl Authz {
     subjects: &[SubjectKey],
     db: &C,
   ) -> Result<Vec<i32>, AuthzError> {
-    let (mut users, mut roles, mut orgs, mut keys) =
-      (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut users, mut roles, mut orgs, mut keys) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
 
     for subject in subjects {
       match (subject.ty.as_str(), subject.relation.as_str()) {
@@ -601,11 +595,10 @@ pub(crate) fn validate_write(write: &TupleWrite) -> Result<(), AuthzError> {
   let registry = Authz::registry()?;
   let definition = registry.require(&write.resource_type)?;
 
-  let relation =
-    definition.relation(&write.relation).ok_or_else(|| AuthzError::UnknownRelation {
-      definition: write.resource_type.clone(),
-      relation:   write.relation.clone(),
-    })?;
+  let relation = definition.relation(&write.relation).ok_or_else(|| AuthzError::UnknownRelation {
+    definition: write.resource_type.clone(),
+    relation:   write.relation.clone(),
+  })?;
 
   let RelationSource::Stored {
     subjects,
@@ -660,10 +653,7 @@ mod write_validation_tests {
   #[test]
   fn a_derived_relation_cannot_be_granted_as_a_tuple() {
     let error = validate_write(&write("parent", SubjectKey::user(1))).unwrap_err();
-    assert!(
-      matches!(&error, AuthzError::NotCompilable(m) if m.contains("derived")),
-      "{error:?}"
-    );
+    assert!(matches!(&error, AuthzError::NotCompilable(m) if m.contains("derived")), "{error:?}");
   }
 
   /// The `admin:user` defect, refused at the API this time.
@@ -685,10 +675,7 @@ mod write_validation_tests {
   /// `op_read` still grants object-wide power rather than being silently downgraded.
   #[test]
   fn the_legacy_action_wildcard_expands_to_the_four_gate_relations() {
-    assert_eq!(
-      expand_service_actions(&["*".to_owned()]),
-      vec!["create", "delete", "read", "update"]
-    );
+    assert_eq!(expand_service_actions(&["*".to_owned()]), vec!["create", "delete", "read", "update"]);
     assert_eq!(
       expand_service_actions(&["read".to_owned(), "*".to_owned()]),
       vec!["create", "delete", "read", "update"],

@@ -6,9 +6,7 @@ use entity::prelude::*;
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::*;
 use sea_orm::sea_query::SimpleExpr;
-use sea_orm::{
-  Condition, EntityTrait, IntoActiveModel, IntoActiveValue, IntoSimpleExpr, QueryTrait,
-};
+use sea_orm::{Condition, EntityTrait, IntoActiveModel, IntoActiveValue, IntoSimpleExpr, QueryTrait};
 use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -18,8 +16,8 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op,
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFilter {
-  pub search: Option<String>,
-  pub name: Option<String>,
+  pub search:   Option<String>,
+  pub name:     Option<String>,
   pub group_id: Option<OneOrMany<i32>>,
 }
 
@@ -74,7 +72,7 @@ impl FilterSchema for BoardFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "BoardGroups", from_query_result)]
 pub struct BoardBoardGroup {
-  pub id: i32,
+  pub id:   i32,
   pub name: String,
 }
 
@@ -82,40 +80,40 @@ pub struct BoardBoardGroup {
 #[sea_orm(entity = "Boards", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardListItem {
-  pub id: i32,
+  pub id:              i32,
   #[sea_orm(nested)]
-  pub group: Option<BoardBoardGroup>,
-  pub name: String,
-  pub description: Option<String>,
-  pub order: i32,
+  pub group:           Option<BoardBoardGroup>,
+  pub name:            String,
+  pub description:     Option<String>,
+  pub order:           i32,
   pub can_upload_file: bool,
-  pub is_versioned: bool,
-  pub is_enabled: bool,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub is_versioned:    bool,
+  pub is_enabled:      bool,
+  pub created_at:      DateTimeWithTimeZone,
+  pub updated_at:      DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Boards", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoard {
-  pub id: i32,
+  pub id:                  i32,
   #[sea_orm(nested)]
-  pub group: Option<BoardBoardGroup>,
-  pub name: String,
-  pub description: Option<String>,
-  pub order: i32,
-  pub can_upload_file: bool,
-  pub max_file_size: i64,
-  pub max_file_count: i32,
-  pub allowed_file_types: Option<JsonValue>,
+  pub group:               Option<BoardBoardGroup>,
+  pub name:                String,
+  pub description:         Option<String>,
+  pub order:               i32,
+  pub can_upload_file:     bool,
+  pub max_file_size:       i64,
+  pub max_file_count:      i32,
+  pub allowed_file_types:  Option<JsonValue>,
   pub reaction_visibility: BoardPostRecordVisibility,
-  pub viewer_visibility: BoardPostRecordVisibility,
-  pub content_visibility: BoardPostRecordVisibility,
-  pub is_versioned: bool,
-  pub is_enabled: bool,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub viewer_visibility:   BoardPostRecordVisibility,
+  pub content_visibility:  BoardPostRecordVisibility,
+  pub is_versioned:        bool,
+  pub is_enabled:          bool,
+  pub created_at:          DateTimeWithTimeZone,
+  pub updated_at:          DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetBoard {
@@ -127,24 +125,24 @@ impl IntoResponse for GetBoard {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoard {
-  pub id: Optional<i32>,
+  pub id:                  Optional<i32>,
   #[serde(default)]
-  pub group_id: Nullable<i32>,
+  pub group_id:            Nullable<i32>,
   #[serde(default)]
-  pub topics: Nullable<Vec<String>>,
-  pub name: String,
+  pub topics:              Nullable<Vec<String>>,
+  pub name:                String,
   #[serde(default)]
-  pub description: Nullable<String>,
-  pub order: Optional<i32>,
-  pub can_upload_file: Optional<bool>,
-  pub max_file_size: Optional<i64>,
-  pub max_file_count: Optional<i32>,
+  pub description:         Nullable<String>,
+  pub order:               Optional<i32>,
+  pub can_upload_file:     Optional<bool>,
+  pub max_file_size:       Optional<i64>,
+  pub max_file_count:      Optional<i32>,
   #[serde(default)]
-  pub allowed_file_types: Nullable<JsonValue>,
+  pub allowed_file_types:  Nullable<JsonValue>,
   pub reaction_visibility: Optional<BoardPostRecordVisibility>,
-  pub viewer_visibility: Optional<BoardPostRecordVisibility>,
-  pub is_versioned: Optional<bool>,
-  pub is_enabled: Optional<bool>,
+  pub viewer_visibility:   Optional<BoardPostRecordVisibility>,
+  pub is_versioned:        Optional<bool>,
+  pub is_enabled:          Optional<bool>,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateBoard {
@@ -184,21 +182,21 @@ impl IntoResponse for BoardCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoard {
   #[serde(default)]
-  pub group_id: Nullable<i32>,
+  pub group_id:            Nullable<i32>,
   #[serde(default)]
-  pub topics: Nullable<Vec<String>>,
-  pub name: Optional<String>,
-  pub description: Nullable<String>,
-  pub order: Optional<i32>,
-  pub can_upload_file: Optional<bool>,
-  pub max_file_size: Optional<i64>,
-  pub max_file_count: Optional<i32>,
+  pub topics:              Nullable<Vec<String>>,
+  pub name:                Optional<String>,
+  pub description:         Nullable<String>,
+  pub order:               Optional<i32>,
+  pub can_upload_file:     Optional<bool>,
+  pub max_file_size:       Optional<i64>,
+  pub max_file_count:      Optional<i32>,
   #[serde(default)]
-  pub allowed_file_types: Nullable<JsonValue>,
+  pub allowed_file_types:  Nullable<JsonValue>,
   pub reaction_visibility: Optional<BoardPostRecordVisibility>,
-  pub viewer_visibility: Optional<BoardPostRecordVisibility>,
-  pub is_versioned: Optional<bool>,
-  pub is_enabled: Optional<bool>,
+  pub viewer_visibility:   Optional<BoardPostRecordVisibility>,
+  pub is_versioned:        Optional<bool>,
+  pub is_enabled:          Optional<bool>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateBoard {
@@ -265,8 +263,7 @@ mod tests {
     let filter: BoardFilter = serde_urlencoded::from_str("group_id=1,2").expect("a list parses");
     assert_eq!(filter.group_id.as_ref().map(OneOrMany::len), Some(2));
 
-    let filter: BoardFilter =
-      serde_urlencoded::from_str("group_id=").expect("an empty value parses");
+    let filter: BoardFilter = serde_urlencoded::from_str("group_id=").expect("an empty value parses");
     assert!(listed(filter.group_id.as_ref()).is_none());
   }
 

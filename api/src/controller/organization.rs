@@ -26,7 +26,12 @@ impl<S: SumidaState> OrganizationController<S> {
     Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<OrganizationListItem>, SumidaError> {
-    Ok(OrganizationService::new(state, session).list(filter, conditions, pagination).await?.into())
+    Ok(
+      OrganizationService::new(state, session)
+        .list(filter, conditions, pagination)
+        .await?
+        .into(),
+    )
   }
 
   async fn get(

@@ -83,10 +83,10 @@ impl Access {
 /// whole point is comparing what each of them sees of the same row — so each session owns its
 /// client.
 pub struct Session {
-  pub label: String,
+  pub label:   String,
   pub user_id: i32,
-  base: SocketAddr,
-  http: reqwest::Client,
+  base:        SocketAddr,
+  http:        reqwest::Client,
 }
 
 impl Session {
@@ -116,7 +116,12 @@ impl Session {
       resp.status()
     );
 
-    Self { label, user_id: user.model.id, base, http }
+    Self {
+      label,
+      user_id: user.model.id,
+      base,
+      http,
+    }
   }
 
   /// Confirms this session is really authenticated.
@@ -137,7 +142,12 @@ impl Session {
 
   /// A caller that never logged in. Used to pin that a route requires authentication at all.
   pub fn anonymous(base: SocketAddr) -> Self {
-    Self { label: "anonymous".into(), user_id: 0, base, http: build_client() }
+    Self {
+      label: "anonymous".into(),
+      user_id: 0,
+      base,
+      http: build_client(),
+    }
   }
 
   /// A caller authenticating with an API key instead of a password login.
@@ -151,12 +161,7 @@ impl Session {
   /// used.
   ///
   /// `user_id` is the key's owner, carried only so a failure message can name a person.
-  pub fn with_api_key(
-    base: SocketAddr,
-    key: &str,
-    user_id: i32,
-    label: impl Into<String>,
-  ) -> Self {
+  pub fn with_api_key(base: SocketAddr, key: &str, user_id: i32, label: impl Into<String>) -> Self {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
       reqwest::header::AUTHORIZATION,
@@ -173,7 +178,12 @@ impl Session {
       .build()
       .expect("failed to build a test http client");
 
-    Self { label: label.into(), user_id, base, http }
+    Self {
+      label: label.into(),
+      user_id,
+      base,
+      http,
+    }
   }
 
   fn request(&self, method: Method, path: &str) -> RequestBuilder {
@@ -189,11 +199,16 @@ impl Session {
     let status = resp.status();
     let body: Value = resp.json().await.unwrap_or(Value::Null);
 
-    let access = Access::from_status(status).unwrap_or_else(|| {
-      if id.appears_in(&body) { Access::Visible } else { Access::Filtered }
-    });
+    let access = Access::from_status(status)
+      .unwrap_or_else(|| if id.appears_in(&body) { Access::Visible } else { Access::Filtered });
 
-    Probe { label: self.label.clone(), path: path.to_string(), status, access, body }
+    Probe {
+      label: self.label.clone(),
+      path: path.to_string(),
+      status,
+      access,
+      body,
+    }
   }
 
   /// Fetches a list endpoint and collects the ids it returned.
@@ -213,7 +228,13 @@ impl Session {
       _ => BTreeSet::new(),
     };
 
-    ListProbe { label: self.label.clone(), path: path.to_string(), status, ids, body }
+    ListProbe {
+      label: self.label.clone(),
+      path: path.to_string(),
+      status,
+      ids,
+      body,
+    }
   }
 
   /// Issues a write and classifies it. The caller is expected to follow up with a database
@@ -229,7 +250,13 @@ impl Session {
 
     let access = Access::from_status(status).unwrap_or(Access::Visible);
 
-    Probe { label: self.label.clone(), path: path.to_string(), status, access, body }
+    Probe {
+      label: self.label.clone(),
+      path: path.to_string(),
+      status,
+      access,
+      body,
+    }
   }
 
   /// Opens an SSE subscription and returns **as soon as the response headers arrive**, before any
@@ -278,7 +305,7 @@ impl Session {
 /// quiet — hangs the suite instead of failing it.
 #[derive(Clone, Copy, Debug)]
 pub struct StreamWindow {
-  timeout: Duration,
+  timeout:    Duration,
   stop_after: Option<usize>,
 }
 
@@ -287,7 +314,10 @@ impl StreamWindow {
   ///
   /// This is the form an exactness assertion needs.
   pub fn of(timeout: Duration) -> Self {
-    Self { timeout, stop_after: None }
+    Self {
+      timeout,
+      stop_after: None,
+    }
   }
 
   /// Stop as soon as `n` events have arrived.
@@ -319,13 +349,13 @@ pub struct StreamEvent {
 /// [`Self::assert_refused`] for the first, [`Self::assert_opened`] plus [`Self::assert_empty`] for
 /// the second.
 pub struct StreamProbe {
-  label: String,
-  path: String,
+  label:  String,
+  path:   String,
   status: StatusCode,
   /// The refusal body. `Null` while the stream is open — the body is being streamed, not read.
-  body: Value,
-  resp: Option<reqwest::Response>,
-  buf: Vec<u8>,
+  body:   Value,
+  resp:   Option<reqwest::Response>,
+  buf:    Vec<u8>,
   events: Vec<StreamEvent>,
   closed: bool,
 }
@@ -389,7 +419,8 @@ impl StreamProbe {
   pub fn assert_refused(self, expected: Access) -> Self {
     let actual = Access::from_status(self.status).unwrap_or(Access::Visible);
     assert_eq!(
-      actual, expected,
+      actual,
+      expected,
       "[{}] {} — expected the subscription to be refused with {:?}, got {:?} (HTTP {}). body: {}",
       self.label,
       self.path,
@@ -542,11 +573,11 @@ fn event_id(data: &Value) -> Option<String> {
 
 /// The outcome of a single-resource request.
 pub struct Probe {
-  label: String,
-  path: String,
+  label:  String,
+  path:   String,
   status: StatusCode,
   access: Access,
-  body: Value,
+  body:   Value,
 }
 
 impl Probe {
@@ -561,7 +592,8 @@ impl Probe {
   #[track_caller]
   pub fn assert(self, expected: Access) -> Self {
     assert_eq!(
-      self.access, expected,
+      self.access,
+      expected,
       "[{}] {} — expected {:?}, got {:?} (HTTP {}). body: {}",
       self.label,
       self.path,
@@ -604,11 +636,11 @@ impl Probe {
 
 /// The outcome of a list request.
 pub struct ListProbe {
-  label: String,
-  path: String,
+  label:  String,
+  path:   String,
   status: StatusCode,
-  ids: BTreeSet<String>,
-  body: Value,
+  ids:    BTreeSet<String>,
+  body:   Value,
 }
 
 impl ListProbe {

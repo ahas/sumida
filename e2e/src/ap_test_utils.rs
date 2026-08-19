@@ -31,7 +31,7 @@ use crate::prelude::*;
 /// Test configuration for permission testing
 pub struct PermissionTestConfig {
   pub namespace: &'static str,
-  pub base_url: &'static str,
+  pub base_url:  &'static str,
 }
 
 /// Writes one tuple, rule-checked but not authority-checked.
@@ -46,12 +46,7 @@ pub async fn tuple(
   relation: &str,
   subject: SubjectKey,
 ) -> anyhow::Result<()> {
-  Authz::write_unchecked(
-    TupleWrite::new(resource_type, resource_id, relation, subject),
-    "e2e",
-    db,
-  )
-  .await?;
+  Authz::write_unchecked(TupleWrite::new(resource_type, resource_id, relation, subject), "e2e", db).await?;
   Ok(())
 }
 
@@ -191,8 +186,7 @@ pub async fn grant_wildcard_action_permission(
   namespace: &str,
   target_resource_id: Option<i32>,
 ) -> anyhow::Result<()> {
-  grant_service_and_resource_access(db, user, namespace, vec!["*".to_string()], target_resource_id)
-    .await
+  grant_service_and_resource_access(db, user, namespace, vec!["*".to_string()], target_resource_id).await
 }
 
 /// Object-wide access on every row of a namespace.
@@ -313,7 +307,7 @@ pub struct CrudTestData {
 
 /// Comprehensive permission test suite for any controller
 pub struct PermissionTestSuite {
-  pub config: PermissionTestConfig,
+  pub config:    PermissionTestConfig,
   pub crud_data: CrudTestData,
 }
 

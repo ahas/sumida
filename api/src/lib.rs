@@ -7,13 +7,11 @@ pub mod layer;
 pub mod service;
 pub mod util;
 
-pub use capability::Capability;
-
 use axum::Router;
+pub use capability::Capability;
 use controller::ApiController;
 use controller::prelude::*;
 use sea_orm::DatabaseConnection;
-
 
 pub trait SumidaState: Clone + Send + Sync + 'static {
   fn db(&self) -> &DatabaseConnection;

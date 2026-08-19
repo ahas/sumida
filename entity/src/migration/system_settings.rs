@@ -71,10 +71,8 @@ impl MigrationTrait for Migration {
 
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
-    db.execute_unprepared("DROP TABLE IF EXISTS system_settings CASCADE;")
-      .await?;
-    db.execute_unprepared("DROP TYPE IF EXISTS system_setting_data_type_enum;")
-      .await?;
+    db.execute_unprepared("DROP TABLE IF EXISTS system_settings CASCADE;").await?;
+    db.execute_unprepared("DROP TYPE IF EXISTS system_setting_data_type_enum;").await?;
     Ok(())
   }
 }

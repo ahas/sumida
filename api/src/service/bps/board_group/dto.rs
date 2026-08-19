@@ -14,8 +14,8 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op,
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardGroupFilter {
-  pub search: Option<String>,
-  pub name: Option<OneOrMany<String>>,
+  pub search:    Option<String>,
+  pub name:      Option<OneOrMany<String>>,
   /// Which level of the tree is read. Saying nothing means the roots, not "every group", so it
   /// carries a meaning a declared key cannot have — an unmentioned key is unfiltered. It stays a
   /// parameter of the list and never a field.
@@ -68,25 +68,25 @@ impl FilterSchema for BoardGroupFilter {
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardGroupListItem {
-  pub id: i32,
-  pub name: String,
+  pub id:          i32,
+  pub name:        String,
   pub description: Option<String>,
-  pub order: i32,
-  pub parent_id: Option<i32>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub order:       i32,
+  pub parent_id:   Option<i32>,
+  pub created_at:  DateTimeWithTimeZone,
+  pub updated_at:  DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardGroup {
-  pub id: i32,
-  pub parent_id: Option<i32>,
-  pub name: String,
+  pub id:          i32,
+  pub parent_id:   Option<i32>,
+  pub name:        String,
   pub description: Option<String>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at:  DateTimeWithTimeZone,
+  pub updated_at:  DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetBoardGroup {
@@ -98,11 +98,11 @@ impl IntoResponse for GetBoardGroup {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardGroup {
-  pub id: Optional<i32>,
-  pub name: String,
+  pub id:          Optional<i32>,
+  pub name:        String,
   pub description: Optional<String>,
   #[serde(default)]
-  pub parent_id: Nullable<i32>,
+  pub parent_id:   Nullable<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -120,10 +120,10 @@ impl IntoResponse for BoardGroupCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardGroup {
-  pub name: Optional<String>,
+  pub name:        Optional<String>,
   pub description: Optional<String>,
   #[serde(default)]
-  pub parent_id: Nullable<i32>,
+  pub parent_id:   Nullable<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -169,8 +169,7 @@ mod tests {
     let filter: BoardGroupFilter = serde_urlencoded::from_str("name=a,b").expect("a list parses");
     assert_eq!(filter.name.as_ref().map(OneOrMany::len), Some(2));
 
-    let filter: BoardGroupFilter =
-      serde_urlencoded::from_str("name=").expect("an empty value parses");
+    let filter: BoardGroupFilter = serde_urlencoded::from_str("name=").expect("an empty value parses");
     assert!(listed(filter.name.as_ref()).is_none());
   }
 

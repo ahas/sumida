@@ -57,7 +57,7 @@ impl<S: SumidaState> PaymentController<S> {
     body: Bytes,
   ) -> Result<WebhookAck, SumidaError> {
     let wh = WebhookHeaders {
-      id: header(&headers, "webhook-id"),
+      id:        header(&headers, "webhook-id"),
       timestamp: header(&headers, "webhook-timestamp"),
       signature: header(&headers, "webhook-signature"),
     };

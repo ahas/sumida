@@ -95,8 +95,8 @@ pub enum ConditionNode {
   Any { of: Vec<ConditionNode> },
   /// One operator against one declared key.
   Field {
-    key: String,
-    op:  Op,
+    key:   String,
+    op:    Op,
     #[serde(default)]
     value: Option<JsonValue>,
   },
@@ -132,12 +132,7 @@ impl ConditionTree {
     Ok(tree)
   }
 
-  fn walk(
-    &self,
-    node: &ConditionNode,
-    depth: usize,
-    tally: &mut Tally,
-  ) -> Result<(), ConditionError> {
+  fn walk(&self, node: &ConditionNode, depth: usize, tally: &mut Tally) -> Result<(), ConditionError> {
     if depth > MAX_CONDITION_DEPTH {
       return Err(ConditionError::TooDeep);
     }
@@ -286,7 +281,7 @@ fn check_shape(key: &str, op: Op, value: Option<&JsonValue>) -> Result<(), Condi
 
       if items.len() > MAX_CONDITION_VALUES {
         return Err(ConditionError::TooManyValues {
-          key: key.to_owned(),
+          key:   key.to_owned(),
           count: items.len(),
         });
       }
@@ -406,13 +401,8 @@ where
       })
     }
     Arity::Many => {
-      let items = value
-        .and_then(JsonValue::as_array)
-        .expect("arity was checked when the tree was parsed");
-      let bounds = items
-        .iter()
-        .map(|item| bind(field, enum_type, item))
-        .collect::<Result<Vec<_>, _>>()?;
+      let items = value.and_then(JsonValue::as_array).expect("arity was checked when the tree was parsed");
+      let bounds = items.iter().map(|item| bind(field, enum_type, item)).collect::<Result<Vec<_>, _>>()?;
 
       Ok(match op {
         Op::In => column.is_in(bounds),
@@ -420,9 +410,7 @@ where
       })
     }
     Arity::Range => {
-      let bounds = value
-        .and_then(JsonValue::as_array)
-        .expect("arity was checked when the tree was parsed");
+      let bounds = value.and_then(JsonValue::as_array).expect("arity was checked when the tree was parsed");
 
       Ok(column.between(bind(field, enum_type, &bounds[0])?, bind(field, enum_type, &bounds[1])?))
     }
@@ -569,23 +557,23 @@ mod tests {
   impl FilterSchema for Sample {
     fn fields() -> &'static [FieldSpec] {
       const FIELDS: &[FieldSpec] = &[
-        FieldSpec::new("title", FieldKind::Text, MatchStrategy::Substring, &[
-          Op::Contains,
-          Op::StartsWith,
-          Op::EndsWith,
-          Op::Eq,
-        ])
+        FieldSpec::new(
+          "title",
+          FieldKind::Text,
+          MatchStrategy::Substring,
+          &[Op::Contains, Op::StartsWith, Op::EndsWith, Op::Eq],
+        )
         .with_sort(),
         FieldSpec::new("body", FieldKind::Text, MatchStrategy::FullText, &[Op::Matches]),
         FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Matches]),
         FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
           .with_variants(&["draft", "published"]),
-        FieldSpec::new("views", FieldKind::Integer, MatchStrategy::Comparison, &[
-          Op::Eq,
-          Op::Between,
-          Op::Gte,
-          Op::IsNull,
-        ])
+        FieldSpec::new(
+          "views",
+          FieldKind::Integer,
+          MatchStrategy::Comparison,
+          &[Op::Eq, Op::Between, Op::Gte, Op::IsNull],
+        )
         .with_sort(),
       ];
 
@@ -815,7 +803,10 @@ mod tests {
       .map(|_| r#"{"type":"field","key":"body","op":"matches","value":"a"}"#)
       .collect::<Vec<_>>()
       .join(",");
-    assert_eq!(refuse(&format!(r#"{{"type":"any","of":[{matches}]}}"#)), ConditionError::TooManyFullText);
+    assert_eq!(
+      refuse(&format!(r#"{{"type":"any","of":[{matches}]}}"#)),
+      ConditionError::TooManyFullText
+    );
 
     let substrings = (0..=MAX_CONDITION_SUBSTRING)
       .map(|_| r#"{"type":"field","key":"title","op":"contains","value":"a"}"#)
@@ -887,7 +878,12 @@ mod tests {
 
   #[test]
   fn a_tree_that_breaks_a_limit_is_refused_while_the_request_is_read() {
-    assert!(serde_urlencoded::from_str::<ConditionQuery>("where=%7B%22type%22%3A%22all%22%2C%22of%22%3A%5B%5D%7D").is_err());
+    assert!(
+      serde_urlencoded::from_str::<ConditionQuery>(
+        "where=%7B%22type%22%3A%22all%22%2C%22of%22%3A%5B%5D%7D"
+      )
+      .is_err()
+    );
     assert!(serde_urlencoded::from_str::<ConditionQuery>("where=not-json").is_err());
   }
 }

@@ -155,10 +155,10 @@ where
   let options = Some(MailFormSendOptions {
     username: smtp.username.clone(),
     password: smtp.password.clone(),
-    auth: smtp.auth.clone(),
-    server: smtp.server.clone(),
-    port: smtp.resolved_port(),
-    tls: smtp.tls,
+    auth:     smtp.auth.clone(),
+    server:   smtp.server.clone(),
+    port:     smtp.resolved_port(),
+    tls:      smtp.tls,
   });
 
   if let Err(err) = MailFormService::<S>::send(kind, email, context, options, db).await {

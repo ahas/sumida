@@ -4,10 +4,10 @@ use sea_orm::prelude::*;
 #[sea_orm(table_name = "organizations")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
-  pub id: i32,
-  pub name: String,
+  pub id:         i32,
+  pub name:       String,
   #[sea_orm(indexed, nullable)]
-  pub parent_id: Option<i32>,
+  pub parent_id:  Option<i32>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at: DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]

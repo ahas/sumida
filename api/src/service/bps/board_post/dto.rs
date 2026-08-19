@@ -7,9 +7,7 @@ use error::SumidaError;
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::*;
 use sea_orm::sea_query::SimpleExpr;
-use sea_orm::{
-  Condition, EntityTrait, FromQueryResult, IntoActiveValue, IntoSimpleExpr, QueryTrait,
-};
+use sea_orm::{Condition, EntityTrait, FromQueryResult, IntoActiveValue, IntoSimpleExpr, QueryTrait};
 use sea_orm_crud::{Nullable, OneOrMany, Optional};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -18,15 +16,7 @@ use super::util;
 use crate::service::auth::helper::verify_password;
 use crate::service::prelude::BoardFileListItem;
 use crate::util::db::{tsquery, wrap_ilike};
-use crate::util::filter::{
-  ConditionTree,
-  FieldKind,
-  FieldSpec,
-  FilterSchema,
-  MatchStrategy,
-  Op,
-  listed,
-};
+use crate::util::filter::{ConditionTree, FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
 pub trait Reply {
   fn get_id(&self) -> i32;
@@ -37,52 +27,52 @@ pub trait Reply {
 #[serde(default)]
 pub struct BoardPostFilter {
   pub search: Option<String>,
-  pub title: Option<String>,
-  pub text: Option<String>,
-  pub kind: Option<BoardPostKind>,
+  pub title:  Option<String>,
+  pub text:   Option<String>,
+  pub kind:   Option<BoardPostKind>,
   pub status: Option<OneOrMany<BoardPostStatus>>,
 
   // FTS
-  pub with_snippet: bool,
-  pub snippet_start_sel: String,
-  pub snippet_stop_sel: String,
-  pub snippet_max_words: usize,
-  pub snippet_min_words: usize,
+  pub with_snippet:          bool,
+  pub snippet_start_sel:     String,
+  pub snippet_stop_sel:      String,
+  pub snippet_max_words:     usize,
+  pub snippet_min_words:     usize,
   pub snippet_max_fragments: usize,
-  pub snippet_short_word: usize,
-  pub snippet_offset: usize,
-  pub snippet_length: Option<usize>,
+  pub snippet_short_word:    usize,
+  pub snippet_offset:        usize,
+  pub snippet_length:        Option<usize>,
   pub snippet_highlight_all: bool,
 
   // Foreign Keys
-  pub topic_id: Option<OneOrMany<i32>>,
-  pub board_id: Option<OneOrMany<i32>>,
+  pub topic_id:  Option<OneOrMany<i32>>,
+  pub board_id:  Option<OneOrMany<i32>>,
   pub parent_id: Option<OneOrMany<i32>>,
 }
 
 impl Default for BoardPostFilter {
   fn default() -> Self {
     Self {
-      search: None,
-      title: None,
-      text: None,
-      kind: None,
-      status: None,
+      search:                None,
+      title:                 None,
+      text:                  None,
+      kind:                  None,
+      status:                None,
       // FTS
-      with_snippet: false,
-      snippet_offset: 0,
-      snippet_length: None,
-      snippet_start_sel: "<mark>".into(),
-      snippet_stop_sel: "</mark>".into(),
+      with_snippet:          false,
+      snippet_offset:        0,
+      snippet_length:        None,
+      snippet_start_sel:     "<mark>".into(),
+      snippet_stop_sel:      "</mark>".into(),
       snippet_max_fragments: 1,
-      snippet_max_words: 20,
-      snippet_min_words: 5,
-      snippet_short_word: 3,
+      snippet_max_words:     20,
+      snippet_min_words:     5,
+      snippet_short_word:    3,
       snippet_highlight_all: false,
       // Foreign Keys
-      topic_id: None,
-      board_id: None,
-      parent_id: None,
+      topic_id:              None,
+      board_id:              None,
+      parent_id:             None,
     }
   }
 }
@@ -101,9 +91,7 @@ impl BoardPostFilter {
       .apply_if(self.text.as_ref(), |q, v| q.filter(tsquery(Column::TextTsv.into_simple_expr(), v)))
       .apply_if(listed(self.topic_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::TopicId)))
       .apply_if(listed(self.board_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::BoardId)))
-      .apply_if(listed(self.parent_id.as_ref()), |q, v| {
-        q.filter(v.into_simple_expr(Column::ParentId))
-      })
+      .apply_if(listed(self.parent_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::ParentId)))
       .apply_if(self.kind.as_ref(), |q, v| q.filter(Column::Kind.eq(v.clone().into_value())))
       .apply_if(listed(self.status.as_ref()), |q, v| {
         q.filter(Column::Status.is_in(v.iter().map(|s| s.clone().into_value())))
@@ -117,28 +105,25 @@ impl BoardPostFilter {
 /// a caller may send. Two of them are full text — `text` runs against the post's tsvector, and
 /// `search` widens that to the title as well — and both say so, because neither can be served by a
 /// substring `ILIKE` over the same column.
-const BOARD_POST_FIELDS: &[FieldSpec] = &[
-  // Title `ILIKE` unioned with a tsquery over the body: two mechanisms in one predicate, which is
-  // what `Custom` is for.
-  FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Matches]),
-  FieldSpec::new("title", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
-  FieldSpec::new("text", FieldKind::Text, MatchStrategy::FullText, &[Op::Matches]),
-  FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq]).with_variants(&[
-    "notice",
-    "article",
-    "comment",
-    "reply",
-  ]),
-  FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_variants(&["draft", "published", "archived", "deleted", "scheduled", "suspended"]),
-  FieldSpec::new("board_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/boards", "name"),
-  FieldSpec::new("topic_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/board-topics", "name"),
-  FieldSpec::new("parent_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/board-posts", "title"),
-  FieldSpec::sort_only("created_at", FieldKind::DateTime),
-];
+const BOARD_POST_FIELDS: &[FieldSpec] =
+  &[
+    // Title `ILIKE` unioned with a tsquery over the body: two mechanisms in one predicate, which is
+    // what `Custom` is for.
+    FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Matches]),
+    FieldSpec::new("title", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+    FieldSpec::new("text", FieldKind::Text, MatchStrategy::FullText, &[Op::Matches]),
+    FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq])
+      .with_variants(&["notice", "article", "comment", "reply"]),
+    FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+      .with_variants(&["draft", "published", "archived", "deleted", "scheduled", "suspended"]),
+    FieldSpec::new("board_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+      .with_relation("/boards", "name"),
+    FieldSpec::new("topic_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+      .with_relation("/board-topics", "name"),
+    FieldSpec::new("parent_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+      .with_relation("/board-posts", "title"),
+    FieldSpec::sort_only("created_at", FieldKind::DateTime),
+  ];
 
 impl FilterSchema for BoardPostFilter {
   fn fields() -> &'static [FieldSpec] {
@@ -186,9 +171,9 @@ impl ViewBoardPost {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostViewerItem {
-  pub user_id: Option<i32>,
-  pub username: Option<String>,
-  pub name: Option<String>,
+  pub user_id:   Option<i32>,
+  pub username:  Option<String>,
+  pub name:      Option<String>,
   pub viewed_at: DateTimeWithTimeZone,
 }
 
@@ -196,20 +181,20 @@ pub struct BoardPostViewerItem {
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostUser {
   #[sea_orm(from_alias = "user_id")]
-  pub id: i32,
+  pub id:       i32,
   #[sea_orm(from_alias = "user_username")]
   pub username: String,
   #[sea_orm(from_alias = "user_full_name")]
-  pub name: String,
+  pub name:     String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostBoard {
   #[sea_orm(from_alias = "board_id")]
-  pub id: i32,
+  pub id:       i32,
   #[sea_orm(from_alias = "board_name")]
-  pub name: String,
+  pub name:     String,
   #[sea_orm(from_alias = "board_group_id")]
   pub group_id: Option<i32>,
 }
@@ -218,7 +203,7 @@ pub struct BoardPostBoard {
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostTopic {
   #[sea_orm(from_alias = "topic_id")]
-  pub id: i32,
+  pub id:   i32,
   #[sea_orm(from_alias = "topic_name")]
   pub name: String,
 }
@@ -226,21 +211,21 @@ pub struct BoardPostTopic {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostCommon {
-  pub id: i32,
-  pub parent_id: Option<i32>,
-  pub title: String,
-  pub kind: BoardPostKind,
-  pub status: BoardPostStatus,
+  pub id:           i32,
+  pub parent_id:    Option<i32>,
+  pub title:        String,
+  pub kind:         BoardPostKind,
+  pub status:       BoardPostStatus,
   pub content_type: BoardPostContentType,
   #[serde(default)]
-  pub reivision: Nullable<i32>,
-  pub tags: Option<Vec<String>>,
-  pub views: i32,
-  pub reactions: Option<JsonValue>,
+  pub reivision:    Nullable<i32>,
+  pub tags:         Option<Vec<String>>,
+  pub views:        i32,
+  pub reactions:    Option<JsonValue>,
   pub published_at: Option<DateTimeWithTimeZone>,
   pub scheduled_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at:   DateTimeWithTimeZone,
+  pub updated_at:   DateTimeWithTimeZone,
 
   // Nested Data
   #[sea_orm(nested)]
@@ -248,7 +233,7 @@ pub struct BoardPostCommon {
   #[sea_orm(nested, nullable)]
   pub topic: Option<BoardPostTopic>,
   #[sea_orm(nested, nullable)]
-  pub user: Option<BoardPostUser>,
+  pub user:  Option<BoardPostUser>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
@@ -285,7 +270,7 @@ pub struct GetBoardPost {
   #[serde(flatten)]
   pub common: BoardPostCommon,
 
-  pub content: Option<String>,
+  pub content:          Option<String>,
   pub compression_type: Option<String>,
 
   #[sea_orm(skip)]
@@ -319,25 +304,25 @@ impl IntoResponse for GetBoardPost {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPost {
-  pub id: Optional<i32>,
-  pub board_id: i32,
+  pub id:                  Optional<i32>,
+  pub board_id:            i32,
   #[serde(default)]
-  pub topic_id: Nullable<i32>,
+  pub topic_id:            Nullable<i32>,
   #[serde(default)]
-  pub parent_id: Nullable<i32>,
-  pub title: String,
+  pub parent_id:           Nullable<i32>,
+  pub title:               String,
   #[serde(default)]
-  pub password: Nullable<String>,
+  pub password:            Nullable<String>,
   #[serde(default)]
-  pub content: Nullable<String>,
-  pub content_type: BoardPostContentType,
-  pub content_visibility: Optional<BoardPostContentVisibility>,
-  pub kind: Optional<BoardPostKind>,
-  pub status: Optional<BoardPostStatus>,
+  pub content:             Nullable<String>,
+  pub content_type:        BoardPostContentType,
+  pub content_visibility:  Optional<BoardPostContentVisibility>,
+  pub kind:                Optional<BoardPostKind>,
+  pub status:              Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at: Nullable<DateTimeWithTimeZone>,
+  pub published_at:        Nullable<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub tags: Nullable<Vec<String>>,
+  pub tags:                Nullable<Vec<String>>,
   pub attached_file_uuids: Option<Vec<Uuid>>,
 }
 
@@ -381,19 +366,19 @@ impl IntoResponse for BoardPostCreated {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
   #[serde(default)]
-  pub topic_id: Nullable<i32>,
-  pub title: Optional<String>,
+  pub topic_id:            Nullable<i32>,
+  pub title:               Optional<String>,
   #[serde(default)]
-  pub content: Nullable<String>,
-  pub content_visibility: Optional<BoardPostContentVisibility>,
+  pub content:             Nullable<String>,
+  pub content_visibility:  Optional<BoardPostContentVisibility>,
   #[serde(default)]
-  pub password: Nullable<String>,
-  pub kind: Optional<BoardPostKind>,
-  pub status: Optional<BoardPostStatus>,
+  pub password:            Nullable<String>,
+  pub kind:                Optional<BoardPostKind>,
+  pub status:              Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at: Nullable<DateTimeWithTimeZone>,
+  pub published_at:        Nullable<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub tags: Nullable<Vec<String>>,
+  pub tags:                Nullable<Vec<String>>,
   pub attached_file_uuids: Option<Vec<Uuid>>,
   pub detached_file_uuids: Option<Vec<Uuid>>,
 }

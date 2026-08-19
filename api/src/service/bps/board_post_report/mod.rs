@@ -5,7 +5,13 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{
-  ColumnTrait, DeleteResult, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QuerySelect,
+  ColumnTrait,
+  DeleteResult,
+  EntityTrait,
+  IntoActiveModel,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
   TransactionTrait,
 };
 
@@ -19,7 +25,7 @@ type ReportEntity = entity::bps::board_post_reports::Entity;
 use entity::bps::board_post_reports::Column as ReportColumn;
 
 pub struct BoardPostReportService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 

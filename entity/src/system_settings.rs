@@ -1,6 +1,7 @@
 use error::SumidaError;
+use sea_orm::ActiveValue::*;
+use sea_orm::IntoActiveModel;
 use sea_orm::entity::prelude::*;
-use sea_orm::{ActiveValue::*, IntoActiveModel};
 use serde::{Deserialize, Serialize};
 
 /// 시스템 설정(운영 설정 key-value) — 공용 feature `system-settings`.
@@ -8,11 +9,7 @@ use serde::{Deserialize, Serialize};
 /// key-value 운영 설정 저장소. 앱별 키 상수(예: `<app>.*`, `task.purge.*`)는 각 소비자
 /// 크레이트가 자체 `keys` 모듈로 소유하고, 이 엔티티는 스키마와 접근 헬퍼만 제공한다.
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, Serialize, Deserialize, DeriveActiveEnum)]
-#[sea_orm(
-  rs_type = "String",
-  db_type = "Enum",
-  enum_name = "system_setting_data_type_enum"
-)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "system_setting_data_type_enum")]
 pub enum SystemSettingDataType {
   #[sea_orm(string_value = "string")]
   #[serde(rename = "string")]
@@ -38,19 +35,19 @@ pub enum SystemSettingDataType {
 #[sea_orm(table_name = "system_settings")]
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = false)]
-  pub key: String,
+  pub key:         String,
   #[sea_orm(column_type = "JsonBinary")]
-  pub value: Json,
-  pub data_type: SystemSettingDataType,
-  pub label: String,
+  pub value:       Json,
+  pub data_type:   SystemSettingDataType,
+  pub label:       String,
   pub description: Option<String>,
   #[sea_orm(column_type = "JsonBinary", nullable)]
-  pub min: Option<Json>,
+  pub min:         Option<Json>,
   #[sea_orm(column_type = "JsonBinary", nullable)]
-  pub max: Option<Json>,
+  pub max:         Option<Json>,
   pub is_editable: bool,
-  pub updated_at: DateTimeWithTimeZone,
-  pub updated_by: Option<i32>,
+  pub updated_at:  DateTimeWithTimeZone,
+  pub updated_by:  Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -72,36 +69,21 @@ impl Entity {
   where
     C: ConnectionTrait,
   {
-    Ok(
-      Self::find_by_id(key)
-        .one(db)
-        .await?
-        .and_then(|m| m.value.as_i64()),
-    )
+    Ok(Self::find_by_id(key).one(db).await?.and_then(|m| m.value.as_i64()))
   }
 
   pub async fn get_bool<C>(key: &str, db: &'_ C) -> Result<Option<bool>, SumidaError>
   where
     C: ConnectionTrait,
   {
-    Ok(
-      Self::find_by_id(key)
-        .one(db)
-        .await?
-        .and_then(|m| m.value.as_bool()),
-    )
+    Ok(Self::find_by_id(key).one(db).await?.and_then(|m| m.value.as_bool()))
   }
 
   pub async fn get_string<C>(key: &str, db: &'_ C) -> Result<Option<String>, SumidaError>
   where
     C: ConnectionTrait,
   {
-    Ok(
-      Self::find_by_id(key)
-        .one(db)
-        .await?
-        .and_then(|m| m.value.as_str().map(String::from)),
-    )
+    Ok(Self::find_by_id(key).one(db).await?.and_then(|m| m.value.as_str().map(String::from)))
   }
 
   /// JSON 값을 그대로 반환. caller 가 자료형을 알고 있는 경우 사용.
@@ -126,9 +108,7 @@ impl Entity {
       return Err(SumidaError::NoData("SystemSetting".to_owned(), key.to_owned()));
     };
     if !existing.is_editable {
-      return Err(SumidaError::Unsupported(format!(
-        "system setting `{key}` is not editable"
-      )));
+      return Err(SumidaError::Unsupported(format!("system setting `{key}` is not editable")));
     }
     let mut active = existing.into_active_model();
     active.value = Set(value);
@@ -163,16 +143,16 @@ impl Entity {
       return Ok(());
     }
     let active = ActiveModel {
-      key: Set(key.to_owned()),
-      value: Set(value),
-      data_type: Set(data_type),
-      label: Set(label.to_owned()),
+      key:         Set(key.to_owned()),
+      value:       Set(value),
+      data_type:   Set(data_type),
+      label:       Set(label.to_owned()),
       description: Set(None),
-      min: Set(None),
-      max: Set(None),
+      min:         Set(None),
+      max:         Set(None),
       is_editable: Set(false),
-      updated_at: Set(chrono::Utc::now().fixed_offset()),
-      updated_by: Set(updated_by),
+      updated_at:  Set(chrono::Utc::now().fixed_offset()),
+      updated_by:  Set(updated_by),
     };
     Self::insert(active).exec(db).await?;
     Ok(())

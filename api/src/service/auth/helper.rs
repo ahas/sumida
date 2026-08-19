@@ -29,20 +29,20 @@ pub fn dummy_verify_password(plain_password: &str) {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
-  pub sub: String, // Subject (user_id)
-  pub username: String,
-  pub iat: i64,           // Issued at
-  pub exp: i64,           // Expiration
-  pub jti: String,        // JWT ID (for blacklisting)
+  pub sub:        String, // Subject (user_id)
+  pub username:   String,
+  pub iat:        i64,    // Issued at
+  pub exp:        i64,    // Expiration
+  pub jti:        String, // JWT ID (for blacklisting)
   pub token_type: String, // "access" or "refresh"
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TokenPair {
-  pub access_token: String,
+  pub access_token:  String,
   pub refresh_token: String,
-  pub token_type: String,
-  pub expires_in: i64,
+  pub token_type:    String,
+  pub expires_in:    i64,
 }
 
 pub async fn get_jwt_secret() -> Result<String, SumidaError> {

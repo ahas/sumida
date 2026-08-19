@@ -9,8 +9,17 @@ use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
-  ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter,
-  QuerySelect, QueryTrait, Statement, TransactionTrait,
+  ColumnTrait,
+  Condition,
+  ConnectionTrait,
+  EntityTrait,
+  FromQueryResult,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  QueryTrait,
+  Statement,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -21,7 +30,7 @@ use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
 pub struct CouponService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -74,7 +83,7 @@ impl<S: SumidaState> CouponService<S> {
     }
     txn.commit().await?;
     Ok(CouponCreated {
-      id: model.id,
+      id:   model.id,
       code: model.code,
     })
   }
@@ -91,8 +100,8 @@ impl<S: SumidaState> CouponService<S> {
       return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
     }
     let mut result = BulkGrantResult {
-      granted: 0,
-      skipped: 0,
+      granted:   0,
+      skipped:   0,
       conflicts: 0,
     };
     for owner in &data.owners {
@@ -460,7 +469,7 @@ impl<S: SumidaState> CouponService<S> {
     Self::consume_coupon(&coupon, &owner_kind, owner_id, &txn).await?;
 
     let mut result = RedeemResult {
-      reward: String::new(),
+      reward:          String::new(),
       credits_granted: None,
       subscription_id: None,
     };

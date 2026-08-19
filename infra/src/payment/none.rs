@@ -1,5 +1,10 @@
 use super::{
-  PaymentError, PaymentProvider, PaymentVerification, RefundResult, WebhookEvent, WebhookHeaders,
+  PaymentError,
+  PaymentProvider,
+  PaymentVerification,
+  RefundResult,
+  WebhookEvent,
+  WebhookHeaders,
 };
 
 /// Default provider when payments are disabled. Every operation reports

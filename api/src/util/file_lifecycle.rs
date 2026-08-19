@@ -73,7 +73,7 @@ pub async fn register_pending_board_file<C: ConnectionTrait>(
 ) -> Result<(), SumidaError> {
   BoardFiles::insert(entity::bps::board_files::ActiveModel {
     file_uuid: Set(file_uuid),
-    post_id: Set(None),
+    post_id:   Set(None),
   })
   .exec(db)
   .await?;
@@ -113,7 +113,7 @@ pub async fn claim_file<C: ConnectionTrait>(
       // generic file with no junction row yet → create an attached link
       BoardFiles::insert(entity::bps::board_files::ActiveModel {
         file_uuid: Set(file_uuid),
-        post_id: Set(Some(post_id)),
+        post_id:   Set(Some(post_id)),
       })
       .exec(db)
       .await?;

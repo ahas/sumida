@@ -15,30 +15,36 @@ use serde_json::{Value, json};
 use sha2::Sha256;
 
 use super::{
-  CardCredential, PaymentError, PaymentProvider, PaymentStatus, PaymentVerification, RefundResult,
-  WebhookEvent, WebhookHeaders,
+  CardCredential,
+  PaymentError,
+  PaymentProvider,
+  PaymentStatus,
+  PaymentVerification,
+  RefundResult,
+  WebhookEvent,
+  WebhookHeaders,
 };
 use crate::settings::membership::PaymentSettings;
 
 const DEFAULT_BASE: &str = "https://api.portone.io";
 
 pub struct PortOneProvider {
-  client: reqwest::Client,
-  api_base: String,
-  api_secret: String,
-  store_id: Option<String>,
-  channel_key: Option<String>,
+  client:         reqwest::Client,
+  api_base:       String,
+  api_secret:     String,
+  store_id:       Option<String>,
+  channel_key:    Option<String>,
   webhook_secret: Option<String>,
 }
 
 impl PortOneProvider {
   pub fn from_settings(cfg: &PaymentSettings) -> Self {
     Self {
-      client: reqwest::Client::new(),
-      api_base: cfg.api_base.clone().unwrap_or_else(|| DEFAULT_BASE.to_string()),
-      api_secret: cfg.api_secret.clone().unwrap_or_default(),
-      store_id: cfg.store_id.clone(),
-      channel_key: cfg.channel_key.clone(),
+      client:         reqwest::Client::new(),
+      api_base:       cfg.api_base.clone().unwrap_or_else(|| DEFAULT_BASE.to_string()),
+      api_secret:     cfg.api_secret.clone().unwrap_or_default(),
+      store_id:       cfg.store_id.clone(),
+      channel_key:    cfg.channel_key.clone(),
       webhook_secret: cfg.webhook_secret.clone(),
     }
   }
@@ -429,10 +435,9 @@ mod tests {
 // SUMIDA_TEST_PORTONE_STORE); skipped unless the secret is set, so it never runs in normal CI.
 #[cfg(test)]
 mod live_tests {
+  use super::PortOneProvider;
   use crate::payment::{PaymentError, PaymentProvider, PaymentStatus};
   use crate::settings::membership::PaymentSettings;
-
-  use super::PortOneProvider;
 
   #[tokio::test]
   async fn portone_api_secret_authenticates() {
@@ -441,11 +446,11 @@ mod live_tests {
       return;
     };
     let cfg = PaymentSettings {
-      provider: "portone".to_string(),
-      api_base: None,
-      api_secret: Some(api_secret),
-      store_id: std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__STORE_ID").ok(),
-      channel_key: None,
+      provider:       "portone".to_string(),
+      api_base:       None,
+      api_secret:     Some(api_secret),
+      store_id:       std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__STORE_ID").ok(),
+      channel_key:    None,
       webhook_secret: None,
     };
     let provider = PortOneProvider::from_settings(&cfg);
@@ -472,11 +477,11 @@ mod live_tests {
     let env = |k: &str| std::env::var(k).unwrap_or_default();
 
     let cfg = PaymentSettings {
-      provider: "portone".to_string(),
-      api_base: None,
-      api_secret: std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__API_SECRET").ok(),
-      store_id: std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__STORE_ID").ok(),
-      channel_key: std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__CHANNEL_KEY").ok(),
+      provider:       "portone".to_string(),
+      api_base:       None,
+      api_secret:     std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__API_SECRET").ok(),
+      store_id:       std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__STORE_ID").ok(),
+      channel_key:    std::env::var("SUMIDA_MEMBERSHIP__PAYMENT__CHANNEL_KEY").ok(),
       webhook_secret: None,
     };
     let provider = PortOneProvider::from_settings(&cfg);

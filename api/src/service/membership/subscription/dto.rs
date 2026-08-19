@@ -20,9 +20,9 @@ fn default_owner_kind() -> OwnerKind {
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionFilter {
   pub owner_kind: Option<OneOrMany<OwnerKind>>,
-  pub owner_id: Option<OneOrMany<i32>>,
-  pub status: Option<OneOrMany<SubscriptionStatus>>,
-  pub plan_code: Option<OneOrMany<String>>,
+  pub owner_id:   Option<OneOrMany<i32>>,
+  pub status:     Option<OneOrMany<SubscriptionStatus>>,
+  pub plan_code:  Option<OneOrMany<String>>,
 }
 
 /// What `/subscriptions` accepts, declared once.
@@ -71,39 +71,39 @@ impl FilterSchema for SubscriptionFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionListItem {
-  pub id: i32,
-  pub code: String,
-  pub plan_id: i32,
-  pub plan_code: String,
-  pub owner_kind: OwnerKind,
-  pub owner_id: i32,
-  pub status: SubscriptionStatus,
+  pub id:                   i32,
+  pub code:                 String,
+  pub plan_id:              i32,
+  pub plan_code:            String,
+  pub owner_kind:           OwnerKind,
+  pub owner_id:             i32,
+  pub status:               SubscriptionStatus,
   pub current_period_start: DateTimeWithTimeZone,
-  pub current_period_end: DateTimeWithTimeZone,
+  pub current_period_end:   DateTimeWithTimeZone,
   pub cancel_at_period_end: bool,
-  pub auto_renew: bool,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub auto_renew:           bool,
+  pub created_at:           DateTimeWithTimeZone,
+  pub updated_at:           DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetSubscription {
-  pub id: i32,
-  pub code: String,
-  pub plan_id: i32,
-  pub plan_code: String,
-  pub owner_kind: OwnerKind,
-  pub owner_id: i32,
-  pub status: SubscriptionStatus,
+  pub id:                   i32,
+  pub code:                 String,
+  pub plan_id:              i32,
+  pub plan_code:            String,
+  pub owner_kind:           OwnerKind,
+  pub owner_id:             i32,
+  pub status:               SubscriptionStatus,
   pub current_period_start: DateTimeWithTimeZone,
-  pub current_period_end: DateTimeWithTimeZone,
+  pub current_period_end:   DateTimeWithTimeZone,
   pub cancel_at_period_end: bool,
-  pub canceled_at: Option<DateTimeWithTimeZone>,
-  pub auto_renew: bool,
-  pub allowed_actions: JsonValue,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub canceled_at:          Option<DateTimeWithTimeZone>,
+  pub auto_renew:           bool,
+  pub allowed_actions:      JsonValue,
+  pub created_at:           DateTimeWithTimeZone,
+  pub updated_at:           DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetSubscription {
@@ -115,25 +115,25 @@ impl IntoResponse for GetSubscription {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSubscription {
-  pub plan_code: String,
+  pub plan_code:       String,
   #[serde(default = "default_owner_kind")]
-  pub owner_kind: OwnerKind,
+  pub owner_kind:      OwnerKind,
   #[serde(default)]
-  pub owner_id: Option<i32>,
+  pub owner_id:        Option<i32>,
   #[serde(default)]
   pub idempotency_key: Option<String>,
   /// Opt the new subscription into auto-renewal (requires `billing_key`).
   #[serde(default)]
-  pub auto_renew: bool,
+  pub auto_renew:      bool,
   /// PG billing key (정기결제) stored for auto-renewal.
   #[serde(default)]
-  pub billing_key: Option<String>,
+  pub billing_key:     Option<String>,
   /// Optional discount coupon(s) applied to the first period's recorded amount (parity with the paid
   /// checkout path). Only meaningful when the first period is charged (i.e. not a free trial).
   #[serde(default)]
-  pub coupon_code: Option<String>,
+  pub coupon_code:     Option<String>,
   #[serde(default)]
-  pub coupon_codes: Option<Vec<String>>,
+  pub coupon_codes:    Option<Vec<String>>,
 }
 
 /// Toggle auto-renew on an existing subscription. Enabling requires a billing key
@@ -141,7 +141,7 @@ pub struct CreateSubscription {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAutoRenew {
-  pub enabled: bool,
+  pub enabled:     bool,
   #[serde(default)]
   pub billing_key: Option<String>,
 }
@@ -160,17 +160,17 @@ pub struct ChangePlan {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProrationResult {
-  pub subscription_id: i32,
-  pub old_plan_code: String,
-  pub new_plan_code: String,
+  pub subscription_id:  i32,
+  pub old_plan_code:    String,
+  pub new_plan_code:    String,
   /// Unused remainder of the old plan's price for this period (a credit).
-  pub old_unused: i64,
+  pub old_unused:       i64,
   /// New plan's price prorated for the remaining period (a charge).
-  pub new_prorated: i64,
+  pub new_prorated:     i64,
   /// Net to settle now = new_prorated - old_unused (negative = credit owed).
   pub proration_amount: i64,
   /// Tracking code of the recorded proration purchase.
-  pub purchase_code: String,
+  pub purchase_code:    String,
 }
 
 impl IntoResponse for ProrationResult {
@@ -189,7 +189,7 @@ pub struct CancelQuery {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionCreated {
-  pub id: i32,
+  pub id:   i32,
   pub code: String,
 }
 
@@ -210,9 +210,8 @@ impl IntoResponse for SubscriptionUpdated {
 
 #[cfg(test)]
 mod filter_tests {
-  use crate::util::filter::listed;
-
   use super::*;
+  use crate::util::filter::listed;
 
   #[test]
   fn the_declaration_is_sound() {
@@ -222,8 +221,7 @@ mod filter_tests {
   #[test]
   fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
     let query = "ownerKind=personal&ownerId=1&status=active&planCode=pro";
-    let filter: SubscriptionFilter =
-      serde_urlencoded::from_str(query).expect("the flat filter parses");
+    let filter: SubscriptionFilter = serde_urlencoded::from_str(query).expect("the flat filter parses");
 
     assert!(filter.owner_kind.is_some());
     assert!(filter.owner_id.is_some());
@@ -244,8 +242,7 @@ mod filter_tests {
     assert_eq!(filter.plan_code.as_ref().map(OneOrMany::len), Some(2));
 
     let filter: SubscriptionFilter =
-      serde_urlencoded::from_str("ownerKind=&ownerId=&status=&planCode=")
-        .expect("an empty value parses");
+      serde_urlencoded::from_str("ownerKind=&ownerId=&status=&planCode=").expect("an empty value parses");
 
     assert!(listed(filter.owner_kind.as_ref()).is_none());
     assert!(listed(filter.owner_id.as_ref()).is_none());

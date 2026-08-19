@@ -32,9 +32,9 @@ impl SumidaState for TestServerState {
 
 #[allow(dead_code)]
 pub struct TestServer {
-  pub addr: SocketAddr,
+  pub addr:    SocketAddr,
   shutdown_tx: Option<oneshot::Sender<()>>,
-  handle: Option<JoinHandle<Result<(), anyhow::Error>>>,
+  handle:      Option<JoinHandle<Result<(), anyhow::Error>>>,
   redis_store: Arc<Mutex<RedisSessionStore>>,
 }
 
@@ -50,9 +50,7 @@ impl TestServer {
   /// registers them, and a router that registered nothing while the test binary had installed
   /// something would be two declarations disagreeing. Passing the slice the binary installed makes
   /// the two the same declaration, which `install` accepts.
-  pub async fn spawn_with_rules(
-    rules: &'static [api::authz::registry::RuleFile],
-  ) -> anyhow::Result<Self> {
+  pub async fn spawn_with_rules(rules: &'static [api::authz::registry::RuleFile]) -> anyhow::Result<Self> {
     let settings = settings::get();
     let db = infra::db::connect().await;
     // Bind to an ephemeral port (host:0) so concurrent tests don't collide on the

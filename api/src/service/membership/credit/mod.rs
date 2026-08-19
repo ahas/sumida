@@ -9,8 +9,18 @@ use infra::settings;
 use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
-  ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, PaginatorTrait,
-  QueryFilter, QueryOrder, QuerySelect, QueryTrait, Statement, TransactionTrait,
+  ColumnTrait,
+  Condition,
+  ConnectionTrait,
+  EntityTrait,
+  FromQueryResult,
+  PaginatorTrait,
+  QueryFilter,
+  QueryOrder,
+  QuerySelect,
+  QueryTrait,
+  Statement,
+  TransactionTrait,
 };
 
 use self::dto::*;
@@ -23,19 +33,19 @@ use crate::util::pagination::Pagination;
 /// Outcome of a FIFO debit (consume/refund).
 pub struct DebitOutcome {
   pub wallet_id: i32,
-  pub debited: i64,
-  pub balance: i64,
+  pub debited:   i64,
+  pub balance:   i64,
 }
 
 /// Outcome of a consume (for the entitlement gate).
 pub struct ConsumeOutcome {
   pub wallet_id: i32,
-  pub consumed: i64,
-  pub balance: i64,
+  pub consumed:  i64,
+  pub balance:   i64,
 }
 
 pub struct CreditService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -281,12 +291,12 @@ impl<S: SumidaState> CreditService<S> {
       if amount == 0 {
         return Ok(DebitOutcome {
           wallet_id: 0,
-          debited: 0,
-          balance: 0,
+          debited:   0,
+          balance:   0,
         });
       }
       return Err(SumidaError::InsufficientCredits {
-        required: amount,
+        required:  amount,
         available: 0,
       });
     };
@@ -294,7 +304,7 @@ impl<S: SumidaState> CreditService<S> {
     // Lock the wallet row to serialize concurrent debits/grants.
     let wallet = CreditWallets::find_by_id(wallet0.id).lock_exclusive().one(txn).await?.ok_or(
       SumidaError::InsufficientCredits {
-        required: amount,
+        required:  amount,
         available: 0,
       },
     )?;
@@ -349,7 +359,7 @@ impl<S: SumidaState> CreditService<S> {
     let spendable = available - reserved;
     if spendable < amount {
       return Err(SumidaError::InsufficientCredits {
-        required: amount,
+        required:  amount,
         available: spendable.max(0),
       });
     }
@@ -396,8 +406,8 @@ impl<S: SumidaState> CreditService<S> {
 
     Ok(DebitOutcome {
       wallet_id: wallet.id,
-      debited: amount,
-      balance: new_balance,
+      debited:   amount,
+      balance:   new_balance,
     })
   }
 
@@ -433,8 +443,8 @@ impl<S: SumidaState> CreditService<S> {
 
     Ok(ConsumeOutcome {
       wallet_id: out.wallet_id,
-      consumed: out.debited,
-      balance: out.balance,
+      consumed:  out.debited,
+      balance:   out.balance,
     })
   }
 
@@ -627,8 +637,8 @@ impl<S: SumidaState> CreditService<S> {
 
     Ok(ConsumeResult {
       wallet_id: out.wallet_id,
-      consumed: out.consumed,
-      balance: out.balance,
+      consumed:  out.consumed,
+      balance:   out.balance,
     })
   }
 
@@ -643,13 +653,13 @@ impl<S: SumidaState> CreditService<S> {
 
     let Some(wallet0) = Self::find_wallet(&owner_kind, owner_id, &txn).await? else {
       return Err(SumidaError::InsufficientCredits {
-        required: 0,
+        required:  0,
         available: 0,
       });
     };
     let wallet = CreditWallets::find_by_id(wallet0.id).lock_exclusive().one(&txn).await?.ok_or(
       SumidaError::InsufficientCredits {
-        required: 0,
+        required:  0,
         available: 0,
       },
     )?;
@@ -667,10 +677,10 @@ impl<S: SumidaState> CreditService<S> {
         txn.commit().await?;
         return Ok(ReservationResult {
           reservation_id: prev.id,
-          wallet_id: wallet.id,
-          amount: prev.amount,
-          status: prev.status,
-          spendable: balance - reserved,
+          wallet_id:      wallet.id,
+          amount:         prev.amount,
+          status:         prev.status,
+          spendable:      balance - reserved,
         });
       }
     }
@@ -683,7 +693,7 @@ impl<S: SumidaState> CreditService<S> {
     let spendable = balance - reserved;
     if spendable < cost {
       return Err(SumidaError::InsufficientCredits {
-        required: cost,
+        required:  cost,
         available: spendable.max(0),
       });
     }
@@ -705,10 +715,10 @@ impl<S: SumidaState> CreditService<S> {
     txn.commit().await?;
     Ok(ReservationResult {
       reservation_id: res.id,
-      wallet_id: wallet.id,
-      amount: cost,
-      status: ReservationStatus::Held,
-      spendable: spendable - cost,
+      wallet_id:      wallet.id,
+      amount:         cost,
+      status:         ReservationStatus::Held,
+      spendable:      spendable - cost,
     })
   }
 
@@ -753,8 +763,8 @@ impl<S: SumidaState> CreditService<S> {
     txn.commit().await?;
     Ok(ConsumeResult {
       wallet_id: out.wallet_id,
-      consumed: out.debited,
-      balance: out.balance,
+      consumed:  out.debited,
+      balance:   out.balance,
     })
   }
 
@@ -785,10 +795,10 @@ impl<S: SumidaState> CreditService<S> {
     txn.commit().await?;
     Ok(ReservationResult {
       reservation_id: res.id,
-      wallet_id: wallet.id,
-      amount: res.amount,
-      status: ReservationStatus::Released,
-      spendable: wallet.balance - reserved,
+      wallet_id:      wallet.id,
+      amount:         res.amount,
+      status:         ReservationStatus::Released,
+      spendable:      wallet.balance - reserved,
     })
   }
 
@@ -826,8 +836,8 @@ impl<S: SumidaState> CreditService<S> {
 
     Ok(ConsumeResult {
       wallet_id: out.wallet_id,
-      consumed: out.debited,
-      balance: out.balance,
+      consumed:  out.debited,
+      balance:   out.balance,
     })
   }
 

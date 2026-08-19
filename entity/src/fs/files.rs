@@ -28,32 +28,32 @@ impl std::str::FromStr for FileStatus {
 #[sea_orm(table_name = "files")]
 pub struct Model {
   #[sea_orm(primary_key, default = "uuid_generate_v4()")]
-  pub uuid: Uuid,
+  pub uuid:          Uuid,
   #[sea_orm(nullable)]
-  pub user_id: Option<i32>,
+  pub user_id:       Option<i32>,
   pub original_name: String,
-  pub dir: String,
-  pub name: String,
+  pub dir:           String,
+  pub name:          String,
   #[sea_orm(nullable)]
-  pub uri: Option<String>,
-  pub size: i64,
-  pub mime_type: String,
+  pub uri:           Option<String>,
+  pub size:          i64,
+  pub mime_type:     String,
   #[sea_orm(nullable)]
-  pub hash: Option<String>,
+  pub hash:          Option<String>,
   #[sea_orm(nullable)]
-  pub tags: Option<Vec<String>>,
+  pub tags:          Option<Vec<String>>,
   #[sea_orm(default_value = "'pending'")]
-  pub status: FileStatus,
+  pub status:        FileStatus,
   #[sea_orm(default_value = "0")]
-  pub refs: i32,
+  pub refs:          i32,
   #[sea_orm(nullable)]
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at:    Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:    DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at: DateTimeWithTimeZone,
+  pub updated_at:    DateTimeWithTimeZone,
   #[sea_orm(nullable)]
-  pub deleted_at: Option<DateTimeWithTimeZone>,
+  pub deleted_at:    Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

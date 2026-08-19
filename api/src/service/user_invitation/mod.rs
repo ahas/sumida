@@ -6,8 +6,16 @@ use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::*;
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
-  Select, TransactionTrait,
+  ColumnTrait,
+  ConnectionTrait,
+  DbErr,
+  DeleteResult,
+  EntityTrait,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  Select,
+  TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -22,7 +30,7 @@ use crate::util::pagination::Pagination;
 const RESOURCE: &str = "user_invitation";
 
 pub struct UserInvitationService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -76,8 +84,8 @@ impl<S: SumidaState> UserInvitationService<S> {
     use entity::user_invitations::Column;
 
     let db = self.state.db();
-    let mut query = conditions
-      .apply::<UserInvitationFilter, _>(filter.apply(self.select(UserInvitations::find())?))?;
+    let mut query =
+      conditions.apply::<UserInvitationFilter, _>(filter.apply(self.select(UserInvitations::find())?))?;
     let count = query.clone().select_only().column(Column::Uuid).count(db).await?;
 
     query = pagination.order_by_schema::<UserInvitationFilter, _>(query);

@@ -25,8 +25,8 @@ use crate::SumidaState;
 use crate::service::auth::dto::LoginSession;
 
 pub struct AuthTokenService<S: SumidaState, J: JwtTokenStore> {
-  pub state: S,
-  pub session: UserSession,
+  pub state:     S,
+  pub session:   UserSession,
   pub jwt_store: J,
 }
 
@@ -92,9 +92,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
       // Store refresh token
       let refresh_claims = helper::verify_jwt_token(&token_pair.refresh_token).await?;
       let refresh_data = RefreshTokenData {
-        user_id: user.id,
-        username: user.username.clone(),
-        jti: refresh_claims.jti.clone(),
+        user_id:    user.id,
+        username:   user.username.clone(),
+        jti:        refresh_claims.jti.clone(),
         expires_at: chrono::DateTime::from_timestamp(refresh_claims.exp, 0).unwrap_or_default(),
         created_at: Utc::now(),
       };
@@ -198,9 +198,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     // Store new refresh token and invalidate old one
     let new_refresh_claims = helper::verify_jwt_token(&new_token_pair.refresh_token).await?;
     let new_refresh_data = RefreshTokenData {
-      user_id: user.id,
-      username: user.username.clone(),
-      jti: new_refresh_claims.jti.clone(),
+      user_id:    user.id,
+      username:   user.username.clone(),
+      jti:        new_refresh_claims.jti.clone(),
       expires_at: chrono::DateTime::from_timestamp(new_refresh_claims.exp, 0).unwrap_or_default(),
       created_at: Utc::now(),
     };

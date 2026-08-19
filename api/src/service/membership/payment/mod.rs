@@ -39,7 +39,7 @@ fn order_code(provider: &str, amount: i64) -> String {
 }
 
 pub struct PaymentService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: Option<UserSession>,
 }
 
@@ -316,8 +316,8 @@ impl<S: SumidaState> PaymentService<S> {
     txn.commit().await?;
 
     Ok(PaymentRefundResult {
-      purchase_code: purchase.code,
-      status: "refunded".to_string(),
+      purchase_code:    purchase.code,
+      status:           "refunded".to_string(),
       cancelled_amount: cancel.cancelled_amount,
     })
   }
@@ -390,11 +390,11 @@ impl<S: SumidaState> PaymentService<S> {
   ) -> Result<ConfirmResult, SumidaError> {
     if purchase.status == PurchaseStatus::Completed {
       return Ok(ConfirmResult {
-        purchase_code: purchase.code.clone(),
-        status: "completed".to_string(),
-        kind: purchase.kind.clone(),
+        purchase_code:   purchase.code.clone(),
+        status:          "completed".to_string(),
+        kind:            purchase.kind.clone(),
         subscription_id: None,
-        wallet_id: None,
+        wallet_id:       None,
       });
     }
 
@@ -417,7 +417,7 @@ impl<S: SumidaState> PaymentService<S> {
       CouponService::<S>::reverse_for_purchase(&purchase.code, txn).await?;
       return Err(SumidaError::PaymentAmountMismatch {
         expected: purchase.amount,
-        actual: verification.amount,
+        actual:   verification.amount,
       });
     }
 

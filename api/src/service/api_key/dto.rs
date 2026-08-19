@@ -22,10 +22,10 @@ fn holder(column: entity::users::Column) -> SimpleExpr {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct ApiKeyFilter {
-  pub key: Option<String>,
-  pub user_id: Option<OneOrMany<i32>>,
+  pub key:      Option<String>,
+  pub user_id:  Option<OneOrMany<i32>>,
   pub username: Option<String>,
-  pub name: Option<String>,
+  pub name:     Option<String>,
 }
 
 impl ApiKeyFilter {
@@ -85,20 +85,20 @@ impl FilterSchema for ApiKeyFilter {
 #[sea_orm(entity = "entity::users::Entity")]
 pub struct ApiKeyUser {
   #[sea_orm(from_alias = "user_id")]
-  pub id: i32,
+  pub id:       i32,
   #[sea_orm(from_alias = "user_username")]
   pub username: String,
   #[sea_orm(from_alias = "user_full_name")]
-  pub name: String,
+  pub name:     String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiKeyListItem {
-  pub key: String,
+  pub key:        String,
   pub key_prefix: Option<String>,
   #[sea_orm(nested, alias = "user")]
-  pub user: ApiKeyUser,
+  pub user:       ApiKeyUser,
   pub expires_at: Option<DateTimeWithTimeZone>,
   pub is_secured: bool,
   pub created_at: DateTimeWithTimeZone,
@@ -107,15 +107,15 @@ pub struct ApiKeyListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetApiKey {
-  pub key: String,
-  pub key_prefix: Option<String>,
+  pub key:             String,
+  pub key_prefix:      Option<String>,
   #[sea_orm(nested, alias = "user")]
-  pub user: ApiKeyUser,
+  pub user:            ApiKeyUser,
   #[sea_orm(skip)]
   pub access_policies: Option<Vec<ApForUser>>,
-  pub expires_at: Option<DateTimeWithTimeZone>,
-  pub is_secured: bool,
-  pub created_at: DateTimeWithTimeZone,
+  pub expires_at:      Option<DateTimeWithTimeZone>,
+  pub is_secured:      bool,
+  pub created_at:      DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetApiKey {
@@ -127,10 +127,10 @@ impl IntoResponse for GetApiKey {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateApiKey {
-  pub user_id: i32,
-  pub expires_at: Nullable<DateTimeWithTimeZone>,
+  pub user_id:         i32,
+  pub expires_at:      Nullable<DateTimeWithTimeZone>,
   pub access_policies: Option<Vec<ApForUser>>,
-  pub is_secured: Optional<bool>,
+  pub is_secured:      Optional<bool>,
 }
 
 impl IntoActiveModel<ActiveModel> for CreateApiKey {
@@ -159,9 +159,9 @@ impl IntoResponse for ApiKeyCreated {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateApiKey {
-  pub expires_at: Nullable<DateTimeWithTimeZone>,
+  pub expires_at:      Nullable<DateTimeWithTimeZone>,
   pub access_policies: Option<Vec<ApForUser>>,
-  pub is_secured: Optional<bool>,
+  pub is_secured:      Optional<bool>,
 }
 
 impl IntoActiveModel<ActiveModel> for UpdateApiKey {
@@ -205,8 +205,8 @@ mod tests {
 
   #[test]
   fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
-    let filter: ApiKeyFilter = serde_urlencoded::from_str("key=a&user_id=1&username=b&name=c")
-      .expect("the flat filter parses");
+    let filter: ApiKeyFilter =
+      serde_urlencoded::from_str("key=a&user_id=1&username=b&name=c").expect("the flat filter parses");
 
     assert!(filter.key.is_some());
     assert!(filter.user_id.is_some());
@@ -219,8 +219,7 @@ mod tests {
     let filter: ApiKeyFilter = serde_urlencoded::from_str("user_id=1,2").expect("a list parses");
     assert_eq!(filter.user_id.as_ref().map(OneOrMany::len), Some(2));
 
-    let filter: ApiKeyFilter =
-      serde_urlencoded::from_str("user_id=").expect("an empty value parses");
+    let filter: ApiKeyFilter = serde_urlencoded::from_str("user_id=").expect("an empty value parses");
     assert!(listed(filter.user_id.as_ref()).is_none());
   }
 

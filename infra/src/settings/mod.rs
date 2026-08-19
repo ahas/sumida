@@ -18,19 +18,19 @@ use serde::Deserialize;
 #[serde(rename_all = "kebab-case")]
 #[allow(dead_code)]
 pub struct SumidaSettings {
-  pub server: server::ServerSettings,
-  pub database: database::DatabaseSettings,
-  pub session: session::SessionSettings,
+  pub server:     server::ServerSettings,
+  pub database:   database::DatabaseSettings,
+  pub session:    session::SessionSettings,
   #[serde(default)]
-  pub security: security::SecuritySettings,
+  pub security:   security::SecuritySettings,
   #[serde(default)]
-  pub storage: storage::StorageSettings,
+  pub storage:    storage::StorageSettings,
   #[serde(default)]
   pub membership: membership::MembershipSettings,
-  pub smtp: Option<smtp::SmtpSettings>,
-  pub jwt: Option<jwt::JwtSettings>,
+  pub smtp:       Option<smtp::SmtpSettings>,
+  pub jwt:        Option<jwt::JwtSettings>,
   #[cfg(feature = "aws")]
-  pub aws: Option<aws::AwsSettings>,
+  pub aws:        Option<aws::AwsSettings>,
 }
 
 impl SumidaSettings {
@@ -94,12 +94,12 @@ mod tests {
   #[serde(rename_all = "kebab-case")]
   struct Storage {
     orphan_grace_hours: i64,
-    max_file_size: u64,
+    max_file_size:      u64,
   }
 
   #[derive(Deserialize)]
   struct Root {
-    storage: Storage,
+    storage:  Storage,
     database: Database,
   }
 

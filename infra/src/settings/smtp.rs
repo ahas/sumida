@@ -19,15 +19,15 @@ pub enum SmtpTlsMode {
 pub struct SmtpSettings {
   pub username: String,
   pub password: String,
-  pub server: String,
-  pub auth: String,
+  pub server:   String,
+  pub auth:     String,
   /// SMTP port. When unspecified, uses a default based on the tls mode
   /// (None=25, Starttls=587, Implicit=465).
   #[serde(default)]
-  pub port: Option<u16>,
+  pub port:     Option<u16>,
   /// TLS mode. Defaults to starttls when unspecified.
   #[serde(default)]
-  pub tls: SmtpTlsMode,
+  pub tls:      SmtpTlsMode,
 }
 
 impl SmtpSettings {

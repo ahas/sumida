@@ -1,9 +1,9 @@
 use std::fmt;
 use std::marker::PhantomData;
 
+use sea_orm::DbErr;
 use sea_orm::sea_query::extension::postgres::{PgBinOper, PgExpr};
 use sea_orm::sea_query::{Expr, SimpleExpr};
-use sea_orm::DbErr;
 use serde::{Deserialize, Deserializer, de};
 
 pub fn is_serialization_failure(error: &DbErr) -> bool {

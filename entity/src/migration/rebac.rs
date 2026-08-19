@@ -3,7 +3,6 @@ use sea_orm_migration::prelude::*;
 
 /// ReBAC data layer — the tuple table, the rule-vocabulary projection, and the closure tables
 /// that materialise the authorization-bearing trees (design §3).
-///
 
 /// Depends on `organizations` (init); the board half additionally needs `board_groups`
 /// (board_system), so consumers that have boards must register this after that migration.

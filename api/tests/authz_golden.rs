@@ -78,7 +78,9 @@ async fn pin_api_key_for_self_is_still_possible_or_gated_only_by_capability() {
     "issuing a key for oneself must not be refused — got {:?}",
     probe.access()
   );
-  DbState::new(&db).assert_exists("api_keys", &format!("user_id = {}", user.model.id)).await;
+  DbState::new(&db)
+    .assert_exists("api_keys", &format!("user_id = {}", user.model.id))
+    .await;
 }
 
 /// `GET /files/stats` aggregated over every tenant's files while its sibling `list` went through
@@ -100,7 +102,8 @@ async fn pin_file_stats_are_scoped_not_global() {
     .await
     .expect("grant the file route capability");
 
-  let session = Session::login(mock.server.addr, &outsider, "user with the file capability but no file grants").await;
+  let session =
+    Session::login(mock.server.addr, &outsider, "user with the file capability but no file grants").await;
   let probe = session.probe_one("/files/stats", &"stats").await;
 
   assert_ne!(
@@ -172,9 +175,7 @@ async fn today_plain_member_sees_no_users_at_all() {
   let session = Session::login(mock.server.addr, &member.user, "member with the user capability").await;
   let listed = session.probe_list("/users?limit=200").await;
 
-  listed
-    .assert_refused(Access::Visible)
-    .assert_empty();
+  listed.assert_refused(Access::Visible).assert_empty();
 }
 
 /// **This was `today_update_and_read_disagree_about_the_org_tier`, and the disagreement is gone.**
@@ -200,14 +201,9 @@ async fn pin_update_and_read_agree_about_the_org_tier() {
   let outside = Member::create(&db, tree.aunt).await.expect("a user in another branch");
 
   // 읽기와 쓰기 양쪽 게이트를 준다. 그래야 두 경로의 *행 스코프* 가 실제로 평가된다.
-  e2e::ap_test_utils::grant_service(
-    &db,
-    &manager.user,
-    "user",
-    vec!["read".into(), "update".into()],
-  )
-  .await
-  .expect("grant the user route capability");
+  e2e::ap_test_utils::grant_service(&db, &manager.user, "user", vec!["read".into(), "update".into()])
+    .await
+    .expect("grant the user route capability");
   // 조직 계층 권한. 종전 `org:user | <subject org> | {update}` 가 뜻하던 층이다.
   e2e::ap_test_utils::grant_org_scope(&db, &manager.user, tree.subject, "user_manager")
     .await
@@ -249,14 +245,9 @@ async fn pin_update_and_read_agree_about_the_org_tier() {
   // 반대 방향. 같은 라우트 게이트만 가진 호출자는 어느 쪽으로도 닿지 못한다 — 이게 없으면
   // 행 스코프를 통째로 지워도 위 단언들은 그대로 통과한다.
   let bystander = Member::create(&db, tree.subject).await.expect("a peer with no organization tier");
-  e2e::ap_test_utils::grant_service(
-    &db,
-    &bystander.user,
-    "user",
-    vec!["read".into(), "update".into()],
-  )
-  .await
-  .expect("grant the user route capability");
+  e2e::ap_test_utils::grant_service(&db, &bystander.user, "user", vec!["read".into(), "update".into()])
+    .await
+    .expect("grant the user route capability");
 
   let peer = Session::login(mock.server.addr, &bystander.user, "peer with the gate only").await;
   peer.assert_authenticated().await;

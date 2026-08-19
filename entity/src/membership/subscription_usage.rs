@@ -9,17 +9,17 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "subscription_usage")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i64,
+  pub id:              i64,
   #[sea_orm(indexed)]
   pub subscription_id: i32,
-  pub action: String,
-  pub period_start: DateTimeWithTimeZone,
+  pub action:          String,
+  pub period_start:    DateTimeWithTimeZone,
   #[sea_orm(default_value = 0)]
-  pub used: i64,
+  pub used:            i64,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:      DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at: DateTimeWithTimeZone,
+  pub updated_at:      DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

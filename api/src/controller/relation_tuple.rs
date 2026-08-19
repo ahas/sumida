@@ -42,7 +42,12 @@ impl<S: SumidaState> RelationTupleController<S> {
     Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<RelationTupleListItem>, SumidaError> {
-    Ok(RelationTupleService::new(state, session).list(filter, conditions, pagination).await?.into())
+    Ok(
+      RelationTupleService::new(state, session)
+        .list(filter, conditions, pagination)
+        .await?
+        .into(),
+    )
   }
 
   async fn get(

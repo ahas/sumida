@@ -23,7 +23,7 @@ use crate::util::storage::{Storage, SumidaStorage};
 const RESOURCE: &str = "file";
 
 pub struct FileService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -98,9 +98,9 @@ impl<S: SumidaState> FileService<S> {
     //  validate_mime_type always blocks dangerous MIME types (executables/scripts).)
     let upload_limits = &infra::settings::get().storage.upload;
     FileValidator::new(FileValidationConfig {
-      can_upload_file: true,
-      max_file_size: upload_limits.max_file_size,
-      max_file_count: 0,
+      can_upload_file:    true,
+      max_file_size:      upload_limits.max_file_size,
+      max_file_count:     0,
       allowed_file_types: upload_limits.allowed_file_types.clone(),
     })
     .validate_size(data.file.bytes.len())?

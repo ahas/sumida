@@ -19,11 +19,11 @@ fn default_owner_kind() -> OwnerKind {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequireActionRequest {
-  pub action: String,
+  pub action:          String,
   #[serde(default = "default_owner_kind")]
-  pub owner_kind: OwnerKind,
+  pub owner_kind:      OwnerKind,
   #[serde(default)]
-  pub owner_id: Option<i32>,
+  pub owner_id:        Option<i32>,
   #[serde(default)]
   pub idempotency_key: Option<String>,
 }
@@ -32,7 +32,7 @@ pub struct RequireActionRequest {
 #[serde(rename_all = "camelCase")]
 pub struct EntitlementOutcome {
   /// How the action was satisfied: `subscription` or `credit`.
-  pub via: String,
+  pub via:      String,
   pub consumed: i64,
 }
 
@@ -43,7 +43,7 @@ impl IntoResponse for EntitlementOutcome {
 }
 
 pub struct EntitlementService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 
@@ -70,9 +70,9 @@ impl<S: SumidaState> EntitlementService<S> {
   ) -> Result<bool, SumidaError> {
     #[derive(FromQueryResult)]
     struct SubRow {
-      id: i32,
+      id:                   i32,
       current_period_start: sea_orm::prelude::DateTimeWithTimeZone,
-      quota: Option<serde_json::Value>,
+      quota:                Option<serde_json::Value>,
     }
     let backend = db.get_database_backend();
     let Some(sub) = SubRow::find_by_statement(Statement::from_sql_and_values(
@@ -146,7 +146,7 @@ impl<S: SumidaState> EntitlementService<S> {
       GateOrder::SubscriptionFirst => {
         if self.try_consume_subscription(&owner_kind, owner_id, action, &txn).await? {
           EntitlementOutcome {
-            via: "subscription".into(),
+            via:      "subscription".into(),
             consumed: 0,
           }
         } else {
@@ -154,7 +154,7 @@ impl<S: SumidaState> EntitlementService<S> {
             .consume_in_txn(&owner_kind, owner_id, action, None, idempotency_key, None, &txn)
             .await?;
           EntitlementOutcome {
-            via: "credit".into(),
+            via:      "credit".into(),
             consumed: out.consumed,
           }
         }
@@ -165,14 +165,14 @@ impl<S: SumidaState> EntitlementService<S> {
           .await
         {
           Ok(out) => EntitlementOutcome {
-            via: "credit".into(),
+            via:      "credit".into(),
             consumed: out.consumed,
           },
           Err(SumidaError::InsufficientCredits { .. })
           | Err(SumidaError::MembershipActionNotAllowed(_)) => {
             if self.try_consume_subscription(&owner_kind, owner_id, action, &txn).await? {
               EntitlementOutcome {
-                via: "subscription".into(),
+                via:      "subscription".into(),
                 consumed: 0,
               }
             } else {

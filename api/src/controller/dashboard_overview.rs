@@ -16,7 +16,9 @@ pub struct DashboardOverviewController<S: SumidaState> {
 
 impl<S: SumidaState> DashboardOverviewController<S> {
   pub fn new() -> Self {
-    Self { _state: std::marker::PhantomData }
+    Self {
+      _state: std::marker::PhantomData,
+    }
   }
 
   async fn auth_activity(State(state): State<S>) -> Result<AuthActivity, SumidaError> {

@@ -4,8 +4,17 @@ use entity::prelude::*;
 use error::SumidaError;
 use sea_orm::sea_query::{Alias, Expr, Func};
 use sea_orm::{
-  ColumnTrait, ConnectionTrait, DbErr, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect,
-  RelationTrait, Select, Set,
+  ColumnTrait,
+  ConnectionTrait,
+  DbErr,
+  EntityTrait,
+  JoinType,
+  PaginatorTrait,
+  QueryFilter,
+  QuerySelect,
+  RelationTrait,
+  Select,
+  Set,
 };
 use sea_orm_crud::Nullable;
 use uuid::Uuid;
@@ -262,7 +271,7 @@ pub async fn claim_post_files<C: ConnectionTrait>(
     if total > config.max_file_count {
       return Err(SumidaError::TooManyFiles {
         current_count: total,
-        max_count: config.max_file_count,
+        max_count:     config.max_file_count,
       });
     }
   }

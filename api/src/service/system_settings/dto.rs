@@ -11,16 +11,16 @@ use serde_json::Value as JsonValue;
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemSettingItem {
-  pub key: String,
-  pub value: JsonValue,
-  pub data_type: SystemSettingDataType,
-  pub label: String,
+  pub key:         String,
+  pub value:       JsonValue,
+  pub data_type:   SystemSettingDataType,
+  pub label:       String,
   pub description: Option<String>,
-  pub min: Option<JsonValue>,
-  pub max: Option<JsonValue>,
+  pub min:         Option<JsonValue>,
+  pub max:         Option<JsonValue>,
   pub is_editable: bool,
-  pub updated_at: DateTimeWithTimeZone,
-  pub updated_by: Option<i32>,
+  pub updated_at:  DateTimeWithTimeZone,
+  pub updated_by:  Option<i32>,
 }
 
 impl IntoResponse for SystemSettingItem {

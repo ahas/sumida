@@ -14,7 +14,11 @@ use std::time::Duration as StdDuration;
 use chrono::{Duration, Utc};
 use entity::membership::subscriptions::Column as SubColumn;
 use entity::membership::{
-  PlanKind, PurchaseStatus, ReservationStatus, SubscriptionEventKind, SubscriptionStatus,
+  PlanKind,
+  PurchaseStatus,
+  ReservationStatus,
+  SubscriptionEventKind,
+  SubscriptionStatus,
 };
 use entity::prelude::*;
 use error::SumidaError;
@@ -23,8 +27,17 @@ use sea_orm::ActiveValue::*;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-  ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
-  QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
+  ColumnTrait,
+  Condition,
+  ConnectionTrait,
+  DatabaseConnection,
+  DatabaseTransaction,
+  EntityTrait,
+  QueryFilter,
+  QueryOrder,
+  QuerySelect,
+  Statement,
+  TransactionTrait,
 };
 use serde_json::json;
 
@@ -67,18 +80,18 @@ async fn acquire_maintenance_lock(db: &DatabaseConnection) -> Option<DatabaseTra
 /// Counts of work done by one maintenance pass.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MaintenanceReport {
-  pub subscriptions_renewed: usize,
+  pub subscriptions_renewed:      usize,
   pub subscriptions_renew_failed: usize,
-  pub dunning_recovered: usize,
-  pub dunning_failed: usize,
-  pub subscriptions_expired: usize,
-  pub pending_purchases_expired: usize,
-  pub reservations_released: usize,
-  pub wallets_swept: usize,
-  pub expiring_notices: usize,
-  pub low_balance_notices: usize,
-  pub orphan_files_reaped: usize,
-  pub scheduled_posts_published: usize,
+  pub dunning_recovered:          usize,
+  pub dunning_failed:             usize,
+  pub subscriptions_expired:      usize,
+  pub pending_purchases_expired:  usize,
+  pub reservations_released:      usize,
+  pub wallets_swept:              usize,
+  pub expiring_notices:           usize,
+  pub low_balance_notices:        usize,
+  pub orphan_files_reaped:        usize,
+  pub scheduled_posts_published:  usize,
 }
 
 /// Auto-renew subscriptions whose period has ended: charge the stored billing

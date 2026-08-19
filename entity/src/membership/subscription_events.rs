@@ -8,24 +8,24 @@ use super::SubscriptionEventKind;
 #[sea_orm(table_name = "subscription_events")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
+  pub id:                   i32,
   #[sea_orm(indexed)]
-  pub subscription_id: i32,
-  pub event_kind: SubscriptionEventKind,
+  pub subscription_id:      i32,
+  pub event_kind:           SubscriptionEventKind,
   #[sea_orm(nullable)]
-  pub old_status: Option<String>,
+  pub old_status:           Option<String>,
   #[sea_orm(nullable)]
-  pub new_status: Option<String>,
+  pub new_status:           Option<String>,
   #[sea_orm(nullable)]
-  pub reason: Option<String>,
+  pub reason:               Option<String>,
   #[sea_orm(nullable)]
   pub triggered_by_user_id: Option<i32>,
   #[sea_orm(nullable)]
-  pub reference_code: Option<String>,
+  pub reference_code:       Option<String>,
   #[sea_orm(nullable)]
-  pub idempotency_key: Option<String>,
+  pub idempotency_key:      Option<String>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:           DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

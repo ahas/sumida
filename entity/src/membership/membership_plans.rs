@@ -9,40 +9,40 @@ use super::{BillingInterval, OwnerKind, PlanKind};
 #[sea_orm(table_name = "membership_plans")]
 pub struct Model {
   #[sea_orm(primary_key)]
-  pub id: i32,
+  pub id:                  i32,
   #[sea_orm(indexed, unique)]
-  pub code: String,
-  pub name: String,
+  pub code:                String,
+  pub name:                String,
   #[sea_orm(nullable)]
-  pub description: Option<String>,
-  pub kind: PlanKind,
-  pub scope: OwnerKind,
+  pub description:         Option<String>,
+  pub kind:                PlanKind,
+  pub scope:               OwnerKind,
   /// Minor currency units (e.g. KRW).
   #[sea_orm(default_value = 0)]
-  pub price: i64,
+  pub price:               i64,
   #[sea_orm(default_value = "'KRW'")]
-  pub currency: String,
+  pub currency:            String,
   #[sea_orm(nullable)]
-  pub billing_interval: Option<BillingInterval>,
+  pub billing_interval:    Option<BillingInterval>,
   /// Authoritative subscription length in days.
   #[sea_orm(nullable)]
-  pub duration_days: Option<i32>,
+  pub duration_days:       Option<i32>,
   /// Free-trial length in days for a new subscription's first period. None = no trial.
   #[sea_orm(nullable)]
-  pub trial_days: Option<i32>,
+  pub trial_days:          Option<i32>,
   /// Credit units granted when this (credit) plan is purchased.
   #[sea_orm(nullable)]
-  pub credit_amount: Option<i64>,
+  pub credit_amount:       Option<i64>,
   #[sea_orm(default_value = true)]
-  pub is_enabled: bool,
+  pub is_enabled:          bool,
   #[sea_orm(nullable)]
   pub provider_product_id: Option<String>,
   #[sea_orm(nullable)]
-  pub deleted_at: Option<DateTimeWithTimeZone>,
+  pub deleted_at:          Option<DateTimeWithTimeZone>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at:          DateTimeWithTimeZone,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at: DateTimeWithTimeZone,
+  pub updated_at:          DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

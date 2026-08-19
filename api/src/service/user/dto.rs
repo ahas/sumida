@@ -14,15 +14,15 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op,
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct UserFilter {
-  pub search: Option<String>,
-  pub username: Option<String>,
-  pub name: Option<String>,
+  pub search:          Option<String>,
+  pub username:        Option<String>,
+  pub name:            Option<String>,
   pub organization_id: Option<OneOrMany<i32>>,
-  pub role_id: Option<OneOrMany<i32>>,
+  pub role_id:         Option<OneOrMany<i32>>,
   /// Whether `organization_id` matches by equality or through the organization tree. It has no
   /// expression of its own — it selects which mechanism the other key uses — so it is a modifier of
   /// that key rather than a field.
-  pub recursive: Option<bool>,
+  pub recursive:       Option<bool>,
 }
 
 impl UserFilter {
@@ -37,9 +37,7 @@ impl UserFilter {
       })
       .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike(Column::Username.into_expr(), v)))
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::FullName.into_expr(), v)))
-      .apply_if(listed(self.role_id.as_ref()), |q, v| {
-        q.filter(v.into_simple_expr(Column::RoleId))
-      });
+      .apply_if(listed(self.role_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::RoleId)));
 
     // An empty list means unfiltered, so it never narrows the query.
     if let Some(org_id) = self.organization_id.as_ref().filter(|v| !v.is_empty()) {
@@ -129,7 +127,7 @@ impl FilterSchema for UserFilter {
 #[serde(rename_all = "camelCase")]
 pub struct UserOrganization {
   #[sea_orm(from_alias = "org_id")]
-  pub id: i32,
+  pub id:   i32,
   #[sea_orm(from_alias = "org_name")]
   pub name: String,
 }
@@ -137,7 +135,7 @@ pub struct UserOrganization {
 impl From<infra::session::UserOrganization> for UserOrganization {
   fn from(value: infra::session::UserOrganization) -> Self {
     Self {
-      id: value.id,
+      id:   value.id,
       name: value.name,
     }
   }
@@ -147,7 +145,7 @@ impl From<infra::session::UserOrganization> for UserOrganization {
 #[serde(rename_all = "camelCase")]
 pub struct UserRole {
   #[sea_orm(from_alias = "role_id")]
-  pub id: i32,
+  pub id:   i32,
   #[sea_orm(from_alias = "role_name")]
   pub name: String,
 }
@@ -155,7 +153,7 @@ pub struct UserRole {
 impl From<infra::session::UserRole> for UserRole {
   fn from(value: infra::session::UserRole) -> Self {
     Self {
-      id: value.id,
+      id:   value.id,
       name: value.name,
     }
   }
@@ -164,41 +162,41 @@ impl From<infra::session::UserRole> for UserRole {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct UserListItem {
-  pub id: i32,
-  pub username: String,
-  pub full_name: Option<String>,
-  pub email: Option<String>,
-  pub phone: Option<String>,
-  pub is_admin: bool,
-  pub is_enabled: bool,
+  pub id:           i32,
+  pub username:     String,
+  pub full_name:    Option<String>,
+  pub email:        Option<String>,
+  pub phone:        Option<String>,
+  pub is_admin:     bool,
+  pub is_enabled:   bool,
   #[sea_orm(from_alias = "is_banned")]
-  pub is_banned: bool,
+  pub is_banned:    bool,
   #[sea_orm(nested, alias = "org")]
   pub organization: UserOrganization,
   #[sea_orm(nested, alias = "role")]
-  pub role: UserRole,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub role:         UserRole,
+  pub created_at:   DateTimeWithTimeZone,
+  pub updated_at:   DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetUser {
-  pub id: i32,
-  pub username: String,
-  pub full_name: Option<String>,
-  pub email: Option<String>,
-  pub phone: Option<String>,
-  pub is_admin: bool,
-  pub is_enabled: bool,
+  pub id:           i32,
+  pub username:     String,
+  pub full_name:    Option<String>,
+  pub email:        Option<String>,
+  pub phone:        Option<String>,
+  pub is_admin:     bool,
+  pub is_enabled:   bool,
   #[sea_orm(from_alias = "is_banned")]
-  pub is_banned: bool,
+  pub is_banned:    bool,
   #[sea_orm(nested)]
   pub organization: UserOrganization,
   #[sea_orm(nested)]
-  pub role: UserRole,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub role:         UserRole,
+  pub created_at:   DateTimeWithTimeZone,
+  pub updated_at:   DateTimeWithTimeZone,
 }
 
 impl IntoResponse for GetUser {
@@ -210,16 +208,16 @@ impl IntoResponse for GetUser {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUser {
-  pub id: Optional<i32>,
-  pub username: String,
-  pub password: String,
-  pub full_name: Nullable<String>,
-  pub email: Nullable<String>,
-  pub phone: Nullable<String>,
-  pub is_admin: Optional<bool>,
-  pub is_enabled: Optional<bool>,
+  pub id:              Optional<i32>,
+  pub username:        String,
+  pub password:        String,
+  pub full_name:       Nullable<String>,
+  pub email:           Nullable<String>,
+  pub phone:           Nullable<String>,
+  pub is_admin:        Optional<bool>,
+  pub is_enabled:      Optional<bool>,
   pub organization_id: i32,
-  pub role_id: i32,
+  pub role_id:         i32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -237,15 +235,15 @@ impl IntoResponse for UserCreated {
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUser {
-  pub username: Optional<String>,
-  pub password: Optional<String>,
-  pub email: Nullable<String>,
-  pub full_name: Nullable<String>,
-  pub phone: Nullable<String>,
-  pub is_admin: Optional<bool>,
-  pub is_enabled: Optional<bool>,
+  pub username:        Optional<String>,
+  pub password:        Optional<String>,
+  pub email:           Nullable<String>,
+  pub full_name:       Nullable<String>,
+  pub phone:           Nullable<String>,
+  pub is_admin:        Optional<bool>,
+  pub is_enabled:      Optional<bool>,
   pub organization_id: Optional<i32>,
-  pub role_id: Optional<i32>,
+  pub role_id:         Optional<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -273,15 +271,15 @@ impl IntoResponse for UserDeleted {
 pub struct ChangePassword {
   pub username: String,
   pub password: String,
-  pub code: String,
+  pub code:     String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserActivation {
-  pub user_id: i32,
+  pub user_id:  i32,
   pub password: String,
-  pub uuid: Uuid,
+  pub uuid:     Uuid,
 }
 
 #[cfg(test)]

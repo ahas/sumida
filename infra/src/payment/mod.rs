@@ -56,50 +56,50 @@ impl PaymentStatus {
 #[derive(Debug, Clone, Serialize)]
 pub struct PaymentVerification {
   /// Merchant order id (PortOne V2 `paymentId`) = our `membership_purchases.code`.
-  pub payment_id: String,
+  pub payment_id:     String,
   /// PG-side transaction id, when available.
   pub transaction_id: Option<String>,
-  pub status: PaymentStatus,
+  pub status:         PaymentStatus,
   /// Total paid amount in minor currency units.
-  pub amount: i64,
-  pub currency: String,
-  pub paid_at: Option<PaymentTime>,
-  pub raw_status: String,
+  pub amount:         i64,
+  pub currency:       String,
+  pub paid_at:        Option<PaymentTime>,
+  pub raw_status:     String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RefundResult {
-  pub status: PaymentStatus,
+  pub status:           PaymentStatus,
   pub cancelled_amount: i64,
-  pub raw_status: String,
+  pub raw_status:       String,
 }
 
 /// Result of a two-phase `authorize` (hold without capturing). `authorization_id` is the PG-side
 /// handle (when distinct from `payment_id`) used by a later `capture`/`void`.
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthorizeResult {
-  pub payment_id: String,
+  pub payment_id:       String,
   pub authorization_id: String,
-  pub status: PaymentStatus,
-  pub amount: i64,
-  pub currency: String,
-  pub raw_status: String,
+  pub status:           PaymentStatus,
+  pub amount:           i64,
+  pub currency:         String,
+  pub raw_status:       String,
 }
 
 /// Result of capturing a prior authorization.
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureResult {
-  pub payment_id: String,
-  pub status: PaymentStatus,
+  pub payment_id:      String,
+  pub status:          PaymentStatus,
   pub captured_amount: i64,
-  pub raw_status: String,
+  pub raw_status:      String,
 }
 
 /// Result of voiding a prior authorization without capturing.
 #[derive(Debug, Clone, Serialize)]
 pub struct VoidResult {
   pub payment_id: String,
-  pub status: PaymentStatus,
+  pub status:     PaymentStatus,
   pub raw_status: String,
 }
 
@@ -122,7 +122,7 @@ pub struct CardCredential {
 /// Standard-Webhooks signature headers.
 #[derive(Debug, Clone, Default)]
 pub struct WebhookHeaders {
-  pub id: String,
+  pub id:        String,
   pub timestamp: String,
   pub signature: String,
 }
@@ -130,9 +130,9 @@ pub struct WebhookHeaders {
 #[derive(Debug, Clone, Serialize)]
 pub struct WebhookEvent {
   /// e.g. `Transaction.Paid`, `Transaction.Cancelled`.
-  pub event_type: String,
+  pub event_type:     String,
   /// Merchant order id (`data.paymentId`).
-  pub payment_id: String,
+  pub payment_id:     String,
   pub transaction_id: Option<String>,
 }
 

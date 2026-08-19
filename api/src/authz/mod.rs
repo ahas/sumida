@@ -148,9 +148,8 @@ impl ObjectKey {
   /// with `operator does not exist: integer = text`. A text-keyed definition cannot see the defect
   /// at all, which is why it went unnoticed until an integer-keyed one was written through.
   pub fn typed(kind: ir::IdKind, definition: &str, id: &str) -> Result<Self, AuthzError> {
-    let malformed = |what: &str| {
-      AuthzError::Schema(format!("`{definition}` is keyed by {what}, and `{id}` is not one"))
-    };
+    let malformed =
+      |what: &str| AuthzError::Schema(format!("`{definition}` is keyed by {what}, and `{id}` is not one"));
 
     match kind {
       ir::IdKind::Int => id.parse().map(ObjectKey::Int).map_err(|_| malformed("an integer")),
@@ -334,10 +333,7 @@ impl Authz {
 
   /// Whether this subject is a platform administrator. R1, and the only caller-visible remnant of
   /// `session.profile.is_admin` on an authorization path.
-  pub async fn is_superuser<C: ConnectionTrait>(
-    subject: &SubjectSet,
-    db: &C,
-  ) -> Result<bool, AuthzError> {
+  pub async fn is_superuser<C: ConnectionTrait>(subject: &SubjectSet, db: &C) -> Result<bool, AuthzError> {
     Self::check_object("platform", "root", "superuser", subject, db).await
   }
 
@@ -417,8 +413,8 @@ impl Authz {
           .collect();
         DefinitionStatus {
           definition: definition.name.clone(),
-          source: registry.source_of(&definition.name).unwrap_or(registry::SUMIDA_RULES.name),
-          state: classify(&mine, &present),
+          source:     registry.source_of(&definition.name).unwrap_or(registry::SUMIDA_RULES.name),
+          state:      classify(&mine, &present),
         }
       })
       .collect();

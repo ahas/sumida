@@ -37,7 +37,7 @@ async fn test_user_read_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -66,7 +66,7 @@ async fn test_user_create_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -150,7 +150,7 @@ async fn test_user_delete_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -179,7 +179,7 @@ async fn test_user_list_permissions_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -216,7 +216,7 @@ async fn test_user_admin_bypass_comprehensive() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);
@@ -629,7 +629,7 @@ async fn test_wildcard_object_permissions() {
 
   let config = PermissionTestConfig {
     namespace: "user",
-    base_url: "/users",
+    base_url:  "/users",
   };
 
   let test_suite = PermissionTestSuite::new(config, crud_data);

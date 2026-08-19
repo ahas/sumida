@@ -9,17 +9,17 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct GrantCredit {
   #[serde(default = "default_owner_kind")]
-  pub owner_kind: OwnerKind,
+  pub owner_kind:      OwnerKind,
   #[serde(default)]
-  pub owner_id: Option<i32>,
-  pub amount: i64,
+  pub owner_id:        Option<i32>,
+  pub amount:          i64,
   /// Optional source plan code recorded on the lot (for audit).
   #[serde(default)]
-  pub plan_code: Option<String>,
+  pub plan_code:       Option<String>,
   #[serde(default)]
-  pub expiry_at: Option<DateTimeWithTimeZone>,
+  pub expiry_at:       Option<DateTimeWithTimeZone>,
   #[serde(default)]
-  pub reference_code: Option<String>,
+  pub reference_code:  Option<String>,
   #[serde(default)]
   pub idempotency_key: Option<String>,
 }
@@ -27,13 +27,13 @@ pub struct GrantCredit {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumeCredit {
-  pub action: String,
+  pub action:          String,
   #[serde(default)]
-  pub plan_code: Option<String>,
+  pub plan_code:       Option<String>,
   #[serde(default = "default_owner_kind")]
-  pub owner_kind: OwnerKind,
+  pub owner_kind:      OwnerKind,
   #[serde(default)]
-  pub owner_id: Option<i32>,
+  pub owner_id:        Option<i32>,
   #[serde(default)]
   pub idempotency_key: Option<String>,
 }
@@ -48,14 +48,14 @@ pub struct OwnerQuery {
   #[serde(default = "default_owner_kind")]
   pub owner_kind: OwnerKind,
   #[serde(default)]
-  pub owner_id: Option<i32>,
+  pub owner_id:   Option<i32>,
 }
 
 impl Default for OwnerQuery {
   fn default() -> Self {
     Self {
       owner_kind: OwnerKind::Personal,
-      owner_id: None,
+      owner_id:   None,
     }
   }
 }
@@ -64,12 +64,12 @@ impl Default for OwnerQuery {
 #[serde(rename_all = "camelCase")]
 pub struct RefundCredit {
   #[serde(default = "default_owner_kind")]
-  pub owner_kind: OwnerKind,
+  pub owner_kind:      OwnerKind,
   #[serde(default)]
-  pub owner_id: Option<i32>,
-  pub amount: i64,
+  pub owner_id:        Option<i32>,
+  pub amount:          i64,
   #[serde(default)]
-  pub reference_code: Option<String>,
+  pub reference_code:  Option<String>,
   #[serde(default)]
   pub idempotency_key: Option<String>,
 }
@@ -77,15 +77,15 @@ pub struct RefundCredit {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WalletBalance {
-  pub wallet_id: i32,
+  pub wallet_id:  i32,
   pub owner_kind: OwnerKind,
-  pub owner_id: i32,
+  pub owner_id:   i32,
   /// Cached sum of non-expired lots.
-  pub balance: i64,
+  pub balance:    i64,
   /// Credits currently on hold by reservations.
-  pub reserved: i64,
+  pub reserved:   i64,
   /// Immediately spendable = `balance - reserved`.
-  pub spendable: i64,
+  pub spendable:  i64,
 }
 
 impl IntoResponse for WalletBalance {
@@ -98,8 +98,8 @@ impl IntoResponse for WalletBalance {
 #[serde(rename_all = "camelCase")]
 pub struct GrantResult {
   pub wallet_id: i32,
-  pub granted: i64,
-  pub balance: i64,
+  pub granted:   i64,
+  pub balance:   i64,
 }
 
 impl IntoResponse for GrantResult {
@@ -112,8 +112,8 @@ impl IntoResponse for GrantResult {
 #[serde(rename_all = "camelCase")]
 pub struct ConsumeResult {
   pub wallet_id: i32,
-  pub consumed: i64,
-  pub balance: i64,
+  pub consumed:  i64,
+  pub balance:   i64,
 }
 
 impl IntoResponse for ConsumeResult {
@@ -126,15 +126,15 @@ impl IntoResponse for ConsumeResult {
 #[serde(rename_all = "camelCase")]
 pub struct ReserveCredit {
   /// Action whose per-credit cost determines the hold amount.
-  pub action: String,
+  pub action:          String,
   #[serde(default)]
-  pub plan_code: Option<String>,
+  pub plan_code:       Option<String>,
   #[serde(default = "default_owner_kind")]
-  pub owner_kind: OwnerKind,
+  pub owner_kind:      OwnerKind,
   #[serde(default)]
-  pub owner_id: Option<i32>,
+  pub owner_id:        Option<i32>,
   #[serde(default)]
-  pub reference_code: Option<String>,
+  pub reference_code:  Option<String>,
   #[serde(default)]
   pub idempotency_key: Option<String>,
   /// Auto-release the hold after this many seconds if not captured/released.
@@ -146,11 +146,11 @@ pub struct ReserveCredit {
 #[serde(rename_all = "camelCase")]
 pub struct ReservationResult {
   pub reservation_id: i32,
-  pub wallet_id: i32,
-  pub amount: i64,
-  pub status: entity::membership::ReservationStatus,
+  pub wallet_id:      i32,
+  pub amount:         i64,
+  pub status:         entity::membership::ReservationStatus,
   /// Spendable = cached balance minus all current holds.
-  pub spendable: i64,
+  pub spendable:      i64,
 }
 
 impl IntoResponse for ReservationResult {
@@ -163,32 +163,32 @@ impl IntoResponse for ReservationResult {
 #[serde(rename_all = "camelCase")]
 pub struct ReservationFilter {
   pub wallet_id: Option<i32>,
-  pub status: Option<entity::membership::ReservationStatus>,
+  pub status:    Option<entity::membership::ReservationStatus>,
 }
 
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct ReservationListItem {
-  pub id: i32,
-  pub wallet_id: i32,
-  pub amount: i64,
-  pub status: entity::membership::ReservationStatus,
-  pub action: Option<String>,
+  pub id:             i32,
+  pub wallet_id:      i32,
+  pub amount:         i64,
+  pub status:         entity::membership::ReservationStatus,
+  pub action:         Option<String>,
   pub reference_code: Option<String>,
-  pub expires_at: Option<DateTimeWithTimeZone>,
-  pub created_at: DateTimeWithTimeZone,
+  pub expires_at:     Option<DateTimeWithTimeZone>,
+  pub created_at:     DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WalletAudit {
-  pub wallet_id: i32,
+  pub wallet_id:  i32,
   /// Cached balance (sum of non-expired lots).
-  pub balance: i64,
+  pub balance:    i64,
   /// Sum of all ledger entry amounts (the authoritative running total).
   pub ledger_sum: i64,
   /// True when the cache and the ledger disagree (a consistency bug).
-  pub diverged: bool,
+  pub diverged:   bool,
 }
 
 impl IntoResponse for WalletAudit {
@@ -201,18 +201,18 @@ impl IntoResponse for WalletAudit {
 #[serde(rename_all = "camelCase")]
 pub struct CreditTxFilter {
   pub wallet_id: Option<i32>,
-  pub kind: Option<CreditTxKind>,
+  pub kind:      Option<CreditTxKind>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditTxItem {
-  pub id: i64,
-  pub wallet_id: i32,
-  pub kind: CreditTxKind,
-  pub amount: i64,
-  pub action: Option<String>,
+  pub id:             i64,
+  pub wallet_id:      i32,
+  pub kind:           CreditTxKind,
+  pub amount:         i64,
+  pub action:         Option<String>,
   pub reference_code: Option<String>,
-  pub balance_after: i64,
-  pub created_at: DateTimeWithTimeZone,
+  pub balance_after:  i64,
+  pub created_at:     DateTimeWithTimeZone,
 }

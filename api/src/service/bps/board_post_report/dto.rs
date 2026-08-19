@@ -2,8 +2,8 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::bps::board_post_reports::Column;
-use sea_orm::sea_query::SimpleExpr;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::SimpleExpr;
 use sea_orm::{FromQueryResult, IntoSimpleExpr};
 use sea_orm_crud::OneOrMany;
 use serde::{Deserialize, Serialize};
@@ -51,20 +51,20 @@ impl FilterSchema for BoardPostReportFilter {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostReportListItem {
-  pub id: i32,
-  pub post_id: i32,
-  pub user_id: i32,
-  pub reason: String,
+  pub id:         i32,
+  pub post_id:    i32,
+  pub user_id:    i32,
+  pub reason:     String,
   pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPostReport {
-  pub id: i32,
-  pub post_id: i32,
-  pub user_id: i32,
-  pub reason: String,
+  pub id:         i32,
+  pub post_id:    i32,
+  pub user_id:    i32,
+  pub reason:     String,
   pub created_at: DateTimeWithTimeZone,
 }
 
@@ -78,7 +78,7 @@ impl IntoResponse for GetBoardPostReport {
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPostReport {
   pub post_id: i32,
-  pub reason: String,
+  pub reason:  String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -105,9 +105,8 @@ impl IntoResponse for BoardPostReportDeleted {
 
 #[cfg(test)]
 mod tests {
-  use crate::util::filter::listed;
-
   use super::*;
+  use crate::util::filter::listed;
 
   #[test]
   fn the_declaration_is_sound() {

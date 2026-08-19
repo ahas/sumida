@@ -4,7 +4,14 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::{
-  DeleteResult, EntityTrait, InsertResult, IntoActiveModel, PaginatorTrait, QuerySelect, Select, Set,
+  DeleteResult,
+  EntityTrait,
+  InsertResult,
+  IntoActiveModel,
+  PaginatorTrait,
+  QuerySelect,
+  Select,
+  Set,
   TransactionTrait,
 };
 
@@ -19,7 +26,7 @@ use crate::util::pagination::Pagination;
 const RESOURCE: &str = "organization";
 
 pub struct OrganizationService<S: SumidaState> {
-  state: S,
+  state:   S,
   session: UserSession,
 }
 

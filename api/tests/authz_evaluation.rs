@@ -176,7 +176,13 @@ async fn tuple(
 }
 
 /// `tuple`, for the common case of a `user:<id>` subject.
-async fn grant(db: &DatabaseConnection, resource_type: &str, resource_id: &str, relation: &str, user: &TestUser) {
+async fn grant(
+  db: &DatabaseConnection,
+  resource_type: &str,
+  resource_id: &str,
+  relation: &str,
+  user: &TestUser,
+) {
   tuple(db, resource_type, resource_id, relation, "user", &user.model.id.to_string(), "").await;
 }
 
@@ -274,9 +280,8 @@ async fn the_route_gate_and_the_object_wide_tier_are_different_grants() {
     Case::new("no grant reaches the gate", false, can_read(&nobody).await),
     Case::new("a route-gate grant opens the gate", true, can_read(&gated).await),
     Case::new("an object-wide grant also opens the gate", true, can_read(&operator).await),
-    Case::new("an administrator holds every gate", true, can_read(&admin).await).noting(
-      "from `platform:root#superuser` over `users.is_admin`, not from the catch-all policy row",
-    ),
+    Case::new("an administrator holds every gate", true, can_read(&admin).await)
+      .noting("from `platform:root#superuser` over `users.is_admin`, not from the catch-all policy row"),
     Case::new(
       "a route-gate grant confers object-wide read",
       false,
@@ -284,9 +289,7 @@ async fn the_route_gate_and_the_object_wide_tier_are_different_grants() {
         .await
         .expect("runs"),
     )
-    .noting(
-      "§5.2's split: \"may use the user API\" stopped being the same grant as \"may see everyone\"",
-    ),
+    .noting("§5.2's split: \"may use the user API\" stopped being the same grant as \"may see everyone\""),
   ];
 
   report("the service-tier route gate", &cases);
@@ -327,9 +330,7 @@ async fn a_route_gate_opens_exactly_the_namespace_it_names() {
   let gate = |namespace: &'static str| {
     let subject = subject.clone();
     let db = db.clone();
-    async move {
-      Authz::check("service", namespace, "can_read", &subject, &db).await.expect("runs")
-    }
+    async move { Authz::check("service", namespace, "can_read", &subject, &db).await.expect("runs") }
   };
 
   let cases = vec![
@@ -382,9 +383,7 @@ async fn a_delegation_scope_matches_by_equality_and_not_by_prefix() {
   let asserts = |user: &TestUser, scope: &'static str| {
     let subject = subject_of(&user.model);
     let db = db.clone();
-    async move {
-      Authz::check("delegation_scope", scope, "assert", &subject, &db).await.expect("runs")
-    }
+    async move { Authz::check("delegation_scope", scope, "assert", &subject, &db).await.expect("runs") }
   };
 
   let cases = vec![
@@ -444,8 +443,9 @@ async fn an_organization_manager_reaches_the_subtree_and_nothing_else() {
   let mut cases = Vec::new();
   for (label, org, expected) in targets {
     let target = Member::create(&db, org).await.expect("a target user");
-    let actual =
-      Authz::check("sumida_user", target.user.model.id, "edit", &subject, &db).await.expect("runs");
+    let actual = Authz::check("sumida_user", target.user.model.id, "edit", &subject, &db)
+      .await
+      .expect("runs");
     cases.push(Case::new(format!("edits a user in the {label}"), expected, actual));
   }
 
@@ -489,8 +489,7 @@ async fn the_point_check_and_the_list_filter_agree() {
     .collect();
 
   let mut cases = Vec::new();
-  for (label, target, expected) in
-    [("inside the subtree", &inside, true), ("outside it", &outside, false)]
+  for (label, target, expected) in [("inside the subtree", &inside, true), ("outside it", &outside, false)]
   {
     let by_list = listed.contains(&target.user.model.id);
     let by_check = Authz::check("sumida_user", target.user.model.id, "edit", &subject, &db)
@@ -593,12 +592,10 @@ async fn a_posts_edit_intersects_its_board_and_excludes_a_block() {
   // to beat authorship — this is `pin_a_block_is_not_circumvented_by_authorship` asserted through
   // the rule rather than through HTTP.
   grant(&db, "board", &board_id.to_string(), "blocked", &author).await;
-  cases.push(
-    Case::new("the author, once blocked on the board", false, edits(&author).await).noting(
-      "a `deny` row had no automatic translation — the backfill refuses `effect='deny'` rather \
+  cases.push(Case::new("the author, once blocked on the board", false, edits(&author).await).noting(
+    "a `deny` row had no automatic translation — the backfill refuses `effect='deny'` rather \
        than guessing which relation it meant, so this block is §9.2's operator action",
-    ),
-  );
+  ));
 
   report("board allow/deny composition", &cases);
 }
@@ -659,10 +656,7 @@ async fn me_access_policies_keeps_its_payload() {
   );
 
   // A non-admin must not be handed the catch-all, or the client grants `manage all` to everyone.
-  assert!(
-    entry("*", "*").is_none(),
-    "a non-admin received the `*` catch-all: {policies:?}"
-  );
+  assert!(entry("*", "*").is_none(), "a non-admin received the `*` catch-all: {policies:?}");
 
   // And an administrator must still get it, from `platform:root#superuser` rather than from the
   // legacy row — this is the branch `plugin.ts:27` turns into `can("manage", "all")`.
@@ -795,9 +789,7 @@ async fn the_object_tier_answers_per_converted_call_site() {
       true,
       views("board_post", post_id.to_string(), &author).await,
     )
-    .noting(
-      "§1.5(1), the intended widening: `board_post#author` derives from `board_posts.user_id`",
-    ),
+    .noting("§1.5(1), the intended widening: `board_post#author` derives from `board_posts.user_id`"),
     Case::new(
       "the owner of a file reaches it with no grant at all",
       true,
@@ -995,8 +987,9 @@ async fn sharing_levels_grant_different_permissions() {
     let username = user.model.username.clone();
     let db = db.clone();
     async move {
-      let actual =
-        Authz::check("demo_root", root, permission, &subject, &db).await.expect("the rule must run");
+      let actual = Authz::check("demo_root", root, permission, &subject, &db)
+        .await
+        .expect("the rule must run");
       Case::new(format!("{username} on root {root} — {permission}"), expected, actual)
     }
   };
@@ -1068,8 +1061,7 @@ async fn a_row_shared_to_an_organization_reaches_its_members() {
     let what = what.to_owned();
     let db = db.clone();
     async move {
-      let actual =
-        Authz::check("demo_root", root, "view", &subject, &db).await.expect("the rule must run");
+      let actual = Authz::check("demo_root", root, "view", &subject, &db).await.expect("the rule must run");
       Case::new(what, expected, actual)
     }
   };
@@ -1133,8 +1125,7 @@ async fn child_rows_walk_to_their_root_and_stop() {
     let username = user.model.username.clone();
     let db = db.clone();
     async move {
-      let actual =
-        Authz::check(definition, id, "view", &subject, &db).await.expect("the rule must run");
+      let actual = Authz::check(definition, id, "view", &subject, &db).await.expect("the rule must run");
       Case::new(format!("{username}: {definition}:{id} → root {root}"), expected, actual)
     }
   };
@@ -1185,9 +1176,7 @@ async fn a_manager_column_is_a_grant_and_a_block_beats_one() {
   let views = |user: &TestUser, root: i32| {
     let subject = subject_of(&user.model);
     let db = db.clone();
-    async move {
-      Authz::check("demo_root", root, "view", &subject, &db).await.expect("the rule must run")
-    }
+    async move { Authz::check("demo_root", root, "view", &subject, &db).await.expect("the rule must run") }
   };
 
   let before = views(&blocked, denied).await;
@@ -1199,9 +1188,8 @@ async fn a_manager_column_is_a_grant_and_a_block_beats_one() {
       Case::new("the manager, by column alone, with no tuple", true, views(&manager, managed).await)
         .noting("`manager` derives from `roots.manager_id`, so the column is the grant"),
       Case::new("a Read share, before the block", true, before),
-      Case::new("the same share, once blocked", false, views(&blocked, denied).await).noting(
-        "the exclusion binds outside the whole union, so a share cannot be walked around a block",
-      ),
+      Case::new("the same share, once blocked", false, views(&blocked, denied).await)
+        .noting("the exclusion binds outside the whole union, so a share cannot be walked around a block"),
       // The manager case is worthless unless the managed row is unreachable without the column.
       Case::new(
         "the managed row, to a caller who is not its manager and holds no share",
@@ -1256,8 +1244,9 @@ async fn a_consumer_definition_walks_into_a_sumida_one() {
     let subject = subject_of(&user.model);
     let db = db.clone();
     async move {
-      let actual =
-        Authz::check("demo_thread", post_id, "view", &subject, &db).await.expect("the rule must run");
+      let actual = Authz::check("demo_thread", post_id, "view", &subject, &db)
+        .await
+        .expect("the rule must run");
       Case::new(format!("demo_thread:{post_id} on board {board}"), expected, actual)
     }
   };

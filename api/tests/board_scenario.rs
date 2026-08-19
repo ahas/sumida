@@ -456,13 +456,8 @@ async fn scenario_reaction_lifecycle_and_security() {
 async fn scenario_reaction_scope_selector_refuses_rather_than_emptying_the_page() {
   let mock = Mock::new().await;
   let db = infra::db::connect().await;
-  let board = make_board(
-    &db,
-    BoardPostContentVisibility::Public,
-    BoardPostRecordVisibility::AuthorOnly,
-    false,
-  )
-  .await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::AuthorOnly, false).await;
 
   let author = TestUser::create(&db).await.unwrap();
   grant_post_perms(&db, &author, &board, &["read", "create"]).await;
@@ -517,8 +512,12 @@ async fn scenario_reaction_scope_selector_refuses_rather_than_emptying_the_page(
   assert_eq!(resp.status(), StatusCode::OK, "the descriptor is served to a caller who may list");
 
   let descriptor: Value = resp.json().await.unwrap();
-  let keys: Vec<&str> =
-    descriptor["fields"].as_array().unwrap().iter().map(|f| f["key"].as_str().unwrap()).collect();
+  let keys: Vec<&str> = descriptor["fields"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|f| f["key"].as_str().unwrap())
+    .collect();
 
   assert!(keys.contains(&"value"), "{keys:?}");
   assert!(keys.contains(&"user_id"), "{keys:?}");
@@ -1134,9 +1133,7 @@ fn encoded(tree: &Value) -> String {
     .to_string()
     .bytes()
     .map(|byte| match byte {
-      b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-        String::from(byte as char)
-      }
+      b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => String::from(byte as char),
       other => format!("%{other:02X}"),
     })
     .collect()
@@ -1242,12 +1239,7 @@ async fn scenario_full_text_under_a_condition_tree() {
   // The integrated `search` field spans two mechanisms and is refused from a tree; its flat
   // parameter is untouched.
   let tree = json!({ "type": "field", "key": "search", "op": "matches", "value": marker.clone() });
-  let resp = mock
-    .client
-    .get(&format!("/board-posts?where={}", encoded(&tree)))
-    .send()
-    .await
-    .unwrap();
+  let resp = mock.client.get(&format!("/board-posts?where={}", encoded(&tree))).send().await.unwrap();
   assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "a custom field has nothing to compile");
 
   let titles = list_titles(&mock, &format!("search={marker}")).await;

@@ -32,12 +32,12 @@ use crate::user::{TestOrg, TestUser};
 ///      grandchild                        ← depth 2; catches a walk that stops at one level
 /// ```
 pub struct OrgTree {
-  pub root: i32,
-  pub aunt: i32,
-  pub parent: i32,
-  pub subject: i32,
-  pub sibling: i32,
-  pub child: i32,
+  pub root:       i32,
+  pub aunt:       i32,
+  pub parent:     i32,
+  pub subject:    i32,
+  pub sibling:    i32,
+  pub child:      i32,
   pub grandchild: i32,
 }
 
@@ -53,7 +53,15 @@ impl OrgTree {
     let child = Self::node(db, "child", Some(subject)).await?;
     let grandchild = Self::node(db, "grandchild", Some(child)).await?;
 
-    Ok(Self { root, aunt, parent, subject, sibling, child, grandchild })
+    Ok(Self {
+      root,
+      aunt,
+      parent,
+      subject,
+      sibling,
+      child,
+      grandchild,
+    })
   }
 
   /// The organizations a manager of `subject` must reach: itself and everything below it.
@@ -103,11 +111,7 @@ impl OrgTree {
   ///
   /// Used to check that a hierarchy walk has no hidden depth limit — a recursive CTE and a
   /// hand-written two-level join agree at depth 2 and diverge at depth 5.
-  pub async fn chain<C: ConnectionTrait>(
-    db: &C,
-    from: i32,
-    depth: usize,
-  ) -> anyhow::Result<Vec<i32>> {
+  pub async fn chain<C: ConnectionTrait>(db: &C, from: i32, depth: usize) -> anyhow::Result<Vec<i32>> {
     let mut out = Vec::with_capacity(depth);
     let mut parent = from;
     for level in 0..depth {
@@ -121,12 +125,15 @@ impl OrgTree {
 /// A member of a given organization, labelled by the part it plays in a case.
 pub struct Member {
   pub user: TestUser,
-  pub org: i32,
+  pub org:  i32,
 }
 
 impl Member {
   pub async fn create<C: ConnectionTrait>(db: &C, org: i32) -> anyhow::Result<Self> {
-    Ok(Self { user: TestUser::create_in_org(db, org).await?, org })
+    Ok(Self {
+      user: TestUser::create_in_org(db, org).await?,
+      org,
+    })
   }
 
   /// An administrator. Kept beside [`Member::create`] so a case can put both tiers in scope

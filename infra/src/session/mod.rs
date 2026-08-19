@@ -56,17 +56,17 @@ use crate::settings;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfile {
-  pub id: i32,
-  pub username: String,
-  pub full_name: String,
-  pub organization: UserOrganization,
-  pub role: UserRole,
-  pub is_admin: bool,
+  pub id:            i32,
+  pub username:      String,
+  pub full_name:     String,
+  pub organization:  UserOrganization,
+  pub role:          UserRole,
+  pub is_admin:      bool,
   pub is_authorized: bool,
-  pub api_key: Option<String>,
+  pub api_key:       Option<String>,
   pub first_seen_at: DateTimeWithTimeZone,
-  pub last_seen_at: DateTimeWithTimeZone,
-  pub expiry: Option<Expiry>,
+  pub last_seen_at:  DateTimeWithTimeZone,
+  pub expiry:        Option<Expiry>,
 }
 
 impl UserProfile {
@@ -87,11 +87,11 @@ impl UserProfile {
     self.username = user.username.clone();
     self.full_name = user.full_name.unwrap_or_default().clone();
     self.organization = UserOrganization {
-      id: organization.id,
+      id:   organization.id,
       name: organization.name.clone(),
     };
     self.role = UserRole {
-      id: role.id,
+      id:   role.id,
       name: role.name.clone(),
     };
     self.is_admin = user.is_admin;
@@ -107,17 +107,17 @@ impl UserProfile {
 impl Default for UserProfile {
   fn default() -> Self {
     Self {
-      id: 0,
-      username: "".to_owned(),
-      full_name: "".to_owned(),
-      organization: UserOrganization::default(),
-      role: UserRole::default(),
-      is_admin: false,
+      id:            0,
+      username:      "".to_owned(),
+      full_name:     "".to_owned(),
+      organization:  UserOrganization::default(),
+      role:          UserRole::default(),
+      is_admin:      false,
       is_authorized: false,
-      api_key: None,
+      api_key:       None,
       first_seen_at: Utc::now().into(),
-      last_seen_at: Utc::now().into(),
-      expiry: None,
+      last_seen_at:  Utc::now().into(),
+      expiry:        None,
     }
   }
 }
@@ -130,14 +130,14 @@ impl IntoResponse for UserProfile {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserOrganization {
-  pub id: i32,
+  pub id:   i32,
   pub name: String,
 }
 
 impl Default for UserOrganization {
   fn default() -> Self {
     Self {
-      id: 0,
+      id:   0,
       name: "".to_owned(),
     }
   }
@@ -145,14 +145,14 @@ impl Default for UserOrganization {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserRole {
-  pub id: i32,
+  pub id:   i32,
   pub name: String,
 }
 
 impl Default for UserRole {
   fn default() -> Self {
     Self {
-      id: 0,
+      id:   0,
       name: "".to_owned(),
     }
   }
@@ -164,15 +164,15 @@ pub struct UserEnvironment {
   pub ip_address: String,
   pub user_agent: String,
 
-  pub os_family: String,
-  pub os_major: Option<String>,
-  pub os_minor: Option<String>,
-  pub os_patch: Option<String>,
+  pub os_family:      String,
+  pub os_major:       Option<String>,
+  pub os_minor:       Option<String>,
+  pub os_patch:       Option<String>,
   pub os_patch_minor: Option<String>,
 
   pub device_family: String,
-  pub device_brand: Option<String>,
-  pub device_model: Option<String>,
+  pub device_brand:  Option<String>,
+  pub device_model:  Option<String>,
 }
 
 lazy_static! {
@@ -203,16 +203,16 @@ where
     let ClientIp(ip) = ClientIp::from_request_parts(req, state).await.map_err(anyhow::Error::from)?;
 
     Ok(Self {
-      ip_address: ip.to_string(),
-      user_agent: user_agent.clone(),
-      os_family: ua_os.family.to_string(),
-      os_major: ua_os.major.map(|x| x.to_string()),
-      os_minor: ua_os.minor.map(|x| x.to_string()),
-      os_patch: ua_os.patch.map(|x| x.to_string()),
+      ip_address:     ip.to_string(),
+      user_agent:     user_agent.clone(),
+      os_family:      ua_os.family.to_string(),
+      os_major:       ua_os.major.map(|x| x.to_string()),
+      os_minor:       ua_os.minor.map(|x| x.to_string()),
+      os_patch:       ua_os.patch.map(|x| x.to_string()),
       os_patch_minor: ua_os.patch_minor.map(|x| x.to_string()),
-      device_family: ua_device.family.to_string(),
-      device_brand: ua_device.brand.map(|x| x.to_string()),
-      device_model: ua_device.model.map(|x| x.to_string()),
+      device_family:  ua_device.family.to_string(),
+      device_brand:   ua_device.brand.map(|x| x.to_string()),
+      device_model:   ua_device.model.map(|x| x.to_string()),
     })
   }
 }
@@ -223,10 +223,10 @@ pub struct UserState {}
 
 #[derive(Clone, Debug)]
 pub struct UserSession {
-  pub inner: Session,
+  pub inner:   Session,
   pub profile: UserProfile,
-  pub env: UserEnvironment,
-  pub state: UserState,
+  pub env:     UserEnvironment,
+  pub state:   UserState,
 }
 
 impl UserSession {
