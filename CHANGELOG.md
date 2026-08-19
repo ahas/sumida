@@ -66,6 +66,19 @@ and this project adheres to semantic versioning at the workspace level.
 
 ### Added
 
+- **`DELETE /users/{user_id}/ban` — a ban can be lifted.** `POST /users/{user_id}/ban` had no
+  counterpart, so the only way out of a ban was deleting the row, which destroys the very record
+  the ban history exists to keep. The new route stamps `lifted_at` on every ban that user currently
+  holds — not already lifted, not expired — and leaves the rows where they are, so `isBanned` on
+  the user list and the user detail flips while the history stays readable. A user with no active
+  ban is answered `200` with nothing changed: "already not banned" is the state the caller asked
+  for, not a failure.
+
+  It sits behind the same session guard and the same `user` **update** route gate as the ban route
+  it undoes, and every ban it would lift is checked for `ban#edit` individually — the same row
+  scope the ban service's own `update` and `delete` apply, because lifting is a write on those
+  rows and a route gate answers a different question than a row scope does.
+
 - **The login lockout policy is an operational setting, not a boot-fixed one.** The failed-attempt
   ceiling, the reset span, the ban span, the ban target, and the switch that turns the whole thing
   off now live in `system_settings` and are read at the point the policy is applied, so an operator

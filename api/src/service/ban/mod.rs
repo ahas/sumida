@@ -1,6 +1,6 @@
 pub mod dto;
 
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, Utc};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
@@ -21,6 +21,7 @@ use sea_orm::{
   RelationTrait,
   Select,
   TransactionTrait,
+  UpdateResult,
 };
 
 use self::dto::*;
@@ -66,15 +67,21 @@ impl<S: SumidaState> BanService<S> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
 
+  /// 유효한 처분의 조건 — 해제되지 않았고, 만료되지도 않았다. `is_banned` 플래그와 해제가 같은
+  /// 조건을 읽으므로 `lifted_at` 이 찍힌 행은 곧바로 플래그에서 빠진다.
+  fn active_at(now: DateTime<FixedOffset>) -> Condition {
+    Condition::all() //
+      .add(BansColumn::LiftedAt.is_null())
+      .add(Condition::any().add(BansColumn::ExpiresAt.is_null()).add(BansColumn::ExpiresAt.gt(now)))
+  }
+
   pub fn exists_expr() -> SimpleExpr {
-    let now = Utc::now().fixed_offset();
     Expr::exists(
       Bans::find()
         .select_only()
         .expr(Expr::val(1))
         .filter(Expr::col(BansColumn::UserId).eq(Expr::col((Users, entity::users::Column::Id))))
-        .filter(Condition::any().add(BansColumn::LiftedAt.is_null()))
-        .filter(Condition::any().add(BansColumn::ExpiresAt.is_null()).add(BansColumn::ExpiresAt.gt(now)))
+        .filter(Self::active_at(Utc::now().fixed_offset()))
         .limit(1)
         .into_query(),
     )
@@ -134,6 +141,41 @@ impl<S: SumidaState> BanService<S> {
     let mut active_model = data.into_active_model();
     active_model.user_id = Set(Some(user_id));
     let result = Bans::insert(active_model).exec(self.state.db()).await?;
+
+    Ok(result)
+  }
+
+  /// 사용자에게 걸려 있는 유효한 처분을 모두 해제한다. 처분 이력 자체가 기록이므로 행은 지우지
+  /// 않고 `lifted_at` 만 찍는다. 해제할 처분이 없으면 아무것도 바꾸지 않고 성공으로 답한다.
+  pub async fn lift_by_user_id(&self, user_id: i32) -> Result<UpdateResult, SumidaError> {
+    let txn = self.state.db().begin().await?;
+    let now = Utc::now().fixed_offset();
+
+    let ids: Vec<i32> = Bans::find()
+      .select_only()
+      .column(BansColumn::Id)
+      .filter(BansColumn::UserId.eq(user_id))
+      .filter(Self::active_at(now))
+      .into_tuple()
+      .all(&txn)
+      .await?;
+
+    if ids.is_empty() {
+      txn.commit().await?;
+      return Ok(UpdateResult { rows_affected: 0 });
+    }
+
+    // 해제도 쓰기라 이웃한 update/delete 와 같은 행 스코프를 묻는다 — 처분 한 건마다 `ban#edit`.
+    for id in &ids {
+      Authz::try_check(RESOURCE, *id, "edit", &self.subject(), &txn).await?;
+    }
+
+    let result = Bans::update_many()
+      .col_expr(BansColumn::LiftedAt, Expr::value(now))
+      .filter(BansColumn::Id.is_in(ids))
+      .exec(&txn)
+      .await?;
+    txn.commit().await?;
 
     Ok(result)
   }
