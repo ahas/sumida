@@ -53,6 +53,7 @@ async fn create_plan(client: &TestClient, body: Value) -> String {
 // pass is skipped entirely (multi-instance single-runner guarantee).
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_run_once_skips_when_lock_held() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
@@ -256,6 +257,7 @@ async fn test_org_subscription_expiring_processed() {
 // A past-period active subscription transitions to `expired` (+ audit event).
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_maintenance_expires_due_subscription() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
@@ -314,6 +316,7 @@ async fn test_maintenance_expires_due_subscription() {
 // cancel_at_period_end reaching the period end transitions to `canceled`.
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_maintenance_cancel_at_period_end_becomes_canceled() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
@@ -374,6 +377,7 @@ async fn test_maintenance_cancel_at_period_end_becomes_canceled() {
 // balance drops to 0 and an `expire` ledger row is written.
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_maintenance_sweeps_inactive_wallet() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
@@ -565,6 +569,7 @@ async fn subscribe_user(db: &sea_orm::DatabaseConnection, body: Value) -> (Mock,
 // (requires the mock PG provider; otherwise self-skips).
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_maintenance_auto_renew_success() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
@@ -615,6 +620,7 @@ async fn test_maintenance_auto_renew_success() {
 // Auto-renew: a declined billing key moves the subscription to past_due.
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_maintenance_auto_renew_failure_past_due() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;

@@ -51,6 +51,7 @@ async fn check(client: &TestClient, action: &str) -> reqwest::Response {
 //    (quota reset) → mid-period upgrade with proration.
 // ===========================================================================
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn scenario_saas_customer_lifecycle() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;

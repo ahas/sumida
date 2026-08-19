@@ -211,6 +211,7 @@ async fn test_trial_period_is_free_and_short() {
 // stops once grace ends. Requires `[membership] grace-days` > 0 (else self-skips).
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_grace_window_keeps_entitlement_then_expires() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
@@ -400,6 +401,7 @@ async fn test_dunning_caps_attempts() {
 // Once grace ends, the expire job finalizes a past_due subscription as expired.
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_expire_finalizes_past_due_after_grace() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
