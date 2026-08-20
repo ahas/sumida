@@ -216,3 +216,50 @@ async fn test_organization_wildcard_object_permissions() {
     .test_wildcard_object_permissions(&mock, target_org1.model.id, target_org2.model.id)
     .await;
 }
+
+/// Concurrent writes to the organization tree must not deadlock.
+///
+/// Every write to `organizations` rebuilds the closure table whole, under an advisory lock. If that
+/// lock were taken after the write instead of before it, two transactions removing different
+/// organizations would hold each other's rows while each waited for the other's lock, and Postgres
+/// would kill one of them — surfacing as a 500 on an ordinary delete. This drives enough of them at
+/// once to cross, and asks that they all come back.
+#[tokio::test]
+async fn concurrent_organization_writes_do_not_deadlock() {
+  use sea_orm::{EntityTrait, TransactionTrait};
+
+  const WRITERS: usize = 8;
+
+  let _mock = Mock::new().await;
+  let db = infra::db::connect().await;
+
+  let mut orgs = Vec::with_capacity(WRITERS);
+  for _ in 0..WRITERS {
+    orgs.push(TestOrg::create(&db).await.expect("seed an organization").model.id);
+  }
+
+  let mut writers = Vec::with_capacity(WRITERS);
+  for id in orgs {
+    let db = db.clone();
+    writers.push(tokio::spawn(async move {
+      let txn = db.begin().await?;
+      entity::organizations::Entity::delete_by_id(id).exec(&txn).await?;
+      txn.commit().await?;
+
+      Ok::<_, sea_orm::DbErr>(id)
+    }));
+  }
+
+  for writer in writers {
+    let outcome = writer.await.expect("the writer task ran to completion");
+    let id = outcome.expect("a concurrent organization delete must not be killed for deadlock");
+    assert!(
+      entity::organizations::Entity::find_by_id(id)
+        .one(&db)
+        .await
+        .expect("read back")
+        .is_none(),
+      "organization {id} is still there after its delete committed",
+    );
+  }
+}

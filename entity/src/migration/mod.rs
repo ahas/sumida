@@ -12,6 +12,7 @@ pub mod init;
 pub mod membership;
 pub mod rebac;
 pub mod rebac_backfill;
+pub mod rebac_closure_lock;
 pub mod rebac_columns;
 pub mod rebac_mirror;
 #[cfg(feature = "system-settings")]

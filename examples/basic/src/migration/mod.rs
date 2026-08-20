@@ -12,6 +12,9 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::membership::Migration),
       // ReBAC data layer. After board_system — board_group_closure references board_groups.
       Box::new(sumida::entity::migration::rebac::Migration),
+      // The closure rebuild takes its lock before the write rather than after it. After `rebac` —
+      // it replaces the trigger order that migration installed.
+      Box::new(sumida::entity::migration::rebac_closure_lock::Migration),
       // Additive columns the compiled rule set reads (boards.organization_id, idx_users__is_admin).
       Box::new(sumida::entity::migration::rebac_columns::Migration),
       // Translates whatever access_policies rows the migrations above have seeded.

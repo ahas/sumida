@@ -1,18 +1,38 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use sea_orm::DbErr;
 use sea_orm::sea_query::extension::postgres::{PgBinOper, PgExpr};
 use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::{DbErr, RuntimeErr, sqlx};
 use serde::{Deserialize, Deserializer, de};
 
-pub fn is_serialization_failure(error: &DbErr) -> bool {
-  // Check for PostgreSQL's serialization failure error code 40001.
-  match error {
-    DbErr::Query(err) => err.to_string().contains("could not serialize access"),
-    DbErr::Exec(err) => err.to_string().contains("could not serialize access"),
-    _ => false,
+/// The SQLSTATE the database attached to this error, if it came from the database at all.
+fn sqlstate(error: &DbErr) -> Option<String> {
+  let runtime = match error {
+    DbErr::Query(err) | DbErr::Exec(err) => err,
+    _ => return None,
+  };
+
+  match runtime {
+    RuntimeErr::SqlxError(sqlx::Error::Database(db)) => db.code().map(|code| code.into_owned()),
+    _ => None,
   }
+}
+
+/// Whether the transaction failed for a reason that goes away on its own if the whole transaction
+/// is run again.
+///
+/// Two SQLSTATEs say that. `40001` is a serialization failure: the database could not order this
+/// transaction against a concurrent one. `40P01` is a deadlock: two transactions each held what the
+/// other was waiting for, and this is the one the database chose to kill. Neither says anything is
+/// wrong with the statement, and in both the transaction has already been rolled back — the only
+/// answer is to run it again.
+///
+/// The decision reads the SQLSTATE rather than the message text. The text is localised by the
+/// server's `lc_messages`, so matching on it stops working the moment the server is not answering
+/// in English, and it stops silently: the retry never fires and the caller sees the failure instead.
+pub fn is_retryable_conflict(error: &DbErr) -> bool {
+  matches!(sqlstate(error).as_deref(), Some("40001" | "40P01"))
 }
 
 /// Treat LIKE wildcards (%, _) and the escape character (\) as literals.
