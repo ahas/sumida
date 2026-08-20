@@ -61,6 +61,13 @@ impl<S: SumidaState> ApiKeyService<S> {
     SubjectKey::apikey(key_hash)
   }
 
+  /// The holder join every read of this resource is built on.
+  ///
+  /// Inner, because `api_keys.user_id` is `NOT NULL` and cascades from `users`: a key without a
+  /// holder is a row the schema does not admit, and a payload that carried an absent holder would
+  /// promise callers a shape the constraint says cannot occur. Left-joining it instead lets such a
+  /// row reach a projection with no place to put the missing holder, and one unadmittable row then
+  /// takes the whole page down. Here it is simply not among the rows.
   fn default_query_with(query: Select<ApiKeys>) -> Select<ApiKeys> {
     let user_alias = Alias::new("user");
     let col_id = Expr::col((user_alias.clone(), "id"));
@@ -72,7 +79,7 @@ impl<S: SumidaState> ApiKeyService<S> {
       .expr_as(col_id, "user_id")
       .expr_as(col_username.clone(), "user_username")
       .expr_as(col_full_name.clone(), "user_full_name")
-      .join_as(JoinType::LeftJoin, entity::api_keys::Relation::User.def(), user_alias.clone())
+      .join_as(JoinType::InnerJoin, entity::api_keys::Relation::User.def(), user_alias.clone())
   }
 
   /// 행 스코프는 `api_key#view` 술어 하나 — 키 소유자 본인과 그 사람을 관리하는 조직이 규칙

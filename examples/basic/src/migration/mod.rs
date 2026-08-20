@@ -18,6 +18,9 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::rebac_backfill::Migration),
       // Last: the mirror keeps the two stores in step for every policy written after the backfill.
       Box::new(sumida::entity::migration::rebac_mirror::Migration),
+      // The api key holder constraint. After rebac — the orphan sweep clears the grants those keys
+      // still hold before the keys themselves go.
+      Box::new(sumida::entity::migration::api_key_holder_fk::Migration),
     ]
   }
 }

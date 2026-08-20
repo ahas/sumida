@@ -26,6 +26,9 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::rebac_mirror::Migration),
       // The index the sign-in lockout reads the log by. It references nothing above it.
       Box::new(entity::migration::access_log_account_index::Migration),
+      // The api key holder constraint. After rebac — the orphan sweep clears the grants those keys
+      // still hold before the keys themselves go.
+      Box::new(entity::migration::api_key_holder_fk::Migration),
     ]
   }
 }

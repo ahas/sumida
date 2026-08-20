@@ -56,7 +56,8 @@ impl ApiKeyFilter {
 const API_KEY_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("key", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("user_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/users", "username"),
+    .with_relation("/users", "username")
+    .with_facet(),
   FieldSpec::new("username", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
 ];
