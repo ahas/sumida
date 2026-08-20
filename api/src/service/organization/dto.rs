@@ -14,6 +14,9 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op}
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct OrganizationFilter {
+  /// A name to look for anywhere in the tree. It is what a reader types when they cannot find
+  /// something, so it answers from every level rather than from the one being read.
+  pub search:    Option<String>,
   pub name:      Option<String>,
   /// Which level of the tree is read. Saying nothing means the roots, not "every organization", so
   /// it carries a meaning a declared key cannot have — an unmentioned key is unfiltered. It stays a
@@ -23,6 +26,7 @@ pub struct OrganizationFilter {
 
 /// What `/organizations` accepts, declared once.
 const ORGANIZATION_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("search", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]),
   FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::sort_only("id", FieldKind::Integer),
   FieldSpec::sort_only("createdAt", FieldKind::DateTime),
@@ -36,7 +40,7 @@ impl FilterSchema for OrganizationFilter {
 
   fn column(key: &str) -> Option<SimpleExpr> {
     Some(match key {
-      "name" => Column::Name.into_simple_expr(),
+      "search" | "name" => Column::Name.into_simple_expr(),
       "id" => Column::Id.into_simple_expr(),
       "createdAt" => Column::CreatedAt.into_simple_expr(),
       "updatedAt" => Column::UpdatedAt.into_simple_expr(),
@@ -55,11 +59,16 @@ impl OrganizationFilter {
     E: EntityTrait,
   {
     query = query.apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)));
+    query = query.apply_if(self.search.as_ref(), |q, v| q.filter(wrap_ilike(Column::Name.into_expr(), v)));
 
-    query = if let Some(parent_id) = self.parent_id {
-      query.filter(Column::ParentId.eq(parent_id))
-    } else {
-      query.filter(Column::ParentId.is_null())
+    // Reading a level and searching for a name are different questions. A level was asked for, so
+    // that level answers; a search with no level named answers from the whole tree, because the
+    // node a reader is searching for is precisely one they have not opened to. With neither, the
+    // roots answer, which is where reading a tree starts.
+    query = match (self.parent_id, self.search.is_some()) {
+      (Some(parent_id), _) => query.filter(Column::ParentId.eq(parent_id)),
+      (None, true) => query,
+      (None, false) => query.filter(Column::ParentId.is_null()),
     };
 
     query

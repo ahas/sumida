@@ -14,6 +14,8 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op,
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardGroupFilter {
+  /// A name to look for anywhere in the tree. It is what a reader types when they cannot find
+  /// something, so it answers from every level rather than from the one being read.
   pub search:    Option<String>,
   pub name:      Option<OneOrMany<String>>,
   /// Which level of the tree is read. Saying nothing means the roots, not "every group", so it
@@ -24,10 +26,14 @@ pub struct BoardGroupFilter {
 
 impl BoardGroupFilter {
   pub fn apply<E: EntityTrait>(&self, query: Select<E>) -> Select<E> {
-    let query = if let Some(parent_id) = self.parent_id {
-      query.filter(Column::ParentId.eq(parent_id))
-    } else {
-      query.filter(Column::ParentId.is_null())
+    // Reading a level and searching for a name are different questions. A level was asked for, so
+    // that level answers; a search with no level named answers from the whole tree, because the
+    // node a reader is searching for is precisely one they have not opened to. With neither, the
+    // roots answer, which is where reading a tree starts.
+    let query = match (self.parent_id, self.search.is_some()) {
+      (Some(parent_id), _) => query.filter(Column::ParentId.eq(parent_id)),
+      (None, true) => query,
+      (None, false) => query.filter(Column::ParentId.is_null()),
     };
 
     query
