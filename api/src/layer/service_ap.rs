@@ -120,20 +120,8 @@ where
 }
 
 #[macro_export]
-macro_rules! service_ap_new {
-  ($state:expr, $ns:literal, $action:ident) => {
-    $crate::layer::ServiceApLayer::new($state.clone(), $ns, stringify!($action))
-  };
-}
-
-#[macro_export]
 macro_rules! service_ap {
   ($state:expr, $ns:literal, $action:ident) => {
     $crate::layer::ServiceApLayer::new($state.clone(), $ns, stringify!($action))
   };
 }
-
-// NOTE: The former `board_ap!` macro referenced the unimplemented `BoardApLayer`, so it broke
-// compilation when used; with zero call sites it was removed. Per-board permissions are a rule now
-// (`board_post#edit` unions its group, its board and its author, and subtracts `blocked`), so there
-// is nothing left for a per-board layer to compose at the call site.

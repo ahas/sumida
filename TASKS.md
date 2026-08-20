@@ -1,246 +1,42 @@
 # Tasks / Roadmap
 
-다른 PC에서도 동일하게 확인할 수 있는 후속 작업 목록. 마치면 항목을 제거하거나
-별도 "완료" 섹션으로 옮긴다. 작업 단위가 크면 별도 TASKS_*.md 로 분리할 수 있다.
+아직 열려 있는 일만 적는다. 마친 항목은 지운다 — 무엇이 언제 왜 바뀌었는지는 git 과 changelog 의
+것이고, 남겨 두면 이 파일이 코드와 어긋난 채로 사람을 잘못 이끈다. 끝난 일이 남긴 결론 중 계속
+지켜야 하는 것은 `docs/` 의 해당 문서에 **지금의 제약**으로 적는다.
 
-## P1 — 운영 직결
+작업 단위가 커지면 별도 `TASKS_*.md` 로 나눈다.
 
-### ~~G5c. RedisJwtStore 실구현~~ — ✅ 완료 (2026-06 검증)
-- `infra/src/jwt.rs:52-126`에 `fred` 기반으로 완전 구현됨(`jwt:refresh:{id}`/`jwt:blacklist:{jti}` + TTL).
-  `cargo check -p infra --features session-store-redis`(기본 feature) 클린. TASKS 노트가 stale였음.
+## 돌지 않는 테스트
 
-### G5d. DynamoDB JWT store e2e 테스트 — ✅ 테스트 작성 (실행은 DynamoDB 테이블 필요)
-- `infra/src/jwt.rs`에 `dynamo_jwt_store_roundtrip` 추가(store/get/delete + blacklist 라운드트립).
-  DynamoDB store 빌드(redis off)에서만 컴파일되고, `SUMIDA_TEST_DYNAMO_TABLE`가 실제 테이블을 가리킬 때만 실행.
+### DynamoDB JWT 스토어 라운드트립
+- `infra/src/jwt.rs` 의 `dynamo_jwt_store_roundtrip` 은 DynamoDB 스토어 빌드(redis off)에서만
+  컴파일되고, `SUMIDA_TEST_DYNAMO_TABLE` 이 실제 표를 가리킬 때만 돈다. 그 표가 없으면 조용히
+  건너뛰므로, 이 경로는 지금 아무 데서도 확인되지 않는다.
 - 실행: `cargo test -p infra --no-default-features --features session-store-aws-dynamodb dynamo_jwt_store_roundtrip`
-  (AWS creds/region + pk/sk(string) + `ttl` 속성 테이블 필요). 미설정 시 자동 skip.
+  (AWS 자격·리전 + pk/sk(string) + `ttl` 속성 표 필요)
 
-### ~~Access token 블랙리스트~~ — ✅ 완료 (옵션 A, 2026-06 검증)
-- logout이 access 토큰 jti도 블랙리스트(`service/auth/token.rs:121-128`), `user_guard`가 매 인증 요청에서
-  `is_token_blacklisted` 조회(`layer/user_guard.rs:108-117`) → 즉시 무효화 동작. TASKS 노트가 stale였음.
+### 파일 수명주기의 DB 통합 테스트
+- 고아 파일 정리와 청구(claim) 흐름은 구현돼 있으나 데이터베이스를 실제로 거치는 통합 테스트가
+  없다. 유예 시간이 지난 파일이 실제로 지워지는 경로가 확인되지 않는다.
 
-## BPS — 게시판 검토 후속 (2026-06 코드리뷰)
+## 결제 — 2단계 결제 (제품 결정 + 샌드박스 필요)
 
-`bs` 브랜치 게시판(`bps`) 도메인 리뷰 결과. 우선순위 P0(배포 차단) → P2.
+`PaymentProvider` 에 `authorize`/`capture`/`void` 가 서 있고 Mock 은 완전히 구현돼 있다. 남은 것은
+둘이다.
 
-### P0-1. `board_posts.user_id` FK가 `boards`를 가리킴 ⚠️
-- 위치: `entity/src/migration/board_system.rs:294-301`
-- `fk_board_posts__user_id`가 `BoardPosts::UserId → Boards::Id`로 연결됨. 글 생성 시 `user_id`에
-  로그인 유저 id가 들어가는데(`board_post/mod.rs:322`), DB FK는 그 값이 `boards.id`에 있어야 통과 →
-  유저/보드 id 안 겹치면 **모든 글 작성이 FK 위반으로 실패**.
-- 작업: FK 대상 테이블을 `users`로 수정 + on_delete `SetNull`(작성자 삭제 시 글 보존) 검토.
+- **서비스 흐름** — 언제 authorize 에서 capture 로 넘어가는지, 그 사이에 무엇이 예약된 상태인지를
+  정해야 엔드포인트(`/payments/authorize|capture|void`)와 `membership_purchases` 의
+  `provider_auth_code` 컬럼이 결정된다. 즉시 결제가 기본이고 2단계는 선택으로 얹는다.
+- **PortOne V2 manual-capture** — 위가 정해진 뒤 실제 엔드포인트로 채운다. 샌드박스 계정이 있어야
+  검증된다.
 
-### P0-2. `get_articles`가 `Notice`로 필터링
-- 위치: `api/src/service/bps/board_post/mod.rs:117`
-- `kind=article` 기본 분기(`board.rs:43`)가 공지만 반환. `BoardPostKind::Notice` → `Article`로 수정.
-
-### P0-3. `GET /board-posts/{id}`가 비밀번호·가시성 우회 ⚠️
-- 위치: `board_post/mod.rs:196-216`(get) vs `218-296`(view)
-- `view()`는 비밀번호 검증 + `check_post_visible`(멤버/비공개) 수행하나 `get()`은 둘 다 생략하고 본문 반환.
-- 작업: `get()`에도 동일 가드 적용해 두 읽기 경로 통일.
-
-### P0-4. 반응(reaction) 권한/소유자/ap 깨짐
-- 위치: `board_post_reaction/mod.rs:65-76`(create), `113-122`(ap 재사용)
-- create: 권한 체크 없음 + `user_id`를 클라이언트 입력에서 받음(타인 명의 위조 가능) + 중복 무제한.
-- read/update/delete: `BoardPostService::ap()`(boards/board_posts 컬럼 참조)를 조인 없는 reaction 쿼리에
-  적용 → SQL 깨질 가능성. 통합테스트로 확정 필요.
-- 작업: create는 세션 user 강제 + 보드 `reaction_visibility`/post 가시성 확인 + (post_id,user_id,value) 중복 정책.
-  ap는 reaction 전용으로 재작성(board_post join 후 컬럼 참조).
-
-### P0-5. 파일 수명주기 + 고아 파일 정리 (견고 방향 확정) ✅ 구현 완료 (DB 통합테스트 미작성)
-구현됨: 엔티티/마이그레이션 PK 정정(file_uuid 단독, post_id nullable+pending 클레임), board 업로드 시
-pending 등록(`register_pending_board_file`), 포스트 create/update 시 claim(명시 uuid + 본문 HTML 파싱,
-`claim_post_files`/`extract_referenced_file_uuids`), refs 운영 + Active 승격/Temporary 강등
-(`util/file_lifecycle.rs`), 포스트 삭제 시 `release_all_post_files`, reaper(`service/fs/maintenance.rs`)를
-membership maintenance pass에 연결. 본문 파싱은 유닛테스트 5종 통과.
-남은 후속: claim/unclaim/reaper의 **DB 통합테스트**(sumida_test 필요), grace(24h)를 settings로 외출,
-"본문에서 빠진 인라인 이미지 자동 detach"는 보류(첨부 유지 → 깨짐 없음, 스토리지 잔류만).
-설계 합의: `files`=범용 추상 테이블, `board_files`=정션, `files.refs`=도메인 무관 참조카운트.
-tiptap는 글 생성 전 파일을 선업로드 → `board_files.post_id` nullable = "pending 클레임".
-- (a) 엔티티 정정: `board_files` 복합 non-null PK 제거 → PK `file_uuid` 단독(1:1 유지), `post_id` nullable+인덱스.
-- (b) board 전용 업로드: 정책 검증 후 `files`(status=temporary, expires_at=now+grace) + `board_files(post_id=NULL)` +
-  `files.refs=1` 등록. 응답에 인라인 표시용 URL/엔드포인트 포함.
-- (c) claim: 포스트 생성/수정 시 `attached_file_uuids` + **본문 HTML 파싱으로 참조 uuid 자동 수집**(견고 방향) →
-  pending `board_files`를 UPDATE로 `post_id` 채움(현 delete+reinsert 폐기), `files.status=active`, `expires_at=NULL`.
-- (d) refs 운영: 정션 insert/delete 시 `files.refs` ± (동일 트랜잭션).
-- (e) 2단계 reaper(`membership::maintenance` 스케줄러 + advisory lock 재사용):
-  A. `board_files WHERE post_id IS NULL AND created_at < now-grace` 삭제 → refs-- (제출-전-이탈 회수)
-  B. `files WHERE refs=0 AND status='temporary' AND expires_at<now` 삭제(스토리지 객체 포함). 드리프트 방어로
-     `AND NOT EXISTS(any junction)` 가드 추가.
-- 참고: `files.refs`/`expires_at` 컬럼은 이미 존재하나 현재 미사용. 업로드는 status를 영구 `Temporary`로 둠.
-
-### P1-6. 목록 스니펫(FTS)으로 비공개 글 본문 유출
-- 위치: `board_post/mod.rs:75-90`(list) + `board_post/util.rs:84-110`(with_fts)
-- list가 read ReBAC만 적용, post `content_visibility` 미반영 → 멤버전용/비공개 글 본문 일부가 스니펫으로 노출.
-- 작업: 스니펫/snippet 컬럼을 가시성에 따라 마스킹(비공개 글이면 NULL).
-
-### P1-7. 파일 인라인 서빙 + 업로더 권한
-- 위치: `util/storage.rs:285-288`(local get_uri=서버 절대경로), `:379-381`(S3 get_uri=공개 URL),
-  `:104`(download은 항상 attachment), `fs/file.rs:upload`(업로더 권한 부여 없음)
-- 로컬 URI는 브라우저에서 사용 불가, S3 URI는 가시성/비밀글 우회. 인라인 표시 경로 없음.
-- 작업: 인증/가시성 연동된 인라인 서빙 엔드포인트(또는 S3 서명 URL), 업로드 시 업로더 file 권한 부여.
-
-### P1-8. MIME/확장자/길이 검증 강화
-- 위치: `util/file_validation.rs:160-180`(블랙리스트만, 매직넘버 없음), content/title 길이 무제한
-- 작업: 매직넘버 기반 콘텐츠 스니핑, content/title 최대 길이, (HTML 본문) 서버측 sanitize 검토(저장형 XSS).
-
-### P2-9. 미완성 / 정합성
-- 예약 발행: `should_be_published_now()`만 존재, 자동 발행 스케줄러 없음 → 예약글 미발행 (`board_posts.rs:204-214`).
-- 반응 집계: `board_posts.reactions`(JSON)을 반응 생성 시 갱신 안 함 → 항상 stale.
-- soft delete: `deleted_at`/status `Deleted` 있으나 `delete()`는 하드 삭제만 (`board_post/mod.rs:445-467`).
-- `with_file_columns`가 `deleted_at`을 `UpdatedAt`에 매핑(오타) (`board_file/util.rs:15`).
-- `boards` 엔티티 `defaultvalue` 오타로 기본값 어트리뷰트 무시 (`entity/src/bps/boards.rs:60,62`).
-- 조회수: `board_post_views`에 (post_id,user_id) 유니크 없음 + read-then-write 경쟁 (`board_post/util.rs:207-240`).
-- `board_post_reports` 테이블만 있고 엔티티/서비스/라우트 전무.
-- 테스트: 글/파일/반응/업로드/가시성/비밀글 테스트 0건 (`api/tests/board.rs`는 boards 권한 9건만).
-
-### 시나리오 테스트 작성 중 발견·수정 (2026-06) ✅
-`api/tests/board_scenario.rs`(7 시나리오) 작성 과정에서 드러난 기존 버그를 함께 수정:
-- **작성자 권한 자동부여가 깨져 모든 글 생성이 500**: `board_post/mod.rs`의 `ap::edit()`이 `.action()` 누락 +
-  `effect`에 "update"/"delete"를 잘못 넣음 → `action must be set`. → action=["update","delete"], effect="allow",
-  대상은 `ApUser::User`(role/org로 새지 않게)로 수정.
-- **비작성자 글 조회가 500**: `with_conditional_post_columns`가 비작성자에게 `views`를 NULL로 반환하나
-  DTO `views: i32`(non-null) → 디코딩 실패. → 비작성자 기본값 0으로 수정.
-- **반응 컨트롤러가 라우터에 미연결**: `BoardPostReactionController`가 `lib.rs` nest 목록에 없어 HTTP로 도달 불가.
-  → `/board-post-reactions`로 마운트.
-- 신규 테스트: 작성자 CRUD, article 목록(공지 제외 회귀가드), 비공개 가시성, 비밀글(get/view 양쪽), 반응
-  (userId 위조 무시·idempotent·소유자만 삭제), 파일 수명주기(업로드→pending→attach→reaper), 인라인 자동 claim.
-  본문 파싱 유닛 5건 + 기존 board 권한 9건 모두 통과.
-
-### 추천 후속 1차 진행 (2026-06) ✅
-- **#6 `get_posts` 경로 board id 강제**: `controller/bps/board.rs`에 `Path(board_id)` 추출해 필터 주입.
-- **#7 `board_post_view` 제거**: 미연결 + 조회기록 수동 CRUD는 footgun → 컨트롤러/서비스/dto 삭제.
-  (후속: `boards.viewer_visibility` 연동 **읽기 전용** 뷰어 목록은 미구현 — 필요 시 신규 구현.)
-- **#1 가시성 합성 min→max**: `check_post_visible`이 더 restrictive 우선(board가 조일 순 있어도 풀진 못함).
-- **#2 목록/검색 가시성 필터**: `content_visible_filter`로 비가시 글을 list/FTS에서 행 자체 제외(제목·스니펫 유출 차단).
-- **#3 인라인 서빙**: `GET /files/{uuid}/inline`(disposition=inline). board 첨부는 post 가시성으로, 그 외는 `file:read`로 인가.
-  로컬 `get_uri` 절대경로 문제는 inline 엔드포인트로 우회(원본 `uri` 의존 제거).
-- **#4 업로더 권한**: 업로드 시 업로더에게 `file:read` 부여(compose 중 미리보기 가능), 파일 삭제 시 정책 정리.
-- **추가로 드러난 기존 버그**: `CreateBoardPost`/`UpdateBoardPost`의 `into_active_model`이 **`content_visibility`를
-  set하지 않아** 모든 글이 DB기본값 `private`로 저장(요청 필드 무시)되던 문제 — DTO에 추가. (min→max 수정이 노출시킴.)
-- 테스트: `board_scenario.rs` 8 시나리오(가시성 list 제외·인라인 서빙 공개/비공개 포함) 전부 통과.
-
-### 추천 후속 2차 진행 (2026-06) ✅
-완성도/하드닝 묶음 + 그 과정에서 드러난 기존 버그.
-- **C-3** `with_file_columns`가 `deleted_at`을 `UpdatedAt`에 매핑하던 오타 → `DeletedAt`.
-- **C-4** `boards` 엔티티 `defaultvalue` 오타(is_versioned/is_enabled) → `default_value`.
-- **C-2** `board_post_views`에 `(post_id,user_id)` 유니크 인덱스 + 조회수 증가를 ON CONFLICT DO NOTHING으로
-  경쟁 안전 처리(원자적 +1, lost update 제거).
-- **C-5** reaper grace(24h) 하드코딩 → `storage.orphan_grace_hours` 설정으로 외출(예제 toml 문서화).
-- **B-1** 예약 발행 잡: `bps::maintenance::publish_scheduled_posts`(scheduled+scheduled_at 경과 → published,
-  published_at 스탬프)를 maintenance pass에 연결.
-- **B-2** 반응 집계: 반응 create/update/delete 시 `board_posts.reactions`를 `{value: count}` 맵으로 갱신.
-- **A-1** 파일/콘텐츠 하드닝: 업로드 매직넘버 검사(ELF/PE/Mach-O/shebang 차단), post `title`(255자)/`content`(1MB) 길이 제한.
-- **추가로 드러난 기존 버그**: 파일 검증 에러(`UnsupportedMimeType`/`FileTooLarge`/`TooManyFiles`/`InvalidFileType`/
-  `FileUploadNotAllowed`/`FileReuseNotAllowed`/`FieldNotProvided`)가 status 매핑 누락으로 **500**으로 떨어지던 것
-  → 415/413/400으로 매핑(`error/src/error.rs`).
-- 테스트: `board_scenario.rs` **11 시나리오**(+ 반응집계/실행파일거부/예약발행), board 권한 9건, 유닛 5건 모두 통과.
-
-### 추천 후속 3차 진행 (2026-06) ✅
-- **A-2 uri 게이트**: 응답에 노출하는 파일 경로를 내부 저장 URI 대신 읽기전용 게이트 경로
-  `/files/{uuid}/inline`으로 가공(`fs::dto::inline_uri`). file list/get, board_file list/get/get_files_for_post,
-  post 첨부(`load_attached_files`) 전부 적용. (남은 후속 A-2b: S3는 inline 핸들러에서 단기 pre-signed 302로 오프로드.)
-- **B-3 신고**: `board_post_reports` 엔티티 + 서비스/컨트롤러/`/board-post-reports` 라우트. 인증 사용자가 가시 글을
-  reason과 함께 신고(`(post_id,user_id)` 유니크 → 재신고는 reason 갱신), 모더레이터(`board_post_report` ns)가 목록/조회/삭제.
-- **B-4 뷰어 목록**: `GET /board-posts/{id}/viewers` — `board.viewer_visibility`(public/members/author/private)로 게이트.
-  board_post_views↔users 관계 추가. (content_visibility=읽기 / reaction_visibility=반응목록 / viewer_visibility=조회자목록 3분리 확인.)
-- **C-1 soft delete**: board_posts `delete()`를 `deleted_at`+status=Deleted 마킹으로 전환(파일은 release).
-  모든 read 경로에 `deleted_at IS NULL` 필터 — `default_query_with`(AP read 일괄) + raw find_by_id 6곳(get/view/update/
-  list_viewers/reaction/report/inline).
-- **C-1b 대댓글 cascade soft-delete**: 부모 soft-delete 시 `parent_id` 서브트리(재귀 CTE)를 함께 soft-delete +
-  각 글의 파일 release (`collect_descendant_post_ids`).
-- **C-1c board soft-delete**: `BoardService::delete()`도 soft-delete(`deleted_at`), board read 필터 +
-  글 목록은 `boards.deleted_at IS NULL`로 삭제된 board의 글까지 숨김.
-- 테스트: `board_scenario.rs` **17 시나리오**(+신고/뷰어목록/soft-delete/대댓글 cascade/board soft-delete/첨부 uri 게이트) 전부 통과.
-
-### 파일 접근 원칙 (확정)
-- 응답·post 본문에 노출되는 파일 경로는 **항상 안정적 앱 경로 `/files/{uuid}/inline`** 하나만 사용.
-  presigned URL / 스토리지 객체 URL을 **반환하지도, 본문에 삽입하지도 않음**.
-- 이유: presigned는 TTL 동안 유출 시 무방비(매 요청 인가 아님)이고, 본문에 박힌 backend 종속 URL은
-  스토리지 마이그레이션 시 전부 깨짐. 앱 경로는 매 요청 인가 + 백엔드 무관(스트리밍 소스만 교체)이라 안전.
-- ~~A-2b presigned 302~~ 철회. 성능 필요 시: 인증된 앱 경로 **앞단에 CDN**(엣지 서명쿠키/토큰 검증, 단기 캐시),
-  응답/콘텐츠에 presigned 객체 URL 노출은 금지.
-
-### 남은 후속
-- (게시판 도메인 보안/완성도/하드닝 라운드 완료. 추가 일감은 제품 결정 시.)
-
-## P2 — 정합성 / 정리
-
-### ~~examples/basic의 stale 바이너리 복구~~ — ✅ 완료 (2026-06 검증)
-- `create_dummy_board_posts` 바이너리 정상 빌드(`f49adaf`에서 복구됨). TASKS 노트가 stale였음.
-
-### ~~운영 정책 시드 가이드 문서화~~ — ✅ 완료 (2026-06)
-- [`docs/permissions.md`](docs/permissions.md) 작성: bps/fs 네임스페이스·액션·라우트 매핑 + 역할별 시드 SQL 예시
-  (일반회원/모더레이터/board 위임). `org:user` 등 기존 네임스페이스 시드도 동일 패턴으로 적용.
-
-## P3 — 갈라파고스 정리 / 표준화 (사용자 합의 후)
-
-### ~~Figment 마이그레이션~~ — ✅ 완료 (2026-06)
-- `config` crate → `figment`. 우선순위 `defaults < toml($SUMIDA_SETTINGS) < SUMIDA_* env`.
-  env 키 매핑: `__`=중첩, 세그먼트 내 `_`→`-`(예: `SUMIDA_STORAGE__ORPHAN_GRACE_HOURS` → `storage.orphan-grace-hours`).
-  `SUMIDA_SETTINGS`(파일 선택자)는 무시. `settings.example.toml` 헤더 + 유닛테스트(`figment::Jail`)로 규칙 검증.
-- 후속(선택): SSM을 figment `Provider`로 같은 파이프라인에 통합(현재는 `jwt-secret-store-aws-ssm` 별도 경로 유지).
-
-### ~~RFC 7807 Problem Details 응답 전환~~ — ✅ 완료 (2026-06)
-- `SumidaApiError::to_response`를 `application/problem+json`으로 전환:
-  `{ type: "urn:sumida:error:<code>", title, status, detail?, code }`. `code`는 확장 멤버로 유지(다운스트림 머신 매칭),
-  `detail`은 debug 빌드에서만 노출(릴리스 프라이버시 유지). 다운스트림은 `to_response` 한 곳만 영향.
-- ⚠️ **breaking**: 기존 `statusCode`→`status`, `reason`→`detail`(+ `type`/`title` 추가). 클라이언트 에러 파싱 갱신 필요.
-
-### ~~ReBAC ApOr 확대 + deny 시멘틱~~ — ✅ 완료 (정책 B, 2026-06)
-- **결정: (B) 글로벌 deny 우선** — 어느 OR 분기든 매칭되는 `deny`가 있으면 전체 거부(deny는 절대적, 소유권으로 우회 불가).
-- `ApCondition.effects()`(has_allow/has_deny 분리) 추가 → 빌딩블록. `ApOr`을 `(allow₀||…) AND NOT (deny₀||…)`로 재작성
-  (apply/check_allowed/can_access). 게시판 변경권한 `authorize_post_mutation`을 effects() 기반 글로벌-deny로 전환
-  ("운영자(board_group AND board) OR 작성자(board_post)" + 전역 deny).
-- 테스트: 작성자/운영자 각각 baseline 허용 → board:update deny 추가 시 403(글로벌 deny) 검증.
-  (`ApOr` 자체는 condition들의 OR 전용; 게시판의 chain-OR-condition은 effects()로 직접 조합.)
-
-### ~~G5b 후속 — token 관련 코멘트/주석 정리~~ — ✅ 완료 (2026-06)
-- `service/auth/token.rs`에 모듈 doc(login/refresh-rotation/logout 흐름 + token_type 분리) + login/logout/refresh 메서드 doc.
-- `controller/auth/token.rs` 핸들러에 라우트/요청·응답 doc-comment(`POST /`, `POST /refresh`, `DELETE /`).
-
-## P2 — 멤버십 후속 (대형 / 외부·제품 의사결정 필요)
-
-멤버십·결제 도메인의 1차 구현은 완료(`docs/membership.md`). 남은 항목은 외부 의존성
-또는 제품 결정이 필요해 보류함.
-
-### ~~빌링키 발급(issuance) 서버 연동~~ — 결정: 수동/클라이언트 주입 (완료)
-- 결정: 빌링키는 클라이언트 SDK가 발급(카드정보 서버 미경유) → 문자열을 서버에 주입.
-  `POST /subscriptions`(billingKey) / `POST /subscriptions/{id}/auto-renew`로 주입 가능.
-- 주입 시 `PaymentProvider::verify_billing_key`로 PG 검증(PortOne `GET /billing-keys/{key}`,
-  Mock/None 대응) → 잘못된 키는 즉시 400. `BillingKey.Issued` 웹훅은 불필요로 폐기.
-
-### ~~per-currency 크레딧 월렛 / 환율~~ — 결정 확정 + 구현 반영
-- **합의 원칙**: 결제 후 사용 가능한 재화는 전부 **credit(unitless 내부 잔액)**. 따라서 **currency는 결제 단계
-  (plan 가격 / purchase 트랜잭션 / coupon 할인 스코프)에만 저장**되고, 월렛/크레딧 측엔 저장하지 않는다.
-- **구현 상태**: `credit_wallets.currency` 드롭 완료(`871c01b`). currency는 `membership_plans`/`membership_purchases`/
-  `coupons`에만 존재(확인). 통화별 잔액·환율은 도입하지 않음. (원칙은 `docs/membership.md` "Per-currency credit wallets / FX" 항목.)
-
-### 크레딧 reserve/capture ↔ PG authorize-capture 연결 — ⚙️ 추상화 완료, 서비스 연동·PortOne 남음
-- ✅ `PaymentProvider`에 `authorize/capture/void`(크레딧 reserve/capture/release의 PG측 대응) 추가.
-  기본 구현 `Unsupported`(기존 구현체 비파괴), **Mock 완전 구현 + 유닛테스트**. None/PortOne은 기본값.
-- (참고) 비동기/가상계좌 결제는 이미 webhook→settle로 연결돼 있음(`handle_webhook`).
-- 남음(제품 결정 + 샌드박스 필요):
-  - **2단계 결제 서비스 흐름** — 언제 authorize→capture할지 정의 + 엔드포인트(`/payments/authorize|capture|void`) +
-    `membership_purchases`에 `provider_auth_code` 컬럼. (즉시결제 기본 흐름은 유지, opt-in 2단계.)
-  - **PortOne V2 manual-capture 구현** — 검증된 V2 엔드포인트로 authorize/capture/void 채우기(샌드박스 필요).
-- ✅ PortOne V2 API Secret **인증 검증 완료**(`portone_api_secret_authenticates` 스모크 테스트, 실 API로 토큰 발급 확인).
-- ✅ **실 PortOne(토스 테스트 채널) 정기결제 풀체인 라이브 검증**(`portone_keyin_billing_and_recurring`):
-  keyin 빌링키 발급 → 빌링키 검증 → 정기결제 → 결제조회(verify) → 부분환불(400, PARTIAL_CANCELLED) → 잔액환불(CANCELLED).
-  - 라이브 테스트가 실 버그 2건 발견·수정: ① `charge_recurring`이 V2 성공응답(`{paidAt,pgTxId}`)을 Unknown으로 오인 → Paid로 수정,
-    ② `cancel`의 partial 분기가 죽은 코드(cancellation.status는 항상 SUCCEEDED) → 정리, partial 여부는 verify로 판별.
-  - 남은 것(결제창 카드입력 필요 → 서버 자동화 불가): 일회성/크레딧 checkout의 실 paymentId 기반 verify(동일 파서라 위에서 간접 검증됨), webhook 실발송.
-
-### 소소한 항목
-- ~~조직 owner 알림 채널~~ — 완료: org 관리자(org:subscription/org:credit manage 정책 보유자) 이메일로 발송
-- ~~스케줄러 다중 인스턴스 advisory lock~~ — 완료: `run_once`가 Postgres advisory lock으로 단일 러너 보장
-- ~~쿠폰은 PG checkout 경로에만 적용(무료 subscribe 경로 제외)~~ — ✅ 완료: `POST /subscriptions`도
-  `couponCode`/`couponCodes`를 받아 첫 기간 청구액 할인(무료 trial은 미소비). 테스트 `test_free_subscribe_applies_coupon`.
+결제창에 카드를 입력해야 하는 경로(일회성·크레딧 checkout 의 실 paymentId verify, webhook 실발송)는
+서버만으로 자동화되지 않는다.
 
 ## 목록 필터 계약 — 남은 리소스와 후속 (정본: `docs/list-filters.md`)
 
 sumida 의 최상위 목록 리소스는 전부 선언을 들고 `GET <리소스>/filters` 를 내주며, 정렬과 조건
-트리를 그 선언 하나로 푼다. 아래는 이번에 닿지 않은 부분이다.
+트리를 그 선언 하나로 푼다. 아래는 아직 닿지 않은 부분이다.
 
 ### 지갑 하위 목록 세 개가 아직 선언을 갖지 않는다
 - `/coupons/{id}/grants`, `/coupons/mine`, 크레딧 원장(`credit_transactions`)과 예약
@@ -261,3 +57,33 @@ sumida 의 최상위 목록 리소스는 전부 선언을 들고 `GET <리소스
 ### 정렬 키 표기가 코어와 bps 에서 snake_case, 그 밖에서 camelCase 로 갈려 있다
 - 한 컬럼에 키는 하나이므로, 다른 표기로 보낸 `sort` 는 오류 없이 기본 정렬로 떨어진다. 표기를
   한쪽으로 모으는 것은 클라이언트와 함께 움직여야 하는 별도 작업이다.
+
+## 규칙이 정본이 아닌 자리
+
+### 쿠폰 관리 권한만 튜플로 표현되지 않는다
+- `CouponService` 는 세션의 `is_admin` 플래그를 직접 읽고 `OnlyAdminAllowed` 로 거절한다. 그래서 이
+  권한만은 부여할 수도, 위임할 수도, 조직으로 좁힐 수도, `/me/access-policies` 로 볼 수도 없다.
+- 네임스페이스 하나(`membership_plan` 과 같은 모양)로 옮기거나, 규칙 집합이 "누가 무엇을 할 수
+  있는지의 단일한 진술"이라는 주장을 좁히거나 — 둘 중 하나를 정해야 한다.
+
+## 문서와 주석이 코드를 가리키는 방식
+
+### `설계 §N` 이 가리키는 문서가 없다
+- `api/src` 의 주석 쉰아홉 곳이 "설계 §5.1", "design §9.7", "E1" 같은 절 번호를 인용한다. 그런
+  문서는 이 저장소에 없다. 가리키는 내용을 실제 문서로 올려 이름으로만 부르거나, 참조를 걷어낸다.
+
+### 규칙 파일과 주석이 변경 이력과 소스 좌표를 나른다
+- `.sz` 규칙 파일은 권한 모델의 정본인데 "종전에는 …" 서술과 `membership/credit/mod.rs:88` 같은
+  파일·줄 좌표를 담고 있다. 좌표는 소스가 움직이는 순간 어긋나고, 이력은 지금의 제약이 아니다.
+  서른 곳 남짓의 주석이 같은 형태다. 한 번에 쓸어야 표기가 반쪽만 바뀌지 않는다.
+
+## 죽은 표면
+
+`access_policies` 표는 init 마이그레이션이 여전히 만들지만 읽는 코드가 없다. 두 묘비 마이그레이션
+(`rebac_backfill`, `rebac_mirror`)이 그 표가 비어 있음을 확인하고 트리거를 걷어낸 상태다. 이름이
+권한을 뜻하는 표가 살아 있으면 그 표에 심는 실수를 부른다 — 비어 있음이 확인된 뒤 떨어뜨린다.
+
+`AdminService` 와 빈 `admin/dto.rs`, `util::db::i32_or_struct`, `capability::has`, `service_ap_new!`,
+`layer::board_ap::helpers`, `board_file::dto::{AttachFileToPost, DetachFileFromPost}` 는 모두 호출자가
+없다. 마지막 둘은 `board_files` 의 키(`file_uuid` 하나, `post_id` 는 nullable)와 모양이 어긋나
+있기도 하다.

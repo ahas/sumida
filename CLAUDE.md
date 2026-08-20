@@ -66,8 +66,16 @@ let app = Router::new()
   .with_state(state);
 ```
 
-`Sumida::new(RULES).router()`가 자동으로 nest하는 경로:
-`/access-logs`, `/access-policies`, `/api-keys`, `/dashboard/monitoring`, `/bans`, `/organizations`, `/roles`, `/auth/session`, `/me`, `/users`, `/user-invitations`, `/user-verifications`, `/mail-forms`, `/boards`, `/board-groups`, `/board-topics`, `/board-posts`, `/board-files`, `/files`.
+`Sumida::new(RULES).router()`가 nest하는 경로. 기능 feature가 끄는 묶음은 그 feature를 함께 적었다 —
+부분 빌드에서는 그 줄이 통째로 없다.
+
+| 조건 | 경로 |
+|---|---|
+| 항상 | `/capabilities`, `/access-logs`, `/relation-tuples`, `/authz`, `/api-keys`, `/dashboard`, `/dashboard/monitoring`, `/bans`, `/organizations`, `/roles`, `/auth/session`, `/auth/token`, `/me`, `/users`, `/user-invitations`, `/user-verifications` |
+| `mail-form` | `/mail-forms` |
+| `board` | `/boards`, `/board-groups`, `/board-topics`, `/board-posts`, `/board-post-reactions`, `/board-post-reports`, `/board-files` |
+| `membership` | `/membership-plans`, `/subscriptions`, `/credits`, `/entitlements`, `/membership-purchases`, `/payments`, `/coupons` |
+| `file` | `/files` |
 
 ### 2. ReBAC 권한 모델 — 규칙 언어와 관계 튜플
 
@@ -121,7 +129,7 @@ file:<uuid>#viewer@user:9               객체(행) — 이 행에 닿을 자격
 
 ### 4. 컨트롤러 표준 — 액션별 `service_ap!` 분리
 
-`api/src/controller/role.rs:74-99`가 기준 패턴.
+`RoleController`가 기준 패턴.
 
 ```rust
 fn router(self, state: &S) -> Router<S> {
@@ -143,7 +151,9 @@ fn router(self, state: &S) -> Router<S> {
 - `user_guard!(state)` — 세션 또는 `Authorization: Bearer <jwt>` / `APIKEY <key>` 검증
 - `admin_guard!(state)` — `profile.is_admin` 체크
 - `service_ap!(state,"ns",action)` — 라우트 게이트. `service:<ns>#can_<action>` 을 통과해야 진입하며, 행 스코프는 그 뒤에 따로 검사된다
-- `board_ap!(state, [board_id,] action)` — 게시판 단위 권한
+
+게시판 단위 권한을 위한 레이어는 없다. 그것은 규칙이 푼다 — `board_post#edit` 이 글의 그룹과
+게시판과 작성자를 합집합으로 묶고 차단을 빼므로, 호출 자리에서 조립할 것이 남지 않는다.
 
 **중요**: 액션별로 `service_ap!`를 따로 묶어야 한다. 한 묶음에 다른 액션을 섞으면 권한 체크가 약한 쪽으로 새어 나간다.
 

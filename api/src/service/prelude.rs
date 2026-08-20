@@ -8,9 +8,6 @@ pub use tower_sessions::Session;
 pub use super::access_log::AccessLogService;
 pub use super::access_log::dto::*;
 //
-pub use super::admin::AdminService;
-pub use super::admin::dto::*;
-//
 pub use super::api_key::ApiKeyService;
 pub use super::api_key::dto::*;
 //

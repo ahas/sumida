@@ -11,44 +11,60 @@ V2 first-class), and a background maintenance scheduler.
 
 This guide covers what an operator must configure before the feature works.
 
-## 1. Required access-policy seeds
+## 1. What has to be granted before the routes answer
 
-`Sumida::new().router()` nests the routes, but most actions are gated. Seed these
-rows in `access_policies` (the `user:admin` wildcard from the test harness bypasses
-all of them; production needs explicit policies).
+`Sumida::new(RULES).router()` nests the routes, but most of them are gated, and a fresh database
+holds no grants at all — every protected route refuses until something is seeded. Grants live in
+relation tuples and are written through the relation-tuple endpoint. [`docs/permissions.md`](permissions.md)
+is the reference for the three tiers, the subject notations and how granting is itself authorized;
+this section names only what the membership domain asks for.
 
-| Namespace | Object | Who needs it | Example action(s) |
-|---|---|---|---|
-| `membership_plan` | `service` | plan-catalog managers (non-admin) | `read`, `create`, `update`, `delete` |
-| `org:subscription` | `<org_id>` (text) | organization subscription managers | `read`, `manage` |
-| `org:credit` | `<org_id>` (text) | organization credit managers | `use`, `manage` |
+### The plan catalogue — a route gate
 
-Plan management (`/membership-plans` write) is gated by `service_ap!(state,
-"membership_plan", …)`; system admins (`profile.is_admin`) and holders of a
-matching `membership_plan` policy pass. **Coupon** management (`/coupons`) is
-**system-admin only** (no AP seed possible — set `users.is_admin`).
+Plan management is gated on the `membership_plan` namespace. Nothing in it is scoped per row, so
+the gate is the whole of it.
 
-Personal subscriptions/credits need no seed (owner = the session user). Org
-actions require an `org:subscription` / `org:credit` allow policy whose `object`
-is the org id; the org-ancestors subquery makes a parent-org policy apply to all
-descendant orgs automatically.
-
-```sql
--- Let role 7 manage the plan catalog:
-INSERT INTO access_policies (namespace, object, action, effect, "user")
-VALUES ('membership_plan', 'service', ARRAY['read','create','update','delete'], 'allow', 'role:7');
-
--- Let role 9 manage organization 42's subscriptions (and its sub-orgs):
-INSERT INTO access_policies (namespace, object, action, effect, "user")
-VALUES ('org:subscription', '42', ARRAY['read','manage'], 'allow', 'role:9');
-
--- …and its credit wallet:
-INSERT INTO access_policies (namespace, object, action, effect, "user")
-VALUES ('org:credit', '42', ARRAY['use','manage'], 'allow', 'role:9');
+```
+service:membership_plan#read@role:7#member       읽기
+service:membership_plan#operator@role:7#member   네 동작 전부
 ```
 
-The `user` column must use the `ApUser` string form: `user:<id>`, `role:<id>`,
-`org:<id>`, `api:<key>`, or `user:admin`.
+### An organization's subscriptions and credit — a relation on the organization
+
+Both are scopes on `organization`, and they carry the containment the other scopes do:
+`viewer` < `editor` < `manager`. There is no route gate for either — the row scope is the whole of
+it, and it reaches the descendants of the organization it is granted on.
+
+```
+organization:42#subscription_manager@role:9#member   구독 관리
+organization:42#credit_manager@role:9#member         크레딧 관리
+organization:42#credit_editor@user:5                 쓸 수는 있으나 정책은 못 바꾼다
+```
+
+Credit carries one branch the other scopes do not: **being a member of the organization is enough to
+see its credit**, because spending is authorized against the wallet's own organization and a member
+who may spend must be able to read the balance.
+
+An organization's own manager (`organization:42#manager`) implies both, as it implies every other
+scope on that organization.
+
+### Personal subscriptions and credit
+
+Nothing to grant. The owner is the session user and the rule reads it off the row.
+
+### Coupons
+
+`/coupons` management does not go through the rule set at all: the service reads `is_admin` off the
+session and refuses anyone else. There is no namespace to grant and no relation to place, and no
+grant can open it — the flag on the user row is the only key. It is the one place in this domain
+where a permission is not expressible as a tuple.
+
+### Who gets the notices
+
+The renewal, dunning and expiry notices for an organization go to whoever holds
+`subscription_manager`, `credit_manager` or `manager` on it, expanded through roles, organization
+membership and API keys alike. Granting the scope is what subscribes someone; there is no separate
+recipient list.
 
 ## 2. Settings (`[membership]`)
 

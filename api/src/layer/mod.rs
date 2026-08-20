@@ -1,6 +1,4 @@
 pub mod admin_guard;
-#[cfg(feature = "board")]
-pub mod board_ap;
 pub mod cors;
 #[cfg(feature = "membership")]
 pub mod entitlement_guard;

@@ -1,5 +1,4 @@
 pub mod access_log;
-pub mod admin;
 pub mod api_key;
 pub mod auth;
 pub mod ban;

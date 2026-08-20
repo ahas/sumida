@@ -1,10 +1,6 @@
-use std::fmt;
-use std::marker::PhantomData;
-
 use sea_orm::sea_query::extension::postgres::{PgBinOper, PgExpr};
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::{DbErr, RuntimeErr, sqlx};
-use serde::{Deserialize, Deserializer, de};
 
 /// The SQLSTATE the database attached to this error, if it came from the database at all.
 fn sqlstate(error: &DbErr) -> Option<String> {
@@ -81,47 +77,4 @@ where
     PgBinOper::Matches,
     Expr::cust_with_values(r#"plainto_tsquery('simple', $1)"#, [search.as_ref()]),
   )
-}
-
-pub fn i32_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
-where
-  T: Deserialize<'de> + From<i32>,
-  D: Deserializer<'de>,
-{
-  struct I32OrStruct<T>(PhantomData<fn() -> T>);
-
-  impl<'de, T> de::Visitor<'de> for I32OrStruct<T>
-  where
-    T: Deserialize<'de> + From<i32>,
-  {
-    type Value = T;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-      formatter.write_str("an integer or a map representing the struct")
-    }
-
-    fn visit_i32<E>(self, value: i32) -> Result<T, E>
-    where
-      E: de::Error,
-    {
-      Ok(T::from(value))
-    }
-
-    fn visit_str<E>(self, value: &str) -> Result<T, E>
-    where
-      E: de::Error,
-    {
-      let id: i32 = value.parse().map_err(E::custom)?;
-      Ok(T::from(id))
-    }
-
-    fn visit_map<M>(self, map: M) -> Result<T, M::Error>
-    where
-      M: de::MapAccess<'de>,
-    {
-      Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
-    }
-  }
-
-  deserializer.deserialize_any(I32OrStruct(PhantomData))
 }

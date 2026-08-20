@@ -264,20 +264,6 @@ impl IntoResponse for BoardFileDeleted {
   }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AttachFileToPost {
-  pub id:      i32,
-  pub post_id: i32,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DetachFileFromPost {
-  pub id:      i32,
-  pub post_id: i32,
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
