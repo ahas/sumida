@@ -62,10 +62,12 @@ impl PlanFilter {
 const PLAN_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Contains]),
   FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_variants(&["subscription", "credit"]),
+    .with_variants(&["subscription", "credit"])
+    .with_facet(),
   FieldSpec::new("scope", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_variants(&["personal", "organization"]),
-  FieldSpec::new("isEnabled", FieldKind::Boolean, MatchStrategy::Comparison, &[Op::Eq]),
+    .with_variants(&["personal", "organization"])
+    .with_facet(),
+  FieldSpec::new("isEnabled", FieldKind::Boolean, MatchStrategy::Comparison, &[Op::Eq]).with_facet(),
   FieldSpec::sort_only("code", FieldKind::Text),
   FieldSpec::sort_only("name", FieldKind::Text),
   FieldSpec::sort_only("price", FieldKind::Integer),

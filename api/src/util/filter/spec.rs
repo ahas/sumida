@@ -215,6 +215,10 @@ fn is_empty_slice(variants: &&'static [&'static str]) -> bool {
   variants.is_empty()
 }
 
+fn is_false(flag: &bool) -> bool {
+  !*flag
+}
+
 /// One declared field: what it is, how it is matched, what may be asked of it, and whether it can be
 /// ordered by.
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -237,6 +241,11 @@ pub struct FieldSpec {
   pub sort_key: Option<&'static str>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub relation: Option<RelationHint>,
+  /// Whether narrowing the list to the rows sharing one row's value for this key is worth offering.
+  /// True only where the value repeats across records; a key unique to a record would narrow to the
+  /// row the reader started from.
+  #[serde(skip_serializing_if = "is_false")]
+  pub facet:    bool,
 }
 
 impl FieldSpec {
@@ -255,6 +264,7 @@ impl FieldSpec {
       sortable: false,
       sort_key: None,
       relation: None,
+      facet: false,
     }
   }
 
@@ -277,6 +287,12 @@ impl FieldSpec {
   pub const fn with_sort_key(mut self, sort_key: &'static str) -> Self {
     self.sortable = true;
     self.sort_key = Some(sort_key);
+    self
+  }
+
+  /// Worth grouping rows by: many records share this key's value.
+  pub const fn with_facet(mut self) -> Self {
+    self.facet = true;
     self
   }
 
@@ -370,6 +386,19 @@ impl FieldSpec {
       return Err(FilterSchemaError::SortKeyWithoutSort(self.key));
     }
 
+    if self.facet {
+      if matches!(self.kind, FieldKind::DateTime | FieldKind::Uuid) {
+        return Err(FilterSchemaError::FacetKindMismatch {
+          key:  self.key,
+          kind: self.kind,
+        });
+      }
+
+      if self.ops.is_empty() {
+        return Err(FilterSchemaError::FacetWithoutOps(self.key));
+      }
+    }
+
     Ok(())
   }
 }
@@ -399,6 +428,8 @@ pub enum FilterSchemaError {
   UnexpectedVariants(&'static str),
   InertField(&'static str),
   SortKeyWithoutSort(&'static str),
+  /// A facet on a field that takes no operator: there is no predicate to narrow the list with.
+  FacetWithoutOps(&'static str),
   OpNotAllowed {
     key: &'static str,
     op:  Op,
@@ -407,6 +438,12 @@ pub enum FilterSchemaError {
     key:      &'static str,
     strategy: MatchStrategy,
     kind:     FieldKind,
+  },
+  /// A facet on a kind whose values do not repeat: an instant is the row's own, and a uuid is one
+  /// row by construction.
+  FacetKindMismatch {
+    key:  &'static str,
+    kind: FieldKind,
   },
   /// The default sort names a key that is not declared, or one that is declared but not sortable.
   /// A list with no usable default sort paginates over an undefined order.
@@ -424,12 +461,16 @@ impl std::fmt::Display for FilterSchemaError {
       Self::UnexpectedVariants(key) => write!(f, "`{key}` declares variants but is not an enum"),
       Self::InertField(key) => write!(f, "`{key}` takes no operator and is not sortable"),
       Self::SortKeyWithoutSort(key) => write!(f, "`{key}` names a sort key but is not sortable"),
+      Self::FacetWithoutOps(key) => write!(f, "`{key}` takes no operator and cannot be a facet"),
       Self::OpNotAllowed { key, op } => write!(f, "`{key}` may not take `{op}`"),
       Self::StrategyKindMismatch {
         key,
         strategy,
         kind,
       } => write!(f, "`{key}` cannot match {kind:?} with {strategy:?}"),
+      Self::FacetKindMismatch { key, kind } => {
+        write!(f, "`{key}` cannot be a facet: {kind:?} values do not repeat across records")
+      }
       Self::UnsortableDefault(key) => write!(f, "the default sort `{key}` is not a sortable field"),
     }
   }
@@ -516,6 +557,45 @@ mod tests {
     assert_eq!(spec.validate(), Err(FilterSchemaError::InertField("dead")));
 
     assert!(FieldSpec::sort_only("created_at", FieldKind::DateTime).validate().is_ok());
+  }
+
+  #[test]
+  fn a_facet_needs_values_that_repeat_and_a_way_to_narrow() {
+    let instant =
+      FieldSpec::new("created_at", FieldKind::DateTime, MatchStrategy::Comparison, &[Op::Eq]).with_facet();
+
+    assert_eq!(
+      instant.validate(),
+      Err(FilterSchemaError::FacetKindMismatch {
+        key:  "created_at",
+        kind: FieldKind::DateTime,
+      })
+    );
+
+    let identifier =
+      FieldSpec::new("uuid", FieldKind::Uuid, MatchStrategy::Comparison, &[Op::Eq]).with_facet();
+
+    assert!(matches!(identifier.validate(), Err(FilterSchemaError::FacetKindMismatch { .. })));
+
+    let unfilterable = FieldSpec::sort_only("kind", FieldKind::Text).with_facet();
+    assert_eq!(unfilterable.validate(), Err(FilterSchemaError::FacetWithoutOps("kind")));
+
+    let status = FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq])
+      .with_variants(&["draft", "published"])
+      .with_facet();
+
+    assert!(status.validate().is_ok());
+  }
+
+  #[test]
+  fn a_field_that_is_no_facet_stays_out_of_the_descriptor_payload() {
+    let plain = text("name");
+    let grouped = FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq])
+      .with_variants(&["a"])
+      .with_facet();
+
+    assert!(!serde_json::to_string(&plain).expect("a field serializes").contains("facet"));
+    assert!(serde_json::to_string(&grouped).expect("a field serializes").contains("\"facet\":true"));
   }
 
   #[test]

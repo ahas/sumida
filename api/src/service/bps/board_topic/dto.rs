@@ -37,7 +37,8 @@ const BOARD_TOPIC_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("search", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]),
   FieldSpec::new("name", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
   FieldSpec::new("board_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/boards", "name"),
+    .with_relation("/boards", "name")
+    .with_facet(),
   FieldSpec::sort_only("created_at", FieldKind::DateTime),
 ];
 

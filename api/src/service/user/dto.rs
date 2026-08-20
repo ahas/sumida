@@ -91,9 +91,11 @@ const USER_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("username", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("organization_id", FieldKind::Integer, MatchStrategy::Custom, &[Op::Eq, Op::In])
-    .with_relation("/organizations", "name"),
+    .with_relation("/organizations", "name")
+    .with_facet(),
   FieldSpec::new("role_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/roles", "name"),
+    .with_relation("/roles", "name")
+    .with_facet(),
   FieldSpec::sort_only("email", FieldKind::Text),
   FieldSpec::sort_only("createdAt", FieldKind::DateTime),
   FieldSpec::sort_only("updatedAt", FieldKind::DateTime),

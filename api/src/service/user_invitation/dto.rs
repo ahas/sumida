@@ -30,7 +30,8 @@ const USER_INVITATION_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("uuid", FieldKind::Uuid, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
   FieldSpec::new("user_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
     .with_relation("/users", "username")
-    .with_sort(),
+    .with_sort()
+    .with_facet(),
   FieldSpec::sort_only("created_at", FieldKind::DateTime),
 ];
 

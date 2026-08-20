@@ -64,7 +64,8 @@ const BAN_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Contains]),
   FieldSpec::new("user_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
     .with_relation("/users", "username")
-    .with_sort(),
+    .with_sort()
+    .with_facet(),
   FieldSpec::new("username", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("ip_address", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]),

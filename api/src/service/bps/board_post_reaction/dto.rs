@@ -27,9 +27,12 @@ pub struct BoardPostReactionFilter {
 /// `user_id` narrows within the rows the post's visibility already opened. Under a private board
 /// the list has already pinned the caller's own id, so naming it here can only narrow further.
 const BOARD_POST_REACTION_FIELDS: &[FieldSpec] = &[
-  FieldSpec::new("value", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq]).with_sort(),
+  FieldSpec::new("value", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq])
+    .with_sort()
+    .with_facet(),
   FieldSpec::new("user_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/users", "username"),
+    .with_relation("/users", "username")
+    .with_facet(),
   FieldSpec::sort_only("createdAt", FieldKind::DateTime),
 ];
 

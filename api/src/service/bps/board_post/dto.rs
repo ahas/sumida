@@ -105,25 +105,29 @@ impl BoardPostFilter {
 /// a caller may send. Two of them are full text — `text` runs against the post's tsvector, and
 /// `search` widens that to the title as well — and both say so, because neither can be served by a
 /// substring `ILIKE` over the same column.
-const BOARD_POST_FIELDS: &[FieldSpec] =
-  &[
-    // Title `ILIKE` unioned with a tsquery over the body: two mechanisms in one predicate, which is
-    // what `Custom` is for.
-    FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Matches]),
-    FieldSpec::new("title", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
-    FieldSpec::new("text", FieldKind::Text, MatchStrategy::FullText, &[Op::Matches]),
-    FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq])
-      .with_variants(&["notice", "article", "comment", "reply"]),
-    FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-      .with_variants(&["draft", "published", "archived", "deleted", "scheduled", "suspended"]),
-    FieldSpec::new("board_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-      .with_relation("/boards", "name"),
-    FieldSpec::new("topic_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-      .with_relation("/board-topics", "name"),
-    FieldSpec::new("parent_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-      .with_relation("/board-posts", "title"),
-    FieldSpec::sort_only("created_at", FieldKind::DateTime),
-  ];
+const BOARD_POST_FIELDS: &[FieldSpec] = &[
+  // Title `ILIKE` unioned with a tsquery over the body: two mechanisms in one predicate, which is
+  // what `Custom` is for.
+  FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Matches]),
+  FieldSpec::new("title", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("text", FieldKind::Text, MatchStrategy::FullText, &[Op::Matches]),
+  FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq])
+    .with_variants(&["notice", "article", "comment", "reply"])
+    .with_facet(),
+  FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["draft", "published", "archived", "deleted", "scheduled", "suspended"])
+    .with_facet(),
+  FieldSpec::new("board_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/boards", "name")
+    .with_facet(),
+  FieldSpec::new("topic_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/board-topics", "name")
+    .with_facet(),
+  FieldSpec::new("parent_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_relation("/board-posts", "title")
+    .with_facet(),
+  FieldSpec::sort_only("created_at", FieldKind::DateTime),
+];
 
 impl FilterSchema for BoardPostFilter {
   fn fields() -> &'static [FieldSpec] {

@@ -25,7 +25,7 @@ pub struct CouponFilter {
 /// The route is administrators only, and that is settled from the session before the list runs — no
 /// parameter of this list picks a scope, so `isActive` is an ordinary narrowing filter.
 const COUPON_FIELDS: &[FieldSpec] = &[
-  FieldSpec::new("isActive", FieldKind::Boolean, MatchStrategy::Comparison, &[Op::Eq]),
+  FieldSpec::new("isActive", FieldKind::Boolean, MatchStrategy::Comparison, &[Op::Eq]).with_facet(),
   FieldSpec::sort_only("code", FieldKind::Text),
   FieldSpec::sort_only("id", FieldKind::Integer),
 ];

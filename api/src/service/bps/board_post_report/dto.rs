@@ -23,9 +23,11 @@ pub struct BoardPostReportFilter {
 /// both keys narrow inside an all-or-nothing scope rather than choosing one.
 const BOARD_POST_REPORT_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("post_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/board-posts", "title"),
+    .with_relation("/board-posts", "title")
+    .with_facet(),
   FieldSpec::new("user_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/users", "username"),
+    .with_relation("/users", "username")
+    .with_facet(),
   FieldSpec::sort_only("createdAt", FieldKind::DateTime),
 ];
 

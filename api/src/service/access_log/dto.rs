@@ -91,7 +91,8 @@ const ACCESS_LOG_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("search", FieldKind::Text, MatchStrategy::Custom, &[Op::Contains]),
   FieldSpec::new("user_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
     .with_relation("/users", "username")
-    .with_sort(),
+    .with_sort()
+    .with_facet(),
   FieldSpec::new("username", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("code", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
@@ -102,12 +103,16 @@ const ACCESS_LOG_FIELDS: &[FieldSpec] = &[
       "account-inactive",
       "account-banned",
     ])
-    .with_sort(),
+    .with_sort()
+    .with_facet(),
   FieldSpec::new("method", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
     .with_variants(&["password", "bearer", "api-key"])
-    .with_sort(),
-  FieldSpec::new("ip_address", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
-  FieldSpec::new("user_agent", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]),
+    .with_sort()
+    .with_facet(),
+  FieldSpec::new("ip_address", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains])
+    .with_sort()
+    .with_facet(),
+  FieldSpec::new("user_agent", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_facet(),
   FieldSpec::new("createdAt", FieldKind::DateTime, MatchStrategy::Comparison, RANGE_OPS).with_sort(),
 ];
 

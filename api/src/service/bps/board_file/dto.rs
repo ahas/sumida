@@ -48,7 +48,8 @@ const BOARD_FILE_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("id", FieldKind::Uuid, MatchStrategy::Comparison, &[Op::Eq, Op::In])
     .with_relation("/files", "name"),
   FieldSpec::new("post_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_relation("/board-posts", "title"),
+    .with_relation("/board-posts", "title")
+    .with_facet(),
   FieldSpec::sort_only("dir", FieldKind::Text),
   FieldSpec::sort_only("name", FieldKind::Text),
   FieldSpec::sort_only("size", FieldKind::Integer),

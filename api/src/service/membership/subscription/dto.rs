@@ -35,11 +35,13 @@ pub struct SubscriptionFilter {
 /// exactly one resource.
 const SUBSCRIPTION_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("ownerKind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_variants(&["personal", "organization"]),
-  FieldSpec::new("ownerId", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
+    .with_variants(&["personal", "organization"])
+    .with_facet(),
+  FieldSpec::new("ownerId", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_facet(),
   FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-    .with_variants(&["pending", "active", "past-due", "canceled", "expired"]),
-  FieldSpec::new("planCode", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
+    .with_variants(&["pending", "active", "past-due", "canceled", "expired"])
+    .with_facet(),
+  FieldSpec::new("planCode", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_facet(),
   FieldSpec::sort_only("createdAt", FieldKind::DateTime),
   FieldSpec::sort_only("currentPeriodEnd", FieldKind::DateTime),
   FieldSpec::sort_only("id", FieldKind::Integer),

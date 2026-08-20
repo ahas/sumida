@@ -66,13 +66,18 @@ impl FileFilter {
 /// single expression and the resource builds it. Everything else stands on one column of the file.
 const FILE_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("user", FieldKind::Text, MatchStrategy::Custom, &[Op::Contains]),
-  FieldSpec::new("dir", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+  FieldSpec::new("dir", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains])
+    .with_sort()
+    .with_facet(),
   FieldSpec::new("name", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("uri", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
   FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
     .with_variants(&["pending", "temporary", "active", "archived", "deleted", "error"])
-    .with_sort(),
-  FieldSpec::new("mime_type", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains]).with_sort(),
+    .with_sort()
+    .with_facet(),
+  FieldSpec::new("mime_type", FieldKind::Text, MatchStrategy::Substring, &[Op::Contains])
+    .with_sort()
+    .with_facet(),
   FieldSpec::sort_only("uuid", FieldKind::Uuid),
 ];
 

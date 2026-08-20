@@ -47,10 +47,18 @@ impl RelationTupleFilter {
 /// substring search over identifiers is how `user:1` finds `user:12` and a support engineer revokes
 /// the wrong grant. The one thing this screen exists to make precise is *which* row.
 const RELATION_TUPLE_FIELDS: &[FieldSpec] = &[
-  FieldSpec::new("resourceType", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
-  FieldSpec::new("resourceId", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
-  FieldSpec::new("relation", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
-  FieldSpec::new("subject", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_sort(),
+  FieldSpec::new("resourceType", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_sort()
+    .with_facet(),
+  FieldSpec::new("resourceId", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_sort()
+    .with_facet(),
+  FieldSpec::new("relation", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_sort()
+    .with_facet(),
+  FieldSpec::new("subject", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_sort()
+    .with_facet(),
   FieldSpec::sort_only("expiresAt", FieldKind::DateTime),
   FieldSpec::sort_only("createdAt", FieldKind::DateTime),
 ];

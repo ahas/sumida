@@ -26,19 +26,21 @@ pub struct PurchaseFilter {
 ///
 /// `ownerId` carries no relation hint: what it points at depends on `ownerKind`, and a hint names
 /// exactly one resource. A picker would have to branch on another key, which the hint cannot say.
-const PURCHASE_FIELDS: &[FieldSpec] =
-  &[
-    FieldSpec::new("ownerKind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-      .with_variants(&["personal", "organization"]),
-    FieldSpec::new("ownerId", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
-    FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-      .with_variants(&["subscription", "credit"]),
-    FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
-      .with_variants(&["pending", "completed", "failed", "refunded"]),
-    FieldSpec::new("planCode", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]),
-    FieldSpec::sort_only("createdAt", FieldKind::DateTime),
-    FieldSpec::sort_only("id", FieldKind::Integer),
-  ];
+const PURCHASE_FIELDS: &[FieldSpec] = &[
+  FieldSpec::new("ownerKind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["personal", "organization"])
+    .with_facet(),
+  FieldSpec::new("ownerId", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_facet(),
+  FieldSpec::new("kind", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["subscription", "credit"])
+    .with_facet(),
+  FieldSpec::new("status", FieldKind::Enum, MatchStrategy::Comparison, &[Op::Eq, Op::In])
+    .with_variants(&["pending", "completed", "failed", "refunded"])
+    .with_facet(),
+  FieldSpec::new("planCode", FieldKind::Text, MatchStrategy::Comparison, &[Op::Eq, Op::In]).with_facet(),
+  FieldSpec::sort_only("createdAt", FieldKind::DateTime),
+  FieldSpec::sort_only("id", FieldKind::Integer),
+];
 
 impl FilterSchema for PurchaseFilter {
   fn fields() -> &'static [FieldSpec] {
