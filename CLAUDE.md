@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cargo run --bin migration` — 엔티티/마이그레이션 수정 후 스키마 적용
 - `cargo run --features full-local --example basic` — 로컬 스택(Redis+local-fs)으로 기본 예제 서버 실행
 - `cargo run --features full-aws --example basic` — AWS 스택(DynamoDB+S3+SSM) 검증
-- `cargo test` — 워크스페이스 전체 유닛/통합 테스트
+- `bash scripts/test/suite.sh` — 통합 테스트 전체. **통합 테스트는 이걸로 돌린다.**
+- `cargo test` — 유닛 테스트용. 통합 테스트까지 함께 돌리면 결과를 믿을 수 없다(아래)
 - `cargo test --package e2e` — E2E 시나리오만
 - `cargo test --features test-suite` — CI feature-gated 검사
 - `cargo fmt`, `cargo clippy --all-targets --all-features` — 푸시 전 필수
@@ -229,6 +230,11 @@ room 자동 가입 규칙: 접속 사용자는 `org:N`, `user:N`, `admin`(관리
 ## 테스트
 
 유닛 테스트는 대상 모듈 옆 `#[cfg(test)]`. E2E는 `e2e/`, feature flag를 모듈 docs에 명시. DB-heavy 케이스는 `infra`의 SeaORM 인-메모리 헬퍼 사용(ad-hoc 연결 금지).
+
+**통합 테스트 바이너리는 한 번에 하나만 돈다.** 하네스가 시작할 때 데이터베이스를 통째로 지우고
+다시 세우는데, `cargo test` 는 테스트 바이너리 여러 개를 동시에 띄운다. 그래서 한 쪽이 도는 중에
+다른 쪽이 그 테이블을 지우고, 매 실행마다 다른 테스트가 401·403·500 으로 떨어진다. 혼자 돌리면
+통과하므로 진짜 실패와 구분이 되지 않는다. `scripts/test/suite.sh` 가 대상을 하나씩 넘긴다.
 
 ## 후속 작업
 
