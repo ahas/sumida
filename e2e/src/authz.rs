@@ -388,11 +388,16 @@ impl StreamProbe {
   /// The resource ids the subscriber actually received.
   ///
   /// Read out of each payload by the shapes the SSE endpoints in this codebase emit: the resource
-  /// itself (`{"id": …}`), a tagged envelope (`{"kind": …, "data": {"id": …}}`), and a log line
-  /// that names the task it belongs to (`{"taskId": …}`), in that order. A payload with none of
-  /// them contributes no id — assert on [`Self::events`] for those.
+  /// itself (`{"id": …}`), a tagged envelope (`{"kind": …, "data": {"id": …}}`), a log line that
+  /// names the task it belongs to (`{"taskId": …}`), and a batch carrying several resources at
+  /// once (`[{"id": …}, …]`), which contributes every id in it. A payload with none of them
+  /// contributes no id — assert on [`Self::events`] for those.
+  ///
+  /// The batch shape matters for the same reason the others do: an endpoint that publishes a whole
+  /// list per event leaks by including a row in the batch, and a reader that only understands one
+  /// id per event sees an empty set either way.
   pub fn ids(&self) -> BTreeSet<String> {
-    self.events.iter().filter_map(|e| event_id(&e.data)).collect()
+    self.events.iter().flat_map(|e| event_ids(&e.data)).collect()
   }
 
   /// Asserts the subscription was established.
@@ -563,12 +568,18 @@ fn parse_sse_block(block: &str) -> Option<StreamEvent> {
   Some(StreamEvent { name, data })
 }
 
-fn event_id(data: &Value) -> Option<String> {
+fn event_ids(data: &Value) -> Vec<String> {
+  if let Some(batch) = data.as_array() {
+    return batch.iter().flat_map(event_ids).collect();
+  }
+
   data
     .get("id")
     .or_else(|| data.get("data").and_then(|d| d.get("id")))
     .or_else(|| data.get("taskId"))
     .map(id_to_string)
+    .into_iter()
+    .collect()
 }
 
 /// The outcome of a single-resource request.
