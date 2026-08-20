@@ -16,7 +16,7 @@ use super::util;
 use crate::service::auth::helper::verify_password;
 use crate::service::prelude::BoardFileListItem;
 use crate::util::db::{tsquery, wrap_ilike};
-use crate::util::filter::{ConditionTree, FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
+use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
 pub trait Reply {
   fn get_id(&self) -> i32;
@@ -442,6 +442,7 @@ impl IntoResponse for BoardPostPublished {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::util::filter::ConditionTree;
 
   #[test]
   fn the_declaration_is_sound() {

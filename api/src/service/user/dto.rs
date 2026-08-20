@@ -19,6 +19,8 @@ pub struct UserFilter {
   pub name:            Option<String>,
   pub organization_id: Option<OneOrMany<i32>>,
   pub role_id:         Option<OneOrMany<i32>>,
+  pub is_enabled:      Option<bool>,
+  pub is_admin:        Option<bool>,
   /// Whether `organization_id` matches by equality or through the organization tree. It has no
   /// expression of its own — it selects which mechanism the other key uses — so it is a modifier of
   /// that key rather than a field.
@@ -37,7 +39,9 @@ impl UserFilter {
       })
       .apply_if(self.username.as_ref(), |q, v| q.filter(wrap_ilike(Column::Username.into_expr(), v)))
       .apply_if(self.name.as_ref(), |q, v| q.filter(wrap_ilike(Column::FullName.into_expr(), v)))
-      .apply_if(listed(self.role_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::RoleId)));
+      .apply_if(listed(self.role_id.as_ref()), |q, v| q.filter(v.into_simple_expr(Column::RoleId)))
+      .apply_if(self.is_enabled, |q, v| q.filter(Column::IsEnabled.eq(v)))
+      .apply_if(self.is_admin, |q, v| q.filter(Column::IsAdmin.eq(v)));
 
     // An empty list means unfiltered, so it never narrows the query.
     if let Some(org_id) = self.organization_id.as_ref().filter(|v| !v.is_empty()) {
@@ -96,6 +100,13 @@ const USER_FIELDS: &[FieldSpec] = &[
   FieldSpec::new("role_id", FieldKind::Integer, MatchStrategy::Comparison, &[Op::Eq, Op::In])
     .with_relation("/roles", "name")
     .with_facet(),
+  // Two classes over the whole table, which is what makes narrowing to one worth offering.
+  FieldSpec::new("is_enabled", FieldKind::Boolean, MatchStrategy::Comparison, &[Op::Eq])
+    .with_sort()
+    .with_facet(),
+  FieldSpec::new("is_admin", FieldKind::Boolean, MatchStrategy::Comparison, &[Op::Eq])
+    .with_sort()
+    .with_facet(),
   FieldSpec::sort_only("email", FieldKind::Text),
   FieldSpec::sort_only("createdAt", FieldKind::DateTime),
   FieldSpec::sort_only("updatedAt", FieldKind::DateTime),
@@ -111,6 +122,8 @@ impl FilterSchema for UserFilter {
       "username" => Column::Username.into_simple_expr(),
       "name" => Column::FullName.into_simple_expr(),
       "role_id" => Column::RoleId.into_simple_expr(),
+      "is_enabled" => Column::IsEnabled.into_simple_expr(),
+      "is_admin" => Column::IsAdmin.into_simple_expr(),
       "email" => Column::Email.into_simple_expr(),
       "createdAt" => Column::CreatedAt.into_simple_expr(),
       "updatedAt" => Column::UpdatedAt.into_simple_expr(),
