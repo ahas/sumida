@@ -308,7 +308,7 @@ mod filter_tests {
 
   #[test]
   fn every_declared_filterable_key_is_a_query_parameter_the_list_reads() {
-    let query = "search=a&username=b&name=c&organization_id=1&role_id=2";
+    let query = "search=a&username=b&name=c&organization_id=1&role_id=2&is_enabled=true&is_admin=false";
     let filter: UserFilter = serde_urlencoded::from_str(query).expect("the flat filter parses");
 
     assert!(filter.search.is_some());
@@ -316,6 +316,8 @@ mod filter_tests {
     assert!(filter.name.is_some());
     assert!(filter.organization_id.is_some());
     assert!(filter.role_id.is_some());
+    assert!(filter.is_enabled.is_some());
+    assert!(filter.is_admin.is_some());
   }
 
   #[test]
@@ -337,7 +339,7 @@ mod filter_tests {
   /// not a field. Nothing may reach it, and neither may any key the resource never declared.
   #[test]
   fn the_non_field_parameters_resolve_to_nothing() {
-    for spelling in ["recursive", "password", "is_admin", "organizationId", "roleId"] {
+    for spelling in ["recursive", "password", "organizationId", "roleId"] {
       assert!(UserFilter::field(spelling).is_none(), "{spelling}");
       assert!(UserFilter::resolve(spelling).is_none(), "{spelling}");
       assert!(UserFilter::sort_column(spelling).is_none(), "{spelling}");
