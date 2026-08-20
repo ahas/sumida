@@ -79,7 +79,7 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     }
 
     // 4) Check the user password
-    let result = if helper::verify_password(&data.password, &user.password) {
+    if helper::verify_password(&data.password, &user.password) {
       self
         .session
         .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::Success, db)
@@ -110,9 +110,7 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
       let banned = self.session.ban_if_exceeded_limit(Some(user.id), db).await?;
 
       Err(if banned { SumidaError::AccountBanned } else { SumidaError::InvalidAccount })
-    };
-
-    result
+    }
   }
 
   /// Revoke a session: blacklist the refresh token (and delete it from the store) and the current
@@ -127,14 +125,14 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     J: infra::jwt::JwtTokenStore,
   {
     // If a refresh token is present, blacklist it and delete it from the store.
-    if let Some(token) = refresh_token {
-      if let Ok(claims) = helper::verify_jwt_token(&token).await {
-        self
-          .jwt_store
-          .blacklist_token(&claims.jti, chrono::DateTime::from_timestamp(claims.exp, 0).unwrap_or_default())
-          .await?;
-        self.jwt_store.delete_refresh_token(&claims.jti).await?;
-      }
+    if let Some(token) = refresh_token
+      && let Ok(claims) = helper::verify_jwt_token(&token).await
+    {
+      self
+        .jwt_store
+        .blacklist_token(&claims.jti, chrono::DateTime::from_timestamp(claims.exp, 0).unwrap_or_default())
+        .await?;
+      self.jwt_store.delete_refresh_token(&claims.jti).await?;
     }
 
     // Blacklist the access token too for immediate invalidation (verify_jwt looks up the jti).

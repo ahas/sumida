@@ -8,7 +8,7 @@ use error::SumidaError;
 use infra::settings;
 use tokio::io::AsyncRead;
 
-use crate::util::file_validation::{FileInfo, IntoFileInfo};
+use crate::util::file_validation::FileInfo;
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
 
@@ -44,10 +44,9 @@ impl StaticFile {
       .to_string_lossy()
       .into_owned()
   }
-}
 
-impl IntoFileInfo for StaticFile {
-  fn into_file_info(&self) -> FileInfo {
+  /// What the validator reads about this file.
+  pub fn file_info(&self) -> FileInfo {
     FileInfo::new(self.name.clone(), self.bytes.len(), self.mime_type.clone())
   }
 }

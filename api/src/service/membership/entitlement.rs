@@ -106,24 +106,19 @@ impl<S: SumidaState> EntitlementService<S> {
     }
 
     // Atomic check-and-increment scoped to this subscription's current period.
-    #[derive(FromQueryResult)]
-    struct UsedRow {
-      used: i64,
-    }
-    let row = UsedRow::find_by_statement(Statement::from_sql_and_values(
-      backend,
-      r#"INSERT INTO subscription_usage (subscription_id, action, period_start, used)
+    let consumed = db
+      .execute(Statement::from_sql_and_values(
+        backend,
+        r#"INSERT INTO subscription_usage (subscription_id, action, period_start, used)
          VALUES ($1, $2, $3, 1)
          ON CONFLICT (subscription_id, action, period_start)
          DO UPDATE SET used = subscription_usage.used + 1
-         WHERE subscription_usage.used < $4
-         RETURNING used"#,
-      [sub.id.into(), action.into(), sub.current_period_start.into(), quota.into()],
-    ))
-    .one(db)
-    .await?;
+         WHERE subscription_usage.used < $4"#,
+        [sub.id.into(), action.into(), sub.current_period_start.into(), quota.into()],
+      ))
+      .await?;
 
-    Ok(row.is_some())
+    Ok(consumed.rows_affected() > 0)
   }
 
   /// Hybrid entitlement gate. Tries the active subscription and credit balance

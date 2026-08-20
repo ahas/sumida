@@ -13,7 +13,6 @@ use sea_orm::{
   Condition,
   ConnectionTrait,
   EntityTrait,
-  FromQueryResult,
   PaginatorTrait,
   QueryFilter,
   QuerySelect,
@@ -362,20 +361,15 @@ impl<S: SumidaState> CouponService<S> {
       }
     }
 
-    #[derive(FromQueryResult)]
-    struct Redeemed {
-      redeemed_count: i32,
-    }
-    let updated = Redeemed::find_by_statement(Statement::from_sql_and_values(
-      txn.get_database_backend(),
-      r#"UPDATE coupons SET redeemed_count = redeemed_count + 1
-         WHERE id = $1 AND (max_redemptions IS NULL OR redeemed_count < max_redemptions)
-         RETURNING redeemed_count"#,
-      [coupon.id.into()],
-    ))
-    .one(txn)
-    .await?;
-    if updated.is_none() {
+    let updated = txn
+      .execute(Statement::from_sql_and_values(
+        txn.get_database_backend(),
+        r#"UPDATE coupons SET redeemed_count = redeemed_count + 1
+         WHERE id = $1 AND (max_redemptions IS NULL OR redeemed_count < max_redemptions)"#,
+        [coupon.id.into()],
+      ))
+      .await?;
+    if updated.rows_affected() == 0 {
       return Err(SumidaError::BadRequest("coupon redemption limit reached".into()));
     }
 
@@ -412,19 +406,19 @@ impl<S: SumidaState> CouponService<S> {
     if !coupon.is_active {
       return Err(SumidaError::BadRequest("coupon is not active".into()));
     }
-    if let Some(exp) = coupon.expires_at {
-      if exp <= Utc::now() {
-        return Err(SumidaError::BadRequest("coupon has expired".into()));
-      }
+    if let Some(exp) = coupon.expires_at
+      && exp <= Utc::now()
+    {
+      return Err(SumidaError::BadRequest("coupon has expired".into()));
     }
     let Some(pct) = coupon.percent_off else {
       return Err(SumidaError::BadRequest("this is a reward coupon — redeem it instead".into()));
     };
     // Currency-scope: a regional promo applies only to its currency.
-    if let Some(scope) = &coupon.currency {
-      if scope != currency {
-        return Err(SumidaError::BadRequest("coupon is not valid for this currency".into()));
-      }
+    if let Some(scope) = &coupon.currency
+      && scope != currency
+    {
+      return Err(SumidaError::BadRequest("coupon is not valid for this currency".into()));
     }
     // Plan-scope: if the coupon lists plans, the checkout plan must be among them.
     let plan_rows = CouponPlans::find().filter(CouponPlansColumn::CouponId.eq(coupon.id)).all(txn).await?;
@@ -457,10 +451,10 @@ impl<S: SumidaState> CouponService<S> {
     if !coupon.is_active {
       return Err(SumidaError::BadRequest("coupon is not active".into()));
     }
-    if let Some(exp) = coupon.expires_at {
-      if exp <= Utc::now() {
-        return Err(SumidaError::BadRequest("coupon has expired".into()));
-      }
+    if let Some(exp) = coupon.expires_at
+      && exp <= Utc::now()
+    {
+      return Err(SumidaError::BadRequest("coupon has expired".into()));
     }
     if coupon.percent_off.is_some() {
       return Err(SumidaError::BadRequest("this is a discount coupon — use it at checkout".into()));

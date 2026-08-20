@@ -757,5 +757,5 @@ async fn test_auto_renew_requires_billing_key() {
     .json()
     .await
     .unwrap();
-  assert_eq!(got["autoRenew"].as_bool().unwrap(), true, "auto-renew must be enabled");
+  assert!(got["autoRenew"].as_bool().unwrap(), "auto-renew must be enabled");
 }

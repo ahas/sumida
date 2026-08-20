@@ -738,8 +738,7 @@ async fn deleting_a_board_file_is_authorized_through_its_post() {
   let file_uuid = seed_file(&db, author.model.id).await;
   BoardFiles::insert(entity::bps::board_files::ActiveModel {
     file_uuid: Set(file_uuid),
-    post_id: Set(Some(post_id)),
-    ..Default::default()
+    post_id:   Set(Some(post_id)),
   })
   .exec(&db)
   .await

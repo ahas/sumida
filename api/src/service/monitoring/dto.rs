@@ -122,7 +122,7 @@ impl ServiceHealth {
     }
   }
 
-  pub async fn new_for_db<'db, C: ConnectionTrait>(db: &'db C) -> Self {
+  pub async fn new_for_db<C: ConnectionTrait>(db: &C) -> Self {
     use sea_orm::Statement;
 
     let (status, message) =

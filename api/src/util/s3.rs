@@ -13,7 +13,7 @@ pub trait IntoS3Uri {
 
 impl IntoS3Uri for (String, String) {
   fn into_s3_uri(self) -> String {
-    format!("s3://{bucket}/{key}", bucket = &self.0, key = &self.1)
+    format!("s3://{bucket}/{key}", bucket = self.0, key = self.1)
   }
 }
 
@@ -76,8 +76,7 @@ pub async fn get_json(
 ) -> Result<serde_json::Value, anyhow::Error> {
   let bytes = get_bytes(client, uri.clone()).await?;
 
-  serde_json::from_slice(&bytes.into_bytes())
-    .map_err(|err| anyhow!("json parsing failure {uri}: {}", err.to_string()))
+  serde_json::from_slice(&bytes.into_bytes()).map_err(|err| anyhow!("json parsing failure {uri}: {}", err))
 }
 
 #[allow(dead_code)]

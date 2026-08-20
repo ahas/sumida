@@ -28,6 +28,12 @@ pub struct SysinfoMetricsProvider {
   system: Arc<Mutex<System>>,
 }
 
+impl Default for SysinfoMetricsProvider {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl SysinfoMetricsProvider {
   pub fn new() -> Self {
     let refresh = RefreshKind::nothing()

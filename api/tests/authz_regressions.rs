@@ -808,8 +808,7 @@ async fn seed_board_world(db: &DatabaseConnection, author: &entity::users::Model
   let file_uuid = seed_file(db, author).await;
   BoardFiles::insert(entity::bps::board_files::ActiveModel {
     file_uuid: Set(file_uuid),
-    post_id: Set(Some(post_id)),
-    ..Default::default()
+    post_id:   Set(Some(post_id)),
   })
   .exec(db)
   .await

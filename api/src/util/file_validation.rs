@@ -86,10 +86,6 @@ impl FileInfo {
   }
 }
 
-pub trait IntoFileInfo {
-  fn into_file_info(&self) -> FileInfo;
-}
-
 pub struct FileValidator {
   config: FileValidationConfig,
 }
@@ -132,19 +128,18 @@ impl FileValidator {
   }
 
   pub fn validate_extension(self, extension: Option<&str>) -> Result<Self, SumidaError> {
-    if let Some(extension) = extension {
-      if !self.config.allowed_file_types.is_empty()
-        && !self
-          .config
-          .allowed_file_types
-          .iter()
-          .any(|t| t.to_lowercase() == extension.to_lowercase())
-      {
-        return Err(SumidaError::InvalidFileType {
-          extension:     extension.to_string(),
-          allowed_types: self.config.allowed_file_types.clone(),
-        });
-      }
+    if let Some(extension) = extension
+      && !self.config.allowed_file_types.is_empty()
+      && !self
+        .config
+        .allowed_file_types
+        .iter()
+        .any(|t| t.to_lowercase() == extension.to_lowercase())
+    {
+      return Err(SumidaError::InvalidFileType {
+        extension:     extension.to_string(),
+        allowed_types: self.config.allowed_file_types.clone(),
+      });
     }
 
     Ok(self)
@@ -176,7 +171,7 @@ impl FileValidator {
       "text/x-script",
     ];
 
-    if dangerous_types.iter().any(|&dangerous| mime_type == dangerous) {
+    if dangerous_types.contains(&mime_type) {
       return Err(SumidaError::UnsupportedMimeType(mime_type.to_string()));
     }
 

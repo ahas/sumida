@@ -24,7 +24,7 @@ impl<S: SumidaState> BoardPostController<S> {
     Query(conditions): Query<ConditionQuery>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
-    Ok(BoardPostService::new(state, session).list(filter, conditions, pagination).await?.into())
+    BoardPostService::new(state, session).list(filter, conditions, pagination).await
   }
 
   async fn get(
@@ -56,7 +56,7 @@ impl<S: SumidaState> BoardPostController<S> {
     Path(id): Path<i32>,
     Query(pagination): Query<Pagination>,
   ) -> Result<List<BoardPostViewerItem>, SumidaError> {
-    Ok(BoardPostService::new(state, session).list_viewers(id, pagination).await?.into())
+    BoardPostService::new(state, session).list_viewers(id, pagination).await
   }
 
   async fn create(

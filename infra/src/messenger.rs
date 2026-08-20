@@ -35,13 +35,12 @@ impl SumidaMessenger {
 
   #[inline]
   pub fn within(&self, rooms: impl RoomParam) -> Self {
-    let rooms = rooms.into_room_iter().collect();
+    let rooms: Vec<_> = rooms.into_room_iter().collect();
 
     let mut messenger = self.clone();
-    messenger.rooms = Some(if messenger.rooms.is_none() {
-      rooms
-    } else {
-      [messenger.rooms.unwrap(), rooms].concat()
+    messenger.rooms = Some(match messenger.rooms.take() {
+      Some(already) => [already, rooms].concat(),
+      None => rooms,
     });
 
     messenger
@@ -50,13 +49,13 @@ impl SumidaMessenger {
   #[inline]
   pub fn org(&self, org_ids: impl IntoIterator<Item = i32>) -> Self {
     let org_rooms = org_ids.into_iter().map(|x| format!("org:{x}")).collect::<Vec<_>>();
-    self.clone().within(org_rooms)
+    self.within(org_rooms)
   }
 
   #[inline]
   pub fn user(&self, user_ids: impl IntoIterator<Item = i32>) -> Self {
     let user_rooms = user_ids.into_iter().map(|x| format!("user:{x}")).collect::<Vec<_>>();
-    self.clone().within(user_rooms)
+    self.within(user_rooms)
   }
 
   #[inline]

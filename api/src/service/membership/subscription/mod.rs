@@ -288,16 +288,15 @@ impl<S: SumidaState> SubscriptionService<S> {
     self.authorize(&owner_kind, owner_id, "manage", &txn).await?;
 
     // Idempotency: same key already created a subscription → return it.
-    if let Some(key) = &data.idempotency_key {
-      if let Some(existing) =
+    if let Some(key) = &data.idempotency_key
+      && let Some(existing) =
         Subscriptions::find().filter(Column::IdempotencyKey.eq(key.clone())).one(&txn).await?
-      {
-        txn.commit().await?;
-        return Ok(SubscriptionCreated {
-          id:   existing.id,
-          code: existing.code,
-        });
-      }
+    {
+      txn.commit().await?;
+      return Ok(SubscriptionCreated {
+        id:   existing.id,
+        code: existing.code,
+      });
     }
 
     let plan = MembershipPlans::find()

@@ -313,19 +313,18 @@ impl<S: SumidaState> CreditService<S> {
     let balance = Self::sweep_expired(wallet.id, wallet.balance, txn).await?;
 
     // Idempotency: a prior ledger row with the same key on this wallet → return as-is.
-    if let Some(key) = idempotency_key {
-      if let Some(prev) = CreditTransactions::find()
+    if let Some(key) = idempotency_key
+      && let Some(prev) = CreditTransactions::find()
         .filter(CreditTransactionsColumn::WalletId.eq(wallet.id))
         .filter(CreditTransactionsColumn::IdempotencyKey.eq(key))
         .one(txn)
         .await?
-      {
-        return Ok(DebitOutcome {
-          wallet_id: wallet.id,
-          debited: -prev.amount,
-          balance,
-        });
-      }
+    {
+      return Ok(DebitOutcome {
+        wallet_id: wallet.id,
+        debited: -prev.amount,
+        balance,
+      });
     }
 
     if amount == 0 {
@@ -472,19 +471,18 @@ impl<S: SumidaState> CreditService<S> {
 
     let balance = Self::sweep_expired(wallet.id, wallet.balance, txn).await?;
 
-    if let Some(key) = idempotency_key {
-      if let Some(prev) = CreditTransactions::find()
+    if let Some(key) = idempotency_key
+      && let Some(prev) = CreditTransactions::find()
         .filter(CreditTransactionsColumn::WalletId.eq(wallet.id))
         .filter(CreditTransactionsColumn::IdempotencyKey.eq(key))
         .one(txn)
         .await?
-      {
-        return Ok(GrantResult {
-          wallet_id: wallet.id,
-          granted: prev.amount,
-          balance,
-        });
-      }
+    {
+      return Ok(GrantResult {
+        wallet_id: wallet.id,
+        granted: prev.amount,
+        balance,
+      });
     }
 
     let lot = CreditGrants::insert(CreditGrantsActiveModel {
@@ -666,23 +664,22 @@ impl<S: SumidaState> CreditService<S> {
     let balance = Self::sweep_expired(wallet.id, wallet.balance, &txn).await?;
 
     // Idempotency: same key on this wallet → return the existing reservation.
-    if let Some(key) = &data.idempotency_key {
-      if let Some(prev) = CreditReservations::find()
+    if let Some(key) = &data.idempotency_key
+      && let Some(prev) = CreditReservations::find()
         .filter(CreditReservationsColumn::WalletId.eq(wallet.id))
         .filter(CreditReservationsColumn::IdempotencyKey.eq(key.clone()))
         .one(&txn)
         .await?
-      {
-        let reserved = Self::held_reserved(wallet.id, &txn).await?;
-        txn.commit().await?;
-        return Ok(ReservationResult {
-          reservation_id: prev.id,
-          wallet_id:      wallet.id,
-          amount:         prev.amount,
-          status:         prev.status,
-          spendable:      balance - reserved,
-        });
-      }
+    {
+      let reserved = Self::held_reserved(wallet.id, &txn).await?;
+      txn.commit().await?;
+      return Ok(ReservationResult {
+        reservation_id: prev.id,
+        wallet_id:      wallet.id,
+        amount:         prev.amount,
+        status:         prev.status,
+        spendable:      balance - reserved,
+      });
     }
 
     let cost = Self::resolve_cost(&data.action, data.plan_code.as_deref(), &txn)

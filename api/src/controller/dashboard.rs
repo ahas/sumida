@@ -47,7 +47,7 @@ impl<S: SumidaState> DashboardMonitoringController<S> {
       .event("dashboard.components")
       .json_data(&components)
       .ok()
-      .map(|event| Ok::<_, Infallible>(event));
+      .map(Ok::<_, Infallible>);
 
     // System Info Stream
     let system_info = service.system_info();
@@ -55,7 +55,7 @@ impl<S: SumidaState> DashboardMonitoringController<S> {
       .event("dashboard.system_info")
       .json_data(&system_info)
       .ok()
-      .map(|event| Ok::<_, Infallible>(event));
+      .map(Ok::<_, Infallible>);
 
     // Snapshot Stream
     let mut interval = tokio::time::interval(Duration::from_secs(1));
@@ -71,7 +71,7 @@ impl<S: SumidaState> DashboardMonitoringController<S> {
           .event("dashboard.snapshot")
           .json_data(&snapshot)
           .ok()
-          .map(|event| Ok::<_, Infallible>(event)),
+          .map(Ok::<_, Infallible>),
         Err(err) => {
           tracing::error!(error = %err, "failed to collect dashboard snapshot");
           None

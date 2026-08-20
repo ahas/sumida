@@ -502,7 +502,7 @@ async fn test_subscription_cancel_at_period_end() {
     .await
     .unwrap();
   assert_eq!(got["status"].as_str().unwrap(), "active", "still active until period end");
-  assert_eq!(got["cancelAtPeriodEnd"].as_bool().unwrap(), true);
+  assert!(got["cancelAtPeriodEnd"].as_bool().unwrap());
 
   // Still entitled during the remaining period.
   let r = user_mock

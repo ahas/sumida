@@ -94,10 +94,10 @@ impl<S: SumidaState> BoardService<S> {
     )
   }
 
-  async fn update_topics<'db, C: ConnectionTrait>(
+  async fn update_topics<C: ConnectionTrait>(
     board_id: i32,
     topics: Option<Vec<String>>,
-    db: &'db C,
+    db: &C,
   ) -> Result<(), SumidaError> {
     BoardTopics::delete_many()
       .filter(BoardTopicsColumn::BoardId.eq(board_id))

@@ -11,17 +11,6 @@ use reqwest::StatusCode;
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 use serde_json::{Value, json};
 
-/// Minimal `SumidaState` so generic maintenance jobs can run directly.
-#[derive(Clone)]
-struct RState {
-  db: sea_orm::DatabaseConnection,
-}
-impl api::SumidaState for RState {
-  fn db(&self) -> &sea_orm::DatabaseConnection {
-    &self.db
-  }
-}
-
 fn rnd() -> String {
   generate_url_safe_string(8).unwrap()
 }
