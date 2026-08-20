@@ -92,3 +92,52 @@ pub async fn resolve_ban_settings<C: sea_orm::ConnectionTrait>(db: &C) -> BanSet
       .map_or_else(|| fallback.target.clone(), String::from),
   }
 }
+
+/// Read one span setting as an optional bound.
+///
+/// `forever`, `none` and an empty value all say "no bound" in so many words, and a value that
+/// cannot be read as a span lands there too. Both bounds are on the strict side of "no bound" —
+/// a ban with no bound stands until an administrator lifts it, and a streak with no bound is never
+/// broken by time — so an unreadable value cannot quietly shorten a ban or forgive a failure. Only
+/// that last case is logged, because it is the only one that means someone typed something wrong.
+pub fn parse_span(key: &str, value: &str) -> Option<chrono::Duration> {
+  let trimmed = value.trim();
+
+  if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("forever") || trimmed.eq_ignore_ascii_case("none") {
+    return None;
+  }
+
+  match humantime::parse_duration(trimmed).map(chrono::Duration::from_std) {
+    Ok(Ok(span)) => Some(span),
+    _ => {
+      tracing::warn!("`{key}` is not a readable span: `{value}`, treating it as no bound");
+      None
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::parse_span;
+
+  #[test]
+  fn forever_and_none_and_empty_mean_no_bound() {
+    assert!(parse_span("security.ban.duration", "forever").is_none());
+    assert!(parse_span("security.ban.failure_reset_after", "none").is_none());
+    assert!(parse_span("security.ban.duration", "").is_none());
+    assert!(parse_span("security.ban.duration", "   ").is_none());
+  }
+
+  #[test]
+  fn a_real_span_is_read() {
+    assert_eq!(
+      parse_span("security.ban.failure_reset_after", "30m"),
+      Some(chrono::Duration::minutes(30))
+    );
+  }
+
+  #[test]
+  fn an_unreadable_span_falls_back_to_no_bound() {
+    assert!(parse_span("security.ban.duration", "eventually").is_none());
+  }
+}

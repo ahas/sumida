@@ -1,3 +1,4 @@
+pub mod access_log_account_index;
 pub mod access_log_identity;
 pub mod access_log_indexes;
 #[cfg(feature = "board")]

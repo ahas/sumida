@@ -6,6 +6,48 @@ and this project adheres to semantic versioning at the workspace level.
 
 ## [Unreleased]
 
+### Security fixes
+
+- **The sign-in lockout never locked anybody out, and it does now — read this before upgrading.**
+  The failure tally the check compared against `security.ban.max_failed_attempts` was written by
+  reading "the last" failure row for the account with no ordering at all, so the database returned
+  an arbitrary one. Every failure read the same value and wrote one more than it: the tally never
+  passed 1, and the comparison against a threshold of ten was never true. No account and no address
+  has ever been blocked by this mechanism on any installation. The check now counts the log itself
+  — the run of password failures for the account, newest first, that is newer than its last
+  successful password sign-in and unbroken by `security.ban.failure_reset_after` — and blocks when
+  that run **reaches** the allowed number rather than exceeding it. It reads no more rows than the
+  threshold needs.
+
+  **What changes for a running installation:** the defaults are enabled, ten attempts, no reset
+  window and no expiry, so from the first deploy an account or address that gets the password wrong
+  ten times running is blocked, and with `security.ban.duration` at `forever` that block stands
+  until an administrator lifts it. An installation that never wanted this should set
+  `security.ban.enabled` to false before deploying. `security.ban.target` decides who the block
+  lands on and defaults to `ip`, which blocks the network address rather than the account.
+
+- **`security.ban.duration` was ignored; the ban expired on the reset window instead.** The expiry
+  handed to the ban was parsed from `security.ban.failure_reset_after`, and the span the operator
+  set as the length of the block was read and discarded. The two settings now do their own jobs:
+  `duration` is the expiry, `failure_reset_after` only breaks the streak. `forever`, `none`, an
+  empty value and anything unreadable all mean "no bound" for both, which is the strict side —
+  an unreadable value cannot shorten a ban or forgive a failure, and it is logged at warn.
+
+- **An unrecognised `security.ban.target` reported that a ban had happened.** The target is an
+  operator-editable runtime setting, so a typo banned nobody while the caller told every user their
+  account was blocked. An unrecognised target is now logged at warn and answers that nothing was
+  banned.
+
+- **`access_logs.count` recorded an arbitrary number.** Nothing reads the column — it is not in the
+  log's response DTO and not in any client schema — but a column that states a number has to state
+  the right one. It now records the consecutive password failures for the account since its last
+  successful sign-in, the attempt being logged included, with no policy in it.
+
+- **The sign-in log had no index touching the account** (`access_log_account_index`), so every read
+  on the lockout path scanned the whole table, on the path an attacker drives hardest. The new
+  composite is `(user_id, method, code, created_at DESC)`. Consumers must register it in their own
+  migrator.
+
 ### Changed
 
 - **sumida no longer knows its consumers.** The framework shipped every downstream product's

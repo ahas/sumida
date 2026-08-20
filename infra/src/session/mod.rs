@@ -46,7 +46,7 @@ use error::SumidaError;
 use lazy_static::lazy_static;
 use sea_orm::ActiveValue::{Set, Unchanged};
 use sea_orm::prelude::*;
-use sea_orm::{Condition, FromQueryResult, InsertResult, QueryOrder, QuerySelect, TransactionTrait};
+use sea_orm::{Condition, InsertResult, QueryOrder, QuerySelect, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use tower_sessions::{Expiry, Session};
 use uaparser::{Parser, UserAgentParser};
@@ -264,32 +264,21 @@ impl UserSession {
     code: AccessResultCode,
     db: &DatabaseConnection,
   ) -> Result<InsertResult<entity::access_logs::ActiveModel>, DbErr> {
-    let count: Option<i32> = if matches!(code, AccessResultCode::PasswordMismatch) {
-      #[derive(FromQueryResult)]
-      struct LastAccessLog {
-        count: Option<i32>,
-      }
+    let user_id = self.resolve_user_id(user_id);
 
-      if let Some(last_access_log) = AccessLogs::find()
-        .select_only()
-        .column(AccessLogsColumn::Count)
-        .filter(AccessLogsColumn::UserId.eq(user_id))
-        .filter(AccessLogsColumn::Method.eq(method.clone()))
-        .filter(AccessLogsColumn::Code.eq(code.clone()))
-        .into_model::<LastAccessLog>()
-        .one(db)
-        .await?
-      {
-        Some(last_access_log.count.unwrap_or(0) + 1)
-      } else {
-        Some(0)
-      }
+    // `count` is a plain fact about the row being written, with no policy in it: how many password
+    // failures this account has run up since its last successful password sign-in, this one
+    // included. Nothing decides anything from it — the lockout counts the log itself — but a column
+    // that states a number has to state the right one.
+    let count: Option<i32> = if matches!(code, AccessResultCode::PasswordMismatch) {
+      let earlier = password_failures_since_success(user_id, db).await?;
+      Some(i32::try_from(earlier.saturating_add(1)).unwrap_or(i32::MAX))
     } else {
       None
     };
 
     AccessLogs::insert(entity::access_logs::ActiveModel {
-      user_id: Set(user_id.unwrap_or(self.profile.id)),
+      user_id: Set(user_id),
       method: Set(method),
       code: Set(code),
       count: Set(count),
@@ -487,50 +476,42 @@ impl UserSession {
     if !settings.enabled {
       return Ok(false);
     }
+    // A threshold of zero would be met by the shortest run there is and block on sight. Nobody
+    // setting it means that, so it is refused rather than arrived at by arithmetic.
+    if settings.max_failed_attempts == 0 {
+      return Ok(false);
+    }
+
     let user_id = self.resolve_user_id(user_id);
+    let allowed = u64::from(settings.max_failed_attempts);
 
-    let Some(last_fail_log) = AccessLogs::find()
-      .filter(AccessLogsColumn::UserId.eq(user_id))
-      .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
-      .filter(AccessLogsColumn::Code.eq(AccessResultCode::PasswordMismatch))
-      .order_by_desc(AccessLogsColumn::CreatedAt)
-      .one(db)
-      .await?
-    else {
-      return Ok(false);
-    };
+    // This runs after the attempt that brought us here has already been written, so the run read
+    // back includes it. Reading no more rows than the threshold answers the only question asked —
+    // has the run reached the allowed number — and leaves nothing unbounded on the path an attacker
+    // drives hardest.
+    let reset_after =
+      settings::security::parse_span("security.ban.failure_reset_after", &settings.failure_reset_after);
+    let failures = recent_password_failures(user_id, allowed, db).await?;
 
-    if AccessLogs::find()
-      .filter(AccessLogsColumn::UserId.eq(user_id))
-      .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
-      .filter(AccessLogsColumn::Code.eq(AccessResultCode::Success))
-      .filter(AccessLogsColumn::CreatedAt.gte(last_fail_log.created_at))
-      .order_by_desc(AccessLogsColumn::CreatedAt)
-      .one(db)
-      .await?
-      .is_some()
-    {
+    if u64::from(failure_streak(&failures, reset_after)) < allowed {
       return Ok(false);
     }
 
-    if (last_fail_log.count.unwrap_or(0) as u32) > settings.max_failed_attempts {
-      let duration = humantime::parse_duration(&settings.failure_reset_after)
-        .ok()
-        .and_then(|x| Duration::from_std(x).ok());
-      // The ban_ip/ban_account signature is (.., reason: &str, note: Option<&str>, ..).
-      // Put the reason in reason and leave note empty (previously the positions were swapped, so reason was an empty string).
-      let reason = "system banned";
+    let expires_in = settings::security::parse_span("security.ban.duration", &settings.duration);
+    let reason = "system banned";
 
-      match settings.target.as_str() {
-        "ip" => self.ban_ip(duration, reason, None, db).await?,
-        "account" => self.ban_account(Some(user_id), duration, reason, None, db).await?,
-        _ => {}
-      };
-
-      return Ok(true);
+    match settings.target.as_str() {
+      "ip" => self.ban_ip(expires_in, reason, None, db).await?,
+      "account" => self.ban_account(Some(user_id), expires_in, reason, None, db).await?,
+      other => {
+        tracing::warn!(
+          "`security.ban.target` is `{other}`, which names nothing that can be banned; nothing was banned"
+        );
+        return Ok(false);
+      }
     }
 
-    Ok(false)
+    Ok(true)
   }
 
   pub fn verify(&self) -> Result<(), SumidaError> {
@@ -632,5 +613,137 @@ where
     session.inner.save().await.map_err(anyhow::Error::from)?;
 
     Ok(session)
+  }
+}
+
+/// The moment of this account's most recent successful password sign-in, if it has ever had one.
+///
+/// A success ends a run of failures — what came before it is not consecutive with what comes after
+/// — so it is where every count on this path stops looking back.
+async fn last_password_success<C: ConnectionTrait>(
+  user_id: i32,
+  db: &C,
+) -> Result<Option<DateTimeWithTimeZone>, DbErr> {
+  AccessLogs::find()
+    .select_only()
+    .column(AccessLogsColumn::CreatedAt)
+    .filter(AccessLogsColumn::UserId.eq(user_id))
+    .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
+    .filter(AccessLogsColumn::Code.eq(AccessResultCode::Success))
+    .order_by_desc(AccessLogsColumn::CreatedAt)
+    .into_tuple::<DateTimeWithTimeZone>()
+    .one(db)
+    .await
+}
+
+/// How many password failures this account has run up since its last successful password sign-in.
+async fn password_failures_since_success<C: ConnectionTrait>(user_id: i32, db: &C) -> Result<u64, DbErr> {
+  let mut query = AccessLogs::find()
+    .filter(AccessLogsColumn::UserId.eq(user_id))
+    .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
+    .filter(AccessLogsColumn::Code.eq(AccessResultCode::PasswordMismatch));
+
+  if let Some(since) = last_password_success(user_id, db).await? {
+    query = query.filter(AccessLogsColumn::CreatedAt.gt(since));
+  }
+
+  query.count(db).await
+}
+
+/// The moments of this account's most recent password failures, newest first, none of them older
+/// than its last successful password sign-in.
+///
+/// `limit` caps the read. The caller only asks whether the run has reached the allowed number, and
+/// no row beyond that many can change the answer.
+async fn recent_password_failures<C: ConnectionTrait>(
+  user_id: i32,
+  limit: u64,
+  db: &C,
+) -> Result<Vec<DateTimeWithTimeZone>, DbErr> {
+  let mut query = AccessLogs::find()
+    .select_only()
+    .column(AccessLogsColumn::CreatedAt)
+    .filter(AccessLogsColumn::UserId.eq(user_id))
+    .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
+    .filter(AccessLogsColumn::Code.eq(AccessResultCode::PasswordMismatch));
+
+  if let Some(since) = last_password_success(user_id, db).await? {
+    query = query.filter(AccessLogsColumn::CreatedAt.gt(since));
+  }
+
+  query
+    .order_by_desc(AccessLogsColumn::CreatedAt)
+    .limit(limit)
+    .into_tuple::<DateTimeWithTimeZone>()
+    .all(db)
+    .await
+}
+
+/// How many of `newest_first` form one unbroken run of failures.
+///
+/// The walk starts at the newest and stops at the first gap between neighbours wider than
+/// `reset_after`: that gap is the window passing with nothing in it, which is where counting starts
+/// again from zero. With no window nothing breaks the run, and the whole slice is one streak.
+fn failure_streak(newest_first: &[DateTimeWithTimeZone], reset_after: Option<Duration>) -> u32 {
+  let Some((first, rest)) = newest_first.split_first() else {
+    return 0;
+  };
+
+  let mut newer = first;
+  let mut streak = 1;
+
+  for older in rest {
+    if let Some(window) = reset_after
+      && *newer - *older > window
+    {
+      break;
+    }
+
+    newer = older;
+    streak += 1;
+  }
+
+  streak
+}
+
+#[cfg(test)]
+mod tests {
+  use chrono::{Duration, TimeZone, Utc};
+  use sea_orm::prelude::DateTimeWithTimeZone;
+
+  use super::failure_streak;
+
+  /// Failure moments the given number of minutes back from a fixed point, newest first.
+  fn minutes_ago(offsets: &[i64]) -> Vec<DateTimeWithTimeZone> {
+    let base = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap().fixed_offset();
+    offsets.iter().map(|offset| base - Duration::minutes(*offset)).collect()
+  }
+
+  #[test]
+  fn an_empty_log_is_no_streak() {
+    assert_eq!(failure_streak(&[], Some(Duration::minutes(10))), 0);
+    assert_eq!(failure_streak(&[], None), 0);
+  }
+
+  #[test]
+  fn a_single_failure_is_a_streak_of_one() {
+    assert_eq!(failure_streak(&minutes_ago(&[0]), Some(Duration::minutes(10))), 1);
+  }
+
+  #[test]
+  fn neighbours_inside_the_window_are_one_run() {
+    assert_eq!(failure_streak(&minutes_ago(&[0, 5, 10, 15]), Some(Duration::minutes(10))), 4);
+  }
+
+  #[test]
+  fn a_gap_wider_than_the_window_ends_the_run() {
+    // The three newest sit five minutes apart; the fourth is an hour further back, so the run
+    // ends before it and the fifth is out of reach behind it.
+    assert_eq!(failure_streak(&minutes_ago(&[0, 5, 10, 70, 75]), Some(Duration::minutes(10))), 3);
+  }
+
+  #[test]
+  fn with_no_window_nothing_breaks_the_run() {
+    assert_eq!(failure_streak(&minutes_ago(&[0, 5, 10, 70, 6000]), None), 5);
   }
 }

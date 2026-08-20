@@ -24,6 +24,8 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::rebac_backfill::Migration),
       // Last: the mirror keeps the two stores in step for every policy written after the backfill.
       Box::new(entity::migration::rebac_mirror::Migration),
+      // The index the sign-in lockout reads the log by. It references nothing above it.
+      Box::new(entity::migration::access_log_account_index::Migration),
     ]
   }
 }
