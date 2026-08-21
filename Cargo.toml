@@ -74,7 +74,15 @@ humantime = "2.2.0"
 image = "0.25.6"
 jsonwebtoken = "10.1.0"
 lazy_static = "1.5.0"
-lettre = "0.11.18"
+# rustls 를 쓴다. musl 정적 링크에서 OpenSSL 은 시스템 라이브러리를 찾지 못하고, 벤더링하면
+# 빌드에 C 툴체인이 끼어든다. 메일 전송은 백엔드에 무관한 API 만 쓰므로 고를 수 있는 자리다.
+lettre = { version = "0.11.18", default-features = false, features = [
+  "smtp-transport",
+  "pool",
+  "hostname",
+  "builder",
+  "rustls-tls",
+] }
 rand = "0.10.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.138"

@@ -331,6 +331,7 @@ async fn past_due_with_grace(db: &sea_orm::DatabaseConnection, am: &Mock) -> (Mo
 // Dunning: a retry with a now-good billing key recovers the subscription.
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_dunning_recovers_subscription() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
@@ -348,8 +349,9 @@ async fn test_dunning_recovers_subscription() {
   a.billing_key = Set(Some("mock:bill:ok".to_string()));
   a.update(&db).await.unwrap();
 
-  let (recovered, _failed) = maintenance::retry_dunning_subscriptions(&db).await.unwrap();
-  assert!(recovered >= 1, "dunning should recover with a good billing key");
+  // The sweep runs over every eligible subscription, so its counts belong to the database rather
+  // than to this case. What this case claims is about its own subscription, and that is what it reads.
+  maintenance::retry_dunning_subscriptions(&db).await.unwrap();
 
   let after = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   assert_eq!(after.status, entity::membership::SubscriptionStatus::Active, "recovered → active");
@@ -370,6 +372,7 @@ async fn test_dunning_recovers_subscription() {
 // Dunning caps retries at max_dunning_attempts (one retry per tick).
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_dunning_caps_attempts() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;
