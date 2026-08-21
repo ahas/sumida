@@ -15,9 +15,10 @@
 - 실행: `cargo test -p infra --no-default-features --features session-store-aws-dynamodb dynamo_jwt_store_roundtrip`
   (AWS 자격·리전 + pk/sk(string) + `ttl` 속성 표 필요)
 
-### 파일 수명주기의 DB 통합 테스트
-- 고아 파일 정리와 청구(claim) 흐름은 구현돼 있으나 데이터베이스를 실제로 거치는 통합 테스트가
-  없다. 유예 시간이 지난 파일이 실제로 지워지는 경로가 확인되지 않는다.
+### 고아 파일 정리의 스토리지 절반
+- 어느 파일이 대상인지를 고르는 질의는 `api/tests/file_lifecycle.rs` 가 실제 데이터베이스에서
+  확인한다. 남은 것은 그 뒤 — 스토리지 객체를 지우는 쪽이다. 객체 저장소를 세우지 않는
+  스위트에서는 그 절반이 돌지 않는다.
 
 ## 결제 — 2단계 결제 (제품 결정 + 샌드박스 필요)
 
