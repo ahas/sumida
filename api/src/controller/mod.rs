@@ -61,6 +61,8 @@ pub struct ControllerRouter<'a, StateT: SumidaState> {
   update:    Router<StateT>,
   delete:    Router<StateT>,
   ungated:   Router<StateT>,
+  /// Routes gated by a namespace that is not this bundle's.
+  foreign:   Router<StateT>,
 }
 
 impl<'a, StateT> ControllerRouter<'a, StateT>
@@ -77,6 +79,7 @@ where
       update: Router::new(),
       delete: Router::new(),
       ungated: Router::new(),
+      foreign: Router::new(),
     }
   }
 
@@ -123,6 +126,21 @@ where
     self
   }
 
+  /// Routes whose gate is another namespace's.
+  ///
+  /// A route can act on this resource while the capability it needs belongs elsewhere — launching a
+  /// job produces a task, so it is the task namespace that decides who may do it. Such a route cannot
+  /// go in an action bundle, because those all derive their gate from the one namespace this bundle
+  /// was opened with, and it must not go in [`Self::ungated`], because it is gated. It joins here so
+  /// it carries its own gate and still takes the session guard once with everything else.
+  pub fn gated_by(mut self, namespace: &str, action: &str, router: Router<StateT>) -> Self {
+    self.foreign =
+      self
+        .foreign
+        .merge(router.route_layer(ServiceApLayer::new(self.state.clone(), namespace, action)));
+    self
+  }
+
   /// Apply each action's gate, merge, and put the session guard over the result.
   ///
   /// An action the controller never named holds no routes, and axum refuses a layer that has
@@ -136,6 +154,7 @@ where
       update,
       delete,
       ungated,
+      foreign,
     } = self;
     let gate = |router: Router<StateT>, action: &str| match router.has_routes() {
       true => router.route_layer(ServiceApLayer::new(state.clone(), namespace, action)),
@@ -148,6 +167,7 @@ where
       .merge(gate(update, "update"))
       .merge(gate(delete, "delete"))
       .merge(ungated)
+      .merge(foreign)
       .route_layer(UserGuardLayer::new(state.clone()))
   }
 }
