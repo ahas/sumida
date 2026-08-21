@@ -1,0 +1,5 @@
+# GNU ld 는 합쳐야 할 것을 통째로 메모리에 올려 놓고 작업한다. 이 워크스페이스는 통합 테스트
+# 바이너리가 서른 개가 넘고 `cargo test` 는 그것들을 코어 수만큼 동시에 링크하므로, 링크 한 번의
+# 비용이 그대로 곱해진다.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

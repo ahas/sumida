@@ -10,6 +10,8 @@ settings.e2e.toml
 .env.*
 !.env.e2e.example
 config.toml
+# 빌드 설정은 비밀이 아니고, 없으면 다른 기계에서 링크가 메모리를 삼킨다.
+!.cargo/config.toml
 .vscode/
 *.code-workspace
 .idea/
