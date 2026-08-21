@@ -25,8 +25,13 @@ use self::dto::*;
 use super::credit::CreditService;
 use super::subscription::SubscriptionService;
 use crate::SumidaState;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
+
+/// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace coupon service = coupon`).
+const RESOURCE: &str = "coupon";
 
 pub struct CouponService<S: SumidaState> {
   state:   S,
@@ -38,12 +43,15 @@ impl<S: SumidaState> CouponService<S> {
     Self { state, session }
   }
 
-  fn require_admin(&self) -> Result<(), SumidaError> {
-    if self.session.profile.is_admin { Ok(()) } else { Err(SumidaError::OnlyAdminAllowed) }
+  /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
+  /// user/role/organization 으로 펼쳐지지 않는다.
+  fn subject(&self) -> SubjectSet {
+    SubjectSet::of(&self.session)
   }
 
+  /// 아직 행이 없으므로 판정할 객체도 없다 — `service:coupon#can_create` 라우트 게이트가
+  /// 이 동작의 전부다.
   pub async fn create(&self, data: CreateCoupon) -> Result<CouponCreated, SumidaError> {
-    self.require_admin()?;
     // Exactly one reward: discount (percent_off), credits, or a free plan.
     let rewards = [data.percent_off.is_some(), data.grant_credits.is_some(), data.free_plan_code.is_some()];
     if rewards.iter().filter(|x| **x).count() != 1 {
@@ -94,8 +102,9 @@ impl<S: SumidaState> CouponService<S> {
     coupon_id: i32,
     data: BulkGrantCoupon,
   ) -> Result<BulkGrantResult, SumidaError> {
-    self.require_admin()?;
-    if Coupons::find_by_id(coupon_id).one(self.state.db()).await?.is_none() {
+    let db = self.state.db();
+    Authz::try_check(RESOURCE, coupon_id, "edit", &self.subject(), db).await?;
+    if Coupons::find_by_id(coupon_id).one(db).await?.is_none() {
       return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
     }
     let mut result = BulkGrantResult {
@@ -114,19 +123,18 @@ impl<S: SumidaState> CouponService<S> {
     Ok(result)
   }
 
-  /// Administrators only, settled from the session before the query. The declared fields narrow
-  /// inside what that decision already opened, and the sort key resolves through `CouponFilter` 's
-  /// own declaration.
+  /// The read scope first, the declared fields inside it, and the condition tree last as one more
+  /// conjunct. The sort key resolves through `CouponFilter` 's own declaration.
   pub async fn list(
     &self,
     filter: CouponFilter,
     conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<(Vec<CouponItem>, u64), SumidaError> {
-    self.require_admin()?;
     let db = self.state.db();
+    let scoped = Authz::filter(RESOURCE, "view", &self.subject(), Coupons::find())?;
     let mut query = conditions.apply::<CouponFilter, _>(
-      Coupons::find().apply_if(filter.is_active, |q, v| q.filter(CouponsColumn::IsActive.eq(v))),
+      scoped.apply_if(filter.is_active, |q, v| q.filter(CouponsColumn::IsActive.eq(v))),
     )?;
     let count = query.clone().select_only().column(CouponsColumn::Id).count(db).await?;
     query = pagination.order_by_schema::<CouponFilter, _>(query);
@@ -136,7 +144,7 @@ impl<S: SumidaState> CouponService<S> {
   }
 
   pub async fn update(&self, id: i32, data: UpdateCoupon) -> Result<CouponUpdated, SumidaError> {
-    self.require_admin()?;
+    Authz::try_check(RESOURCE, id, "edit", &self.subject(), self.state.db()).await?;
     let mut am = CouponsActiveModel {
       id: Unchanged(id),
       ..Default::default()
@@ -167,7 +175,7 @@ impl<S: SumidaState> CouponService<S> {
   }
 
   pub async fn delete(&self, id: i32) -> Result<CouponDeleted, SumidaError> {
-    self.require_admin()?;
+    Authz::try_check(RESOURCE, id, "remove", &self.subject(), self.state.db()).await?;
     Coupons::delete_by_id(id).exec(self.state.db()).await?;
     Ok(CouponDeleted)
   }
@@ -229,8 +237,9 @@ impl<S: SumidaState> CouponService<S> {
   /// - revoked → re-issue (the recall enabled it);
   /// - already redeemed → **409** (revoke first to re-issue — no silent re-grant).
   pub async fn grant_to(&self, coupon_id: i32, data: GrantCoupon) -> Result<CouponGranted, SumidaError> {
-    self.require_admin()?;
-    if Coupons::find_by_id(coupon_id).one(self.state.db()).await?.is_none() {
+    let db = self.state.db();
+    Authz::try_check(RESOURCE, coupon_id, "edit", &self.subject(), db).await?;
+    if Coupons::find_by_id(coupon_id).one(db).await?.is_none() {
       return Err(SumidaError::NoData("Coupon".into(), coupon_id.to_string()));
     }
     self.grant_once(coupon_id, &data).await?;
@@ -240,8 +249,8 @@ impl<S: SumidaState> CouponService<S> {
   /// Recall a coupon from an owner. A revoked grant can no longer be redeemed;
   /// re-granting re-issues it. Idempotent.
   pub async fn revoke(&self, coupon_id: i32, data: GrantCoupon) -> Result<CouponRevoked, SumidaError> {
-    self.require_admin()?;
     let db = self.state.db();
+    Authz::try_check(RESOURCE, coupon_id, "edit", &self.subject(), db).await?;
     let Some(g) = Self::find_grant(coupon_id, &data.owner_kind, data.owner_id, db).await? else {
       return Err(SumidaError::NoData("CouponGrant".into(), coupon_id.to_string()));
     };
@@ -257,14 +266,14 @@ impl<S: SumidaState> CouponService<S> {
     Ok(CouponRevoked)
   }
 
-  /// List a coupon's grants (admin) — for issued/redeemed/revoked analytics.
+  /// List a coupon's grants — for issued/redeemed/revoked analytics.
   pub async fn grants(
     &self,
     coupon_id: i32,
     pagination: Pagination,
   ) -> Result<(Vec<CouponGrantItem>, u64), SumidaError> {
-    self.require_admin()?;
     let db = self.state.db();
+    Authz::try_check(RESOURCE, coupon_id, "view", &self.subject(), db).await?;
     let mut query = CouponGrants::find().filter(CouponGrantsColumn::CouponId.eq(coupon_id));
     let count = query.clone().select_only().column(CouponGrantsColumn::Id).count(db).await?;
     query = pagination.order_by(query, |_| CouponGrantsColumn::Id);

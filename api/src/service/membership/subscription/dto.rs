@@ -212,8 +212,13 @@ impl IntoResponse for SubscriptionUpdated {
 
 #[cfg(test)]
 mod filter_tests {
+  use entity::membership::subscriptions::Entity;
+  use sea_orm::{Condition, EntityTrait, Select};
+
   use super::*;
-  use crate::util::filter::listed;
+  use crate::authz::Authz;
+  use crate::authz::subject::SubjectSet;
+  use crate::util::filter::{ConditionTree, listed};
 
   #[test]
   fn the_declaration_is_sound() {
@@ -291,5 +296,104 @@ mod filter_tests {
     for key in ["ownerKind", "ownerId", "status", "planCode"] {
       assert!(SubscriptionFilter::sort_column(key).is_none(), "{key}");
     }
+  }
+
+  /// One caller for the rule compiler. Which tuples it would match is never read — what these
+  /// assert is the shape of the statement, not the rows it returns.
+  fn caller() -> SubjectSet {
+    SubjectSet::from_parts(vec!["user:7".to_owned(), "role:3#member".to_owned()], vec![7])
+  }
+
+  /// The owner scope this list is built from: the caller's own rows, their organization's, and the
+  /// organizations `organization#view_subscription` reaches — the last left in the statement as a
+  /// subquery, the way the service leaves it. The scope is itself a disjunction, which is what makes
+  /// the parenthesising asserted below load-bearing: a tree's `OR` flattened into it would hand the
+  /// caller every other owner's rows.
+  fn scope() -> Select<Entity> {
+    use sea_orm::{QueryFilter, QuerySelect, QueryTrait};
+
+    let orgs = Authz::filter(
+      "organization",
+      "view_subscription",
+      &caller(),
+      entity::organizations::Entity::find()
+        .select_only()
+        .column(entity::organizations::Column::Id),
+    )
+    .expect("the organization scope compiles");
+
+    Entity::find().filter(
+      Condition::any()
+        .add(
+          Condition::all()
+            .add(Column::OwnerKind.eq(OwnerKind::Personal))
+            .add(Column::OwnerId.eq(7)),
+        )
+        .add(
+          Condition::all()
+            .add(Column::OwnerKind.eq(OwnerKind::Organization))
+            .add(Column::OwnerId.eq(100)),
+        )
+        .add(
+          Condition::all()
+            .add(Column::OwnerKind.eq(OwnerKind::Organization))
+            .add(Column::OwnerId.in_subquery(orgs.into_query())),
+        ),
+    )
+  }
+
+  fn where_of(query: Select<Entity>) -> String {
+    use sea_orm::QueryTrait;
+    use sea_orm::sea_query::PostgresQueryBuilder;
+
+    let sql = query.as_query().to_string(PostgresQueryBuilder);
+
+    sql.split_once(" WHERE ").expect("a WHERE clause").1.to_owned()
+  }
+
+  /// The tree as the one condition a list adds to a query it has already scoped.
+  fn compiled(raw: &str) -> Condition {
+    ConditionTree::parse(raw)
+      .expect("the tree parses")
+      .compile::<SubscriptionFilter>()
+      .expect("the tree compiles")
+  }
+
+  /// A root `any` under the read scope. The builder renders the disjunction inside its own
+  /// parentheses and the query adds it with `AND`, so the widest thing a tree can do is add one
+  /// conjunct: the scope stays whole beside it instead of becoming one of the alternatives.
+  #[test]
+  fn an_or_inside_a_tree_stays_a_conjunct_of_the_scope() {
+    use sea_orm::QueryFilter;
+
+    const TREE: &str = r#"{"type":"any","of":[
+      {"type":"field","key":"status","op":"eq","value":"active"},
+      {"type":"field","key":"planCode","op":"eq","value":"pro"}
+    ]}"#;
+
+    let bare = where_of(Entity::find().filter(compiled(TREE)));
+    let scoped = where_of(scope().filter(compiled(TREE)));
+
+    assert!(bare.contains(" OR "), "{bare}");
+    assert!(scoped.contains(&where_of(scope())), "the scope must survive whole: {scoped}");
+    assert!(
+      scoped.ends_with(&format!(" AND ({bare})")),
+      "the tree must be one more conjunct: {scoped}"
+    );
+  }
+
+  /// The column stores text, so the bound value needs no cast. A key backed by a database enum
+  /// names its type in the declaration instead, and the cast lands in the predicate.
+  #[test]
+  fn a_text_backed_enum_binds_without_a_cast() {
+    use sea_orm::QueryFilter;
+
+    let predicate = where_of(
+      Entity::find().filter(compiled(r#"{"type":"field","key":"status","op":"eq","value":"active"}"#)),
+    );
+
+    assert!(SubscriptionFilter::enum_type("status").is_none());
+    assert!(predicate.contains("'active'"), "{predicate}");
+    assert!(!predicate.contains("CAST("), "{predicate}");
   }
 }

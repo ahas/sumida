@@ -58,14 +58,6 @@ sumida 의 최상위 목록 리소스는 전부 선언을 들고 `GET <리소스
 - 한 컬럼에 키는 하나이므로, 다른 표기로 보낸 `sort` 는 오류 없이 기본 정렬로 떨어진다. 표기를
   한쪽으로 모으는 것은 클라이언트와 함께 움직여야 하는 별도 작업이다.
 
-## 규칙이 정본이 아닌 자리
-
-### 쿠폰 관리 권한만 튜플로 표현되지 않는다
-- `CouponService` 는 세션의 `is_admin` 플래그를 직접 읽고 `OnlyAdminAllowed` 로 거절한다. 그래서 이
-  권한만은 부여할 수도, 위임할 수도, 조직으로 좁힐 수도, `/me/access-policies` 로 볼 수도 없다.
-- 네임스페이스 하나(`membership_plan` 과 같은 모양)로 옮기거나, 규칙 집합이 "누가 무엇을 할 수
-  있는지의 단일한 진술"이라는 주장을 좁히거나 — 둘 중 하나를 정해야 한다.
-
 ## 문서와 주석이 코드를 가리키는 방식
 
 ### `설계 §N` 이 가리키는 문서가 없다
@@ -77,13 +69,3 @@ sumida 의 최상위 목록 리소스는 전부 선언을 들고 `GET <리소스
   파일·줄 좌표를 담고 있다. 좌표는 소스가 움직이는 순간 어긋나고, 이력은 지금의 제약이 아니다.
   서른 곳 남짓의 주석이 같은 형태다. 한 번에 쓸어야 표기가 반쪽만 바뀌지 않는다.
 
-## 죽은 표면
-
-`access_policies` 표는 init 마이그레이션이 여전히 만들지만 읽는 코드가 없다. 두 묘비 마이그레이션
-(`rebac_backfill`, `rebac_mirror`)이 그 표가 비어 있음을 확인하고 트리거를 걷어낸 상태다. 이름이
-권한을 뜻하는 표가 살아 있으면 그 표에 심는 실수를 부른다 — 비어 있음이 확인된 뒤 떨어뜨린다.
-
-`AdminService` 와 빈 `admin/dto.rs`, `util::db::i32_or_struct`, `capability::has`, `service_ap_new!`,
-`layer::board_ap::helpers`, `board_file::dto::{AttachFileToPost, DetachFileFromPost}` 는 모두 호출자가
-없다. 마지막 둘은 `board_files` 의 키(`file_uuid` 하나, `post_id` 는 nullable)와 모양이 어긋나
-있기도 하다.

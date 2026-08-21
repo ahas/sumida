@@ -30,10 +30,8 @@
 //! says which one it is and why, because a difference nobody wrote down is a difference nobody
 //! decided.
 //!
-//! One thing is seeded as an `access_policies` row rather than as a tuple, and on purpose:
-//! [`me_access_policies_keeps_its_payload`] asserts that such a row does **not** reach the client.
-//! Everywhere else the fixture writes the store the rules read, because a test of a rule that seeds
-//! through a translation layer goes red for the layer's reasons as well as the rule's.
+//! The fixture always writes the store the rules read. A test of a rule that seeds through a
+//! translation layer goes red for the layer's reasons as well as the rule's.
 //!
 //! Requires a real Postgres. Nothing in the request path is exercised except
 //! [`me_access_policies_keeps_its_payload`]: the evaluator is called directly, so a failure here is
@@ -117,32 +115,6 @@ fn subject_of(user: &entity::users::Model) -> SubjectSet {
     ],
     vec![user.id],
   )
-}
-
-/// Writes one legacy policy row.
-///
-/// One test still uses it, and there the row **is** the input under test: it must not surface in
-/// the client payload. Nothing else seeds this way — the rules do not read this table, so a row
-/// written here reaches no evaluator at all.
-async fn legacy_policy(
-  db: &DatabaseConnection,
-  user: &TestUser,
-  namespace: &str,
-  object: &str,
-  actions: Vec<String>,
-  effect: &str,
-) {
-  entity::access_policies::Entity::insert(entity::access_policies::ActiveModel {
-    namespace: Set(namespace.to_owned()),
-    object: Set(object.to_owned()),
-    action: Set(actions),
-    effect: Set(effect.to_owned()),
-    user: Set(format!("user:{}", user.model.id)),
-    ..Default::default()
-  })
-  .exec(db)
-  .await
-  .expect("write a legacy policy row");
 }
 
 /// Writes one tuple. `Authz::write` — with its authority check and `created_by` stamp — belongs to
@@ -612,11 +584,11 @@ async fn a_posts_edit_intersects_its_board_and_excludes_a_block() {
 /// entry each silently disable part of the UI — the sort of break that shows up as "the button is
 /// gone" days later and not as a failing request.
 ///
-/// **The object tier is deliberately gone from the payload**, and that is the one intended change.
-/// It used to be passed through from `access_policies` because that was still what the server
-/// resolved row-level access against; it is not, so passing it through would report grants the
-/// server never reads. The assertion below is written in that direction — a legacy row is written
-/// and must **not** appear — so a regression that quietly restored the passthrough goes red.
+/// **The payload carries the service tier and nothing below it.** A row-tier grant says which rows a
+/// caller reaches, and the server settles that per request against the rules; handing it to the
+/// client would put a second copy of the answer somewhere it can go stale, and the client would
+/// draw a control for a row the request then refuses. So the case seeds a row grant the rules do
+/// read, and asserts it does **not** appear.
 #[tokio::test]
 async fn me_access_policies_keeps_its_payload() {
   let db = prepare().await;
@@ -624,9 +596,9 @@ async fn me_access_policies_keeps_its_payload() {
   let user = TestUser::create(&db).await.expect("a caller with grants");
   let admin = TestUser::create_admin(&db).await.expect("an administrator");
 
-  // The route gate, as a tuple, and an object-tier `access_policies` row that must not surface.
+  // The route gate, and a row-tier grant that must not surface beside it.
   grant(&db, "service", "user", "read", &user).await;
-  legacy_policy(&db, &user, "board", "7", vec!["update".into()], "allow").await;
+  grant(&db, "demo_widget", "widget-7", "editor", &user).await;
 
   let mock = Mock::with_rules(DEMO_RULES).await;
 
@@ -649,10 +621,10 @@ async fn me_access_policies_keeps_its_payload() {
   );
 
   assert!(
-    entry("board", "7").is_none(),
-    "an object-tier `access_policies` row reached the payload. The server does not consult that \
-     table for row-level access any more, so the client would be told it may edit board 7 and the \
-     request would be refused: {policies:?}"
+    entry("demo_widget", "widget-7").is_none(),
+    "a row-tier grant reached the payload. The client would be told it may edit that row, and the \
+     answer would then be settled again per request against the rules, which is the one place it \
+     is settled: {policies:?}"
   );
 
   // A non-admin must not be handed the catch-all, or the client grants `manage all` to everyone.

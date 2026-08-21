@@ -1,6 +1,7 @@
 pub mod access_log_account_index;
 pub mod access_log_identity;
 pub mod access_log_indexes;
+pub mod access_policies_drop;
 pub mod api_key_holder_fk;
 #[cfg(feature = "board")]
 pub mod board_system;

@@ -21,13 +21,18 @@ this section names only what the membership domain asks for.
 
 ### The plan catalogue — a route gate
 
-Plan management is gated on the `membership_plan` namespace. Nothing in it is scoped per row, so
-the gate is the whole of it.
+Plan management is gated on the `membership_plan` namespace. Nothing in it is scoped per row: the
+row permission resolves straight back to the namespace's **operator tier**, so a plain-tier grant
+opens the route and the list still comes back empty. Grant the operator tier to whoever manages the
+catalogue.
 
 ```
-service:membership_plan#read@role:7#member       읽기
 service:membership_plan#operator@role:7#member   네 동작 전부
+service:membership_plan#op_read@role:8#member    목록만
 ```
+
+Creating is the exception in the other direction — there is no row yet to judge, so the gate is the
+whole of it and `service:membership_plan#create` is enough on its own.
 
 ### An organization's subscriptions and credit — a relation on the organization
 
@@ -52,12 +57,26 @@ scope on that organization.
 
 Nothing to grant. The owner is the session user and the rule reads it off the row.
 
-### Coupons
+### The coupon catalogue — a route gate
 
-`/coupons` management does not go through the rule set at all: the service reads `is_admin` off the
-session and refuses anyone else. There is no namespace to grant and no relation to place, and no
-grant can open it — the flag on the user row is the only key. It is the one place in this domain
-where a permission is not expressible as a tuple.
+Coupon management is gated on the `coupon` namespace and behaves exactly as the plan catalogue does,
+operator tier and all. Distribution — issuing a coupon to an owner, recalling it, reading who holds
+one — is management of the coupon itself, so it sits under `update` and `read` rather than under a
+permission of its own.
+
+```
+service:coupon#operator@role:7#member   네 동작 전부
+service:coupon#op_read@role:8#member    쿠폰과 발행 내역 조회만
+```
+
+**A platform administrator needs nothing seeded.** The operator tier already unions
+`platform:root#superuser` in, and the administrator flag on the user row is one branch of that, the
+same way it reaches every other namespace.
+
+**Spending what you were given is not management.** `GET /coupons/mine` and `POST /coupons/redeem`
+read and consume the grants of the session's own owner, so they carry no namespace gate and no
+grant opens or closes them. An ordinary account uses a coupon it was issued without holding anything
+on the catalogue.
 
 ### Who gets the notices
 
@@ -179,8 +198,9 @@ What this domain can and cannot do today.
   `requires_grant` makes a coupon redeemable **only** by granted owners and each
   grant is **single-use** (one grant = one redemption); re-issuing a spent grant
   requires a revoke first (no silent re-grant). Mass-issue via `POST
-  /coupons/{id}/grant-bulk`. Recipients see theirs via `GET /coupons/mine`; admins
-  audit issued/redeemed/revoked via `GET /coupons/{id}/grants`.
+  /coupons/{id}/grant-bulk`. Recipients see theirs via `GET /coupons/mine`; whoever
+  holds the coupon namespace audits issued/redeemed/revoked via `GET
+  /coupons/{id}/grants`.
 - **Organizations**: org-admin (ReBAC) management of org subscriptions/credits with
   automatic parent→child hierarchy (single-row *and* lists); org notices reach the
   org's managers.

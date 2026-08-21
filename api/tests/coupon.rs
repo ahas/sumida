@@ -729,7 +729,9 @@ async fn test_failed_payment_reverses_coupon_grant() {
 }
 
 // ---------------------------------------------------------------------------
-// Coupon management is admin-only.
+// Coupon management is gated on its own namespace. A caller without the gate is
+// refused by the route, not by the account — the two are different refusals and
+// collapsing them would let the row scope be deleted with the suite still green.
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn test_coupon_admin_only() {
@@ -743,7 +745,7 @@ async fn test_coupon_admin_only() {
     .send()
     .await
     .unwrap();
-  assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "non-admin cannot create coupons");
+  assert_eq!(r.status(), StatusCode::FORBIDDEN, "a caller without the coupon gate cannot create one");
 }
 
 // ---------------------------------------------------------------------------

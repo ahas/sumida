@@ -403,7 +403,7 @@ mod registry_tests {
 
   /// Exactly sumida's own gated namespaces route, and nothing else does.
   ///
-  /// The list is written out rather than counted. "18 namespaces route" passes just as happily when
+  /// The list is written out rather than counted. "19 namespaces route" passes just as happily when
   /// one has been swapped for another, and *which* ones is the whole claim — a route gate is what
   /// stands between a caller and an API. What the list also pins is the other direction: the three
   /// namespaces below it that do **not** route, and why.
@@ -432,6 +432,7 @@ mod registry_tests {
         "board_post_reaction",
         "board_post_report",
         "board_topic",
+        "coupon",
         "file",
         "mail_form",
         "membership_plan",

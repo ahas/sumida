@@ -648,8 +648,8 @@ fn the_namespace_inventory_matches_the_code() {
   let namespaces = registry.namespaces();
 
   let gated = namespaces.iter().filter(|n| n.gated).count();
-  assert_eq!(gated, 18, "18 service objects, one per route-gated namespace");
-  assert_eq!(namespaces.len(), 21, "18 gates + org:user, org:credit, org:subscription");
+  assert_eq!(gated, 19, "19 service objects, one per route-gated namespace");
+  assert_eq!(namespaces.len(), 22, "19 gates + org:user, org:credit, org:subscription");
   assert!(
     namespaces.iter().all(|entry| entry.source == "schema.sz"),
     "a namespace reached sumida's registry from somewhere other than sumida's own rule file"

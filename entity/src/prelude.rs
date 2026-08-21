@@ -6,13 +6,6 @@ pub use super::access_logs::{
   Model as AccessLogsModel,
   Relation as AccessLogsRelation,
 };
-pub use super::access_policies::{
-  ActiveModel as AccessPoliciesActiveModel,
-  Column as AccessPoliciesColumn,
-  Entity as AccessPolicies,
-  Model as AccessPoliciesModel,
-  Relation as AccessPoliciesRelation,
-};
 pub use super::api_keys::{
   ActiveModel as ApiKeysActiveModel,
   Column as ApiKeysColumn,

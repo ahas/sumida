@@ -1,11 +1,11 @@
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
-use super::ApiController;
+use super::{ApiController, ControllerRouter};
+use crate::SumidaState;
 use crate::service::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct OrganizationController<S: SumidaState> {
@@ -80,27 +80,16 @@ where
   S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
-    let route_read = Router::new() //
-      .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "organization", read));
-    let route_filters = filter_descriptor_router::<S, OrganizationFilter>(state, "organization");
-    let route_create = Router::new() //
-      .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(state, "organization", create));
-    let route_update = Router::new() //
-      .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(state, "organization", update));
-    let route_delete = Router::new() //
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "organization", delete));
-
-    Router::new()
-      .merge(route_read)
-      .merge(route_filters)
-      .merge(route_create)
-      .merge(route_update)
-      .merge(route_delete)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "organization")
+      .read(
+        Router::new() //
+          .route("/", routing::get(Self::list))
+          .route("/{id}", routing::get(Self::get)),
+      )
+      .descriptor::<OrganizationFilter>()
+      .create(Router::new().route("/", routing::post(Self::create)))
+      .update(Router::new().route("/{id}", routing::patch(Self::update)))
+      .delete(Router::new().route("/{id}", routing::delete(Self::delete)))
+      .build()
   }
 }

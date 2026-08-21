@@ -7,18 +7,6 @@ use serde_json::json;
 use super::helper::*;
 
 #[derive(DeriveIden)]
-enum AccessPolicies {
-  Table,
-  Uuid,
-  Namespace,
-  Object,
-  Action,
-  User,
-  Effect,
-  CreatedAt,
-}
-
-#[derive(DeriveIden)]
 enum Organizations {
   Table,
   Id,
@@ -190,62 +178,6 @@ impl MigrationTrait for Migration {
         "#,
     )
     .await?;
-
-    // BEGIN access_policies table
-    manager
-      .create_table(
-        Table::create()
-          .if_not_exists()
-          .table(AccessPolicies::Table)
-          .col(uuid(AccessPolicies::Uuid).default(Expr::cust("uuid_generate_v4()")))
-          .col(string(AccessPolicies::Namespace))
-          .col(string(AccessPolicies::Effect))
-          .col(string(AccessPolicies::Object))
-          .col(
-            array(AccessPolicies::Action, ColumnType::String(StringLen::None)).default(Expr::cust("'{}'")),
-          )
-          .col(string(AccessPolicies::User))
-          .col(timestamp_with_time_zone(AccessPolicies::CreatedAt).default(Expr::current_timestamp()))
-          .primary_key(Index::create().name("pk_access_policies__uuid").col(AccessPolicies::Uuid))
-          .to_owned(),
-      )
-      .await?;
-    manager
-      .create_index(
-        Index::create()
-          .if_not_exists()
-          .name("idx_access_policies__tuple")
-          .table(AccessPolicies::Table)
-          .col(AccessPolicies::Namespace)
-          .col(AccessPolicies::Object)
-          .col(AccessPolicies::Action)
-          .col(AccessPolicies::User)
-          .index_type(IndexType::BTree)
-          .to_owned(),
-      )
-      .await?;
-    manager
-      .create_index(
-        Index::create()
-          .if_not_exists()
-          .name("idx_access_policies__group")
-          .table(AccessPolicies::Table)
-          .col(AccessPolicies::Namespace)
-          .index_type(IndexType::BTree)
-          .to_owned(),
-      )
-      .await?;
-    manager
-      .create_index(
-        Index::create()
-          .if_not_exists()
-          .name("idx_access_policies__user")
-          .table(AccessPolicies::Table)
-          .col(AccessPolicies::User)
-          .index_type(IndexType::BTree)
-          .to_owned(),
-      )
-      .await?;
 
     // BEGIN organizations table
     manager
@@ -751,7 +683,6 @@ impl MigrationTrait for Migration {
     drop_table(manager, Users::Table).await?;
     drop_table(manager, Roles::Table).await?;
     drop_table(manager, Organizations::Table).await?;
-    drop_table(manager, AccessPolicies::Table).await?;
 
     // Functions
     db.execute_unprepared("DROP FUNCTION IF EXISTS manage_updated_at(in _tbl regclass);")
@@ -777,9 +708,8 @@ fn looks_hashed(s: &str) -> bool {
 
 /// 레거시 평문 API 키를 blake3 해시로 정규화한다(멱등).
 ///
-/// 신규 코드(`api_key::hash_api_key`)는 키를 blake3 해시로 저장/조회한다. 이 함수는
-/// 평문으로 남아있는 키와, 그 키를 식별자로 쓰는 `access_policies."user"`(`api:<평문>`)를
-/// 함께 `api:<해시>`로 이전해 기존 키가 계속 동작하도록 한다.
+/// 신규 코드(`api_key::hash_api_key`)는 키를 blake3 해시로 저장/조회한다. 이 함수는 평문으로
+/// 남아있는 키를 해시로 옮겨 기존 키가 계속 동작하도록 한다.
 ///
 /// - fresh init(빈 테이블)에선 아무것도 하지 않는다.
 /// - 이미 해시(64자 hex)인 행은 건너뛴다(코드 배포 후 생성된 키 보호).
@@ -806,14 +736,6 @@ pub async fn hash_legacy_api_keys<C: ConnectionTrait>(db: &C) -> Result<(), DbEr
     }
     let hash = blake3::hash(plaintext.as_bytes()).to_hex().to_string();
     let prefix: String = plaintext.chars().take(8).collect();
-
-    // 먼저 access_policies의 api:<평문> 식별자를 api:<해시>로 변환.
-    db.execute(Statement::from_sql_and_values(
-      backend,
-      r#"UPDATE access_policies SET "user" = $1 WHERE "user" = $2"#,
-      [format!("api:{hash}").into(), format!("api:{plaintext}").into()],
-    ))
-    .await?;
 
     // api_keys.key(PK) 평문 → 해시. key_prefix = 평문 앞부분.
     db.execute(Statement::from_sql_and_values(

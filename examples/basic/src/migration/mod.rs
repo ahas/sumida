@@ -17,13 +17,15 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::rebac_closure_lock::Migration),
       // Additive columns the compiled rule set reads (boards.organization_id, idx_users__is_admin).
       Box::new(sumida::entity::migration::rebac_columns::Migration),
-      // Translates whatever access_policies rows the migrations above have seeded.
+      // Refuses to go on if access_policies still holds a grant nothing here can read.
       Box::new(sumida::entity::migration::rebac_backfill::Migration),
-      // Last: the mirror keeps the two stores in step for every policy written after the backfill.
+      // Takes the mirror trigger and its functions off that table.
       Box::new(sumida::entity::migration::rebac_mirror::Migration),
       // The api key holder constraint. After rebac — the orphan sweep clears the grants those keys
       // still hold before the keys themselves go.
       Box::new(sumida::entity::migration::api_key_holder_fk::Migration),
+      // The table nothing reads. Last, so the two tombstones above have found it empty first.
+      Box::new(sumida::entity::migration::access_policies_drop::Migration),
     ]
   }
 }

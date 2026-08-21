@@ -147,7 +147,12 @@ impl IntoResponse for BoardTopicDeleted {
 
 #[cfg(test)]
 mod tests {
+  use sea_orm::{Condition, EntityTrait, Select};
+
   use super::*;
+  use crate::authz::Authz;
+  use crate::authz::subject::SubjectSet;
+  use crate::util::filter::ConditionTree;
 
   #[test]
   fn the_declaration_is_sound() {
@@ -198,5 +203,58 @@ mod tests {
     // Declared, but not sortable.
     assert!(BoardTopicFilter::sort_column("search").is_none());
     assert!(BoardTopicFilter::sort_column("board_id").is_none());
+  }
+
+  /// One caller for the rule compiler. Which tuples it would match is never read — what these
+  /// assert is the shape of the statement, not the rows it returns.
+  fn caller() -> SubjectSet {
+    SubjectSet::from_parts(vec!["user:7".to_owned(), "role:3#member".to_owned()], vec![7])
+  }
+
+  /// The read scope the list is built from. The projection and the joins the service adds are left
+  /// out on purpose: what §11 turns on is how the scope and the tree meet in the `WHERE` clause.
+  fn scope() -> Select<Entity> {
+    Authz::filter(super::super::RESOURCE, "view", &caller(), Entity::find())
+      .expect("the read scope compiles")
+  }
+
+  fn where_of(query: Select<Entity>) -> String {
+    use sea_orm::QueryTrait;
+    use sea_orm::sea_query::PostgresQueryBuilder;
+
+    let sql = query.as_query().to_string(PostgresQueryBuilder);
+
+    sql.split_once(" WHERE ").expect("a WHERE clause").1.to_owned()
+  }
+
+  /// The tree as the one condition a list adds to a query it has already scoped.
+  fn compiled(raw: &str) -> Condition {
+    ConditionTree::parse(raw)
+      .expect("the tree parses")
+      .compile::<BoardTopicFilter>()
+      .expect("the tree compiles")
+  }
+
+  /// A root `any` under the read scope. The builder renders the disjunction inside its own
+  /// parentheses and the query adds it with `AND`, so the widest thing a tree can do is add one
+  /// conjunct: the scope stays whole beside it instead of becoming one of the alternatives.
+  #[test]
+  fn an_or_inside_a_tree_stays_a_conjunct_of_the_scope() {
+    use sea_orm::QueryFilter;
+
+    const TREE: &str = r#"{"type":"any","of":[
+      {"type":"field","key":"name","op":"eq","value":"notice"},
+      {"type":"field","key":"board_id","op":"in","value":[1,2]}
+    ]}"#;
+
+    let bare = where_of(Entity::find().filter(compiled(TREE)));
+    let scoped = where_of(scope().filter(compiled(TREE)));
+
+    assert!(bare.contains(" OR "), "{bare}");
+    assert!(scoped.contains(&where_of(scope())), "the scope must survive whole: {scoped}");
+    assert!(
+      scoped.ends_with(&format!(" AND ({bare})")),
+      "the tree must be one more conjunct: {scoped}"
+    );
   }
 }

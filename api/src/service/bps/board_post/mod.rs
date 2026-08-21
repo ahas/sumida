@@ -39,6 +39,34 @@ use crate::util::user::hash_password;
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace board_post service = board_post`).
 const RESOURCE: &str = "board_post";
 
+/// What a kind's list projects for the reply subtree it carries under each item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplySubtree {
+  /// The same columns the list itself projects — the body stays out of the snippet.
+  WithoutContent,
+  /// The body column too, because this kind is read in place rather than opened.
+  WithContent,
+}
+
+/// A kind answers for the shape of its own list, so adding a kind is a variant answering here
+/// rather than another branch appearing at every call site.
+pub trait BoardPostKindListing {
+  /// The reply subtree a list of this kind loads under each item, or `None` when it loads none.
+  fn reply_subtree(&self) -> Option<ReplySubtree>;
+}
+
+impl BoardPostKindListing for BoardPostKind {
+  fn reply_subtree(&self) -> Option<ReplySubtree> {
+    match self {
+      // A notice stands alone. Nothing hangs under it, and a versioned board's archived revisions
+      // share its kind and parent, so loading a subtree here would surface them as replies.
+      BoardPostKind::Notice => None,
+      BoardPostKind::Article | BoardPostKind::Reply => Some(ReplySubtree::WithoutContent),
+      BoardPostKind::Comment => Some(ReplySubtree::WithContent),
+    }
+  }
+}
+
 pub struct BoardPostService<S: SumidaState> {
   state:   S,
   session: UserSession,
@@ -166,23 +194,53 @@ impl<S: SumidaState> BoardPostService<S> {
     conditions.apply::<BoardPostFilter, _>(query)
   }
 
+  /// One list body for every kind: the shared list query narrowed to the kind, counted, paginated,
+  /// and — when the kind carries one — the reply subtree loaded and attached under each item.
+  /// The kind is the only thing that varies, and it answers for the variation itself.
+  pub async fn list_by_kind(
+    &self,
+    kind: BoardPostKind,
+    filter: BoardPostFilter,
+    conditions: ConditionQuery,
+    pagination: Pagination,
+  ) -> Result<List<BoardPostListItem>, SumidaError> {
+    let db = self.state.db();
+    let mut query = self
+      .get_list_query(filter, &conditions)?
+      .filter(BoardPostsColumn::Kind.eq(kind.clone()));
+
+    let count = query.clone().count(db).await?;
+
+    query = self.apply_pagination(query, pagination);
+
+    let mut items = query.into_model::<BoardPostListItem>().all(db).await?;
+
+    if let Some(subtree) = kind.reply_subtree()
+      && !items.is_empty()
+    {
+      let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
+      // The subtree starts from the same read scope as the list; only the body column is in
+      // question, and the kind is what says whether it belongs there.
+      let query = self.select(BoardPosts::find())?;
+      let query = match subtree {
+        ReplySubtree::WithoutContent => query,
+        ReplySubtree::WithContent => query.column_as(BoardPostsColumn::Content, "content"),
+      };
+      let mut replies_by_parent = self.load_replies_tree(query, &item_ids, kind, db).await?;
+
+      self.attach_list_item_replies(&mut items, &mut replies_by_parent);
+    }
+
+    Ok(List::new(items, count))
+  }
+
   pub async fn get_notices(
     &self,
     filter: BoardPostFilter,
     conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
-    let db = self.state.db();
-    let mut query = self.get_list_query(filter, &conditions)?;
-    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Notice));
-
-    let count = query.clone().count(db).await?;
-
-    query = self.apply_pagination(query, pagination);
-
-    let items = query.into_model::<BoardPostListItem>().all(db).await?;
-
-    Ok(List::new(items, count))
+    self.list_by_kind(BoardPostKind::Notice, filter, conditions, pagination).await
   }
 
   pub async fn get_articles(
@@ -191,26 +249,7 @@ impl<S: SumidaState> BoardPostService<S> {
     conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
-    let db = self.state.db();
-    let mut query = self.get_list_query(filter, &conditions)?;
-    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Article));
-
-    let count = query.clone().count(db).await?;
-
-    query = self.apply_pagination(query, pagination);
-
-    let mut items = query.into_model::<BoardPostListItem>().all(db).await?;
-
-    if !items.is_empty() {
-      let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
-      let mut replies_by_parent = self
-        .load_replies_tree(self.select(BoardPosts::find())?, &item_ids, BoardPostKind::Article, db)
-        .await?;
-
-      self.attach_list_item_replies(&mut items, &mut replies_by_parent);
-    }
-
-    Ok(List::new(items, count))
+    self.list_by_kind(BoardPostKind::Article, filter, conditions, pagination).await
   }
 
   pub async fn get_comments(
@@ -219,31 +258,7 @@ impl<S: SumidaState> BoardPostService<S> {
     conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
-    let db = self.state.db();
-    let mut query = self.get_list_query(filter, &conditions)?;
-    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Comment));
-
-    let count = query.clone().count(db).await?;
-
-    query = self.apply_pagination(query, pagination);
-
-    let mut items = query.into_model::<BoardPostListItem>().all(db).await?;
-
-    if !items.is_empty() {
-      let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
-      let mut replies_by_parent = self
-        .load_replies_tree(
-          self.select(BoardPosts::find())?.column_as(BoardPostsColumn::Content, "content"),
-          &item_ids,
-          BoardPostKind::Comment,
-          db,
-        )
-        .await?;
-
-      self.attach_list_item_replies(&mut items, &mut replies_by_parent);
-    }
-
-    Ok(List::new(items, count))
+    self.list_by_kind(BoardPostKind::Comment, filter, conditions, pagination).await
   }
 
   pub async fn get_replies(
@@ -252,26 +267,7 @@ impl<S: SumidaState> BoardPostService<S> {
     conditions: ConditionQuery,
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
-    let db = self.state.db();
-    let mut query = self.get_list_query(filter, &conditions)?;
-    query = query.filter(BoardPostsColumn::Kind.eq(BoardPostKind::Reply));
-
-    let count = query.clone().count(db).await?;
-
-    query = self.apply_pagination(query, pagination);
-
-    let mut items = query.into_model::<BoardPostListItem>().all(db).await?;
-
-    if !items.is_empty() {
-      let item_ids = items.iter().map(|x| x.common.id).collect::<Vec<_>>();
-      let mut replies_by_parent = self
-        .load_replies_tree(self.select(BoardPosts::find())?, &item_ids, BoardPostKind::Reply, db)
-        .await?;
-
-      self.attach_list_item_replies(&mut items, &mut replies_by_parent);
-    }
-
-    Ok(List::new(items, count))
+    self.list_by_kind(BoardPostKind::Reply, filter, conditions, pagination).await
   }
 
   pub async fn get(&self, id: i32) -> Result<Option<GetBoardPost>, SumidaError> {

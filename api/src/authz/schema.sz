@@ -20,7 +20,7 @@
 // ─── terminal subject types ──────────────────────────────────────────────────────────────────
 
 definition user   { }
-definition apikey { }   // apikey:<blake3 hash>, the same hash `access_policies."user"` held as `api:<hash>`
+definition apikey { }   // apikey:<blake3 hash of the key>
 
 // ─── R1 ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -355,6 +355,20 @@ definition membership_plan on membership_plans.id int {
   permission remove = service:membership_plan->operate_delete
 }
 
+// The coupon catalogue is global configuration in the same sense, and distribution — issuing a
+// coupon to an owner, recalling it, reading who holds it — is management of the coupon itself, so
+// it resolves through these three rather than through a permission of its own.
+//
+// What is deliberately **not** here is a caller acting on their own grants. Redeeming a coupon and
+// listing what was issued to you read the grant rows of the session's own owner, so there is
+// nothing to authorize against the catalogue and those routes carry no gate at all. Folding them in
+// would make an ordinary account need coupon management to spend what it was given.
+definition coupon on coupons.id int {
+  permission view   = service:coupon->operate_read
+  permission edit   = service:coupon->operate_update
+  permission remove = service:coupon->operate_delete
+}
+
 // The tuple table itself, replacing the `access_policy` namespace.
 definition relation_tuple on relation_tuples.id int {
   permission view   = service:access_policy->operate_read
@@ -366,7 +380,7 @@ definition relation_tuple on relation_tuples.id int {
 // ─── the namespace inventory ─────────────────────────────────────────────────────────────────
 //
 // sumida's own, enumerated from sumida's code, not from the design:
-//   grep -rn 'service_ap!' --include='*.rs' api/src   → 18 namespaces × their actions
+//   grep -rn 'service_ap!' --include='*.rs' api/src   → the gated namespaces × their actions
 //   grep -rn 'ap::ns('     --include='*.rs' api/src   → the row-level namespaces below
 //
 // A product's namespaces are in the product's own rule file, and are not repeated here.
@@ -387,6 +401,7 @@ namespace board_post          service = board_post
 namespace board_post_reaction service = board_post_reaction
 namespace board_post_report   service = board_post_report
 namespace board_topic         service = board_topic
+namespace coupon              service = coupon
 namespace file                service = file
 namespace mail_form           service = mail_form
 namespace membership_plan     service = membership_plan

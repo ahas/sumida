@@ -155,7 +155,11 @@ impl IntoResponse for BoardPostReactionDeleted {
 
 #[cfg(test)]
 mod tests {
+  use entity::bps::board_post_reactions::Entity;
+  use sea_orm::{Condition, EntityTrait, Select};
+
   use super::*;
+  use crate::util::filter::ConditionTree;
 
   #[test]
   fn the_declaration_is_sound() {
@@ -198,5 +202,54 @@ mod tests {
     assert!(BoardPostReactionFilter::sort_column("createdAt").is_some());
     // Declared, but not sortable.
     assert!(BoardPostReactionFilter::sort_column("user_id").is_none());
+  }
+
+  /// The read scope this list is built from: the post the caller named, answered before the query
+  /// runs, and — where the board keeps reactions private — the caller's own rows. Both are pinned
+  /// before a single declared key is read.
+  fn scope() -> Select<Entity> {
+    use sea_orm::QueryFilter;
+
+    Entity::find().filter(Column::PostId.eq(7)).filter(Column::UserId.eq(9))
+  }
+
+  fn where_of(query: Select<Entity>) -> String {
+    use sea_orm::QueryTrait;
+    use sea_orm::sea_query::PostgresQueryBuilder;
+
+    let sql = query.as_query().to_string(PostgresQueryBuilder);
+
+    sql.split_once(" WHERE ").expect("a WHERE clause").1.to_owned()
+  }
+
+  /// The tree as the one condition a list adds to a query it has already scoped.
+  fn compiled(raw: &str) -> Condition {
+    ConditionTree::parse(raw)
+      .expect("the tree parses")
+      .compile::<BoardPostReactionFilter>()
+      .expect("the tree compiles")
+  }
+
+  /// A root `any` under the read scope. The builder renders the disjunction inside its own
+  /// parentheses and the query adds it with `AND`, so the widest thing a tree can do is add one
+  /// conjunct: the scope stays whole beside it instead of becoming one of the alternatives.
+  #[test]
+  fn an_or_inside_a_tree_stays_a_conjunct_of_the_scope() {
+    use sea_orm::QueryFilter;
+
+    const TREE: &str = r#"{"type":"any","of":[
+      {"type":"field","key":"value","op":"eq","value":"like"},
+      {"type":"field","key":"user_id","op":"in","value":[1,2]}
+    ]}"#;
+
+    let bare = where_of(Entity::find().filter(compiled(TREE)));
+    let scoped = where_of(scope().filter(compiled(TREE)));
+
+    assert!(bare.contains(" OR "), "{bare}");
+    assert!(scoped.contains(&where_of(scope())), "the scope must survive whole: {scoped}");
+    assert!(
+      scoped.ends_with(&format!(" AND ({bare})")),
+      "the tree must be one more conjunct: {scoped}"
+    );
   }
 }

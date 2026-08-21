@@ -3,11 +3,11 @@ use axum::http::StatusCode;
 use axum::{Json, Router, routing};
 use axum_extra::extract::Query;
 
-use super::ApiController;
+use super::{ApiController, ControllerRouter};
+use crate::SumidaState;
 use crate::service::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct UserController<S: SumidaState> {
@@ -129,34 +129,27 @@ where
   S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
-    let route_read = Router::new()
-      .route("/", routing::get(Self::list))
-      .route("/{user_id}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "user", read));
-    let route_filters = filter_descriptor_router::<S, UserFilter>(state, "user");
-    let route_create = Router::new() //
-      .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(state, "user", create));
-    let route_update = Router::new()
-      .route("/{user_id}", routing::patch(Self::update))
-      .route("/{user_id}/invite", routing::post(Self::invite))
-      .route("/{user_id}/ban", routing::post(Self::ban).delete(Self::lift_ban))
-      .route_layer(service_ap!(state, "user", update));
-    let route_delete = Router::new()
-      .route("/{user_id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "user", delete));
-
     // Standard CRUD routes requiring session/token auth + service_ap permission.
-    // impersonate issues a session for an arbitrary user, so it must go through authentication.
-    // (admin status is checked once more in the service-layer impersonate().)
-    let route_guarded = Router::new()
-      .merge(route_read)
-      .merge(route_filters)
-      .merge(route_create)
-      .merge(route_update)
-      .merge(route_delete)
-      .route("/{user_id}/impersonate", routing::post(Self::impersonate))
-      .route_layer(user_guard!(state));
+    // impersonate issues a session for an arbitrary user, so it must go through authentication,
+    // but its authority is admin status rather than a namespace action — the service-layer
+    // impersonate() is what checks it, so the route carries no action gate.
+    let route_guarded = ControllerRouter::new(state, "user")
+      .read(
+        Router::new() //
+          .route("/", routing::get(Self::list))
+          .route("/{user_id}", routing::get(Self::get)),
+      )
+      .descriptor::<UserFilter>()
+      .create(Router::new().route("/", routing::post(Self::create)))
+      .update(
+        Router::new()
+          .route("/{user_id}", routing::patch(Self::update))
+          .route("/{user_id}/invite", routing::post(Self::invite))
+          .route("/{user_id}/ban", routing::post(Self::ban).delete(Self::lift_ban)),
+      )
+      .delete(Router::new().route("/{user_id}", routing::delete(Self::delete)))
+      .ungated(Router::new().route("/{user_id}/impersonate", routing::post(Self::impersonate)))
+      .build();
 
     // Pre-auth endpoints that self-verify via a body token (invitation uuid / verification code).
     let route_public = Router::new()
