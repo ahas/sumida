@@ -1,4 +1,4 @@
-//! Golden SQL: the exact predicate every rule shape compiles to (design §14 step 2).
+//! Golden SQL: the exact predicate every rule shape compiles to.
 //!
 //! Pure unit tests — no database, no session, no server. What they assert is the *text* of the
 //! compiled predicate, because that text is the whole authorization decision and nothing else in
@@ -42,7 +42,7 @@ fn demo() -> &'static Registry {
   })
 }
 
-/// The caller of design §6.2: user 7, role 3, organization 100.
+/// The worked example's caller: user 7, role 3, organization 100.
 fn caller() -> SubjectSet {
   SubjectSet::from_parts(
     vec!["user:7".to_owned(), "role:3#member".to_owned(), "organization:100#member".to_owned()],
@@ -250,8 +250,8 @@ fn walk_over_an_edge_substitutes_the_target_id() {
   );
 }
 
-/// A multi-hop derivation (E5) becomes nested `EXISTS`, one per join — exactly the joins a
-/// hand-written containment query pays for today, and no more.
+/// A multi-hop derivation becomes nested `EXISTS`, one per join — exactly the joins a
+/// hand-written containment query pays for, and no more.
 #[test]
 fn multi_hop_derivation_becomes_nested_exists() {
   let compiled = demo_sql("demo_bud", "view");
@@ -291,8 +291,8 @@ fn a_userset_relation_scans_in_the_other_direction() {
   );
 }
 
-/// Intersection is preserved rather than converted to a union — `board_group AND board` is what
-/// `ApChain` used to compose at the call site and what `board_post`'s create path checks.
+/// Intersection stays an intersection rather than collapsing to a union: authority over a group
+/// is not by itself authority over a board inside it, and a post's create path relies on that.
 #[test]
 fn intersection_survives_as_and() {
   let compiled = sql("board", "edit");
@@ -366,8 +366,8 @@ fn a_chained_exclusion_is_one_subtraction_of_a_union() {
 
 // ─── whole rules, end to end ─────────────────────────────────────────────────────────────────
 
-/// §6.2's worked example. Every branch it names must be present, and the whole thing must still be
-/// one expression — no CTE, no second statement, nothing to feed back into SQL. That is the
+/// The worked example, end to end. Every branch its rule names must be present, and the whole
+/// thing must still be one expression — no CTE, no second statement, nothing to feed back into SQL. That is the
 /// property a five-figure list screen depends on: the rule is a `WHERE` clause, so `COUNT`,
 /// `ORDER BY` and `LIMIT` stay in one statement with it.
 #[test]
@@ -540,7 +540,7 @@ fn every_converted_call_site_names_a_permission_that_exists() {
     ("user/mod.rs", "sumida_user", "remove"),
     ("fs/file.rs", "file", "view"),
     ("fs/file.rs", "file", "remove"),
-    // `board` and `board_group` declare no `remove`; `own` *is* "may delete" (§1.4).
+    // `board` and `board_group` declare no `remove`; `own` *is* "may delete".
     ("bps/board/mod.rs", "board", "view"),
     ("bps/board/mod.rs", "board", "edit"),
     ("bps/board/mod.rs", "board", "own"),
@@ -594,9 +594,8 @@ fn every_converted_call_site_names_a_permission_that_exists() {
 
 /// `role#remove` exists, and it is `operate_delete` rather than `operate_update`.
 ///
-/// `RoleService::delete` needed a permission of its own and there was none; `edit` would have done
-/// as a string, and that is exactly the G12 shape — deleting a role revokes every grant it carries,
-/// which is not the authority to rename it. The two must therefore compile differently.
+/// Deleting a role revokes every grant it carries, which is not the authority to rename it. Two
+/// strings handed to one check would make them the same grant, so the two must compile differently.
 #[test]
 fn role_remove_is_a_different_grant_from_role_edit() {
   let edit = check_sql("role", 1, "edit");
@@ -693,9 +692,8 @@ fn one_definition_may_answer_two_namespaces() {
   );
 }
 
-/// `org:credit` and `org:subscription` keep a `use` tier distinct from `manage` — blocking item 2
-/// of the brief. `credit/mod.rs:66` uses `manage` and `:93` uses `use`, so collapsing them would
-/// remove a capability that is in use.
+/// `org:credit` and `org:subscription` keep the tier that spends distinct from the tier that
+/// administers. Both are in use, so collapsing them would take a capability away.
 #[test]
 fn credit_and_subscription_keep_a_use_tier_distinct_from_manage() {
   let registry = Authz::registry().expect("validates");
@@ -720,9 +718,9 @@ fn credit_and_subscription_keep_a_use_tier_distinct_from_manage() {
   );
 }
 
-/// `CreditService::authorize_use` short-circuits on "same-organization member"
-/// (`credit/mod.rs:88`). That is `organization#member`, and `view_credit` has to keep it or a
-/// member loses the ability to spend their own organization's credit.
+/// A plain member of an organization may spend that organization's credit without being granted
+/// anything. That is the `organization#member` branch of `view_credit`; without it a member loses
+/// the ability to spend their own organization's credit.
 #[test]
 fn view_credit_still_admits_a_plain_organization_member() {
   let compiled = check_sql("organization", 100, "view_credit");

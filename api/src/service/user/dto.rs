@@ -379,7 +379,9 @@ mod filter_tests {
   }
 
   /// The read scope the list is built from. The projection and the joins the service adds are left
-  /// out on purpose: what §11 turns on is how the scope and the tree meet in the `WHERE` clause.
+  /// out on purpose: what is under test is how the scope and the condition tree meet in the
+  /// `WHERE` clause, since a filter may only narrow an already-authorized scope
+  /// (`docs/list-filters.md`).
   fn scope() -> Select<Entity> {
     Authz::filter(super::super::RESOURCE, "view", &caller(), Entity::find())
       .expect("the read scope compiles")

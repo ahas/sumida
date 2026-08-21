@@ -1,11 +1,8 @@
 //! What the compiled rules answer, against a real database, per mechanism.
 //!
-//! This file is what is left of the equivalence suite that ran the legacy evaluator and `Authz`
-//! side by side over the same Postgres and asserted the two agreed. It was the acceptance evidence
-//! for the migration and could not outlive the thing on its left-hand side, so every case that
-//! still says something was rewritten as an **absolute** claim — the answer the legacy evaluator
-//! used to supply is now written down as the expectation — and the cases whose only content was
-//! "the two agree" went with it.
+//! Every case is an **absolute** claim: the answer the rules must give, written down. Nothing here
+//! compares one evaluator against another, so a case that no longer says something is a case to
+//! delete rather than to loosen.
 //!
 //! Six mechanisms, chosen because each is a different one rather than a different namespace:
 //!
@@ -15,7 +12,7 @@
 //! | delegation | `delegation_scope:<scope>#assert`, matched by equality and never by prefix |
 //! | organization hierarchy | `sumida_user:<id>#edit` through the `^` closure |
 //! | board allow/deny composition | `board_post:<id>#edit` — an intersection inside, an exclusion outside |
-//! | the object tier, per converted call site | `<definition>:<id>#<permission>` |
+//! | the object tier, per call site | `<definition>:<id>#<permission>` |
 //! | an installed consumer's object tier | the sharing levels, the walks, and the block |
 //!
 //! The last row is the fixture rule set, `tests/fixtures/schema.demo.sz`, installed through the
@@ -25,10 +22,10 @@
 //!
 //! Each case prints a row of `expected | actual` and then asserts. The table is kept because it is
 //! the artefact a reviewer reads: a bare `assert!` says a rule is wrong without saying which of a
-//! dozen shapes it was wrong about. Where a case records a **deliberate** difference from the old
-//! model — §1.5's widenings and narrowings — the expectation *is* the new answer and the `note`
-//! says which one it is and why, because a difference nobody wrote down is a difference nobody
-//! decided.
+//! dozen shapes it was wrong about. Where the rules answer something a reader would not have
+//! predicted — a widening or a narrowing the model chose deliberately — the expectation *is* that
+//! answer and the `note` says which way it goes and why, because a decision nobody wrote down is a
+//! decision nobody made.
 //!
 //! The fixture always writes the store the rules read. A test of a rule that seeds through a
 //! translation layer goes red for the layer's reasons as well as the rule's.
@@ -52,9 +49,8 @@ struct Case {
   what:     String,
   expected: bool,
   actual:   bool,
-  /// Set when this case records a deliberate change from the pre-migration model. It does not
-  /// weaken the assertion — `expected` is still asserted — it says *why* the expectation is what
-  /// it is, where a reader of the old system would have predicted the other answer.
+  /// Set when the expectation is one a reader would not have predicted. It does not weaken the
+  /// assertion — `expected` is still asserted — it says *why* the expectation is what it is.
   note:     Option<&'static str>,
 }
 
@@ -103,8 +99,8 @@ fn report(area: &str, cases: &[Case]) {
 
 /// One caller's identity, without needing a session.
 ///
-/// `is_admin` is deliberately **not** an extra principal: R1 is `platform#flagged`, a derived
-/// tupleset over `users.is_admin`, so the flag enters through `user_ids`. This is
+/// `is_admin` is deliberately **not** an extra principal: `platform#flagged` is a derived tupleset
+/// over `users.is_admin`, so the flag enters through `user_ids`. This is
 /// `SubjectSet::of`'s non-api-key branch, spelled out against a `users` row.
 fn subject_of(user: &entity::users::Model) -> SubjectSet {
   SubjectSet::from_parts(
@@ -222,11 +218,9 @@ async fn boot_reports_which_rules_this_database_can_back() {
 
 /// `service_ap!(state, "user", read)` is `service:user#can_read`, and the two tiers stay apart.
 ///
-/// The deliberate semantic change of §5.2 is asserted rather than left implicit. The old
-/// `_build_object_condition` ORed `object = '*'` unconditionally, so a row granting object-wide
-/// power also satisfied the route gate; here `operate_read` still implies `can_read`, and a gate
-/// grant still does **not** imply object-wide power. Both directions are cases of their own,
-/// because a rule that collapsed them would pass a test that only checked the first.
+/// The implication runs one way only, and both directions are cases of their own: `operate_read`
+/// implies `can_read`, and a route-gate grant does **not** imply object-wide power. A rule that
+/// collapsed the two would pass a test that checked only the first.
 #[tokio::test]
 async fn the_route_gate_and_the_object_wide_tier_are_different_grants() {
   let db = prepare().await;
@@ -239,8 +233,7 @@ async fn the_route_gate_and_the_object_wide_tier_are_different_grants() {
   grant(&db, "service", "user", "read", &gated).await;
   grant(&db, "service", "user", "op_read", &operator).await;
   // The administrator gets nothing at all: `platform#flagged` derives from `users.is_admin`, so the
-  // grant is the column. The old model needed a `* | * | {*} | user:admin` catch-all row for this,
-  // and that row is superseded rather than migrated (§2.2).
+  // column *is* the grant and there is no row to write.
 
   let can_read = |user: &TestUser| {
     let subject = subject_of(&user.model);
@@ -253,7 +246,7 @@ async fn the_route_gate_and_the_object_wide_tier_are_different_grants() {
     Case::new("a route-gate grant opens the gate", true, can_read(&gated).await),
     Case::new("an object-wide grant also opens the gate", true, can_read(&operator).await),
     Case::new("an administrator holds every gate", true, can_read(&admin).await)
-      .noting("from `platform:root#superuser` over `users.is_admin`, not from the catch-all policy row"),
+      .noting("from `platform:root#superuser` over `users.is_admin`, not from any granted row"),
     Case::new(
       "a route-gate grant confers object-wide read",
       false,
@@ -261,7 +254,7 @@ async fn the_route_gate_and_the_object_wide_tier_are_different_grants() {
         .await
         .expect("runs"),
     )
-    .noting("§5.2's split: \"may use the user API\" stopped being the same grant as \"may see everyone\""),
+    .noting("the tiers are separate grants: \"may use the user API\" is not \"may see everyone\""),
   ];
 
   report("the service-tier route gate", &cases);
@@ -269,10 +262,8 @@ async fn the_route_gate_and_the_object_wide_tier_are_different_grants() {
 
 /// A route gate is an **object id** on `service`, and it opens exactly the one namespace it names.
 ///
-/// This case used to assert that the Phase 1 shim really consulted the compiled rule for a routed
-/// namespace, by granting a tuple no `access_policies` row backed. There is no shim and no second
-/// store to fall back to, so what it asserts now is the half that was never about the shim: one
-/// namespace per grant, and no leakage between the four products that share this rule set.
+/// There is one store of grants and nothing to fall back to, so what this asserts is one namespace
+/// per grant, and no leakage between the products that share this rule set.
 ///
 /// **The negative is not the one it looks like it should be, and that is worth stating.** The
 /// compiled evaluator has no notion of a *gated* namespace: `service` has no backing table, so its
@@ -535,9 +526,8 @@ async fn a_posts_edit_intersects_its_board_and_excludes_a_block() {
   .expect("post")
   .last_insert_id;
 
-  // The author gets **nothing**. Authorship derives from `board_posts.user_id` now (§1.5's first
-  // widening), where it used to be an `allow` row `create` wrote at `board_post/mod.rs:448` — so a
-  // grant here would hide exactly the property the first case asserts.
+  // The author gets **nothing**. Authorship derives from `board_posts.user_id`, so a grant here
+  // would hide exactly the property the first case asserts.
   grant(&db, "board_group", &group_id.to_string(), "editor", &operator).await;
   grant(&db, "board", &board_id.to_string(), "editor", &operator).await;
   grant(&db, "board_group", &group_id.to_string(), "editor", &group_only).await;
@@ -550,8 +540,8 @@ async fn a_posts_edit_intersects_its_board_and_excludes_a_block() {
 
   let mut cases = vec![
     Case::new("the author, with no grant at all", true, edits(&author).await).noting(
-      "§1.5(1), the intended widening: `board_post#author` derives from `board_posts.user_id`, so \
-       authorship is no longer a row `create` has to remember to write",
+      "`board_post#author` derives from `board_posts.user_id`, so authorship is a column and not a \
+       row `create` has to remember to write",
     ),
     Case::new("an operator holding both halves", true, edits(&operator).await),
     Case::new("the group grant alone", false, edits(&group_only).await).noting(
@@ -565,8 +555,8 @@ async fn a_posts_edit_intersects_its_board_and_excludes_a_block() {
   // the rule rather than through HTTP.
   grant(&db, "board", &board_id.to_string(), "blocked", &author).await;
   cases.push(Case::new("the author, once blocked on the board", false, edits(&author).await).noting(
-    "a `deny` row had no automatic translation — the backfill refuses `effect='deny'` rather \
-       than guessing which relation it meant, so this block is §9.2's operator action",
+    "a block is an operator action: `blocked` is written on the object, and the exclusion is \
+       subtracted outside the whole union so authorship cannot walk through it",
   ));
 
   report("board allow/deny composition", &cases);
@@ -574,15 +564,14 @@ async fn a_posts_edit_intersects_its_board_and_excludes_a_block() {
 
 // ─── the client's payload ────────────────────────────────────────────────────────────────────
 
-/// `/me/access-policies` still answers what the CASL client has always been given.
+/// `/me/access-policies` answers the shape the CASL client consumes.
 ///
-/// The whole payload is projected from `relation_tuples` now. The client is not being changed in
-/// this phase, so the wire shape is a contract: `updateAbilityFor`
-/// (`casl/src/runtime/plugin.ts:19`) iterates `action × object` and emits
+/// The payload is projected from `relation_tuples`, and its wire shape is a contract with a client
+/// this repository does not build: `updateAbilityFor` iterates `action × object` and emits
 /// `can(action, `${namespace}:${object}`)`, with a special case on `namespace === "*"`. A missing
-/// `"service"` object string, a `namespace` that is no longer the legacy string, or a lost `"*"`
-/// entry each silently disable part of the UI — the sort of break that shows up as "the button is
-/// gone" days later and not as a failing request.
+/// `"service"` object string, a renamed `namespace`, or a lost `"*"` entry each silently disable
+/// part of the UI — the sort of break that shows up as "the button is gone" days later and not as
+/// a failing request.
 ///
 /// **The payload carries the service tier and nothing below it.** A row-tier grant says which rows a
 /// caller reaches, and the server settles that per request against the rules; handing it to the
@@ -630,8 +619,8 @@ async fn me_access_policies_keeps_its_payload() {
   // A non-admin must not be handed the catch-all, or the client grants `manage all` to everyone.
   assert!(entry("*", "*").is_none(), "a non-admin received the `*` catch-all: {policies:?}");
 
-  // And an administrator must still get it, from `platform:root#superuser` rather than from the
-  // legacy row — this is the branch `plugin.ts:27` turns into `can("manage", "all")`.
+  // An administrator must get it, from `platform:root#superuser` — this is the entry the client
+  // turns into `can("manage", "all")`.
   let admin_session = Session::login(mock.server.addr, &admin, "an administrator").await;
   let admin_body = admin_session.probe_one("/me/access-policies", &"policies").await;
   let admin_policies = admin_body.body().as_array().cloned().unwrap_or_default();
@@ -645,15 +634,14 @@ async fn me_access_policies_keeps_its_payload() {
   );
 }
 
-// ─── 5. the object tier, per converted call site ─────────────────────────────────────────────
+// ─── 5. the object tier, per call site ───────────────────────────────────────────────────────
 
-/// The **row-level** tier, over the four mechanisms §14 step 13's conversion actually moves.
+/// The **row-level** tier, over the four mechanisms a call site can ask for.
 ///
 /// The service-tier case above is about one grant shape; this is about the tier that decides *which
-/// rows*, which is what the 33 converted call sites ask. Each case names the answer the old model
-/// gave, or — for the three §1.5 differences — says which way it moved and why. Writing those three
-/// down rather than deleting them is the point: a difference nobody wrote down is a difference
-/// nobody decided.
+/// rows*. Each case names the answer the rules must give, and where that answer is one a reader
+/// would not have predicted the `note` says which way it goes and why: a decision nobody wrote
+/// down is a decision nobody made.
 #[tokio::test]
 async fn the_object_tier_answers_per_converted_call_site() {
   let db = prepare().await;
@@ -715,7 +703,7 @@ async fn the_object_tier_answers_per_converted_call_site() {
   .expect("file");
 
   // 세 층을 각기 다른 사람에게 준다: 행 하나(`board#viewer`), 라우트 게이트(`service:board#read`),
-  // 그리고 종전 `object='*'` 에 해당하는 객체 전역(`service:file#op_read`).
+  // 객체 전역(`service:file#op_read`).
   grant(&db, "board", &board_id.to_string(), "viewer", &holder).await;
   grant(&db, "service", "board", "read", &gated).await;
   grant(&db, "service", "file", "op_read", &operator).await;
@@ -742,34 +730,33 @@ async fn the_object_tier_answers_per_converted_call_site() {
       false,
       views("board", board_id.to_string(), &nobody).await,
     ),
-    // (3) 설계 §5.2 가 두 층을 갈라 놓은 자리. 종전에도 행 검사에는 `object='service'` 가
-    // 맞지 않았고, 지금도 아니다.
+    // (3) 두 층이 갈라지는 자리. 라우트 게이트 부여는 행 검사에 닿지 않는다.
     Case::new(
       "a route-gate grant does not reach a row",
       false,
       views("board", board_id.to_string(), &gated).await,
     ),
-    // (4) `object='*'` — `file` 처럼 정의가 `service:<ns>->operate_read` 를 품은 쪽은 정확히 옮겨진다.
+    // (4) 객체 전역 층 — `file` 처럼 정의가 `service:<ns>->operate_read` 를 품은 쪽에서만 성립한다.
     Case::new(
       "an object-wide grant on `file` reaches somebody else's file",
       true,
       views("file", file_uuid.to_string(), &operator).await,
     ),
-    // (5) R3 — 소유권이 열에서 파생된다. 종전에는 업로드/작성 때 심어 둔 행이 있어야 닿았다.
+    // (5) 소유권은 열에서 파생된다. 부여할 것도, 작성 때 심어 둘 행도 없다.
     Case::new(
       "the author of a post reaches it with no grant at all",
       true,
       views("board_post", post_id.to_string(), &author).await,
     )
-    .noting("§1.5(1), the intended widening: `board_post#author` derives from `board_posts.user_id`"),
+    .noting("`board_post#author` derives from `board_posts.user_id`, so the author needs no grant"),
     Case::new(
       "the owner of a file reaches it with no grant at all",
       true,
       views("file", file_uuid.to_string(), &author).await,
     )
-    .noting("§1.5(1) again, for `file#owner` over `files.user_id`"),
-    // (6) `board` 에는 객체 전역 읽기의 대응물이 **없다**. 좁힘이며, 규칙 쪽 결정이라 이 단계에서
-    // 임의로 메우지 않았다. `operator` 는 위에서 `file` 에만 받았으므로 `board` 에는 아무것도 없다.
+    .noting("the same shape for `file#owner` over `files.user_id`"),
+    // (6) `board` 에는 객체 전역 읽기의 대응물이 **없다**. 규칙 쪽 결정이므로 호출 자리에서 임의로
+    // 메우지 않는다. `operator` 는 위에서 `file` 에만 받았으므로 `board` 에는 아무것도 없다.
     Case::new(
       "an object-wide read grant on `board` has no equivalent",
       false,

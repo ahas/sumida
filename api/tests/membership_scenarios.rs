@@ -226,8 +226,8 @@ async fn scenario_org_admin_hierarchy() {
 
   // Manager in the parent org, with org policies on the PARENT only.
   let manager = TestUser::create_in_org(&db, parent.model.id).await.unwrap();
-  // 종전 `org:subscription | <parent> | {read,manage}` 와 `org:credit | <parent> | {use,manage}`.
-  // 상위 조직에 붙은 부여가 하위 조직까지 닿는 것은 이제 `^` 닫힘이 맡는다.
+  // 상위 조직의 구독·크레딧 관리 층. 상위 조직에 붙은 부여가 하위 조직까지 닿는 것은 `^`
+  // 닫힘이 맡는다.
   grant_org_scope(&db, &manager, parent.model.id, "subscription_manager").await.unwrap();
   grant_org_scope(&db, &manager, parent.model.id, "credit_manager").await.unwrap();
   let mm = Mock::new().await;

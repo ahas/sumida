@@ -90,9 +90,9 @@ impl<S: SumidaState> CreditService<S> {
 
   /// Use = consume/read balance. 최상위 관리자 / 본인 / `organization#view_credit` 보유자.
   ///
-  /// 종전의 "같은 조직 구성원이면 통과" 단축로는 사라졌다. 없어진 것이 아니라 규칙 안으로
-  /// 들어갔다 — `view_credit = credit_viewer^ | edit_credit | member` 의 `member` 갈래가 바로
-  /// 그것이고, 이제 목록·단건 어느 쪽에서 물어도 같은 답이 나온다.
+  /// "같은 조직 구성원이면 통과" 는 여기서 분기로 다루지 않는다. 규칙 안에 있다 —
+  /// `view_credit = credit_viewer^ | edit_credit | member` 의 `member` 갈래가 그것이고,
+  /// 그래서 목록·단건 어느 쪽에서 물어도 같은 답이 나온다.
   pub async fn authorize_use<C: ConnectionTrait>(
     &self,
     owner_kind: &OwnerKind,

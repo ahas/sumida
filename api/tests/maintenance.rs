@@ -210,7 +210,7 @@ async fn test_org_manager_emails_resolution() {
 
   let org = TestOrg::create(&db).await.unwrap();
   let manager = TestUser::create_in_org(&db, org.model.id).await.unwrap();
-  // 종전 `org:subscription | <org> | {manage}` 정책 행이 뜻하던 층.
+  // 조직의 구독을 관리하는 층.
   grant_org_scope(&db, &manager, org.model.id, "subscription_manager").await.unwrap();
 
   let emails = org_manager_emails(org.model.id, &db).await.unwrap();

@@ -1,9 +1,6 @@
-//! What the caller may do — the `/me/permissions` projection (design §8.2, §9.7).
+//! What the caller may do — the `/me/permissions` projection.
 //!
-//! `service_grants` answers the *legacy* question: which rows would `/me/access-policies` have
-//! shown. This answers the new one, and the difference is the whole reason §9.7 adds a second
-//! endpoint rather than reshaping the first.
-//!
+//! Two endpoints, because they answer two different questions and one payload cannot carry both.
 //! `/me/access-policies` reports **tuples**. `/me/permissions` reports **permissions**, which is
 //! not the same set: `service:<namespace>#operator` is one tuple and confers every capability on
 //! that namespace, and `platform:root#superuser` is one tuple and confers them on every namespace.
@@ -12,12 +9,12 @@
 //! the rule file. So every entry here is **evaluated through the compiled rule**, never assembled
 //! from the raw relations.
 //!
-//! Two tiers, kept apart because §5.2 deliberately made them different grants:
+//! Two tiers, kept apart because they are different grants:
 //!
-//! * `services` — may the caller reach the API at all. This is what `service_ap!` gates on, and
+//! * `services` — may the caller reach the API at all. This is what the route gate checks, and
 //!   what the client uses to decide whether a screen exists.
-//! * `operates`  — may the caller act on **everyone's** rows, not only their own. Today's
-//!   `object = '*'`. A client that conflates the two shows an operator's global list to somebody
+//! * `operates`  — may the caller act on **everyone's** rows, not only their own. A client that
+//!   conflates the two shows an operator's global list to somebody
 //!   who holds only the route gate, and then the server correctly returns their own rows and the
 //!   screen looks broken.
 //!
@@ -47,7 +44,7 @@ enum Tier {
 /// a schema change that has to be made here too — deliberately, not by inference.
 const ACTIONS: [&str; 4] = ["create", "read", "update", "delete"];
 
-/// The payload of `GET /me/permissions` (design §9.7).
+/// The payload of `GET /me/permissions`.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Effective {

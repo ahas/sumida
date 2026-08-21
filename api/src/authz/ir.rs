@@ -1,18 +1,18 @@
-//! The rule IR (design §4.3).
+//! The rule IR.
 //!
 //! This is what a `.sz` rule file parses into and what `compile` walks. It is deliberately dumb: it
 //! carries no resolution, no defaults and no inference. Everything a rule means is either written
 //! in the schema text or rejected by `validate` — because the failure mode of an inferring IR is a
 //! rule that means something nobody wrote, which in this subsystem is a permission nobody granted.
 //!
-//! Two deviations from the design's IR sketch, both deliberate:
+//! Two shape decisions worth stating:
 //!
-//! * Owned `String`/`Vec` instead of `&'static str`/`&'static [_]`. The registry is built by
+//! * Owned `String`/`Vec` rather than `&'static str`/`&'static [_]`. The registry is built by
 //!   parsing `include_str!`-ed schema text once, behind a `OnceLock`, rather than by a build-script
 //!   codegen step. The text is still baked into the binary and a rule edit is still a deploy; what
 //!   is avoided is a code generator whose output nobody reads.
 //! * `Rewrite::Walk` carries a whole `Rewrite` on its right-hand side rather than a permission
-//!   name, so a chain (`board->group->blocked`, §5.3) is one node type instead of a special case.
+//!   name, so a chain (`board->group->blocked`) is one node type instead of a special case.
 
 use std::fmt;
 
@@ -21,13 +21,14 @@ use serde::Serialize;
 /// Who a stored relation will accept as a subject.
 ///
 /// Declared per relation so a write of `service:<namespace>#read@board:7` is refused at the API
-/// instead of being stored and silently never matching — the failure the old model had no
-/// vocabulary to prevent, and which left a reversed `admin:user` row sitting in the table.
+/// instead of being stored and silently never matching. Without this vocabulary a reversed row —
+/// an object written where a subject belongs — is accepted and then matches nothing for as long as
+/// it sits in the table.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum SubjectSpec {
   /// `user`, `apikey` — a terminal subject type.
   Direct(String),
-  /// `role#member`, `organization#member` — a userset. Restricted by E4 to relations that are
+  /// `role#member`, `organization#member` — a userset. Restricted to relations that are
   /// O(1)-derivable from the session, which is what keeps the subject side a string match.
   Userset { ty: String, relation: String },
   /// `user:*` — the public wildcard.
@@ -44,12 +45,11 @@ impl fmt::Display for SubjectSpec {
   }
 }
 
-/// One join in a multi-hop derivation (E5): join `table` on its `key_col`, then continue with
+/// One join in a multi-hop derivation: join `table` on its `key_col`, then continue with
 /// `next_col`.
 ///
 /// `via structures.site_id` is `Hop { table: "structures", key_col: "id", next_col: "site_id" }` —
-/// the key column is always the hop table's `id`, which is what all of §5's hops need and is the
-/// only shape the grammar admits.
+/// the key column is always the hop table's `id`, which is the only shape the grammar admits.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Hop {
   pub table:    String,
@@ -82,7 +82,7 @@ pub enum Correlation {
   Free,
 }
 
-/// A derived tupleset — a relation backed by a domain column instead of a tuple (E2/E5).
+/// A derived tupleset — a relation backed by a domain column instead of a tuple.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Derivation {
   pub table:       String,
@@ -121,7 +121,7 @@ pub enum Rewrite {
   /// A permission on the same object, inlined at compile time.
   Computed(String),
   /// `rel^` — a `rel` tuple on this object *or any ancestor of it*, over the definition's
-  /// declared closure table (E3).
+  /// declared closure table.
   Closure(String),
   /// `rel->…` — tuple_to_userset. The right-hand side is a whole rewrite so a chain such as
   /// `board->group->blocked` is one node.
@@ -138,8 +138,8 @@ pub enum Rewrite {
   },
   Union(Vec<Rewrite>),
   Intersection(Vec<Rewrite>),
-  /// `a - b`. `b` may itself be a union — the grammar decision that lets `board_post`'s deny
-  /// composition survive the move off per-tuple `deny` (§4.1, blocking item 1).
+  /// `a - b`. `b` may itself be a union, which is what lets a post subtract its own block, its
+  /// board's and its group's in one exclusion binding outside the whole grant union.
   Exclusion {
     base:     Box<Rewrite>,
     subtract: Box<Rewrite>,
@@ -217,9 +217,9 @@ impl Definition {
 pub struct NamespaceEntry {
   /// The legacy namespace string, e.g. `org:credit`, `board_post`.
   pub namespace:  String,
-  /// Whether a route gate (`service_ap!`) exists, i.e. whether `service:<namespace>` is a real
-  /// object. Service object ids keep today's namespace strings, colons included, so the
-  /// `/me/access-policies` compatibility payload stays byte-identical for the CASL client.
+  /// Whether a route gate exists, i.e. whether `service:<namespace>` is a real object. Service
+  /// object ids are the namespace strings, colons included, which is the shape the CASL client
+  /// reads out of the `/me/access-policies` payload.
   pub gated:      bool,
   /// The definition row-level checks on this namespace resolve to, when there are any.
   pub definition: Option<String>,

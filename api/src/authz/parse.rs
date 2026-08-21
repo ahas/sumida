@@ -1,12 +1,13 @@
-//! Parser for the rule language of design §4.1.
+//! Parser for the `.sz` rule language. `docs/sz-language.md` is the language's canonical
+//! description; this file is its grammar as implemented.
 //!
 //! Scannerless recursive descent over the schema text. There is no separate token stream because
 //! two constructs need the raw source — the `where` clause of a derivation, and identifiers that
 //! carry `:` and `.` (`service:app:system-settings`, `org:credit`, `sites.manager_id`) — and
 //! threading a lexer mode through a token stream to serve two cases costs more than it saves.
 //!
-//! Grammar, as implemented. Four additions to the design's sketch, each because the compiler
-//! cannot do its job without the fact and inferring it would mean guessing:
+//! Four constructs below carry a fact the compiler cannot do its job without, and that inferring
+//! would mean guessing at; each is spelled out under the grammar:
 //!
 //! ```text
 //! file        := ( definition | extension | namespace )*
@@ -47,7 +48,7 @@
 //!   them, which means the framework has to know what its consumers are. An extension may not
 //!   introduce `on` or `closure` — those are the definition's identity, not a member of it — and a
 //!   member that collides with one the target already has is refused.
-//! * **`namespace`** — the legacy-namespace inventory validation rule 8 checks against.
+//! * **`namespace`** — the namespace inventory validation rule 8 checks against.
 
 use super::ir::*;
 
@@ -386,7 +387,7 @@ impl<'a> Parser<'a> {
     Ok(())
   }
 
-  /// The `scope <family>` shorthand of §5.2.
+  /// The `scope <family>` shorthand.
   ///
   /// Text-level only: it expands here, before the IR, into three relations and three permissions
   /// that are ordinary canonical Zanzibar. It exists so the eleven-odd families on `organization`
@@ -702,7 +703,7 @@ mod tests {
     assert_eq!(d.filter.as_deref(), Some("things.user_id IS NOT NULL"));
   }
 
-  /// `|` binds tightest, then `&`, then `-` (§4.1). If this ever flips, `board_post#edit` silently
+  /// `|` binds tightest, then `&`, then `-`. If this ever flips, `board_post#edit` silently
   /// stops subtracting the block from the whole union and starts subtracting it from one branch.
   #[test]
   fn precedence_is_union_then_intersection_then_exclusion() {

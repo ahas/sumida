@@ -112,7 +112,7 @@ impl<S: SumidaState> BoardGroupService<S> {
   pub async fn delete(&self, id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
     // `board_group` 에는 `remove` 가 없다. `own = owner^ | service:board_group->operate_delete`
-    // 자체가 "지울 수 있다"이므로 삭제는 `own` 으로 인가한다(설계 §1.4).
+    // 자체가 "지울 수 있다"이므로 삭제는 `own` 으로 인가한다.
     Authz::try_check(RESOURCE, id, "own", &self.subject(), &txn).await?;
     let result = BoardGroups::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;

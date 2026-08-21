@@ -76,13 +76,14 @@ where
         }
       };
 
-      // R1 through the rule, not through the session field (design §8.1).
+      // Platform authority is decided by the rule, never by the session field.
       //
-      // `session.profile.is_admin` was filled in from the key's owner by `verify_api_key`, so a
-      // **secured** API key — one that is supposed to carry only its own grants — passed this guard
-      // with its owner's administrative power. `SubjectSet::of` gives a secured key an empty
-      // `user_ids`, so `platform#flagged` cannot match `users.is_admin` at all and the escalation
-      // is closed structurally rather than by remembering to check `api_key.is_secured` here.
+      // `session.profile.is_admin` is filled in from the key's owner when a request arrives on an
+      // API key, so reading it here would let a **secured** key — one that is supposed to carry
+      // only its own grants — pass with its owner's administrative power. `SubjectSet::of` gives a
+      // secured key an empty `user_ids`, so `platform#flagged` cannot match `users.is_admin` at
+      // all; the escalation is closed structurally rather than by remembering to check
+      // `api_key.is_secured` here.
       //
       // For an interactive session the answer is identical to the field: `flagged` reads the same
       // column for the same user id.

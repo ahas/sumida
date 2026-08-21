@@ -1,24 +1,17 @@
 //! Golden tests: the **outcome** of an authorization decision, through HTTP.
 //!
-//! Written before the ReBAC rewrite so it could be proved equivalent rather than argued to be. The
-//! acceptance bar was not "identical mechanism" but "the new model can be configured to produce the
-//! same outcome", so what is written down is the outcome — for each tier of caller, against each
-//! shape of resource, which rows come back and which layer refuses.
+//! **What is written down is the outcome, never the mechanism** — for each tier of caller, against
+//! each shape of resource, which rows come back and which layer refuses. Every case goes through
+//! the router and asserts on a response, so no case names an evaluator and none of them has to
+//! change when the way a decision is reached does.
 //!
-//! Every case goes through the router and asserts on a response, so it never named an evaluator and
-//! did not have to change when one replaced the other. That is why it survived §14 step 14, which
-//! deleted `util/ap.rs` and with it `authz_equivalence.rs`: these cases were the "before" of the
-//! comparison, they are the "after" unchanged, and a case that is both is the strongest evidence
-//! the migration produces.
+//! **A golden test is not an endorsement.** Some of what is recorded here is behaviour this
+//! codebase intends to change, and locking a defect in place under the name "golden" would be worse
+//! than having no test at all. So every case is labelled:
 //!
-//! **A golden test is not an endorsement.** Some of what is pinned here is behaviour this codebase
-//! changed on purpose, and locking a defect in place under the name "golden" would be worse than
-//! having no test at all. So every case is labelled:
-//!
-//! - `pin_*` — behaviour that had to survive the rewrite. A change here is a regression.
-//! - `today_*` — behaviour recorded because it was what happened before, and which the rewrite was
-//!   expected to change. These document the starting point; when one of them fails, read the
-//!   comment and decide whether the new answer is the intended one.
+//! - `pin_*` — behaviour that must hold. A change here is a regression.
+//! - `today_*` — behaviour recorded as it stands and not endorsed. When one of these fails, read
+//!   the comment and decide whether the new answer is the intended one before touching the test.
 //!
 //! Requires a real Postgres — every scope under test lives in SQL.
 
@@ -30,14 +23,14 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::EntityTrait;
 use serde_json::json;
 
-// ─── regressions: the three sumida fixes from 67857ef ────────────────────────
+// ─── regressions: three escalations this file holds closed ───────────────────
 
 /// An API key may not be issued in someone else's name.
 ///
-/// `CreateApiKey.user_id` was written verbatim from the request body while `verify_api_key`
-/// authorizes the session as the key's owner, and `is_secured` defaults to false so that session
-/// inherits the owner's full permissions — `is_admin` included. Holding the coarse
-/// `api_key:create` capability was therefore enough to mint an administrator's key and use it.
+/// `verify_api_key` authorizes the session as the key's owner, and `is_secured` defaults to false,
+/// so that session inherits the owner's full permissions — `is_admin` included. If
+/// `CreateApiKey.user_id` were taken verbatim from the request body, holding the coarse
+/// `api_key:create` capability would be enough to mint an administrator's key and use it.
 ///
 /// Enforced by a **handler check**, so the expected refusal is `Forbidden`, not a filtered row.
 #[tokio::test]
@@ -204,7 +197,7 @@ async fn pin_update_and_read_agree_about_the_org_tier() {
   e2e::ap_test_utils::grant_service(&db, &manager.user, "user", vec!["read".into(), "update".into()])
     .await
     .expect("grant the user route capability");
-  // 조직 계층 권한. 종전 `org:user | <subject org> | {update}` 가 뜻하던 층이다.
+  // 조직 계층 권한 — 대상 조직과 그 하위 전체의 사용자에 닿는 층이다.
   e2e::ap_test_utils::grant_org_scope(&db, &manager.user, tree.subject, "user_manager")
     .await
     .expect("grant org-tier update over the subject org");
@@ -212,13 +205,13 @@ async fn pin_update_and_read_agree_about_the_org_tier() {
   let session = Session::login(mock.server.addr, &manager.user, "manager of subject org").await;
   session.assert_authenticated().await;
 
-  // 단건 읽기 — 종전에는 행 스코프가 걸러 내어 401 이 나오던 자리다.
+  // 단건 읽기 — 행 스코프가 조직 계층을 타고 대상 행까지 닿아야 한다.
   session
     .probe_one(&format!("/users/{}", target.user.model.id), &target.user.model.id)
     .await
     .assert(Access::Visible);
 
-  // 쓰기 — 종전에도 통과했다. 둘이 이제 같은 규칙에서 나온다는 것이 요점이다.
+  // 쓰기 — 읽기와 같은 규칙에서 나온다는 것이 요점이다. 둘이 갈리면 한쪽만 통과한다.
   session
     .probe_write(
       Method::PATCH,
@@ -394,8 +387,8 @@ async fn pin_a_block_is_not_circumvented_by_authorship() {
     .await
     .assert(Access::Visible);
 
-  // 이제 게시판 수준에서 차단한다. 소유권은 그대로다. 종전에는 `effect = 'deny'` 한 행이었고,
-  // 지금은 `board:<id>#blocked` 튜플이다 — 규칙에서 합집합 바깥으로 빠진다.
+  // 게시판 수준에서 차단한다. 소유권은 그대로다. `board:<id>#blocked` 튜플은 규칙에서 합집합
+  // 바깥으로 빠지므로 작성자 본인도 걸린다.
   e2e::ap_test_utils::block_object(&db, &author, "board", &board_id.to_string())
     .await
     .expect("block at board level");

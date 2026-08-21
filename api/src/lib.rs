@@ -1,5 +1,5 @@
-/// Relational Zanzibar — compiled, boot-validated, and the only evaluator there is. It replaced the
-/// lateral-join evaluator over `access_policies`, which is deleted.
+/// Relational Zanzibar — compiled, boot-validated, and the only evaluator there is. Nothing on a
+/// request path decides authorization anywhere else.
 pub mod authz;
 pub mod capability;
 pub mod controller;

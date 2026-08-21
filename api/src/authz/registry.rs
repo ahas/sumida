@@ -1,7 +1,7 @@
-//! The definition registry — the compiled rule set (design §5) and the namespace inventory.
+//! The definition registry — the compiled rule set and the namespace inventory.
 //!
 //! The rule text is `include_str!`-ed, so it is baked into the binary and a rule edit is a deploy,
-//! not a runtime change (E1). It is parsed once behind a `OnceLock` and validated immediately; a
+//! not a runtime change. It is parsed once behind a `OnceLock` and validated immediately; a
 //! rule set that does not parse or does not validate produces an error every entry point returns,
 //! and `Authz::boot` turns that into a refusal to start.
 //!

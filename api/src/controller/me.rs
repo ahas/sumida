@@ -53,31 +53,26 @@ impl<S: SumidaState> MeController<S> {
     Ok(Json(json!({})))
   }
 
-  /// The caller's own grants, in the shape the CASL client has always received (design §9.7).
+  /// The caller's own grants, in the flat shape the CASL client consumes.
   ///
-  /// The wire shape is unchanged, and unchanged deliberately: `updateAbilityFor`
-  /// (the CASL runtime plugin the clients share) turns each element into
-  /// `can(action, `${namespace}:${object}`)`, and because a `service` object's id *is* today's
-  /// namespace string, projecting that half from tuples is exact rather than approximate.
+  /// **The wire shape is fixed by that client.** The CASL runtime plugin the clients share turns
+  /// each element into `can(action, `${namespace}:${object}`)`, and because a `service` object's id
+  /// *is* the namespace string, projecting that half from tuples is exact rather than approximate.
   ///
-  /// The payload has two tiers, and both are read from `relation_tuples` now that the object tier
-  /// routes too:
+  /// Two kinds of entry come out:
   ///
   /// * **route gate** — one entry per namespace, `object: ["service"]`.
   /// * **the administrator's `{namespace:"*", object:["*"], action:["*"]}` entry** — synthesised
-  ///   from `platform:root#superuser`, which the client's `namespace === "*"` branch
-  ///   (`plugin.ts:27`) turns into `can("manage","all")`. Taking it from the rule rather than from
-  ///   the catch-all row is what makes platform administration grantable as a tuple, without
-  ///   touching `users.is_admin`.
+  ///   from `platform:root#superuser`, which the client's `namespace === "*"` branch turns into
+  ///   `can("manage","all")`. Taking it from the rule rather than from a catch-all grant row is
+  ///   what makes platform administration grantable as a tuple, without touching `users.is_admin`.
   ///
-  /// The **object tier is deliberately not projected**, and its removal is the visible half of §14
-  /// step 13. It used to be passed through from `access_policies` because that was still what the
-  /// server resolved row-level checks against; the server resolves them from the rules now, and a
-  /// rule is not a list of rows. Synthesising entries for it would mean inventing a flat
-  /// `namespace | object | action` record for a decision that is a predicate over the row under
-  /// test — `board_post#view` reaches a post through its board, its group and its author, and no
-  /// enumeration of objects can say that. `/me/permissions` is the endpoint that answers "what may
-  /// I do" without lying about shape.
+  /// The **object tier is deliberately not projected.** A row-level decision is a predicate over
+  /// the row under test, not a list of objects: `board_post#view` reaches a post through its board,
+  /// its group and its author, and no enumeration of object ids can say that. Inventing flat
+  /// `namespace | object | action` records for it would tell the client something the evaluator
+  /// never decided. `/me/permissions` is the endpoint that answers "what may I do" without lying
+  /// about shape.
   async fn get_access_policies(
     session: UserSession,
     State(state): State<S>,
@@ -86,7 +81,7 @@ impl<S: SumidaState> MeController<S> {
     let subject = SubjectSet::of(&session);
 
     // The literal `["service"]` the client concatenates. A service grant has exactly one object and
-    // it is this string; the legacy `ARRAY_AGG(DISTINCT ap."object")` produced the same one element.
+    // it is this string.
     let mut policies: Vec<ApForUser> = from_service_grants(Authz::service_grants(&subject, db).await?);
 
     if Authz::is_superuser(&subject, db).await? {
@@ -101,13 +96,13 @@ impl<S: SumidaState> MeController<S> {
     Ok(Json(policies))
   }
 
-  /// What the caller may actually do (design §9.7).
+  /// What the caller may actually do.
   ///
-  /// This is the endpoint the post-migration client drives its UI from, and the one thing it does
-  /// that `/access-policies` cannot is separate the two tiers §5.2 made different grants: `services`
-  /// is "may I reach this API at all" and `operates` is "may I act on everyone's rows". The legacy
-  /// payload cannot express that distinction — it reports `object: ["service"]` and `object: ["*"]`
-  /// as two rows in one flat list, and the client's CASL rules collapse them.
+  /// This is the endpoint a client drives its UI from, and the one thing it does that
+  /// `/access-policies` cannot is keep the two tiers apart: `services` is "may I reach this API at
+  /// all" and `operates` is "may I act on everyone's rows". A flat list of
+  /// `namespace | object | action` records cannot express that distinction — the two arrive as two
+  /// rows and the client's CASL rules collapse them.
   ///
   /// Every entry is evaluated through the compiled rule rather than read off the tuples, so one
   /// `service:<namespace>#operator` tuple reports every capability on it, and `platform:root#superuser`

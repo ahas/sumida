@@ -56,8 +56,8 @@ pub enum Access {
   ///
   /// Kept separate from [`Access::Forbidden`] so a broken login fixture cannot read as a passing
   /// authorization test. Beware that it does **not** always mean "not logged in": some handlers
-  /// map a row their scope filtered out onto `401` rather than `404` — `GET /users/{id}`
-  /// (`controller/user.rs:37`) answers `InvalidAccount` when the scoped select returns nothing.
+  /// map a row their scope filtered out onto `401` rather than `404` — `GET /users/{id}` answers
+  /// `InvalidAccount` when the scoped select returns nothing.
   /// A case that expects this must say so and explain why, or it is asserting nothing.
   Unauthenticated,
   /// Anything else, carried verbatim so a failure message can say what actually happened.
@@ -627,8 +627,8 @@ impl Probe {
   /// `NoServiceAvailable`, `E1009`) and the authority check on the object being granted
   /// (`Authz::write` → `NoAccessPermission`, `E1008`). The gate runs **first**, so a case that
   /// forgot to grant its caller the service tier gets `E1009` and passes every assertion about
-  /// ownership without the ownership check ever having run. That is the shape of four false passes
-  /// in this project; this is how a case refuses to be one of them.
+  /// ownership without the ownership check ever having run. Naming the code is how a case refuses
+  /// to pass that way.
   #[track_caller]
   pub fn assert_code(self, expected: &str) -> Self {
     let actual = self.body.get("code").and_then(Value::as_str);

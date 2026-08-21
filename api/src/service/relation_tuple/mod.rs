@@ -22,29 +22,24 @@ use crate::authz::{Authz, AuthzError};
 use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
 
-/// The CRUD surface over `relation_tuples` — what replaces direct `access_policies` writes
-/// (design §9.6).
+/// The CRUD surface over `relation_tuples` — granting and revoking, as a resource.
 ///
-/// The whole of the authorization is two calls into `Authz`, and that is the design: every write
+/// The whole of the authorization is two calls into `Authz`, and that is deliberate: every write
 /// path here goes through `Authz::write` / `Authz::revoke`, which check `<resource_type>#grant`
 /// **on the object being granted**. Nothing in this file decides who may grant what, because a rule
-/// that lives at a call site is a rule the next call site can forget — which is exactly what
-/// `assert_policy_within_authority` was.
+/// that lives at a call site is a rule the next call site can forget.
 ///
-/// The authority rule this replaces, and how it differs:
+/// **The authority rule starts from "no", and the rule set names the path to yes.** A granter must
+/// hold `grant` on the object they are granting: `organization#grant = manage`, so an organization
+/// manager may grant inside their own subtree and nowhere else; `service#grant = operator |
+/// platform:root->superuser`, so delegating a route gate needs operator on that namespace. The
+/// exemption is `platform:root#superuser`, which most `grant` rules union in through their own
+/// chain.
 ///
-/// | | old (`ap::assert_policy_within_authority`) | new (`<definition>#grant`) |
-/// |---|---|---|
-/// | who is exempt | `is_admin`, read off the session | `platform:root#superuser`, which most `grant` rules union in through their own chain |
-/// | what a non-admin may not write | any `allow` row containing a `*` in namespace, object, action or user | any tuple on an object they do not hold `grant` on |
-/// | what a non-admin **could** write | any concrete row at all — `board_post | 7 | {delete} | user:99`, on somebody else's post, from any account | nothing, unless the rule says so |
-///
-/// The old rule only ever refused wildcards. A concrete grant on a resource the granter had no
-/// relationship to passed it, because the table records no grantor and the check had nothing to
-/// compare against. The new one is the opposite shape: it starts from "no", and the rule names the
-/// path to yes — `organization#grant = manage`, so an organization manager may grant inside their
-/// own subtree and nowhere else; `service#grant = operator | platform:root->superuser`, so
-/// delegating a route gate needs operator on that namespace.
+/// A check shaped the other way round — one that enumerates what a caller may *not* write, such as
+/// refusing wildcards — passes every concrete grant. That lets any account hand any subject a
+/// specific power over somebody else's row, and there is nothing in the row to compare the granter
+/// against.
 pub struct RelationTupleService<S: SumidaState> {
   state:   S,
   session: UserSession,
@@ -76,12 +71,11 @@ impl<S: SumidaState> RelationTupleService<S> {
 
   /// The row scope, as the compiled rule renders it.
   ///
-  /// `relation_tuple#view` is `service:access_policy->operate_read` (§5.4), which reads no column of
-  /// the row under test — so today this predicate is session-constant and the list is all-or-
-  /// nothing, exactly as the legacy `ap::ns("access_policy")` scope was. It is still emitted **into
-  /// the statement** rather than evaluated once and branched on, because that is what makes the rule
-  /// the only thing deciding: the day `relation_tuple#view` grows a row-dependent branch, this list
-  /// narrows with it and no code here changes.
+  /// `relation_tuple#view` is `service:access_policy->operate_read`, which reads no column of the
+  /// row under test — so the predicate is session-constant and the list is all-or-nothing. It is
+  /// still emitted **into the statement** rather than evaluated once and branched on, because that
+  /// is what makes the rule the only thing deciding: the day `relation_tuple#view` grows a
+  /// row-dependent branch, this list narrows with it and no code here changes.
   fn select(&self, query: Select<RelationTuples>) -> Result<Select<RelationTuples>, SumidaError> {
     Ok(Authz::filter(
       "relation_tuple",
@@ -132,9 +126,9 @@ impl<S: SumidaState> RelationTupleService<S> {
   /// the grant's expiry and its `created_by` instead of adding a second row. That is why there is no
   /// `PATCH` — a tuple's identity *is* its five columns, so changing any of them is a revoke and a
   /// grant, and the only field that can be edited in place is the expiry, which this path already
-  /// edits. The alternative was `AccessPolicyService::update`'s shape, which had to re-derive the
-  /// merged final state before it could re-check authority (`access_policy/mod.rs:88`) — a partial
-  /// update over an authorization record is a stepwise-circumvention problem nobody needs to have.
+  /// edits. A `PATCH` would have to merge the request onto the stored row and re-derive the final
+  /// state before it could re-check authority; a partial update over an authorization record is a
+  /// stepwise-circumvention problem nobody needs to have.
   pub async fn create(&self, data: CreateRelationTuple) -> Result<i64, SumidaError> {
     let db = self.state.db();
     let subject = self.subject();

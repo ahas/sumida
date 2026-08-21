@@ -2,16 +2,16 @@
 //!
 //! `RoleForm.vue` and the api-key form post
 //! `accessPolicies: [{ namespace, object: ["service"], action, effect }]` and read the same shape
-//! back. That contract is deliberately unchanged by the migration (design §9.4), so the two screens
-//! keep working without a client release — what changes is only where the grants are stored.
+//! back. **That wire contract is fixed by the clients**, so this module translates rather than
+//! reshapes.
 //!
-//! Two shapes the legacy payload could carry and the tuple store cannot, both refused here rather
-//! than silently reinterpreted:
+//! Two shapes the payload can carry and the tuple store cannot, both refused here rather than
+//! silently reinterpreted:
 //!
-//! * **`effect: "deny"`.** A tuple grants; there is no negative tuple and no `effect` column
-//!   (design §3). Denial is a property of the *rule* now — an exclusion over a `blocked` relation —
-//!   so a form that posts one is asking for something no store can hold, and answering `200` would
-//!   report a block that does not exist.
+//! * **`effect: "deny"`.** A tuple grants; there is no negative tuple and no `effect` column.
+//!   Blocking is a property of the *rule* — an exclusion over a `blocked` relation — so a form that
+//!   posts one is asking for something no store can hold, and answering `200` would report a block
+//!   that does not exist.
 //! * **an object other than `"service"`.** These two forms only ever posted the route-gate tier.
 //!   A per-row grant to a role is `/relation-tuples`, whose authority check is the object's own
 //!   `#grant`; accepting it here would write it against `service:<namespace>#grant` instead, which
@@ -24,11 +24,9 @@ use crate::authz::ServiceGrant;
 
 /// One entry of that payload: `{ namespace, object, action, effect }`.
 ///
-/// It kept its name and its four fields when the store beneath it changed, and it lives here now
-/// rather than in `util::ap` because it is the last thing that file held which was not an
-/// evaluator. Nothing reads it out of a `SELECT` any more — it used to be a `DerivePartialModel`
-/// over `access_policies`, and every producer of it now builds it from [`from_service_grants`] or
-/// from `platform:root#superuser` (`controller/me.rs`), so it is a wire shape and only that.
+/// **A wire shape and only that.** Nothing reads it out of a `SELECT`: every producer builds it
+/// from [`from_service_grants`] or from `platform:root#superuser`. Deriving it from a table again
+/// would tie the payload the clients are pinned to back to a storage layout that is free to move.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApForUser {

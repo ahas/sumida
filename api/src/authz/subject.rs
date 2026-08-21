@@ -1,12 +1,10 @@
-//! The subject set — one identity expansion (design §2.2).
+//! The subject set — one identity expansion.
 //!
-//! Replaces four copies of the same logic (`ap.rs:300` `who()`, `:762` `FindApForUsers::who()`,
-//! `:996` `EditAp::who()`, `service/membership/mod.rs:78` `managed_org_ids`) and a fifth
-//! hand-parser (`membership/mod.rs:170`, which silently drops `api:` recipients). Four copies of a
-//! rule is four chances for one of them to be wrong, and the audit found that it was.
-//!
-//! All five are gone as of §14 step 13: every converted service builds its subject through
-//! `SubjectSet::of`, and `Authz::expand_to_user_ids` replaced the hand-parser.
+//! **Every service builds its subject here and nowhere else**, through `SubjectSet::of`, and every
+//! service that has to turn subject strings back into user ids goes through
+//! `Authz::expand_to_user_ids`. A second expansion written at a call site is a second chance to get
+//! the rule wrong — to drop a subject prefix it does not recognise, or to expand a secured API key
+//! into its owner — and the copy that is wrong is the one nobody reads.
 
 use infra::session::UserSession;
 
@@ -36,10 +34,10 @@ impl SubjectSet {
   /// branch, whose `user_ids` binding is empty here. The branch is then statically false rather
   /// than accidentally true.
   ///
-  /// An **unsecured** key expands to the owner's full identity, which is today's documented intent
-  /// (`layer/user_guard.rs:168-177`): `session.profile` has already been filled in with the owner
-  /// and `profile.api_key` is left unset, so this function cannot tell the two apart — and must
-  /// not, because that is the behaviour being preserved.
+  /// An **unsecured** key expands to the owner's full identity, which is what the user guard sets
+  /// up: `session.profile` arrives already filled in with the owner and `profile.api_key` unset, so
+  /// this function cannot tell such a request from the owner's own — and must not, because that
+  /// equivalence is what "unsecured" means.
   pub fn of(session: &UserSession) -> Self {
     if let Some(hash) = &session.profile.api_key {
       return Self {
@@ -48,9 +46,9 @@ impl SubjectSet {
       };
     }
 
-    // Membership is not inherited upward: the caller's own organization and nothing else, exactly
-    // what `who()` pushes today (`ap.rs:308`). R2's hierarchy lives on the *resource* side, via the
-    // `^` closure, so a grant on an ancestor reaches a descendant and never the reverse.
+    // Membership is not inherited upward: the caller's own organization and nothing else. The
+    // organization hierarchy lives on the *resource* side, via the `^` closure, so a grant on an
+    // ancestor reaches a descendant and never the reverse.
     Self {
       keys:     vec![
         format!("user:{}", session.profile.id),

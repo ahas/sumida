@@ -48,9 +48,8 @@ impl<S: SumidaState> BoardFileService<S> {
   }
 
   /// 행 스코프는 `board_file#view` 술어 하나 — 첨부는 자기 글(`post->view`)이나 원본
-  /// 파일(`file->view`) 중 하나로 열린다. 종전의 `join(BoardFiles, Column::PostId)` 는 첨부의
-  /// 객체를 글 id 로 잡고 있었는데, 정의는 `board_files.file_uuid` 를 키로 삼으므로 그 어긋남도
-  /// 함께 사라진다.
+  /// 파일(`file->view`) 중 하나로 열린다. 첨부의 객체는 `board_files.file_uuid` 이지 글 id 가
+  /// 아니다. 글 id 로 잡으면 한 글에 달린 첨부 전체가 한 객체로 뭉뚱그려진다.
   fn select(&self, query: Select<BoardFiles>) -> Result<Select<BoardFiles>, SumidaError> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), query)?)
   }
@@ -151,8 +150,8 @@ impl<S: SumidaState> BoardFileService<S> {
 
     // Row-level permission check: reject if there is no delete permission for that post's attachment.
     // Without this check, board_file:delete permission alone would let one delete any post's attachment (and the original file).
-    // `board_files` 의 기본 키는 `file_uuid` 하나이고 정의도 그 열을 키로 삼으므로, 종전의
-    // 두 열 필터는 첨부 한 건을 정확히 같은 집합으로 지목한다. `post_id` 는 아래 DELETE 에 그대로 남는다.
+    // `board_files` 의 기본 키는 `file_uuid` 하나이고 정의도 그 열을 키로 삼는다. 아래 DELETE 가
+    // 드는 `post_id` 는 지울 행을 좁힐 뿐, 인가의 객체는 아니다.
     Authz::try_check(RESOURCE, data.file_uuid, "remove", &self.subject(), &txn).await?;
 
     let result = BoardFiles::delete_many()

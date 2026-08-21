@@ -1,25 +1,23 @@
-//! Tuple writes and reverse expansion (design §8.2).
+//! Tuple writes and reverse expansion.
 //!
 //! Everything else in this module answers "may this subject do that". This file is the other half:
 //! the grants themselves — writing one, revoking one, and reading back **who holds what on one
-//! object**, which is the direction the sharing screens read and the one shape §6.5 names as
-//! inherently its own statement rather than a predicate.
+//! object**. That last direction is the one the sharing screens read, and it is the one shape that
+//! cannot be a predicate over a caller's rows: it enumerates subjects, so it is its own statement.
 //!
-//! Three properties are load-bearing, and each of them is something `access_policies` could not
-//! do:
+//! Three properties are load-bearing:
 //!
 //! * **A write is checked against the rule set before it reaches the table.** A relation that is
 //!   derived from a domain column cannot be granted as a row, and a subject type the relation never
 //!   declared is refused at the API instead of being stored and silently never matching. That is
 //!   the defect a reversed `admin:user` row is: a grant nobody could ever have used, sitting
 //!   in the table looking like authority.
-//! * **A write is authority-checked against `<definition>#grant`.** The old model had
-//!   `assert_policy_within_authority`, which could not verify that a granter holds what they grant
-//!   because the table records no grantor. Here the granter is the caller's own subject set and the
-//!   rule says what granting requires.
+//! * **A write is authority-checked against `<definition>#grant`.** The granter is the caller's own
+//!   subject set and the rule states what granting that object requires, so nobody can hand out
+//!   what they do not hold themselves.
 //! * **A revoke names a tuple exactly.** `uq_relation_tuples__tuple` makes a duplicate impossible,
-//!   so a revocation cannot leave a second copy behind — which `idx_access_policies__tuple`, not
-//!   being unique, allowed.
+//!   so a revocation cannot leave a second copy behind. A non-unique index in that position is how
+//!   a revoked grant keeps working.
 
 use error::SumidaError;
 use sea_orm::prelude::DateTimeWithTimeZone;
@@ -126,7 +124,8 @@ pub struct TupleWrite {
   pub resource_id:   String,
   pub relation:      String,
   pub subject:       SubjectKey,
-  /// The one caveat this model has (§13.4). `None` is a grant that does not expire.
+  /// Expiry is the only condition a tuple can carry — there is no time-of-day, no weekday, no
+  /// request-origin clause. `None` is a grant that does not expire.
   pub expires_at:    Option<DateTimeWithTimeZone>,
 }
 
@@ -305,7 +304,7 @@ impl Authz {
     Ok(result.rows_affected())
   }
 
-  /// Who holds `relations` on one object — the reverse expansion of §6.5 case 6.
+  /// Who holds `relations` on one object — the reverse expansion.
   ///
   /// Expired grants are excluded, because a screen that lists them shows authority nobody has.
   pub async fn subjects_with<C: ConnectionTrait>(
@@ -388,23 +387,20 @@ impl Authz {
   ///
   /// This is the write half of the role form and the api-key form — the two screens that post
   /// `accessPolicies: [{namespace, object: ["service"], action, effect}]` and read the same shape
-  /// back from [`Authz::service_grants`]. It replaces `ap::for_users().update(..)`, whose
-  /// `DELETE` was by subject alone and therefore also removed the object-tier rows the same subject
-  /// held.
+  /// back from [`Authz::service_grants`].
   ///
   /// Three properties, and the first two are the reason it is one function rather than a delete and
   /// a loop at each call site:
   ///
   /// * **It touches nothing outside `resource_type = 'service'`.** A per-object grant or a
   ///   delegation scope held by the same role survives a submit of the permission grid, without the
-  ///   caller having to enumerate what to preserve (design §9.4).
+  ///   caller having to enumerate what to preserve. A delete keyed by subject alone would take the
+  ///   object-tier rows with it.
   /// * **Authority is `service:<namespace>#grant`**, checked for every namespace named, before
-  ///   anything is deleted. That replaces `assert_policy_within_authority`, which could only refuse
-  ///   wildcards — a non-admin could hand a role any concrete grant at all, including one they did
-  ///   not hold themselves.
-  /// * **The legacy `action: ["*"]` is expanded, not stored.** `*` is not a relation; on a `service`
-  ///   object it meant the four route-gate actions and nothing more, which is the same expansion
-  ///   `rebac_mirror_map` performs.
+  ///   anything is deleted. A check that only refuses wildcards is not enough: it lets a non-admin
+  ///   hand a role any concrete grant at all, including one they do not hold themselves.
+  /// * **`action: ["*"]` is expanded, not stored.** `*` is not a relation; on a `service` object it
+  ///   stands for the four route-gate actions and nothing more.
   pub async fn replace_service_grants<C: ConnectionTrait>(
     holder: &SubjectKey,
     grants: &[ServiceGrant],
@@ -473,10 +469,10 @@ impl Authz {
 
   /// The user ids a set of subject keys resolves to.
   ///
-  /// Replaces `membership/mod.rs:170`'s hand-parser, which read `user:` / `role:` / `org:` and
-  /// **silently dropped `api:`** — so a key that held the grant never received the notification the
-  /// grant existed to trigger. Here every subject type the relations accept is expanded, api keys
-  /// included, in one statement.
+  /// **Every subject type the relations accept is expanded here, api keys included**, in one
+  /// statement. A hand-parser that recognises only the prefixes its author had in mind drops the
+  /// rest without saying so, and a subject silently dropped from this expansion is a holder who
+  /// never receives what the grant exists to deliver.
   ///
   /// A userset (`role:1#member`, `organization:100#member`) expands to its members; a terminal
   /// `user:` subject is itself. Anything else contributes nobody rather than being guessed at.
@@ -525,13 +521,12 @@ impl Authz {
   }
 }
 
-/// The legacy action vocabulary of a `service` object, as relations.
+/// The action vocabulary of a `service` object, as relations.
 ///
-/// `*` is the only value that is not already a relation name. On a `service` object it meant "every
-/// route action on this namespace" — the object is `service`, so there was no object-wide power in
-/// it — and that is the four gate relations exactly. `rebac_mirror_map` makes the same expansion for
-/// the same rows, which is what keeps a role form submitted before the migration and one submitted
-/// after it equivalent.
+/// `*` is the only value that is not already a relation name. On a `service` object it means "every
+/// route action on this namespace", which is the four gate relations exactly — the object is
+/// `service`, so no object-wide power is in it. Expanding it here rather than storing it keeps `*`
+/// out of the table, where it would be a relation the rules never declared.
 fn expand_service_actions(actions: &[String]) -> Vec<String> {
   let mut out = Vec::new();
   for action in actions {

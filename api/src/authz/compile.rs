@@ -1,13 +1,13 @@
-//! The compiler: a rewrite rule becomes **one boolean SQL predicate** (design §6).
+//! The compiler: a rewrite rule becomes **one boolean SQL predicate**.
 //!
-//! This is the property the whole design rests on. `ap.rs::with_lateral_join` aggregates
-//! `bool_or(effect='allow') / bool_or(effect='deny')` per row in a `LEFT JOIN LATERAL`, which keeps
-//! filter, `COUNT`, `ORDER BY` and `LIMIT/OFFSET` in one statement; a Zanzibar *service* would
-//! answer with an id set that has to be fed back into SQL, and that breaks pagination the moment a
-//! list runs to five figures. So a rule compiles to a `SimpleExpr` that drops into an existing
-//! `WHERE`, and nothing here ever materialises an id list into Rust.
+//! This is the property the whole model rests on. A rule compiles to a `SimpleExpr` that drops into
+//! an existing `WHERE`, so filter, `COUNT`, `ORDER BY` and `LIMIT/OFFSET` stay in one statement and
+//! nothing here ever materialises an id list into Rust. A Zanzibar *service* would answer with an
+//! id set that has to be fed back into SQL, and that breaks pagination the moment a list runs to
+//! five figures.
 //!
-//! With per-tuple `deny` gone there is nothing left to aggregate, so the lateral goes too:
+//! Blocking is a property of the rule rather than of a tuple, so there is nothing to aggregate per
+//! row and the predicate is a plain boolean expression:
 //!
 //! | construct | SQL |
 //! |---|---|
@@ -25,10 +25,9 @@
 //!
 //! Every tuple predicate ANDs `(expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)`.
 //!
-//! It also removed a defect the old design had. `organization_ancestors_subquery` hardcoded the
-//! alias `"ap"."object"`, which is why `project_ap.rs` carried a warning that the point check and
-//! the list check could not be built from one expression. Here they compile from the same tree, so
-//! they cannot diverge.
+//! The point check and the list check compile from the same rewrite tree, so they cannot diverge.
+//! Nothing here may hardcode a caller's table alias: an alias baked into a subquery is what forces
+//! the two checks apart into expressions that have to be kept in step by hand.
 
 use std::cell::Cell;
 use std::collections::HashSet;
@@ -191,7 +190,7 @@ impl<'a> Compiler<'a> {
   }
 
   /// `$1 = ANY($2)` written out, because sea-query renders the composed form as
-  /// `col = (ANY(...))`, which is not valid PostgreSQL — the same trap `util/org.rs:31` documents.
+  /// `col = (ANY(...))`, which is not valid PostgreSQL.
   /// The array is one bound parameter, so the plan shape does not change with the caller's identity.
   fn any_of_text(&self, expr: SimpleExpr, values: Vec<String>) -> SimpleExpr {
     Expr::cust_with_exprs("$1 = ANY($2)", [expr, Expr::val(values).cast_as(alias("text[]"))])
@@ -253,11 +252,12 @@ impl<'a> Compiler<'a> {
     )
   }
 
-  /// `<id> IN (SELECT descendant_id …)` — the `^` closure (E3).
+  /// `<id> IN (SELECT descendant_id …)` — the `^` closure, resolved through a declared closure
+  /// table.
   ///
   /// The subquery is **uncorrelated**: the subject side is session-constant, so Postgres hoists it
-  /// into a hashed InitPlan and the per-row cost is one integer probe. It has the same shape as
-  /// `managed_org_ids` (`service/membership/mod.rs:72`) and none of its properties — it is
+  /// into a hashed InitPlan and the per-row cost is one integer probe. Three properties have to
+  /// hold together, and a hand-written descendant lookup at a call site gives up all three: it is
   /// generated from the same rewrite tree as the point check so the two cannot diverge, it stays
   /// inside the statement so pagination is unaffected, and exclusion is applied by the rule outside
   /// the union so a block cannot be lost.
@@ -604,8 +604,8 @@ impl<'a> Compiler<'a> {
   /// table the predicate has to run over that row, so it is enclosed in
   /// `EXISTS (SELECT 1 FROM <table> WHERE <id_col> = <id_expr> AND …)`. When it does not — which is
   /// every organization branch, because `manager^` and friends are tuples and closures only — the
-  /// id expression is substituted directly and no row is fetched. That is the difference between
-  /// §6.2's `cu.organization_id IN (…)` and one extra join per row.
+  /// id expression is substituted directly and no row is fetched. That is the difference between a
+  /// bare `IN (…)` on a column the caller's own row already has, and one extra join per row.
   fn at_object(
     &self,
     definition: &str,

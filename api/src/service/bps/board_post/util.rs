@@ -293,7 +293,7 @@ pub async fn unclaim_post_files<C: ConnectionTrait>(
 }
 
 /// Collect a post id plus all of its descendants (the comment/reply subtree via `parent_id`),
-/// so a soft delete can cascade to replies that the FK cascade no longer removes.
+/// so a soft delete can cascade to replies that an FK cascade does not reach.
 pub async fn collect_descendant_post_ids<C: ConnectionTrait>(
   root_id: i32,
   db: &C,

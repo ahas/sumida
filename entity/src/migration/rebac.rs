@@ -1,5 +1,5 @@
 //! ReBAC data layer — the tuple table, the rule-vocabulary projection, and the closure tables
-//! that materialise the authorization-bearing trees (design §3).
+//! that materialise the authorization-bearing trees.
 
 use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
 use sea_orm_migration::prelude::*;
@@ -37,7 +37,7 @@ impl MigrationTrait for Migration {
   async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
 
-    // ── the rule vocabulary (§3.2) ──────────────────────────────────────────────────────────
+    // ── the rule vocabulary ─────────────────────────────────────────────────────────────────
     //
     // These two tables are a *projection* of the compiled rule registry; the evaluator never reads
     // them. They exist here for two reasons: the foreign key below, which is the only thing that
@@ -90,33 +90,30 @@ impl MigrationTrait for Migration {
     )
     .await?;
 
-    // ── relation_tuples (§3.1) ──────────────────────────────────────────────────────────────
+    // ── relation_tuples ─────────────────────────────────────────────────────────────────────
     //
-    // What the shape buys over `access_policies(namespace, object, action[], "user")`:
+    // Every column below is load-bearing, and the reason is the same each time — a grant has to be
+    // identified exactly, matched by an index, and revoked without leaving a copy behind:
     //
-    //   · resource_type / resource_id split the one untyped `object` column that carried a row id
-    //     for one namespace, an organization id for another, a slug for a third and the literal
-    //     string 'service' for route gates — disambiguated only by naming conventions that
-    //     several teams invented independently.
-    //   · `relation` is one scalar per row instead of `action varchar[]`. This is the fix for the
-    //     index defect: `_build_action_condition` matches with array containment (`@>`), which a
-    //     btree cannot answer, so `idx_access_policies__tuple` was only ever usable for its
-    //     `(namespace, object)` prefix and its `"user"` column was never index-filtered. A scalar
-    //     `relation` is plain equality, so the index below is usable end to end. Do not reintroduce
-    //     an array column here.
+    //   · resource_type / resource_id are separate. One untyped object column ends up carrying a
+    //     row id for one namespace, an organization id for another, a slug for a third and a
+    //     literal marker for route gates, disambiguated by naming convention alone.
+    //   · `relation` is one scalar per row, never an array. An array column is matched with
+    //     containment (`@>`), which a btree cannot answer, so an index over it is usable only for
+    //     the columns *before* it and the subject column is never index-filtered. Plain equality
+    //     keeps the index below usable end to end. Do not reintroduce an array column here.
     //   · subject_type/subject_id/subject_relation is Zanzibar's subject triple. The third
-    //     component is what makes a subject a *set*: `role:1#member` is "every member of role 1",
-    //     which is what the old `role:1` string meant without saying so, and `subject_id = '*'` is
-    //     the public wildcard without any string parsing.
-    //   · expires_at — the old model has no expiry at all.
-    //   · created_by — the old table records no grantor, which is half the reason
-    //     `assert_policy_within_authority` cannot verify that a granter holds what they grant.
-    //   · uq_relation_tuples__tuple — `idx_access_policies__tuple` is not unique, so a duplicate
-    //     policy is possible and a revocation that deletes one row leaves the other behind.
+    //     component is what makes a subject a *set*: `role:1#member` is "every member of role 1"
+    //     said out loud, and `subject_id = '*'` is the public wildcard without any string parsing.
+    //   · expires_at — a grant can be given a lifetime.
+    //   · created_by — who granted it. Without a grantor there is nothing to check a granter's own
+    //     authority against.
+    //   · uq_relation_tuples__tuple — a non-unique index in this position admits a duplicate grant,
+    //     and then a revocation that deletes one row leaves the other behind.
     //
-    // `resource_id_int` deviates from the design text, which reads `resource_id ~ '^[0-9]+$'`.
-    // That predicate admits a numeric string wider than `integer` and the cast then raises 22003
-    // at INSERT time, on a generated column the writer never mentioned. `{1,9}` cannot overflow.
+    // `resource_id_int` bounds the digit count rather than testing `^[0-9]+$`. An unbounded
+    // predicate admits a numeric string wider than `integer`, and the cast then raises 22003 at
+    // INSERT time on a generated column the writer never mentioned. `{1,9}` cannot overflow.
     db.execute_unprepared(
       r#"
       CREATE TABLE IF NOT EXISTS relation_tuples (
@@ -148,7 +145,7 @@ impl MigrationTrait for Migration {
     )
     .await?;
 
-    // Indexes (§3.1). Column order follows the access pattern the compiled rules will emit:
+    // Indexes. Column order follows the access pattern the compiled rules emit:
     // resource_type and relation are compile-time literals, resource_id comes from the row under
     // test, and subject_key is matched against one bound text[].
     db.execute_unprepared(
@@ -180,12 +177,12 @@ impl MigrationTrait for Migration {
     )
     .await?;
 
-    // ── org_closure (§3.3) ──────────────────────────────────────────────────────────────────
+    // ── org_closure ─────────────────────────────────────────────────────────────────────────
     //
-    // R2 ("an organization admin reaches its descendants, to arbitrary depth") was a recursive walk
-    // run per row inside a LATERAL join, whose cost accumulates by N×depth — and it had been
-    // re-implemented more than once, in more than one direction. Materialising it makes the walk
-    // one bounded join.
+    // "An organization manager reaches its descendants, to arbitrary depth" is otherwise a
+    // recursive walk run per row, whose cost accumulates by N×depth and which every caller that
+    // needs it writes again, sometimes in the opposite direction. Materialised here it is one
+    // bounded join, written once.
     //
     // Maintenance is a **full rebuild** in a statement-level trigger, not an incremental update.
     // Organizations number in the hundreds and change rarely; incremental closure maintenance
@@ -285,7 +282,7 @@ impl MigrationTrait for Migration {
     )
     .await?;
 
-    // ── board_group_closure (§3.3) ──────────────────────────────────────────────────────────
+    // ── board_group_closure ─────────────────────────────────────────────────────────────────
     //
     // Of the three self-referencing trees in this estate only two carry an authorization edge:
     //

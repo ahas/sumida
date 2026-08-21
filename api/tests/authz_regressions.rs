@@ -1,13 +1,9 @@
-//! The four of design §12.8's twelve fixed criticals that are **sumida's**, re-asserted against the
-//! compiled evaluator.
+//! Four escalations sumida's own rules have to hold closed, asserted against the evaluator.
 //!
-//! Each is also pinned **through HTTP**, in `api/tests/authz_golden.rs`. Those pins were written
-//! while the legacy evaluator was in charge and did not have to change when the compiled rules
-//! replaced it, because they name a request and a response and never an evaluator.
-//!
-//! This file asserts the four against the rule directly. Two levels, deliberately: failing here is
-//! a rule defect, failing in `authz_golden.rs` is a defect in the code around the rule, and needing
-//! both to change at once is the signal that a boundary moved.
+//! Each is also pinned **through HTTP**, in `api/tests/authz_golden.rs`, where a case names a
+//! request and a response and never an evaluator. Two levels, deliberately: failing here is a rule
+//! defect, failing in `authz_golden.rs` is a defect in the code around the rule, and needing both
+//! to change at once is the signal that a boundary moved.
 //!
 //! | # | property | here |
 //! |---|---|---|
@@ -16,10 +12,9 @@
 //! | G11 | `/files/stats` is scoped the way `list` is | one `file#view` predicate, two statements |
 //! | G12 | delete authorizes against `remove`, not `view` | two permissions, not two strings |
 //!
-//! **The other eight belong to a product and live in that product's repository** — not here. Their
-//! row scopes turn on definitions sumida does not declare, whose backing tables are absent from a
-//! sumida database entirely, so there is nothing here to evaluate them against. A regression suite
-//! for a rule belongs beside the rule.
+//! **A regression suite for a rule belongs beside the rule.** A property whose row scope turns on a
+//! definition sumida does not declare cannot be asserted here at all — the backing table is absent
+//! from a sumida database — so it belongs in the repository that declares it.
 //!
 //! Requires a real Postgres. No request goes through the router: the evaluator is called directly,
 //! so a failure here is a rule and not a handler.
@@ -114,15 +109,13 @@ async fn seed_file(db: &DatabaseConnection, owner: &entity::users::Model) -> Uui
 
 /// **G9** — a non-admin cannot create an API key bound to another account.
 ///
-/// `67857ef` fixed this with a handler branch: `if !is_admin && data.user_id != session.id { … }`
-/// (`api_key/mod.rs:92`). A handler branch is a thing the next caller can forget, and the reason it
-/// was ever needed is that a key inherits its owner's whole identity on verify — so minting a key in
-/// somebody's name is exactly as powerful as editing them.
+/// A key inherits its owner's whole identity on verify, so minting a key in somebody's name is
+/// exactly as powerful as editing them. The rule says so: the guard is `sumida_user:<user_id>#edit`
+/// rather than a handler branch, which the next caller could forget.
 ///
-/// §8 makes that equality the rule: the guard becomes `sumida_user:<user_id>#edit`. What this pins
-/// is that the power is **not free** — an ordinary account holds it over nobody, not even over
-/// itself — and that the two ways to acquire it are the two the design names: the organization tier
-/// and R1.
+/// What this pins is that the power is **not free** — an ordinary account holds it over nobody, not
+/// even over itself — and that the two ways to acquire it are the organization tier and platform
+/// authority.
 #[tokio::test]
 async fn g9_minting_a_key_in_another_name_needs_edit_over_that_account() {
   let db = prepare().await;
@@ -185,19 +178,18 @@ async fn g9_minting_a_key_in_another_name_needs_edit_over_that_account() {
 
 /// **G10, jointly with I4** — a key bound to an administrator.
 ///
-/// The named bug from the brief: `is_admin` was read straight off the session on ~55 authorization
-/// paths, and `verify_api_key` fills the session in with the key owner's profile. A **secured** key
-/// — one that is supposed to carry only its own grants — therefore carried its owner's
-/// administrative power.
+/// `verify_api_key` fills the session in with the key owner's profile, so any authorization path
+/// that reads `is_admin` straight off the session hands a **secured** key — one that is supposed to
+/// carry only its own grants — its owner's administrative power.
 ///
-/// In the compiled model there is nothing to get wrong, because there is no direct read of the flag
-/// on an authorization path at all: R1 is `platform:root#superuser`, whose `flagged` branch matches
-/// `users.is_admin` against the subject set's `user_ids`. A secured key's subject set has an empty
-/// `user_ids`, so the branch is *statically* false rather than accidentally true.
+/// Nothing reads the flag directly. Platform authority is `platform:root#superuser`, whose
+/// `flagged` branch matches `users.is_admin` against the subject set's `user_ids`; a secured key's
+/// subject set has an empty `user_ids`, so the branch is *statically* false rather than
+/// accidentally true.
 ///
 /// Both halves are asserted. The unsecured key must still expand to the owner's full identity —
-/// that is `user_guard.rs:168-177`'s documented intent, and a "fix" that closed it would break
-/// every service key in use.
+/// that is what "unsecured" means, and a "fix" that closed it would break every service key in
+/// use.
 #[tokio::test]
 async fn g10_a_secured_key_bound_to_an_admin_is_not_a_superuser() {
   let db = prepare().await;
@@ -232,8 +224,7 @@ async fn g10_a_secured_key_bound_to_an_admin_is_not_a_superuser() {
   tuple(&db, "sumida_user", &target.model.id.to_string(), "manager", "apikey", "deadbeef", "").await;
   assert!(
     Authz::check("sumida_user", target.model.id, "edit", &secured, &db).await.expect("runs"),
-    "a secured key cannot use a grant made directly to it — `apikey:` subjects are being dropped, \
-     which is the defect `membership/mod.rs:170` already has"
+    "a secured key cannot use a grant made directly to it — `apikey:` subjects are being dropped"
   );
 }
 
@@ -241,12 +232,12 @@ async fn g10_a_secured_key_bound_to_an_admin_is_not_a_superuser() {
 
 /// **G11** — `GET /files/stats` is scoped the way `list` is.
 ///
-/// The aggregate ran over every tenant's files while its sibling `list` went through the scoped
-/// select. An aggregate is a disclosure: it answers "how much does that tenant have" without
-/// returning a row, and a scope applied to one of the two is a scope that is not applied.
+/// An aggregate is a disclosure: it answers "how much does that tenant have" without returning a
+/// row. A count that runs over every tenant's files while its sibling `list` goes through the
+/// scoped select is a scope that is not applied.
 ///
-/// The compiled rule makes the two the same object — `Authz::filter` adds a `WHERE` predicate and
-/// touches nothing else, so the identical predicate serves `SELECT *` and `SELECT count(*)`. This
+/// The two are the same object here — `Authz::filter` adds a `WHERE` predicate and touches nothing
+/// else, so the identical predicate serves `SELECT *` and `SELECT count(*)`. This
 /// asserts that equality over a corpus rather than asserting it about the source: the count and the
 /// listed rows must agree for every caller, including one whose grant reaches only some of them.
 #[tokio::test]
@@ -280,7 +271,7 @@ async fn g11_the_file_aggregate_and_the_file_list_are_one_predicate() {
     assert_eq!(
       listed.len() as u64,
       counted,
-      "{label}: the aggregate and the list disagree, which is exactly the G11 shape"
+      "{label}: the aggregate and the list disagree, so one of the two is unscoped"
     );
     assert_eq!(counted, expected, "{label}: the scope let through the wrong number of files");
   }
@@ -302,20 +293,17 @@ async fn g11_the_file_aggregate_and_the_file_list_are_one_predicate() {
 
 /// **G12** — `FileService::delete` authorizes against `remove`, not `view`.
 ///
-/// `delete` passed `"read"` to `.action(…)`, so anyone who could see a file could delete it. What
-/// made that possible is that the action is a **string**: `view` and `remove` were two values of one
-/// parameter, and nothing could tell a wrong one from a right one.
+/// A delete path that hands `"read"` to the check lets anyone who can see a file delete it. What
+/// makes that possible is the action being a **string**: `view` and `remove` are two values of one
+/// parameter, and nothing can tell a wrong one from a right one.
 ///
-/// In the compiled model they are two permissions with two different rules, and this asserts the
-/// difference is real rather than nominal — a subject holding only `file#viewer` passes `view` and
-/// fails `remove`, on the same file, in the same statement shape.
+/// They are two permissions with two different rules, and this asserts the difference is real
+/// rather than nominal — a subject holding only `file#viewer` passes `view` and fails `remove`, on
+/// the same file, in the same statement shape.
 ///
-/// The **compile-time** half of G12 — "passing `\"view\"` to a delete path does not compile" — is
-/// still not assertable, and the conversion decided not to make it so. §8.1 proposed a reshaped
-/// `ApiService<E>` whose `try_access` would take a typed permission; that trait was rejected rather
-/// than rewritten, and then emptied of implementors entirely. Reshaping a trait nobody implements
-/// buys nothing. `Authz::try_check` takes the permission as a `&str`, so a wrong one is a wrong
-/// *value*. What guards it instead is
+/// **The compile-time half is not asserted, because it is not assertable.** `Authz::try_check`
+/// takes the permission as a `&str`, so a wrong one is a wrong *value*, not a type error. What
+/// guards it instead is
 /// `golden_sql_tests::every_converted_call_site_names_a_permission_that_exists`: a hand-maintained
 /// table of every `(definition, permission)` a converted call site names, which turns a run-time
 /// `UnknownPermission` 500 into a unit-test failure. A table somebody has to maintain is weaker
@@ -337,7 +325,7 @@ async fn g12_view_and_remove_are_different_permissions_not_different_strings() {
   );
   assert!(
     !Authz::check("file", uuid, "remove", &viewer_subject, &db).await.expect("runs"),
-    "a view share conferred `remove` — G12 is re-opened on the compiled path"
+    "a view share conferred `remove` — deletion is being authorized against the power to read"
   );
 
   // The owner holds both. Without this, a rule that refused `remove` to everybody would pass.
@@ -603,15 +591,14 @@ async fn agree<E, K>(
   }
 }
 
-// ─── the write half: what replaced `ap::for_users()` ─────────────────────────────────────────
+// ─── the write half ──────────────────────────────────────────────────────────────────────────
 
 /// `replace_service_grants` replaces the route-gate tier **and nothing else**.
 ///
-/// `ap::for_users().update(..)` deleted by subject alone: submitting the role form wiped every
-/// object-tier row that role held as a side effect. Design §9.4 is that a per-object grant survives
-/// a submit of the permission grid without the caller having to enumerate what to preserve, and
-/// this is where that is asserted — the object-tier tuple is written first and must still be there
-/// afterwards.
+/// A delete keyed by subject alone would wipe every object-tier grant that role holds as a side
+/// effect of submitting the permission grid. A per-object grant has to survive that submit without
+/// the caller enumerating what to preserve, and this is where that is asserted — the object-tier
+/// tuple is written first and must still be there afterwards.
 ///
 /// The authority half is asserted in the same case because the two are one operation: a caller who
 /// may not grant must not get to clear the existing grants on the way to being refused.
@@ -656,8 +643,8 @@ async fn replacing_a_roles_service_grants_leaves_its_object_grants_alone() {
       "service:ban#delete".to_owned(),
       "service:ban#read".to_owned()
     ],
-    "the object-tier grant did not survive a submit of the permission grid (§9.4), or the old \
-     route gate was left behind"
+    "the object-tier grant did not survive a submit of the permission grid, or a route gate that \
+     was not resubmitted was left behind"
   );
 
   // (3) 화면이 읽어 오는 모양은 그대로다 — 넣은 것과 같은 것이 나온다.
@@ -681,12 +668,12 @@ async fn replacing_a_roles_service_grants_leaves_its_object_grants_alone() {
   );
 }
 
-/// `expand_to_user_ids` stops dropping `apikey:` subjects.
+/// `expand_to_user_ids` does not drop `apikey:` subjects.
 ///
-/// `membership/mod.rs:170` hand-parsed `user:` / `role:` / `org:` and silently ignored everything
-/// else, so a key that held the grant never received the notification the grant existed to send.
-/// Every subject type the relations accept is expanded here, and the api-key half is asserted
-/// explicitly because it is the one that was missing.
+/// A hand-parser that recognises only `user:` / `role:` / `org:` ignores everything else in
+/// silence, and a key that holds the grant then never receives what the grant exists to send. Every
+/// subject type the relations accept is expanded here, and the api-key half is asserted explicitly
+/// because it is the one a prefix list is most likely to miss.
 #[tokio::test]
 async fn expanding_subjects_to_user_ids_includes_api_keys() {
   use api::authz::write::SubjectKey;

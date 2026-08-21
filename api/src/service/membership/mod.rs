@@ -89,10 +89,9 @@ pub async fn recipient_emails<C: ConnectionTrait>(
 
 /// Emails of the users who manage organization `org_id`'s membership.
 ///
-/// 종전에는 `org:subscription` / `org:credit` 정책 행의 `"user"` 문자열을 손으로 파싱했는데,
-/// 그 파서는 `api:` 로 시작하는 수신자를 **조용히 버렸다**(설계 §8). 이제 관계 자체를 되짚어
-/// 읽고(`subjects_with`) 주체를 사용자 id 로 펼치므로(`expand_to_user_ids`), 키에 부여된
-/// 권한도 알림을 받는다.
+/// 관계 자체를 되짚어 읽고(`subjects_with`) 주체를 사용자 id 로 펼친다(`expand_to_user_ids`).
+/// 주체 문자열을 여기서 손으로 파싱하면 아는 접두사만 통과시키게 되고, 모르는 종류의 수신자는
+/// 아무 말 없이 사라진다 — 부여는 받았는데 알림만 못 받는 상태가 된다.
 pub async fn org_manager_emails<C: ConnectionTrait>(
   org_id: i32,
   db: &C,
@@ -100,7 +99,7 @@ pub async fn org_manager_emails<C: ConnectionTrait>(
   use std::collections::HashSet;
 
   // 세 관계는 `organization` 의 `scope subscription` / `credit_manager` / 총괄 `manager` 다.
-  // 종전 정책의 `action = {manage, *}` 가 뜻하던 층이 정확히 이 셋이다.
+  // 조직의 멤버십을 관리한다는 것이 이 셋 중 하나를 쥐고 있다는 뜻이다.
   let grants = Authz::subjects_with(
     "organization",
     &org_id.to_string(),

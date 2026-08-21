@@ -91,8 +91,7 @@ async fn test_user_update_permissions_comprehensive() {
   // update has a two-stage gate:
   //   (1) the `service_ap!("user", update)` route layer → `service:user#update`
   //   (2) the row guard → `sumida_user:<id>#edit`, which the caller reaches through
-  //       `org->manage_user` — one tuple on the organization covers it and every descendant,
-  //       which is what the `org:user` policy row used to mean.
+  //       `org->manage_user` — one tuple on the organization covers it and every descendant.
   ap_test_utils::grant_service(&db, &operator, "user", vec!["update".to_string()])
     .await
     .expect("Failed to grant user service permission");
@@ -186,10 +185,9 @@ async fn test_user_list_permissions_comprehensive() {
   test_suite.test_list_permission(&mock).await;
 }
 
-// `test_*_explicit_deny_comprehensive` 는 없어졌다. 개별 부여에 붙는 `effect = 'deny'` 가
-// 사라졌기 때문이다(설계 §3): 차단은 이제 규칙의 성질이고, 그것을 표현하는 `blocked` 관계는
-// 부정을 다루던 게시판 계열 세 정의(`board_group`/`board`/`board_post`)만 선언한다. 여기서
-// 다루는 정의에는 차단할 방법이 아예 없으므로, 있는 척하는 테스트를 남기지 않는다.
+// 여기서 다루는 정의에는 개별 차단이 없다. 차단은 규칙의 성질이고, 그것을 표현하는 `blocked`
+// 관계는 게시판 계열 세 정의(`board_group`/`board`/`board_post`)만 선언한다. 차단할 방법이
+// 없는 정의에 차단 테스트를 두면 있는 척하는 테스트가 된다.
 // 차단 우선순위 자체는 `api/tests/board.rs::test_board_block_precedence_comprehensive` 가 든다.
 
 #[tokio::test]
@@ -285,8 +283,8 @@ async fn test_user_wildcard_action_comprehensive() {
     .await
     .expect("Failed to create target user");
 
-  // 라우트 게이트 전량 + 대상 행 하나에 대한 관리자 관계. 종전 `org:user` 정책이 조직 id 를
-  // 객체로 잡던 자리는 `organization:<id>#user_manager` 튜플이 대신한다.
+  // 라우트 게이트 전량 + 대상 행 하나에 대한 관리자 관계. 조직을 객체로 잡는 쪽은
+  // `organization:<id>#user_manager` 튜플이다.
   ap_test_utils::grant_wildcard_action_permission(&db, &user, "user", Some(target_user.model.id))
     .await
     .expect("Failed to grant wildcard action permission on user");

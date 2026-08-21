@@ -23,8 +23,7 @@ use uuid::Uuid;
 
 // ---- helpers ---------------------------------------------------------------
 
-/// 종전 `access_policies` 한 행에 해당하는 부여. 객체가 `service` 면 라우트 게이트,
-/// 그 밖이면 그 행 하나에 대한 부여다.
+/// 부여 하나. 객체가 `service` 면 라우트 게이트, 그 밖이면 그 행 하나에 대한 부여다.
 async fn allow(db: &DatabaseConnection, user: &TestUser, ns: &str, object: &str, actions: &[&str]) {
   let actions: Vec<String> = actions.iter().map(|s| (*s).to_string()).collect();
   if object == "service" {
@@ -205,7 +204,8 @@ async fn scenario_article_list_excludes_notices() {
   assert_eq!(create_post(&mock, article_body).await.status(), StatusCode::CREATED);
   assert_eq!(create_post(&mock, notice_body).await.status(), StatusCode::CREATED);
 
-  // kind=article must contain the article and NOT the notice (regression: used to filter Notice).
+  // kind=article must contain the article and NOT the notice: the kind filter has to narrow the
+  // list, not merely be accepted.
   let resp = mock
     .client
     .get(&format!("/boards/{}/posts?kind=article&boardId={}", board.id, board.id))
@@ -331,7 +331,7 @@ async fn scenario_password_protected_post() {
   let resp = mock2.client.get(&format!("/board-posts/{post_id}")).send().await.unwrap();
   assert_eq!(resp.status(), StatusCode::FORBIDDEN, "GET on a password post must be blocked");
 
-  // view with no password → blocked (regression: omitting the password used to pass)
+  // view with no password → blocked. The password is required on this path too, not only on GET.
   let resp = mock2
     .client
     .post(&format!("/board-posts/{post_id}/view"))
@@ -1037,12 +1037,11 @@ async fn scenario_board_soft_delete_hides_board_and_posts() {
   assert!(row.deleted_at.is_some(), "board deleted_at is stamped");
 }
 
-/// 종전 `effect = 'deny'` 한 행에 해당하는 차단.
+/// 차단 하나.
 ///
-/// 개별 부여에 붙는 부정은 사라졌고(설계 §3), 그 자리를 정의가 선언한 `blocked` 관계가
-/// 대신한다 — 규칙에서 합집합 **바깥**으로 빠지므로 작성자 소유권으로 우회할 수 없다는 성질은
-/// 그대로다. 액션별 차단은 표현할 수 없으므로 인자에서 사라졌다: `blocked` 는 그것을 이름으로
-/// 부르는 모든 권한에서 빠진다.
+/// 차단은 정의가 선언한 `blocked` 관계이며, 규칙에서 합집합 **바깥**으로 빠지므로 작성자
+/// 소유권으로 우회할 수 없다. 액션별 차단은 표현되지 않으므로 인자도 받지 않는다 — `blocked`
+/// 는 그것을 이름으로 부르는 모든 권한에서 빠진다.
 async fn deny(db: &DatabaseConnection, user: &TestUser, ns: &str, object: &str) {
   block_object(db, user, ns, object).await.expect("write the block");
 }

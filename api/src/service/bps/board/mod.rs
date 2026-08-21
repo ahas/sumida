@@ -160,7 +160,7 @@ impl<S: SumidaState> BoardService<S> {
   pub async fn delete(&self, id: i32) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
     // `board` 에는 `remove` 가 없다. `own = owner | org->manage_board |
-    // service:board->operate_delete` 자체가 "지울 수 있다"이므로 삭제는 `own` 으로 인가한다(§1.4).
+    // service:board->operate_delete` 자체가 "지울 수 있다"이므로 삭제는 `own` 으로 인가한다.
     Authz::try_check(RESOURCE, id, "own", &self.subject(), &txn).await?;
 
     // Soft delete: hide the board (and, via the post read filter, its posts) without dropping rows.

@@ -1,24 +1,18 @@
 //! Grant helpers for the integration suites, written in the vocabulary the evaluator reads.
 //!
-//! Until §14 step 13 these wrote `access_policies` rows, and the row tier was resolved against that
-//! table so they worked. The row tier answers from `relation_tuples` now, and the mirror trigger
-//! deliberately refuses to translate an object-tier policy row (`rebac_mirror.rs`'s final
-//! `RETURN;`) — so a helper left writing policy rows would grant **nothing**, every "should be
-//! forbidden" assertion would keep passing, and the suite would report that a capability still
-//! works on the day it stopped existing. That is why they are rewritten in the same commit as the
-//! routing and not after it.
+//! The row tier answers from `relation_tuples`, so every grant here is a tuple. Three grants, one
+//! per tier, because the three tiers are three different powers:
 //!
-//! Three grants, one per tier, because the tiers stopped being the same thing (§5.2):
-//!
-//! | old | new | means |
+//! | tier | helper | means |
 //! |---|---|---|
-//! | `object = 'service'` | [`grant_service`]     | may reach this API at all |
-//! | `object = '*'`       | [`grant_object_wide`] | may act on **everyone's** rows of this namespace |
-//! | `object = '<id>'`    | [`grant_object`]      | may act on that one row |
+//! | route gate  | [`grant_service`]     | may reach this API at all |
+//! | object-wide | [`grant_object_wide`] | may act on **everyone's** rows of this namespace |
+//! | one row     | [`grant_object`]      | may act on that one row |
 //!
 //! Every grant is checked against the compiled rule before it is written ([`assert_rule_reads`]):
-//! a tuple on a relation the rule never consults is authority nobody can use, and a test built on
-//! one passes for the wrong reason.
+//! a tuple on a relation the rule never consults is authority nobody can use, so a fixture that
+//! writes one grants **nothing** while every "should be forbidden" assertion keeps passing — the
+//! suite reports that a capability still works on the day it stopped existing.
 
 use api::authz::Authz;
 use api::authz::subject::SubjectSet;
@@ -50,10 +44,10 @@ pub async fn tuple(
   Ok(())
 }
 
-/// Route-gate tier — what `object = 'service'` meant. One tuple per action.
+/// Route-gate tier — the right to reach the API at all. One tuple per action.
 ///
-/// `"*"` expands to the four route actions, exactly as `rebac_mirror_map` expands it: on a
-/// `service` object the wildcard never meant object-wide power, because the object *is* `service`.
+/// `"*"` expands to the four route actions and no further: on a `service` object the wildcard is
+/// not object-wide power, because the object *is* `service`.
 pub async fn grant_service(
   db: &DatabaseConnection,
   user: &TestUser,
@@ -67,7 +61,7 @@ pub async fn grant_service(
   Ok(())
 }
 
-/// Object-wide tier — what `object = '*'` meant (§2.3).
+/// Object-wide tier — every row of the namespace, ownership disregarded.
 ///
 /// `service:<namespace>#op_<action>`, which the definition's own permissions union in as
 /// `service:<namespace>->operate_<action>`. `"*"` becomes `operator`, the single relation that
@@ -103,7 +97,7 @@ pub async fn grant_object_wide(
   Ok(())
 }
 
-/// One row — what `object = '<id>'` meant.
+/// One row — authority over a single object.
 ///
 /// The relation is the definition's own, because the tiers are not uniformly named: a board has
 /// `viewer`/`editor`/`owner`, an organization has `manager`, a role has `admin`. A namespace with
@@ -131,12 +125,12 @@ pub async fn grant_object(
   Ok(())
 }
 
-/// A block on one row — what `effect = 'deny'` meant, where the rules can express it (§3).
+/// A block on one row, where the rules can express it.
 ///
-/// Denial stopped being a property of a grant and became a property of the rule: `blocked` is
-/// subtracted **outside** the whole union, so authorship cannot walk through it. Only the
-/// definitions whose code contemplated denial declare it (`board_group`, `board`, `board_post`);
-/// anywhere else a block is not expressible and this panics rather than pretending.
+/// Denial is a property of the rule and not of a grant: `blocked` is subtracted **outside** the
+/// whole union, so authorship cannot walk through it. Only the definitions that declare it
+/// (`board_group`, `board`, `board_post`) can carry a block; anywhere else it is not expressible
+/// and this panics rather than pretending.
 pub async fn block_object(
   db: &DatabaseConnection,
   user: &TestUser,
@@ -150,8 +144,8 @@ pub async fn block_object(
 
 /// An organization-tier grant: `organization:<id>#<family>_<tier>`, reaching every descendant.
 ///
-/// This is what an `org:<family>` policy row meant — "manages this organization and everything
-/// under it" — with the per-row recursive CTE replaced by the `^` closure over `org_closure`.
+/// One tuple says "manages this organization and everything under it": the `^` closure reads
+/// `org_closure`, so no per-row walk of the tree is needed.
 pub async fn grant_org_scope(
   db: &DatabaseConnection,
   user: &TestUser,
@@ -163,7 +157,7 @@ pub async fn grant_org_scope(
 
 /// Grant both the route gate and the row tier.
 ///
-/// `None` is the old `object = '*'`: every row of the namespace. `Some(id)` is that one row.
+/// `None` is the object-wide tier: every row of the namespace. `Some(id)` is that one row.
 pub async fn grant_service_and_resource_access(
   db: &DatabaseConnection,
   user: &TestUser,
@@ -202,7 +196,8 @@ pub async fn grant_wildcard_object_permission(
 
 // ─── the mapping tables ──────────────────────────────────────────────────────────────────────
 
-/// The legacy action vocabulary. `"*"` on a route gate meant the four route actions.
+/// The action vocabulary these fixtures take. `"*"` on a route gate stands for the four route
+/// actions.
 fn expand_actions(actions: &[String]) -> Vec<String> {
   let mut out: Vec<String> = Vec::new();
   for action in actions {
@@ -217,8 +212,7 @@ fn expand_actions(actions: &[String]) -> Vec<String> {
   out
 }
 
-/// The legacy action → the permission the converted call site now asks for, when the definition
-/// declares one.
+/// A fixture action → the permission a call site asks for, when the definition declares one.
 ///
 /// `None` is a real answer and not a failure: `sumida_user` has no `create` (a create has no row to
 /// check), `board` has no `remove` (deleting a board is `own`). A fixture must not write a tuple for
@@ -573,10 +567,9 @@ impl PermissionTestSuite {
 
   /// A block overrides a grant on the same row.
   ///
-  /// The replacement for `test_explicit_deny_precedence`. The old case wrote
-  /// `effect = 'deny'` on any namespace; a block is now a `blocked` relation, and only the
-  /// definitions whose code contemplated denial declare one — so this exists for the board family
-  /// and [`block_object`] refuses anywhere else rather than quietly asserting nothing.
+  /// A block is a `blocked` relation, and only the definitions that declare one can carry it — so
+  /// this case exists for the board family, and [`block_object`] refuses anywhere else rather than
+  /// quietly asserting nothing.
   pub async fn test_block_precedence(&self, mock: &Mock, resource_id: i32) {
     let db = infra::db::connect().await;
     let user = TestUser::create(&db).await.expect("Failed to create test user");
@@ -671,11 +664,10 @@ impl PermissionTestSuite {
     assert_eq!(resp.status(), StatusCode::OK, "Wildcard action should allow delete");
   }
 
-  /// Object-wide access reaches **every** row of the namespace — what `object = '*'` meant.
+  /// Object-wide access reaches **every** row of the namespace.
   ///
-  /// This is the acceptance criterion for §2.3's mapping: the grant is `service:<ns>#op_read`, it
-  /// must open rows the caller has no per-row grant on, and it must not carry the update tier with
-  /// it.
+  /// The acceptance criterion: the grant is `service:<ns>#op_read`, it must open rows the caller
+  /// has no per-row grant on, and it must not carry the update tier with it.
   pub async fn test_wildcard_object_permissions(
     &self,
     mock: &Mock,

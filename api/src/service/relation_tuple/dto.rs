@@ -11,10 +11,9 @@ use serde_json::json;
 
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
-/// The list filter, one field per column of the `/relation-tuples` screen (design §9.6).
+/// The list filter, one field per column of the `/relation-tuples` screen.
 ///
-/// Every field is an **exact** match, not the `ILIKE '%…%'` `AccessPolicyFilter` uses. A tuple's
-/// columns are identifiers — a resource type, a relation, a canonical subject key — and a substring
+/// Every field is an **exact** match, never a substring one. A tuple's columns are identifiers — a resource type, a relation, a canonical subject key — and a substring
 /// search over identifiers is how `user:1` finds `user:12` and a support engineer revokes the wrong
 /// grant. The one thing this screen exists to make precise is *which* row.
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -88,9 +87,9 @@ impl FilterSchema for RelationTupleFilter {
 
 /// One tuple as the screen renders it.
 ///
-/// The shape is §9.6's new column set, and what is *missing* is the point: there is no `effect`.
-/// Deny is a rule construct now (`board_post#view` subtracts `blocked`), not a row, so a column for
-/// it would be a field nobody can set and every reader would ask about.
+/// What is *missing* is the point: there is no `effect`. Blocking is a rule construct
+/// (`board_post#view` subtracts `blocked`), not a row, so a column for it would be a field nobody
+/// can set and every reader would ask about.
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationTupleListItem {
@@ -122,7 +121,7 @@ pub struct CreateRelationTuple {
   pub resource_id:   String,
   pub relation:      String,
   pub subject:       String,
-  /// The one caveat this model has (§13.4). Absent is a grant that does not expire.
+  /// Expiry is the only condition a grant can carry. Absent is a grant that does not expire.
   #[serde(default)]
   pub expires_at:    Option<DateTimeWithTimeZone>,
 }
@@ -227,7 +226,9 @@ mod tests {
   }
 
   /// The read scope the list is built from. The projection and the joins the service adds are left
-  /// out on purpose: what §11 turns on is how the scope and the tree meet in the `WHERE` clause.
+  /// out on purpose: what is under test is how the scope and the condition tree meet in the
+  /// `WHERE` clause, since a filter may only narrow an already-authorized scope
+  /// (`docs/list-filters.md`).
   fn scope() -> Select<Entity> {
     Authz::filter("relation_tuple", "view", &caller(), Entity::find()).expect("the read scope compiles")
   }

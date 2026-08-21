@@ -56,8 +56,8 @@ impl Pagination {
   /// declaration states as its default.
   ///
   /// A `sort` naming a field the resource does not declare, or declares but does not mark sortable,
-  /// is not an error and not a column either — it falls back, exactly as a hand-written match arm
-  /// did. What it can no longer do is order by something the descriptor never offered.
+  /// is not an error and not a column either — it falls back to the declared default. Nothing can be
+  /// ordered by a key the declaration never offered.
   ///
   /// Direction is the request's `order` in both cases; the declaration states a default key, not a
   /// default direction.

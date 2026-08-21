@@ -5,7 +5,7 @@ use super::ApiController;
 use crate::authz::schema_view::SchemaView;
 use crate::{SumidaState, user_guard};
 
-/// `GET /authz/schema` — the vocabulary the `/relation-tuples` form is built from (design §9.6).
+/// `GET /authz/schema` — the vocabulary the `/relation-tuples` form is built from.
 ///
 /// **Gated at authentication and no further, deliberately.**
 ///

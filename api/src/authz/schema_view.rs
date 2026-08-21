@@ -1,17 +1,16 @@
-//! The vocabulary, as `GET /authz/schema` serves it (design §3.2, §9.6).
+//! The vocabulary, as `GET /authz/schema` serves it.
 //!
 //! The `/relation-tuples` screen's three selects — resource type, relation, subject type — have to
 //! come from the same place the evaluator reads, or the form offers grants that cannot take effect.
-//! That is the defect the old free-text form had: `access_policies` had no vocabulary at all, which
-//! is why a reversed `admin:user` row could sit in the table looking like authority and matching
-//! nothing, forever.
+//! A form with no vocabulary behind it is how a reversed row — an object written where a subject
+//! belongs — ends up in the table looking like authority and matching nothing, forever.
 //!
-//! **Served from the compiled registry, not from `relation_definitions`.** §3.2 describes the two
-//! tables as a projection of the registry that exists for the foreign key and for this endpoint,
-//! and they are the same content whenever they are in sync — but "whenever they are in sync" is a
-//! condition, and a screen fed from a stale projection offers a relation the evaluator does not
-//! know, which is precisely the failure this endpoint exists to prevent. The registry cannot be
-//! stale: it *is* what `Authz::check` compiles.
+//! **Served from the compiled registry, not from `relation_definitions`.** Those two tables are a
+//! projection of the registry that exists for the foreign key and for this endpoint, and they are
+//! the same content whenever they are in sync — but "whenever they are in sync" is a condition, and
+//! a screen fed from a stale projection offers a relation the evaluator does not know, which is
+//! precisely the failure this endpoint exists to prevent. The registry cannot be stale: it *is*
+//! what `Authz::check` compiles.
 //!
 //! What is deliberately **not** exposed: `relation_definitions.source`, the `Derivation` behind a
 //! derived relation. It names a table, a column, its join hops and a raw SQL filter fragment — a
@@ -20,7 +19,7 @@
 //! person can grant (`Authz::write` refuses it, and the form should not ask). `kind` carries that
 //! and nothing more.
 //!
-//! `rewrite` **is** exposed, per §3.2: it lets the screen show *why* a permission is held and lets
+//! `rewrite` **is** exposed: it lets the screen show *why* a permission is held and lets
 //! a support engineer read the effective rule without a build. It is safe to expose where `source`
 //! is not, because a `Rewrite` tree is written entirely in the vocabulary this same payload already
 //! declares — relation, permission and definition names — and mentions no table and no column.
@@ -57,7 +56,7 @@ pub struct PermissionView {
   pub resource_type: String,
   pub permission:    String,
   /// The serialised `Rewrite` tree. Read-only, and read-only in the sense that there is no write
-  /// path at all: rules are compiled into the binary (E1), so a rule edit is a deploy.
+  /// path at all: rules are compiled into the binary, so a rule edit is a deploy.
   pub rewrite:       Rewrite,
 }
 
@@ -173,8 +172,7 @@ mod schema_view_tests {
     }
   }
 
-  /// A permission's rule is exposed, because §3.2 asks for it: the screen shows *why* a permission
-  /// is held. What is pinned here is that it arrives as a tree and not as an opaque string, so the
+  /// A permission's rule is exposed so the screen can show *why* a permission is held. What is pinned here is that it arrives as a tree and not as an opaque string, so the
   /// client can render it rather than print it.
   #[test]
   fn a_permission_carries_its_rule() {

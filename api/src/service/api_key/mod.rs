@@ -55,8 +55,8 @@ impl<S: SumidaState> ApiKeyService<S> {
     SubjectSet::of(&self.session)
   }
 
-  /// 키가 부여를 **받는** 쪽으로 등장할 때의 주체 키. 종전 `access_policies."user"` 의
-  /// `api:<hash>` 와 같은 해시다.
+  /// 키가 부여를 **받는** 쪽으로 등장할 때의 주체 키. 키를 가리키는 것은 언제나 키 값이 아니라
+  /// 그 해시다.
   fn holder(key_hash: &str) -> SubjectKey {
     SubjectKey::apikey(key_hash)
   }
@@ -121,7 +121,7 @@ impl<S: SumidaState> ApiKeyService<S> {
     };
 
     if api_key.is_secured {
-      // 보안 키가 보유한 라우트 게이트. 화면이 늘 읽어 온 모양 그대로다(§9.4).
+      // 보안 키가 보유한 라우트 게이트. 폼이 읽고 되돌려 보내는 모양 그대로다.
       let held = SubjectSet::from_parts(vec![Self::holder(key).key()], Vec::new());
       api_key.access_policies = Some(from_service_grants(Authz::service_grants(&held, &txn).await?));
     }
@@ -216,7 +216,8 @@ impl<S: SumidaState> ApiKeyService<S> {
   pub async fn delete(&self, key: &str) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
     Authz::try_check(RESOURCE, key, "remove", &self.subject(), &txn).await?;
-    // 키가 사라지면 그 키 앞으로 남은 부여도 전부 사라진다(§1.6).
+    // 키가 사라지면 그 키 앞으로 남은 부여도 전부 사라진다. 남겨 두면 같은 해시가 다시 발급될 때
+    // 새 키가 옛 부여를 물려받는다.
     Authz::revoke_all_of(&Self::holder(key), &txn).await?;
 
     let result = ApiKeys::delete_by_id(key).exec(&txn).await?;

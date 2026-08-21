@@ -62,10 +62,9 @@ impl<S: SumidaState> SubscriptionService<S> {
   /// Restrict a list/query to subscriptions the caller may see: 최상위 관리자 → 전체;
   /// 그 밖에는 본인 개인 구독 + 자기 조직 + `organization#view_subscription` 이 닿는 조직.
   ///
-  /// 종전의 `managed_org_ids` 는 정책 행에서 조직 id 목록을 Rust 로 실체화한 뒤 재귀 CTE 로
-  /// 후손을 펼쳤다. 단건 판정(`authorize`)과 목록 판정이 서로 다른 구현이었으므로, 하나는
-  /// 통과하고 다른 하나는 막는 어긋남이 구조적으로 가능했다. 이제 둘 다 같은 재작성 트리에서
-  /// 생성되고, 조직 id 목록은 문장 안에 서브쿼리로 남는다 — 페이지네이션도 그대로다.
+  /// 단건 판정(`authorize`)과 목록 판정이 같은 재작성 트리에서 생성된다. 둘을 따로 구현하면
+  /// 하나는 통과하고 다른 하나는 막는 어긋남이 구조적으로 가능해진다. 조직 id 목록도 Rust 로
+  /// 실체화하지 않고 문장 안에 서브쿼리로 남으므로 페이지네이션이 깨지지 않는다.
   async fn scope<C: ConnectionTrait>(
     &self,
     query: Select<Subscriptions>,

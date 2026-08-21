@@ -45,8 +45,8 @@ impl<S: SumidaState> RoleService<S> {
 
   /// 역할이 부여를 **받는** 쪽으로 등장할 때의 주체 키.
   ///
-  /// 종전의 `role:<id>` 문자열이 사실 뜻하던 것 — "이 역할의 모든 구성원" — 을 그대로 쓴
-  /// 것이다. `role:<id>` 라는 단말 주체로 적으면 아무에게도 닿지 않는다.
+  /// 역할에 부여한다는 것은 "이 역할의 모든 구성원에게" 라는 뜻이므로 userset 이다.
+  /// `role:<id>` 라는 단말 주체로 적으면 아무에게도 닿지 않는다.
   fn holder(id: i32) -> SubjectKey {
     SubjectKey::userset("role", &id.to_string(), "member")
   }
@@ -87,7 +87,7 @@ impl<S: SumidaState> RoleService<S> {
       return Ok(None);
     };
 
-    // 이 역할이 보유한 라우트 게이트. 화면이 늘 읽어 온 모양 그대로다(§9.4).
+    // 이 역할이 보유한 라우트 게이트. 폼이 읽고 되돌려 보내는 모양 그대로다.
     let held = SubjectSet::from_parts(vec![Self::holder(id).key()], Vec::new());
     role.access_policies = from_service_grants(Authz::service_grants(&held, &txn).await?);
     let role = Some(role);
@@ -102,9 +102,8 @@ impl<S: SumidaState> RoleService<S> {
   ) -> Result<InsertResult<entity::roles::ActiveModel>, SumidaError> {
     let txn = self.state.db().begin().await?;
     // 권한 검사는 `replace_service_grants` 안에서 네임스페이스마다
-    // `service:<namespace>#grant` 로 이뤄진다. 종전의 `assert_policy_within_authority` 는
-    // 와일드카드만 거절했으므로, 자기가 갖지도 않은 구체적 권한을 역할에 달아 주는 것은
-    // 그대로 통과했다.
+    // `service:<namespace>#grant` 로 이뤄진다. 와일드카드만 거절하는 검사로는 부족하다 —
+    // 자기가 갖지도 않은 구체적 권한을 역할에 달아 주는 것이 그대로 통과한다.
     let grants = to_service_grants(&data.access_policies)?;
     let result = Roles::insert(data.into_active_model()).exec(&txn).await?;
     Authz::replace_service_grants(&Self::holder(result.last_insert_id), &grants, &self.subject(), &txn)
@@ -137,7 +136,7 @@ impl<S: SumidaState> RoleService<S> {
     Authz::try_check(RESOURCE, id, "remove", &self.subject(), &txn).await?;
 
     // 역할이 사라지면 그 역할 앞으로 남은 부여도 전부 사라진다. 객체마다 `#grant` 를 다시
-    // 묻지 않는 것은 의도된 것이다 — 그러면 최상위 관리자 말고는 역할을 지울 수 없다(§1.6).
+    // 묻지 않는 것은 의도된 것이다 — 그러면 최상위 관리자 말고는 역할을 지울 수 없다.
     Authz::revoke_all_of(&Self::holder(id), &txn).await?;
     let result = Roles::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;

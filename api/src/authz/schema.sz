@@ -1,8 +1,9 @@
-// sumida's rule set — design §5.1 to §5.4.
+// sumida's rule set.
 //
-// Read this file to find out who may do what. Every rule that used to live at a call site as an
-// `if session.profile.is_admin` or a hand-built policy chain is here, which is the point: a rule in
-// one place cannot be forgotten by the next caller.
+// Read this file to find out who may do what. Every authorization rule lives here rather than at a
+// call site, which is the point: a rule in one place cannot be forgotten by the next caller.
+// `docs/permissions.md` explains what the three tiers mean and how to grant against them;
+// `docs/sz-language.md` is the grammar.
 //
 // This is sumida's file and only sumida's. A product built on sumida keeps its own rules in its own
 // repository and installs them at boot; nothing here knows what those are, and a family of resource
@@ -13,7 +14,7 @@
 //                               Omitted when the objects are named by string alone (`service`,
 //                               `platform`, `delegation_scope`).
 //   · definition names use `_`  so a name is a valid Rust identifier and an unambiguous SQL
-//                               literal. The *service object id* keeps today's colon form.
+//                               literal. The *service object id* is written with a colon instead.
 //   · `where` clauses are      column-qualified, because a derivation can be emitted inside a
 //                               subquery where an unqualified name would bind to the wrong table.
 
@@ -26,14 +27,13 @@ definition apikey { }   // apikey:<blake3 hash of the key>
 
 // Exactly one object: platform:root.
 //
-// `flagged` keeps `users.is_admin` as the operational source of truth, so the admin user screen is
-// unchanged — while `admin` makes platform administration grantable without touching the `users`
-// table, which today is only expressible as the `* | * | * | {*}` catch-all.
+// Two ways in, on purpose. `flagged` keeps `users.is_admin` as the operational source of truth, so
+// the admin user screen has a column to drive; `admin` makes platform administration grantable
+// without touching the `users` table.
 //
-// The consequence that matters: the flag is now reachable only through the subject set, so a
-// **secured API key bound to an admin no longer carries administrative power**. `who()` already got
-// that right; the ~55 direct `session.profile.is_admin` reads got it wrong. Here there is nothing to
-// get wrong, because there is no direct read on an authorization path.
+// The consequence that matters: the flag is reachable only through the subject set, so a **secured
+// API key bound to an admin carries no administrative power**. Nothing on an authorization path
+// reads the flag directly, so there is no second place for that decision to be made differently.
 definition platform {
   relation admin:   user | role#member
   relation flagged: user = column(users.id -> user where users.is_admin)
@@ -44,24 +44,23 @@ definition platform {
 
 // ─── the route-gate tier ─────────────────────────────────────────────────────────────────────
 
-// resource_id is today's namespace string, colons included: `service:user`, `service:board_post`,
-// and whatever a product declares for its own. `resource_type` and `resource_id` are separate
-// columns, so the colons are inert — and the `/me/access-policies` compatibility payload stays
-// byte-identical for the CASL client, which builds `can(action, `${namespace}:${object}`)`.
+// resource_id is the namespace string, colons included: `service:user`, `service:board_post`, and
+// whatever a product declares for its own. `resource_type` and `resource_id` are separate columns,
+// so the colons are inert — and the `/me/access-policies` payload keeps the shape the CASL client
+// consumes, which builds `can(action, `${namespace}:${object}`)`.
 //
-// One deliberate semantic change, stated plainly. The old evaluator ORed `object = '*'`
-// unconditionally, so an `object='*'` row also satisfied the route gate. Here `op_read` grants the
-// object-wide power *and* implies the route gate, but a route-gate grant (`read`) does **not**
-// grant object-wide power. That is a narrowing, in the safe direction, and it is what makes "let
-// Jiwon see everyone's records" a different grant from "let Jiwon use the records API".
+// The two tiers do not imply each other symmetrically. `op_read` grants the object-wide power *and*
+// implies the route gate, but a route-gate grant (`read`) does **not** grant object-wide power.
+// That asymmetry is what makes "let Jiwon see everyone's records" a different grant from "let
+// Jiwon use the records API".
 definition service {
-  // route-gate tier — what `service_ap!` checks (object = 'service' today)
+  // route-gate tier — what the route gate checks, before the handler is entered
   relation create: user | role#member | organization#member | apikey
   relation read:   user | role#member | organization#member | apikey
   relation update: user | role#member | organization#member | apikey
   relation delete: user | role#member | organization#member | apikey
 
-  // object-wide tier — what `object = '*'` used to mean
+  // object-wide tier — reaches every row of the namespace, ownership disregarded
   relation op_create: user | role#member | organization#member | apikey
   relation op_read:   user | role#member | organization#member | apikey
   relation op_update: user | role#member | organization#member | apikey
@@ -99,9 +98,10 @@ definition delegation_scope {
 // single tuple `organization:100#manager@user:9` makes user 9 manager of everything in org 100 and
 // everything beneath it. That one tuple is the whole of R2 for that person.
 //
-// `scope <family>` expands to three stored relations and three permissions (see `parse.rs`). Three
-// tiers, not one, because the old model's per-action organization grants have to survive exactly:
-// `{read}` is a viewer, `{read,update}` an editor, `{read,update,owner}` a manager.
+// `scope <family>` expands to three stored relations and three permissions (the expansion lives in
+// the parser). Three tiers rather than one, because an organization grant has to be able to say
+// read-only, read-and-write, and full authority separately: `viewer` < `editor` < `manager`, each
+// implying the one before it and none of them implying the one after.
 //
 // Only the families sumida itself has an organization-scoped resource for are declared here.
 // Declaring an unused scope would let somebody grant a tuple that silently widens production — and
@@ -118,11 +118,10 @@ definition organization on organizations.id int {
 
   scope user   scope subscription  scope board  scope file
 
-  // `credit` is written out rather than declared with `scope`, because it needs one extra branch.
-  // `CreditService::authorize_use` (`membership/credit/mod.rs:88`) short-circuits on
-  // `OwnerKind::Organization if session.profile.organization.id == owner_id` — a plain member of an
-  // organization may spend that organization's credit. That is `member`, and `view_credit` has to
-  // keep it or the migration takes a capability away from every ordinary account.
+  // `credit` is written out rather than declared with `scope`, because it needs one extra branch: a
+  // plain member of an organization may spend that organization's credit without being granted
+  // anything. That is the `member` term in `view_credit`; dropping it would take a capability away
+  // from every ordinary account in an organization.
   relation credit_viewer:  user | role#member | organization#member | apikey
   relation credit_editor:  user | role#member | organization#member | apikey
   relation credit_manager: user | role#member | organization#member | apikey
@@ -144,16 +143,15 @@ definition role on roles.id int {
 
   permission view   = admin | service:role->operate_read
   permission edit   = admin | service:role->operate_update
-  // `RoleService::delete` needs a permission of its own. `edit` would have done as a string and
-  // that is exactly the G12 shape — deleting a role revokes every grant it carries, which is not
-  // the same authority as renaming it.
+  // Deleting a role revokes every grant it carries, which is not the same authority as renaming it,
+  // so deletion gets a permission of its own rather than another string handed to the same check.
   permission remove = admin | service:role->operate_delete
   permission grant  = admin | service:role->operate_update
 }
 
 // The *object* side of a user row. `user` stays the subject type; this is "may I act on that
-// person". `UserService::update`'s `org:user` branch becomes `sumida_user:<id>#edit`, and the
-// per-row recursive CTE it used is gone.
+// person". An organization's authority over its people arrives through `org->manage_user`, which
+// the closure on `organization` already carries down the tree — no per-row walk is needed.
 definition sumida_user on users.id int {
   relation org:     organization = column(users.organization_id -> organization)
   relation manager: user | role#member | organization#member | apikey
@@ -184,11 +182,10 @@ definition board_group on board_groups.id int {
   permission grant  = own
 }
 
-// The `board_group` AND `board` composition is **preserved, not converted to a union**. It is what
-// `board_post/mod.rs:406-411` (create) and `:739-744` (list) actually do, and the grammar admits
-// intersection, so there is no reason to change the semantics. `editor_or_own_here` and
-// `viewer_or_edit_here` are the local-only halves, named so the intersection reads as "the group
-// permits it **and** this board permits it" — exactly how `ApChain` composes today.
+// Inheritance from the group is an **intersection, not a union**: authority over the group is not
+// by itself authority over a board inside it. `editor_or_own_here` and `viewer_or_edit_here` are
+// the local-only halves, named so the intersection reads as "the group permits it **and** this
+// board permits it".
 //
 // `org->manage_board` is dead when `boards.organization_id IS NULL`. That is how a public-board
 // deployment opts out of organization scoping with no config flag; a public board is one tuple,
@@ -226,19 +223,18 @@ definition board_topic on board_topics.id int {
   permission grant  = board->own
 }
 
-// `authorize_post_mutation` (`board_post/mod.rs:465-500`) transcribed:
+// A post resolves as:
 //
-//     allowed = (group_allow && board_allow) || owner_allow
-//     denied  = group_deny  || board_deny   || owner_deny
+//     allowed = (group_allow && board_allow) || author
+//     denied  = group_deny  || board_deny    || post_deny
 //     result  = allowed && !denied
 //
 // `board->edit` already carries the `group & board` intersection, and the subtrahend is a union.
 // The exclusion binds outside the whole union, so authorship cannot route around a block — and
 // because it is in the rule rather than at a call site, the next caller cannot forget it.
 //
-// `author` derives from `board_posts.user_id`, which create already sets. The `ap::edit()` grant at
-// `:448` and its matching revocation at `:613` become dead once this is live: ownership stops being
-// a stored row that can drift from the column.
+// `author` derives from `board_posts.user_id`, the column create sets. Ownership is that column and
+// not a stored grant, so the two cannot drift apart.
 definition board_post on board_posts.id int {
   relation board:  board = column(board_posts.board_id -> board)
   relation author: user  = column(board_posts.user_id -> user
@@ -264,9 +260,8 @@ definition board_file on board_files.file_uuid uuid {
   permission remove = post->edit | file->remove
 }
 
-// `board_post_reaction` and `board_post_report` have a route gate and **no** row-level check
-// anywhere today — an existing gap. Giving them definitions closes it, which is a widening of
-// enforcement and is called out as such.
+// A reaction and a report are authorized against the post they hang on, not by the route gate
+// alone: reaching a post is what decides whether its reactions and reports may be reached.
 definition board_post_reaction on board_post_reactions.id int {
   relation post:   board_post = column(board_post_reactions.post_id -> board_post)
   relation author: user       = column(board_post_reactions.user_id -> user
@@ -287,9 +282,8 @@ definition board_post_report on board_post_reports.id int {
   permission remove = service:board_post_report->operate_delete
 }
 
-// The three permissions are distinct rules. sumida `67857ef` fixed `FileService::delete`
-// authorising against `read`; here that mistake is no longer expressible, because `remove` and
-// `view` are different permissions rather than different strings passed to `.action()`.
+// `view`, `edit` and `remove` are three distinct permissions rather than three strings handed to
+// one check, so deleting a file cannot be authorized against the power to read it.
 definition file on files.uuid uuid {
   relation owner: user         = column(files.user_id -> user where files.user_id IS NOT NULL)
   relation org:   organization = column(files.user_id -> organization via users.organization_id)
@@ -303,9 +297,9 @@ definition file on files.uuid uuid {
 
 // ─── flat sumida resources ───────────────────────────────────────────────────────────────────
 
-// `ApiKeyService::create`'s "a non-admin may not issue a key for another user" guard
-// (`api_key/mod.rs:92`, added by `67857ef`) becomes `sumida_user:<user_id>#edit` — issuing a key in
-// somebody's name is exactly as powerful as editing them, and now says so.
+// Issuing an API key in somebody's name is exactly as powerful as editing that person, so creation
+// is authorized as `sumida_user:<user_id>#edit`. No separate "a non-admin may not issue a key for
+// another user" guard belongs at the call site; this rule is that guard.
 definition api_key on api_keys.key {
   relation owner: user         = column(api_keys.user_id -> user)
   relation org:   organization = column(api_keys.user_id -> organization via users.organization_id)
@@ -341,8 +335,8 @@ definition user_invitation on user_invitations.uuid uuid {
 }
 
 // `mail_form`, `membership_plan`, `role`, `organization` and `relation_tuple` are global
-// configuration: no creator, no organization, so R2 and R3 do not apply and they are reachable only
-// through R1 or an explicit grant. That is already the effective behaviour.
+// configuration: no creator, no organization, so neither the organization tree nor an ownership
+// column applies and they are reachable only through platform authority or an explicit grant.
 definition mail_form on mail_forms.kind {
   permission view   = service:mail_form->operate_read
   permission edit   = service:mail_form->operate_update
@@ -369,7 +363,7 @@ definition coupon on coupons.id int {
   permission remove = service:coupon->operate_delete
 }
 
-// The tuple table itself, replacing the `access_policy` namespace.
+// The tuple table itself. It is reached through the `access_policy` namespace.
 definition relation_tuple on relation_tuples.id int {
   permission view   = service:access_policy->operate_read
   permission create = service:access_policy->operate_create
@@ -379,7 +373,7 @@ definition relation_tuple on relation_tuples.id int {
 
 // ─── the namespace inventory ─────────────────────────────────────────────────────────────────
 //
-// sumida's own, enumerated from sumida's code, not from the design:
+// sumida's own, enumerated from sumida's code. To re-derive the list:
 //   grep -rn 'service_ap!' --include='*.rs' api/src   → the gated namespaces × their actions
 //   grep -rn 'ap::ns('     --include='*.rs' api/src   → the row-level namespaces below
 //
@@ -410,10 +404,11 @@ namespace role                service = role
 namespace user                service = sumida_user
 namespace user_invitation     service = user_invitation
 
-// Row-level only — no `service_ap!` gate anywhere. `org:credit` and `org:subscription` keep a `use`
-// tier distinct from `manage`: `credit/mod.rs:66` uses `manage`, `:93` uses `use`, and collapsing
-// them would remove a capability that is in use. They map onto `organization`'s `credit` and
-// `subscription` scopes.
+// Row-level only — these carry no route gate. `org:credit` and `org:subscription` keep the tier
+// that spends distinct from the tier that administers: an account may be allowed to draw on an
+// organization's credit without being allowed to change what the organization holds. Collapsing the
+// two would remove a capability in use. They map onto `organization`'s `credit` and `subscription`
+// scopes.
 namespace org:user         = sumida_user
 namespace org:credit       = organization
 namespace org:subscription = organization

@@ -74,8 +74,8 @@ impl<S: SumidaState> UserService<S> {
   }
 
   /// 행 스코프는 `sumida_user#view` 술어 하나 — 상위 조직 관리자의 도달(`org->manage_user`)이
-  /// 목록과 단건 판정에서 같은 규칙으로 나온다. 종전에는 목록만 `ap::ns("user")` 로,
-  /// 단건 수정만 `org:user` + 조상 서브쿼리로 갈라져 있었다.
+  /// 목록과 단건 판정에서 같은 규칙으로 나온다. 둘을 따로 구현하면 하나는 통과하고 다른 하나는
+  /// 막는 어긋남이 구조적으로 가능해진다.
   pub(crate) fn select(&self, query: Select<Users>) -> Result<Select<Users>, SumidaError> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
@@ -146,8 +146,8 @@ impl<S: SumidaState> UserService<S> {
     //                                                  (is_admin/role_id/organization_id/is_enabled) locked
     //   (3) otherwise                                 → blocked (NoAccessPermission)
     //
-    // Changing one's own profile must go through the /me route (UpdateMe DTO). This route is
-    // the operator-privilege channel used to update other people.
+    // Changing one's own profile goes through the /me route (UpdateMe DTO). This route is the
+    // operator-privilege channel for updating other people.
     let allow_security_fields = if self.session.profile.is_admin {
       true
     } else {

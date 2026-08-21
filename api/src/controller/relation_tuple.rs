@@ -7,7 +7,7 @@ use crate::util::filter::{ConditionQuery, filter_descriptor_router};
 use crate::util::pagination::{List, Pagination};
 use crate::{SumidaState, service_ap, user_guard};
 
-/// `/relation-tuples` — the record of who holds what (design §9.6).
+/// `/relation-tuples` — the record of who holds what.
 ///
 /// Two gates, and they answer with **different error codes**, which is the thing to hold on to when
 /// reading a refusal:
@@ -22,7 +22,8 @@ use crate::{SumidaState, service_ap, user_guard};
 /// refuses first, so a caller who was never granted the service tier never reaches the part under
 /// test. Assert the code, not the status.
 ///
-/// `/access-policies` stays mounted beside this, read-only, for as long as Phase 1–2 runs (§9.6).
+/// `/access-policies` is mounted beside this and is read-only: a grant is written here, and read
+/// there in the flat shape the CASL client consumes.
 #[derive(Clone, Debug, Default)]
 pub struct RelationTupleController<S: SumidaState> {
   _state: std::marker::PhantomData<S>,

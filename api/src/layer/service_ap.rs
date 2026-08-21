@@ -90,10 +90,9 @@ where
 
       let req = Request::from_parts(parts, body);
 
-      // `service:<namespace>#can_<action>`. Between §14 steps 7 and 13 this went through
-      // `ap::ns(..)`, whose shim decided per namespace whether to answer from the compiled rule or
-      // from `access_policies`; once all four products were routed there was one store and no
-      // decision left to make, so step 14 deleted the shim and the call is made here directly.
+      // `service:<namespace>#can_<action>`, asked of the evaluator directly. Nothing stands between
+      // the gate and the rule: an indirection that decides per namespace where the answer comes
+      // from is a second authorization store wearing one name.
       //
       // A rule that does not compile refuses the request rather than admitting it. The error is
       // logged because a gate that fails closed and says nothing is indistinguishable from a

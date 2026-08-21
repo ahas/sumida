@@ -2,8 +2,7 @@
 //!
 //! **This is the authority, and it is the only one.** Both tiers answer from here: the route gate
 //! through `layer::service_ap` and the object tier through every service's `select` /
-//! `Authz::try_check`. The lateral-join evaluator over `access_policies` that preceded it is
-//! deleted, and nothing on a request path reads that table.
+//! `Authz::try_check`. Nothing on a request path decides authorization anywhere else.
 //!
 //! **sumida carries its own rules and nobody else's.** A product built on it hands its rule files
 //! to `Authz::install_rules` before anything reads the registry; the rule set is then sumida's file
@@ -16,9 +15,9 @@
 //!                                                                                an existing WHERE
 //! ```
 //!
-//! * `subject`  — one identity expansion, replacing four copies and a hand-parser.
+//! * `subject`  — one identity expansion, built once and read by everything that judges.
 //! * `ir`       — the rewrite representation.
-//! * `parse`    — the `.sz` rule language of §4.1.
+//! * `parse`    — the `.sz` rule language, whose grammar is `docs/sz-language.md`.
 //! * `registry` — the rule set, memoised, with the namespace inventory, and the install seam.
 //! * `validate` — the eight boot rules. Failure aborts start-up.
 //! * `compile`  — a rewrite becomes one boolean `SimpleExpr`.
@@ -67,8 +66,8 @@ pub enum AuthzError {
     definition: String,
     permission: String,
   },
-  /// A rule that parses but cannot become one SQL statement. §6.5 lists the shapes; the design's
-  /// requirement is that each is **named and refused**, never degraded into a second query.
+  /// A rule that parses but cannot become one SQL statement. Such a shape is **named and
+  /// refused**, never degraded into a second query — the whole model rests on one predicate.
   NotCompilable(String),
   Database(String),
 }
@@ -142,11 +141,11 @@ impl ObjectKey {
   /// Reads a caller-supplied id string as the type the definition's own key column has.
   ///
   /// Needed wherever an id arrives as text and the definition is not text-keyed — the tuple table
-  /// (`resource_id` is `text`), a URL path segment, a JSON body. `Authz::write` is the case that
-  /// found this: it took `TupleWrite::resource_id`, a `String`, straight into the `#grant` point
-  /// check, which then compared `organizations.id` against a text literal and failed the request
-  /// with `operator does not exist: integer = text`. A text-keyed definition cannot see the defect
-  /// at all, which is why it went unnoticed until an integer-keyed one was written through.
+  /// (`resource_id` is `text`), a URL path segment, a JSON body. Handing such a string to a point
+  /// check unconverted compares an integer key against a text literal, and Postgres answers
+  /// `operator does not exist: integer = text` on the request. A text-keyed definition never shows
+  /// the fault, so a caller that skips this is correct until the first integer-keyed definition
+  /// goes through it.
   pub fn typed(kind: ir::IdKind, definition: &str, id: &str) -> Result<Self, AuthzError> {
     let malformed =
       |what: &str| AuthzError::Schema(format!("`{definition}` is keyed by {what}, and `{id}` is not one"));
@@ -270,8 +269,7 @@ impl Authz {
     }
   }
 
-  /// A check on one of the string-named singletons — `service`, `platform`, `delegation_scope`
-  /// (design §8.2).
+  /// A check on one of the string-named singletons — `service`, `platform`, `delegation_scope`.
   ///
   /// Mechanically `check` with a text id; it exists as its own name because those three have no
   /// row behind them and reading `check("platform", "root", …)` as a row lookup is the mistake
@@ -286,23 +284,20 @@ impl Authz {
     Self::check(definition, id, permission, subject, db).await
   }
 
-  /// The service-tier grants one subject holds, in the shape `/me/access-policies` returns
-  /// (design §9.7).
+  /// The service-tier grants one subject holds, in the shape `/me/access-policies` returns.
   ///
-  /// One row per namespace with the relations aggregated into the legacy `action` array, which is
-  /// what `updateAbilityFor` (`casl/src/runtime/plugin.ts:19`) consumes — it builds
-  /// `can(action, `${namespace}:${object}`)` per element, so the payload has to keep both the
-  /// namespace strings and the literal `"service"` object. Service object ids *are* today's
-  /// namespace strings, so the projection is exact rather than approximate.
+  /// One row per namespace with the relations aggregated into an `action` array, because the CASL
+  /// client builds `can(action, `${namespace}:${object}`)` per element — so the payload has to
+  /// carry both the namespace strings and the literal `"service"` object. Service object ids *are*
+  /// the namespace strings, so the projection is exact rather than approximate.
   ///
   /// Two things it deliberately does not do:
   ///
-  /// * it does not project the object tier. Those grants are still `access_policies` rows on the
-  ///   legacy path (§11 Phase 1), and synthesising them from tuples would report a permission the
-  ///   evaluator does not yet consult.
-  /// * it does not invent an `effect: "deny"` row. Deny is a rule construct now, not a record, and
-  ///   the client's `updateAbilityFor` would turn a synthesised one into a `cannot(...)` nobody
-  ///   granted.
+  /// * it does not project the object tier. A row-level grant has no representation in a payload
+  ///   keyed by a namespace and the literal `service` object, and flattening one into that shape
+  ///   would tell the client it may act on rows the evaluator judges one at a time.
+  /// * it does not invent an `effect: "deny"` row. Blocking is a rule construct, not a record, and
+  ///   the client would turn a synthesised one into a `cannot(...)` nobody granted.
   pub async fn service_grants<C: ConnectionTrait>(
     subject: &SubjectSet,
     db: &C,
@@ -442,8 +437,8 @@ impl Authz {
     if drifted.is_empty() { Ok(report) } else { Err(AuthzError::Validation(drifted)) }
   }
 
-  /// Rewrites the `relation_definitions` / `permission_definitions` projection (E6) from the
-  /// compiled registry, in one transaction's worth of statements.
+  /// Rewrites the `relation_definitions` / `permission_definitions` projection from the compiled
+  /// registry, in one transaction's worth of statements.
   ///
   /// The projection is never read by the evaluator. It exists for the foreign key on
   /// `relation_tuples`, which is the only thing that can stop a caller writing a tuple on a
@@ -519,7 +514,7 @@ impl Authz {
       }
     }
 
-    // Anything the rules no longer declare, and that nothing points at, goes.
+    // Anything the rules do not declare, and that nothing points at, goes.
     let keep = wanted
       .iter()
       .map(|(definition, relation)| format!("('{definition}','{relation}')"))
@@ -724,10 +719,9 @@ mod boot_tests {
   /// compilation. So a missing **table** has to read as a deployment fact and not as drift, or
   /// every deployment with a feature switched off refuses to start.
   ///
-  /// This is the executable form of the whole feature-flag argument, and it is the reason there is
-  /// no per-product marker table any more: a product that ships only its own rules has no foreign
-  /// rules to suppress, and the branch that made an absent optional feature survivable was never
-  /// the marker.
+  /// A product ships only the rules it wants judged, so there are no foreign rules to suppress and
+  /// nothing needs a marker table to say which product a definition belongs to. What has to be
+  /// distinguished is a missing table from a missing column, and that is decided here.
   #[test]
   fn a_rule_whose_table_is_missing_is_absent_not_drift() {
     let dependencies = [dependency("boards", "id"), dependency("boards", "group_id")];

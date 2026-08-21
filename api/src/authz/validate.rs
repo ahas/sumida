@@ -1,10 +1,10 @@
-//! Boot validation (design §4.4). **Every failure here aborts start-up.**
+//! Boot validation. **Every failure here aborts start-up.**
 //!
-//! That is the point of the phase. The defects this replaces were all silent: a namespace nobody
-//! declared fell through to "no policy matches, deny"; a relation nobody defined was a string that
-//! matched nothing; a check nobody wrote was an absent `if`. None of them produced a symptom until
-//! somebody was locked out or read something they should not have. Here each of them is a process
-//! that will not start, with the offender named.
+//! That is the point of the phase. Every defect this catches is otherwise silent: a namespace
+//! nobody declared falls through to "nothing matches, deny"; a relation nobody defined is a string
+//! that matches nothing; a subject nothing can ever produce sits in the table looking like
+//! authority. None of them produces a symptom until somebody is locked out or reads something they
+//! should not have. Here each of them is a process that will not start, with the offender named.
 //!
 //! Every rule is checked against the whole registry and **all** the failures are reported at once,
 //! not the first — fixing a schema one boot at a time is how a person gives up and loosens the
@@ -13,7 +13,7 @@
 //! | rule | what it stops |
 //! |---|---|
 //! | 1 | a rewrite naming a relation or permission that does not exist |
-//! | 2 | a subject vocabulary that admits a tuple nothing can ever match (a reversed `admin:user` row), and a userset that is not O(1)-derivable from the session (E4) |
+//! | 2 | a subject vocabulary that admits a tuple nothing can ever match (a reversed `admin:user` row), and a userset that is not O(1)-derivable from the session |
 //! | 3 | a permission defined in terms of itself, directly or through a walk |
 //! | 4 | `^` over anything but a stored relation — an exclusion re-evaluated at every ancestor level is not a bounded join |
 //! | 5 | a `->` chain deeper than 4 |
@@ -52,8 +52,8 @@ pub fn validate(registry: &Registry) -> Result<(), AuthzError> {
   check_cycles(registry, &mut errors);
   check_namespaces(registry, &mut errors);
 
-  // A rule that survives every structural check and still will not compile is exactly the case
-  // §6.5 says must be named and refused rather than degraded silently.
+  // A rule that survives every structural check and still will not compile has to be named and
+  // refused here, rather than degraded silently into something the evaluator can run.
   if errors.is_empty() {
     check_compiles(registry, &mut errors);
   }
@@ -106,7 +106,7 @@ fn check_subject_spec(registry: &Registry, spec: &SubjectSpec, at: &str, errors:
         errors.push(format!("{at}: subject `{spec}` names undeclared definition `{ty}`"));
         return;
       };
-      // E4: a userset subject must be resolvable from the session in O(1), which is what keeps the
+      // A userset subject must be resolvable from the session in O(1), which is what keeps the
       // subject side one string match instead of a recursive resolution.
       match def.relation(relation).map(|r| &r.source) {
         Some(RelationSource::Derived(derivation))
@@ -506,8 +506,8 @@ mod tests {
     );
   }
 
-  /// Rule 1 — a rewrite naming something that does not exist. In the old model this was a string
-  /// that matched no policy, i.e. a silent deny; here it is a boot failure.
+  /// Rule 1 — a rewrite naming something that does not exist. Left unchecked it is a name that
+  /// matches nothing, i.e. a silent deny; here it is a boot failure.
   #[test]
   fn a_rewrite_naming_a_missing_relation_is_refused() {
     assert_rejected(
@@ -526,7 +526,7 @@ mod tests {
     );
   }
 
-  /// Rule 2, E4 — a userset subject that would need recursive resolution. Restricting subjects to
+  /// Rule 2 — a userset subject that would need recursive resolution. Restricting subjects to
   /// what the session yields in O(1) is what keeps the subject side one string match.
   #[test]
   fn a_userset_subject_that_is_not_session_derivable_is_refused() {

@@ -1,10 +1,10 @@
 use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
 use sea_orm_migration::prelude::*;
 
-/// The sumida-side columns and indexes the compiled rule set reads (design §3.4, §3.5).
+/// The sumida-side columns and indexes the compiled rule set reads.
 ///
-/// Purely additive, and — like everything else in this phase — read by nothing yet. Two changes,
-/// both because a rule needs a fact the schema does not currently record:
+/// Purely additive. Two columns, each because a rule needs a fact the rest of the schema does not
+/// record:
 ///
 /// * `boards.organization_id`, **nullable on purpose**. It is how "boards stay general-purpose"
 ///   lives in the model instead of in a config flag: a public-board deployment leaves it NULL and
@@ -15,10 +15,9 @@ use sea_orm_migration::prelude::*;
 ///   `EXISTS (SELECT 1 FROM users WHERE is_admin AND id = ANY($2))` that Postgres hoists into an
 ///   InitPlan — is index-backed rather than a sequential scan once per statement.
 ///
-/// The remaining columns of §3.4/§3.5 belong to definitions sumida does not declare, and land in
-/// the migrations of whatever declares them. Until they do, `Authz::boot` reports those definitions
-/// as drift and refuses to start, rather than activating a rule that reads a column which does not
-/// exist.
+/// Any further column a rule needs belongs to whichever definition declares it, and lands in that
+/// declarer's own migration. Until it does, `Authz::boot` reports the definition as drift and
+/// refuses to start, rather than activating a rule that reads a column which does not exist.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 

@@ -128,9 +128,9 @@ impl<S: SumidaState> BoardPostService<S> {
   /// `board_posts.user_id` 에서 파생), 게시판의 열람 권한(`board->view`, 그 안에 그룹과의
   /// 교집합이 들어 있다), 그리고 차단(`blocked`)의 빼기가 전부 그 안에 있다.
   ///
-  /// 종전에는 `ApChain` 이 `board_group AND board` 를 호출자 쪽에서 조립했다. 교집합은 규칙에
-  /// 그대로 남았지만(`board#edit` 의 `group->edit & editor_or_own_here`), 이제 조립하는 호출자가
-  /// 없으므로 잊을 수도 없다.
+  /// 그룹과 게시판의 교집합은 규칙 안에 있다(`board#edit` 의
+  /// `group->edit & editor_or_own_here`). 호출자 쪽에서 조립하지 않으므로 다음 호출자가 빼먹을
+  /// 자리가 없다.
   fn select(&self, query: Select<BoardPosts>) -> Result<Select<BoardPosts>, SumidaError> {
     Ok(Authz::filter(RESOURCE, "view", &self.subject(), Self::default_query_with(query))?)
   }
@@ -483,8 +483,8 @@ impl<S: SumidaState> BoardPostService<S> {
     };
 
     // `board#create = edit`, 그리고 `board#edit` 안에 `group->edit & editor_or_own_here` 라는
-    // 그룹과의 교집합이 이미 들어 있다. 종전의 `ap::chain()` 이 하던 조립이 규칙으로 옮겨간 것이며,
-    // 그룹이 없는 게시판(`boards.group_id IS NULL`)에서 그 갈래가 죽는 것도 그대로다.
+    // 그룹과의 교집합이 이미 들어 있다. 그룹이 없는 게시판(`boards.group_id IS NULL`)에서는 그
+    // 갈래가 죽고 게시판 자체의 권한만 남는다.
     Authz::try_check("board", board.id, "create", &self.subject(), &txn).await?;
 
     // Store attached file IDs for later processing
@@ -529,17 +529,17 @@ impl<S: SumidaState> BoardPostService<S> {
 
   /// Permission check for editing/deleting a post.
   ///
-  /// 종전에는 세 번의 `effects()` 결과를 호출자가 직접 조립했다:
+  /// 판정 전체가 `board_post#edit` 한 술어 안에 있다:
   ///
   /// ```text
-  /// allowed = (group_allow && board_allow) || owner_allow
-  /// denied  = group_deny  || board_deny   || owner_deny
+  /// allowed = (group_allow && board_allow) || author
+  /// denied  = group_deny  || board_deny    || post_deny
   /// result  = allowed && !denied
   /// ```
   ///
-  /// 그 산술이 통째로 `board_post#edit` 안으로 들어갔다 — `board->edit` 이 그룹과의 교집합을
-  /// 이미 품고 있고, 차단은 합집합 **바깥**에서 빠지므로 작성자 소유권으로 우회할 수 없다.
-  /// 조립하는 호출자가 없으니 다음 호출자가 빼먹을 수도 없다.
+  /// `board->edit` 이 그룹과의 교집합을 이미 품고 있고, 차단은 합집합 **바깥**에서 빠지므로
+  /// 작성자 소유권으로 우회할 수 없다. 이 산술을 호출자 쪽에서 조립하면 다음 호출자가 한 항을
+  /// 빼먹을 수 있다.
   async fn authorize_post_mutation<C: sea_orm::ConnectionTrait>(
     &self,
     action: &str,
@@ -638,7 +638,7 @@ impl<S: SumidaState> BoardPostService<S> {
     // Operator permission (board_group AND board) OR author ownership (board_post)
     self.authorize_post_mutation("delete", id, &txn).await?;
 
-    // Soft delete cascades to the comment/reply subtree (the FK cascade no longer fires on a soft delete).
+    // Soft delete cascades to the comment/reply subtree (an FK cascade does not fire on a soft delete).
     let ids = util::collect_descendant_post_ids(id, &txn).await?;
 
     // Free each post's attached files, then mark the whole subtree deleted.

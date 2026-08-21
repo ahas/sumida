@@ -146,9 +146,8 @@ async fn seed_board_post(db: &DatabaseConnection, author_id: i32) -> (i32, i32, 
 /// `sumida_user` — the list and the point check are one predicate, and the organization tier is
 /// what opens both.
 ///
-/// This is `managed_org_ids`'s defect made impossible: the list used to be `ap::ns("user")` and the
-/// update used to be `ap::ns("org:user")` plus an ancestor walk, so a manager could modify a user
-/// they could not enumerate. Both are `sumida_user#…` now.
+/// Both directions resolve `sumida_user#…`. Scoping the list one way and the update another lets a
+/// manager modify a user they cannot enumerate, and neither half looks wrong on its own.
 #[tokio::test]
 async fn users_are_scoped_by_the_organization_tier_in_both_directions() {
   let mock = Mock::new().await;
@@ -200,12 +199,11 @@ async fn users_are_scoped_by_the_organization_tier_in_both_directions() {
   );
 }
 
-/// The object-wide tier — what `object = '*'` meant (§2.3) — reaches **every** row.
+/// The object-wide tier reaches **every** row of its namespace.
 ///
-/// The acceptance criterion for the `object = '*'` → `service:<ns>#op_read` mapping. Without it the
-/// mapping is untested in the direction that matters: a fixture that granted the wrong relation
-/// would grant nothing, every "should be forbidden" assertion would still pass, and the capability
-/// would be gone with the suite green.
+/// Without a case in this direction the tier is untested where it matters: a fixture that granted
+/// the wrong relation would grant nothing, every "should be forbidden" assertion would still pass,
+/// and the capability would be gone with the suite green.
 #[tokio::test]
 async fn an_object_wide_grant_reaches_rows_the_caller_has_no_share_on() {
   let mock = Mock::new().await;
@@ -251,7 +249,7 @@ async fn an_object_wide_grant_reaches_rows_the_caller_has_no_share_on() {
 // ─── files ───────────────────────────────────────────────────────────────────────────────────
 
 /// `file` — ownership derives from `files.user_id`, a share is one tuple, and the aggregate is the
-/// same predicate as the list (G11).
+/// same predicate as the list.
 #[tokio::test]
 async fn files_are_scoped_by_ownership_and_by_share() {
   let mock = Mock::new().await;
@@ -273,8 +271,8 @@ async fn files_are_scoped_by_ownership_and_by_share() {
   let outsider_session = Session::login(mock.server.addr, &outsider, "a caller with the gate only").await;
   outsider_session.assert_authenticated().await;
 
-  // 업로더는 정책 행 없이도 자기 파일을 본다 — `file#owner` 가 `files.user_id` 에서 파생되기
-  // 때문이다. 종전에는 업로드 때 심어 둔 `ap::edit()` 행이 그 일을 했다.
+  // 업로더는 부여 없이도 자기 파일을 본다 — `file#owner` 가 `files.user_id` 에서 파생되기
+  // 때문이다. 소유권이 별도의 행이면 그 행과 컬럼이 어긋날 수 있다.
   assert_listed(
     &owner_session.probe_list("/files?limit=200").await,
     "uuid",
@@ -314,19 +312,19 @@ async fn files_are_scoped_by_ownership_and_by_share() {
     "one share reached a file it does not name"
   );
 
-  // G11(집계와 목록이 같은 술어라는 것)은 평가기 층에서
+  // 집계와 목록이 같은 술어라는 것은 평가기 층에서
   // `authz_regressions.rs::g11_the_file_aggregate_and_the_file_list_are_one_predicate` 가 든다.
-  // 여기서 HTTP 로 재확인하지 않는 이유는 `GET /files/stats` 가 이 변경과 무관하게 깨져 있기
+  // 여기서 HTTP 로 재확인하지 않는 이유는 `GET /files/stats` 가 인가와 무관하게 깨져 있기
   // 때문이다: `SUM(files.size)` 는 Postgres 에서 `numeric` 인데 핸들러가 `Option<i64>` 로 디코딩해
-  // 스코프 안에 파일이 하나라도 있으면 500 이 난다. 이 단계의 일이 아니라 그대로 둔다.
+  // 스코프 안에 파일이 하나라도 있으면 500 이 난다.
 }
 
-/// **G12 through HTTP** — a read share does not confer deletion.
+/// **Through HTTP** — a read share does not confer deletion.
 ///
-/// `FileService::delete` used to pass `"read"` to `.action(…)`, so anyone who could see a file could
-/// delete it. `view` and `remove` are two different rules now, and this asserts the difference at
-/// the endpoint rather than in the rule: the refusal must be `E1008` (the row), because the caller
-/// was given `service:file#delete` and therefore passed the gate.
+/// A delete path that authorizes against the power to read lets anyone who can see a file delete
+/// it. `view` and `remove` are two different rules, and this asserts the difference at the endpoint
+/// rather than in the rule: the refusal must be `E1008` (the row), because the caller was given
+/// `service:file#delete` and therefore passed the gate.
 #[tokio::test]
 async fn deleting_a_file_needs_remove_and_a_read_share_is_not_it() {
   let mock = Mock::new().await;
@@ -377,10 +375,9 @@ async fn deleting_a_file_needs_remove_and_a_read_share_is_not_it() {
 /// `board_post` — authorship derives from `board_posts.user_id`, and a stranger who holds the whole
 /// route gate is still refused by the row.
 ///
-/// `authorize_post_mutation` used to assemble `(group && board) || owner` from three `effects()`
-/// calls; it is one `board_post#edit` now, and the intersection lives in `board#edit`. The stranger
-/// case is what proves the row half still runs: they hold `service:board_post#update`, so a refusal
-/// can only come from the row.
+/// `(group && board) || author` is one `board_post#edit` predicate, with the intersection inside
+/// `board#edit`. The stranger case is what proves the row half runs at all: they hold
+/// `service:board_post#update`, so a refusal can only come from the row.
 #[tokio::test]
 async fn a_post_is_editable_by_its_author_and_not_by_a_stranger_holding_the_gate() {
   let mock = Mock::new().await;
@@ -401,8 +398,8 @@ async fn a_post_is_editable_by_its_author_and_not_by_a_stranger_holding_the_gate
   let stranger_session = Session::login(mock.server.addr, &stranger, "a stranger with the gate").await;
   stranger_session.assert_authenticated().await;
 
-  // 작성자는 정책 행 없이도 자기 글에 닿는다 — `board_post#author` 가 `board_posts.user_id` 에서
-  // 파생되기 때문이다. 종전에는 create 가 심어 둔 `ap::edit()` 행이 그 일을 했다.
+  // 작성자는 부여 없이도 자기 글에 닿는다 — `board_post#author` 가 `board_posts.user_id` 에서
+  // 파생되기 때문이다. 소유권이 별도의 행이면 그 행과 컬럼이 어긋날 수 있다.
   author_session
     .probe_one(&format!("/board-posts/{post_id}"), &post_id)
     .await
@@ -717,10 +714,10 @@ async fn the_global_resources_open_only_at_the_object_wide_tier() {
 /// `board_file` — an attachment's delete is authorized through its post, never by holding the
 /// attachment namespace alone.
 ///
-/// This is §12.8's containment shape: a child row reached by id must not skip the scope its parent
-/// applies. The old code joined `board_files.post_id` and compared it against the policy's object,
-/// so the *post* id had to be granted; the definition is keyed by `board_files.file_uuid` and
-/// resolves through `post->edit`, so the grant that opens it is a grant on the board.
+/// Containment: a child row reached by id must not skip the scope its parent applies. The
+/// definition is keyed by `board_files.file_uuid` and resolves through `post->edit`, so the grant
+/// that opens an attachment is a grant on the board — never one on the attachment namespace, and
+/// never one that names the post id as the object.
 ///
 /// The **delete** path is used rather than the read path because `GET /board-files` and
 /// `GET /board-files/file` are broken independently of this change — the list projects the key as
@@ -809,8 +806,8 @@ async fn board_topics_follow_their_board_and_groups_carry_their_children() {
   session.probe_list("/boards?limit=200").await.assert_empty();
 
   // 그룹만 열어도 게시판은 열리지 않는다 — `board#view` 의 그룹 갈래는 교집합이기 때문이다
-  // (`group->view & viewer_or_edit_here`). 종전 `ApChain` 이 호출자 쪽에서 조립하던 AND 가
-  // 규칙 안으로 옮겨간 것이고, 합집합으로 완화되지 않았다는 것이 여기서 확인된다.
+  // (`group->view & viewer_or_edit_here`). 이 AND 가 합집합으로 느슨해지지 않았다는 것을
+  // 여기서 확인한다.
   grant_object(&db, &caller, "board_group", &group_id.to_string(), vec!["read".into()])
     .await
     .expect("group viewer");
@@ -830,9 +827,9 @@ async fn board_topics_follow_their_board_and_groups_carry_their_children() {
 /// The role form's wire contract survives, and the caller's own payload changes with it.
 ///
 /// `RoleForm.vue` posts `accessPolicies: [{namespace, object:["service"], action, effect}]` and
-/// reads the same shape back. That contract is deliberately unchanged (§9.4) — what changed is
-/// where the grants live, so the round trip is the assertion: post, read back, and then check that
-/// a member of that role actually receives the capability through `/me/access-policies`.
+/// reads the same shape back. **That wire contract is fixed by the client**, so the round trip is
+/// the assertion: post, read back, and then check that a member of that role actually receives the
+/// capability through `/me/access-policies`.
 ///
 /// The last part is what makes it more than a serialisation test. A round trip that stored the
 /// grant somewhere nobody reads would pass every step but the last.
@@ -933,9 +930,9 @@ async fn the_role_form_round_trips_and_the_grant_reaches_the_roles_members() {
 
 /// A block is refused by the form rather than stored as a grant.
 ///
-/// `effect: "deny"` had a meaning the tuple store cannot hold — there is no negative tuple and no
-/// `effect` column (§3). Accepting it and writing an `allow` would report a block that does not
-/// exist, which is the worst of the three possible answers.
+/// `effect: "deny"` names something the tuple store cannot hold — there is no negative tuple and no
+/// `effect` column. Accepting it and writing an `allow` would report a block that does not exist,
+/// which is the worst of the three possible answers.
 #[tokio::test]
 async fn the_role_form_refuses_a_deny_instead_of_storing_it_as_a_grant() {
   let mock = Mock::new().await;
