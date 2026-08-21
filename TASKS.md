@@ -20,10 +20,19 @@
       --features session-store-aws-dynamodb,jwt dynamo_jwt_store_roundtrip
   ```
 
-### 고아 파일 정리의 S3 백엔드
-- 정리기는 로컬 파일시스템 백엔드로 `api/tests/file_lifecycle.rs` 가 확인한다 — 대상을 고르는
-  질의부터 객체와 행이 함께 사라지는 데까지. S3 백엔드는 같은 트레이트의 다른 구현이고, 그쪽
-  경로는 버킷 없이 돌지 않는다.
+### 고아 파일 정리의 S3 백엔드 — 기본 스위트 밖
+- 로컬 파일시스템 백엔드는 `api/tests/file_lifecycle.rs` 가 기본 스위트에서 확인한다. S3 는 같은
+  트레이트의 다른 구현이고 버킷이 있어야 돌므로 `api/tests/file_lifecycle_s3.rs` 로 따로 선다.
+- 버킷과 AWS 자격을 갖추고 아래를 돌린다. 두 변수 모두 필요하다 — 하나는 스토어를 그 버킷으로
+  가리키고, 하나는 케이스가 실제로 돌아도 되는지를 정한다. 첫 케이스가 스토어의 백엔드를 먼저
+  확인하므로, 설정이 빠지면 나머지가 로컬에서 통과하며 S3 에 대해 아무 말도 하지 않는 일은
+  생기지 않는다.
+
+  ```
+  SUMIDA_TEST_S3_BUCKET=<버킷> SUMIDA_STORAGE__S3__BUCKET=<버킷> \
+    cargo test --features e2e/system-settings,api/storage-aws-s3 \
+      -p api --test file_lifecycle_s3
+  ```
 
 ## 결제 — 2단계 결제 (제품 결정 + 샌드박스 필요)
 
