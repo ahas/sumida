@@ -5,13 +5,13 @@ use infra::aws;
 use infra::settings;
 use serde_json::json;
 
-use super::ApiController;
+use super::{ApiController, ControllerRouter};
+use crate::SumidaState;
 use crate::service::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
 #[cfg(feature = "storage-aws-s3")]
 use crate::util::s3;
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct MailFormController<S: SumidaState> {
@@ -129,28 +129,20 @@ where
   S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
-    let route_read = Router::new()
-      .route("/", routing::get(Self::list))
-      .route("/{kind}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "mail_form", read));
-    let route_filters = filter_descriptor_router::<S, MailFormFilter>(state, "mail_form");
-    let route_create = Router::new()
-      .route("/", routing::post(Self::create))
-      .route("/files", routing::post(Self::upload_files))
-      .route_layer(service_ap!(state, "mail_form", create));
-    let route_update = Router::new() //
-      .route("/{kind}", routing::patch(Self::update))
-      .route_layer(service_ap!(state, "mail_form", update));
-    let route_delete = Router::new() //
-      .route("/{kind}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "mail_form", delete));
-
-    Router::<S>::new()
-      .merge(route_read)
-      .merge(route_filters)
-      .merge(route_create)
-      .merge(route_update)
-      .merge(route_delete)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "mail_form")
+      .read(
+        Router::new() //
+          .route("/", routing::get(Self::list))
+          .route("/{kind}", routing::get(Self::get)),
+      )
+      .descriptor::<MailFormFilter>()
+      .create(
+        Router::new()
+          .route("/", routing::post(Self::create))
+          .route("/files", routing::post(Self::upload_files)),
+      )
+      .update(Router::new().route("/{kind}", routing::patch(Self::update)))
+      .delete(Router::new().route("/{kind}", routing::delete(Self::delete)))
+      .build()
   }
 }

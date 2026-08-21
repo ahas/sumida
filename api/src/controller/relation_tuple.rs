@@ -1,18 +1,18 @@
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
-use super::ApiController;
+use super::{ApiController, ControllerRouter};
+use crate::SumidaState;
 use crate::service::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 /// `/relation-tuples` — the record of who holds what.
 ///
 /// Two gates, and they answer with **different error codes**, which is the thing to hold on to when
 /// reading a refusal:
 ///
-/// * the route gate (`service_ap!`) asks `service:access_policy#can_<action>` and refuses with
+/// * the route gate ([`ControllerRouter`]) asks `service:access_policy#can_<action>` and refuses with
 ///   `NoServiceAvailable` — `403`, code `1009`. It runs **before** the handler, so it says nothing
 ///   about the tuple being written.
 /// * `Authz::write` / `Authz::revoke` ask `<resource_type>#grant` **on the object named in the
@@ -91,23 +91,15 @@ where
     // giving it a namespace of its own would silently take the capability away from everyone who
     // holds it today. `service:access_policy` resolves to the `relation_tuple` definition through
     // the inventory (`schema.sz`'s `namespace access_policy service = relation_tuple`).
-    let route_read = Router::new() //
-      .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "access_policy", read));
-    let route_filters = filter_descriptor_router::<S, RelationTupleFilter>(state, "access_policy");
-    let route_create = Router::new() //
-      .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(state, "access_policy", create));
-    let route_delete = Router::new() //
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "access_policy", delete));
-
-    Router::new() //
-      .merge(route_read)
-      .merge(route_filters)
-      .merge(route_create)
-      .merge(route_delete)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "access_policy")
+      .read(
+        Router::new() //
+          .route("/", routing::get(Self::list))
+          .route("/{id}", routing::get(Self::get)),
+      )
+      .descriptor::<RelationTupleFilter>()
+      .create(Router::new().route("/", routing::post(Self::create)))
+      .delete(Router::new().route("/{id}", routing::delete(Self::delete)))
+      .build()
   }
 }

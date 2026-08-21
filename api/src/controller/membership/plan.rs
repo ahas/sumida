@@ -3,11 +3,11 @@ use std::marker::PhantomData;
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
-use crate::controller::ApiController;
+use crate::SumidaState;
+use crate::controller::{ApiController, ControllerRouter};
 use crate::service::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct PlanController<S: SumidaState>(PhantomData<S>);
@@ -72,33 +72,16 @@ impl<S: SumidaState> PlanController<S> {
 
 impl<S: SumidaState> ApiController<S> for PlanController<S> {
   fn router(self, state: &S) -> Router<S> {
-    let read = Router::new()
-      .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "membership_plan", read));
-    let route_filters = filter_descriptor_router::<S, PlanFilter>(state, "membership_plan");
-    let create = Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!(
-      state,
-      "membership_plan",
-      create
-    ));
-    let update = Router::new().route("/{id}", routing::patch(Self::update)).route_layer(service_ap!(
-      state,
-      "membership_plan",
-      update
-    ));
-    let delete = Router::new().route("/{id}", routing::delete(Self::delete)).route_layer(service_ap!(
-      state,
-      "membership_plan",
-      delete
-    ));
-
-    Router::new()
-      .merge(read)
-      .merge(route_filters)
-      .merge(create)
-      .merge(update)
-      .merge(delete)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "membership_plan")
+      .read(
+        Router::new()
+          .route("/", routing::get(Self::list))
+          .route("/{id}", routing::get(Self::get)),
+      )
+      .descriptor::<PlanFilter>()
+      .create(Router::new().route("/", routing::post(Self::create)))
+      .update(Router::new().route("/{id}", routing::patch(Self::update)))
+      .delete(Router::new().route("/{id}", routing::delete(Self::delete)))
+      .build()
   }
 }

@@ -3,11 +3,11 @@ use std::marker::PhantomData;
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
-use crate::controller::ApiController;
+use crate::SumidaState;
+use crate::controller::{ApiController, ControllerRouter};
 use crate::service::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct CouponController<S: SumidaState>(PhantomData<S>);
@@ -107,38 +107,30 @@ impl<S: SumidaState> CouponController<S> {
 
 impl<S: SumidaState> ApiController<S> for CouponController<S> {
   fn router(self, state: &S) -> Router<S> {
-    let read = Router::new()
-      .route("/", routing::get(Self::list))
-      .route("/{id}/grants", routing::get(Self::grants))
-      .route_layer(service_ap!(state, "coupon", read));
-    let route_filters = filter_descriptor_router::<S, CouponFilter>(state, "coupon");
-    let create = Router::new()
-      .route("/", routing::post(Self::create))
-      .route_layer(service_ap!(state, "coupon", create));
-    // 배포와 회수는 쿠폰 자체를 손보는 일이라 `update` 로 묶는다. 서비스 쪽 행 점검도 같은
-    // `coupon#edit` 이므로 게이트를 통과한 호출자가 행에서 다른 이유로 막히지 않는다.
-    let update = Router::new()
-      .route("/{id}", routing::patch(Self::update))
-      .route("/{id}/grant", routing::post(Self::grant).delete(Self::revoke))
-      .route("/{id}/grant-bulk", routing::post(Self::grant_bulk))
-      .route_layer(service_ap!(state, "coupon", update));
-    let delete = Router::new()
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "coupon", delete));
-
-    // 받은 것을 쓰는 길은 관리 게이트 바깥이다. 자기 앞으로 발행된 쿠폰을 보고 쓰는 데에
-    // 쿠폰 관리 권한을 요구하면, 평범한 계정이 자기가 받은 것을 쓰지 못한다.
-    let own_grants = Router::new()
-      .route("/mine", routing::get(Self::mine))
-      .route("/redeem", routing::post(Self::redeem));
-
-    Router::new()
-      .merge(read)
-      .merge(route_filters)
-      .merge(create)
-      .merge(update)
-      .merge(delete)
-      .merge(own_grants)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "coupon")
+      .read(
+        Router::new()
+          .route("/", routing::get(Self::list))
+          .route("/{id}/grants", routing::get(Self::grants)),
+      )
+      .descriptor::<CouponFilter>()
+      .create(Router::new().route("/", routing::post(Self::create)))
+      // 배포와 회수는 쿠폰 자체를 손보는 일이라 `update` 로 묶는다. 서비스 쪽 행 점검도 같은
+      // `coupon#edit` 이므로 게이트를 통과한 호출자가 행에서 다른 이유로 막히지 않는다.
+      .update(
+        Router::new()
+          .route("/{id}", routing::patch(Self::update))
+          .route("/{id}/grant", routing::post(Self::grant).delete(Self::revoke))
+          .route("/{id}/grant-bulk", routing::post(Self::grant_bulk)),
+      )
+      .delete(Router::new().route("/{id}", routing::delete(Self::delete)))
+      // 받은 것을 쓰는 길은 관리 게이트 바깥이다. 자기 앞으로 발행된 쿠폰을 보고 쓰는 데에
+      // 쿠폰 관리 권한을 요구하면, 평범한 계정이 자기가 받은 것을 쓰지 못한다.
+      .ungated(
+        Router::new()
+          .route("/mine", routing::get(Self::mine))
+          .route("/redeem", routing::post(Self::redeem)),
+      )
+      .build()
   }
 }

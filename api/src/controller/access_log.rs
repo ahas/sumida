@@ -1,11 +1,11 @@
 use axum::extract::{Path, Query, State};
 use axum::{Router, routing};
 
-use super::ApiController;
+use super::{ApiController, ControllerRouter};
+use crate::SumidaState;
 use crate::service::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct AccessLogController<S: SumidaState> {
@@ -55,19 +55,14 @@ where
   S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
-    let route_read = Router::new()
-      .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "access_log", read));
-    let route_filters = filter_descriptor_router::<S, AccessLogFilter>(state, "access_log");
-    let route_delete = Router::new() //
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "access_log", delete));
-
-    Router::new() //
-      .merge(route_read)
-      .merge(route_filters)
-      .merge(route_delete)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "access_log")
+      .read(
+        Router::new() //
+          .route("/", routing::get(Self::list))
+          .route("/{id}", routing::get(Self::get)),
+      )
+      .descriptor::<AccessLogFilter>()
+      .delete(Router::new().route("/{id}", routing::delete(Self::delete)))
+      .build()
   }
 }

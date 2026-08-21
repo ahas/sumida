@@ -6,12 +6,12 @@ use error::SumidaError;
 use infra::session::UserSession;
 use uuid::Uuid;
 
-use crate::controller::ApiController;
+use crate::SumidaState;
+use crate::controller::{ApiController, ControllerRouter};
 use crate::service::fs::dto::*;
 use crate::service::fs::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct FileController<S: SumidaState> {
@@ -99,36 +99,20 @@ where
   S: SumidaState,
 {
   fn router(self, state: &S) -> axum::Router<S> {
-    let route_read = Router::new()
-      .route("/", routing::get(Self::list))
-      .route("/{uuid}", routing::get(Self::get))
-      .route("/stats", routing::get(Self::get_stats))
-      .route("/{uuid}/download", routing::get(Self::download))
-      .route_layer(service_ap!(state, "file", read));
-    let route_filters = filter_descriptor_router::<S, FileFilter>(state, "file");
-
-    let route_create = Router::new()
-      .route("/", routing::post(Self::upload))
-      .route_layer(service_ap!(state, "file", create));
-
-    // let route_update = Router::new() //
-    //   .route_layer(service_ap!(state, "file", update));
-
-    let route_delete = Router::new()
-      .route("/{uuid}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "file", delete));
-
-    // Inline serving authorizes per-row (post visibility for board files, `file:read` otherwise),
-    // so it sits under `user_guard` only — not the `file:read` service gate.
-    let route_inline = Router::new().route("/{uuid}/inline", routing::get(Self::inline));
-
-    Router::new()
-      .merge(route_read)
-      .merge(route_filters)
-      .merge(route_create)
-      // .merge(route_update)
-      .merge(route_delete)
-      .merge(route_inline)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "file")
+      .read(
+        Router::new()
+          .route("/", routing::get(Self::list))
+          .route("/{uuid}", routing::get(Self::get))
+          .route("/stats", routing::get(Self::get_stats))
+          .route("/{uuid}/download", routing::get(Self::download)),
+      )
+      .descriptor::<FileFilter>()
+      .create(Router::new().route("/", routing::post(Self::upload)))
+      .delete(Router::new().route("/{uuid}", routing::delete(Self::delete)))
+      // Inline serving authorizes per-row (post visibility for board files, `file:read` otherwise),
+      // so it takes the session guard only — not the `file:read` service gate.
+      .ungated(Router::new().route("/{uuid}/inline", routing::get(Self::inline)))
+      .build()
   }
 }

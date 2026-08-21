@@ -127,35 +127,43 @@ file:<uuid>#viewer@user:9               객체(행) — 이 행에 닿을 자격
 부모-자식 종속은 규칙 쪽에서 푼다. 자식 정의가 부모로 가는 관계를 갖고 부모의 권한을 참조하면,
 자식 조회에 부모 조인이 자동으로 따라붙는다. 서비스 코드에서 조인을 조립하지 않는다.
 
-### 4. 컨트롤러 표준 — 액션별 `service_ap!` 분리
+### 4. 컨트롤러 표준 — `ControllerRouter`
 
-`RoleController`가 기준 패턴.
+네임스페이스를 한 번만 적고, 액션별 게이트는 거기서 파생시킨다.
 
 ```rust
 fn router(self, state: &S) -> Router<S> {
-  let route_read   = Router::new().route("/", get(Self::list)).route("/{id}", get(Self::get))
-    .route_layer(service_ap!(state, "my:ns", read));
-  let route_create = Router::new().route("/", post(Self::create))
-    .route_layer(service_ap!(state, "my:ns", create));
-  let route_update = Router::new().route("/{id}", patch(Self::update))
-    .route_layer(service_ap!(state, "my:ns", update));
-  let route_delete = Router::new().route("/{id}", delete(Self::delete))
-    .route_layer(service_ap!(state, "my:ns", delete));
-
-  Router::new().merge(route_read).merge(route_create).merge(route_update).merge(route_delete)
-    .route_layer(user_guard!(state))   // 최상위에 한 번만
+  ControllerRouter::new(state, "my:ns")
+    .read(Router::new().route("/", get(Self::list)).route("/{id}", get(Self::get)))
+    .descriptor::<MyFilter>()
+    .create(Router::new().route("/", post(Self::create)))
+    .update(Router::new().route("/{id}", patch(Self::update)))
+    .delete(Router::new().route("/{id}", delete(Self::delete)))
+    .build()
 }
 ```
+
+부르지 않은 액션은 그냥 없다 — 지우기만 있는 리소스는 `read` 와 `delete` 만 부른다.
+`build()` 가 넷을 합치고 `user_guard!` 를 최상위에 한 번 건다.
+
+**액션이 한 묶음에 섞이면 권한 검사가 약한 쪽으로 샌다.** 그래서 이 분리는 규약이 아니라 구조여야
+한다 — 손으로 다섯 묶음을 쓰면 네임스페이스 문자열이 컨트롤러마다 대여섯 번 반복되고, 그중 하나만
+오타가 나도 그 라우트는 다른 게이트 뒤로 조용히 옮겨간 채 그대로 컴파일되고 그대로 서비스된다.
+
+게이트를 받지 않는 라우트는 `ungated()` 로 붙인다. 자기 것에 대해 행동하는 호출(자기 쿠폰을 쓰는
+것 같은)이 여기 온다 — 세션 가드는 그대로 받는다.
 
 레이어 종류:
 - `user_guard!(state)` — 세션 또는 `Authorization: Bearer <jwt>` / `APIKEY <key>` 검증
 - `admin_guard!(state)` — `profile.is_admin` 체크
-- `service_ap!(state,"ns",action)` — 라우트 게이트. `service:<ns>#can_<action>` 을 통과해야 진입하며, 행 스코프는 그 뒤에 따로 검사된다
+- `service_ap!(state,"ns",action)` — 라우트 게이트 자체. `ControllerRouter` 가 액션마다 이것을 건다
+
+**모든 컨트롤러가 이 형태인 것은 아니다.** 인가를 서비스 안에서 규칙으로 푸는 리소스는 라우트
+게이트를 갖지 않고 세션 가드만 받는다(멤버십의 구독·크레딧·결제가 그렇다). 게이트가 없는 것과
+게이트를 빠뜨린 것은 다르므로, 게이트를 두지 않기로 했으면 그 이유가 컨트롤러에 적혀 있어야 한다.
 
 게시판 단위 권한을 위한 레이어는 없다. 그것은 규칙이 푼다 — `board_post#edit` 이 글의 그룹과
 게시판과 작성자를 합집합으로 묶고 차단을 빼므로, 호출 자리에서 조립할 것이 남지 않는다.
-
-**중요**: 액션별로 `service_ap!`를 따로 묶어야 한다. 한 묶음에 다른 액션을 섞으면 권한 체크가 약한 쪽으로 새어 나간다.
 
 ### 5. DTO 표준
 

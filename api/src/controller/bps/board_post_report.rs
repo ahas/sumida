@@ -1,11 +1,11 @@
 use axum::extract::{Path, Query, State};
 use axum::{Json, Router, routing};
 
-use crate::controller::ApiController;
+use crate::SumidaState;
+use crate::controller::{ApiController, ControllerRouter};
 use crate::service::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct BoardPostReportController<S: SumidaState> {
@@ -72,25 +72,15 @@ where
   fn router(self, state: &S) -> axum::Router<S> {
     // Reading/resolving reports is moderator-only; filing one is open to any authenticated user
     // that can read the post (enforced in the service).
-    let route_read = Router::new()
-      .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get))
-      .route_layer(service_ap!(state, "board_post_report", read));
-    let route_filters = filter_descriptor_router::<S, BoardPostReportFilter>(state, "board_post_report");
-    let route_create = Router::new().route("/", routing::post(Self::create)).route_layer(service_ap!(
-      state,
-      "board_post_report",
-      create
-    ));
-    let route_delete = Router::new()
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "board_post_report", delete));
-
-    Router::new()
-      .merge(route_read)
-      .merge(route_filters)
-      .merge(route_create)
-      .merge(route_delete)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "board_post_report")
+      .read(
+        Router::new() //
+          .route("/", routing::get(Self::list))
+          .route("/{id}", routing::get(Self::get)),
+      )
+      .descriptor::<BoardPostReportFilter>()
+      .create(Router::new().route("/", routing::post(Self::create)))
+      .delete(Router::new().route("/{id}", routing::delete(Self::delete)))
+      .build()
   }
 }

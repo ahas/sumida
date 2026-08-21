@@ -124,6 +124,9 @@ where
   }
 
   /// Apply each action's gate, merge, and put the session guard over the result.
+  ///
+  /// An action the controller never named holds no routes, and axum refuses a layer that has
+  /// nothing under it, so such an action contributes nothing instead of a gate guarding no route.
   pub fn build(self) -> Router<StateT> {
     let Self {
       state,
@@ -134,13 +137,16 @@ where
       delete,
       ungated,
     } = self;
-    let gate = |action: &str| ServiceApLayer::new(state.clone(), namespace, action);
+    let gate = |router: Router<StateT>, action: &str| match router.has_routes() {
+      true => router.route_layer(ServiceApLayer::new(state.clone(), namespace, action)),
+      false => router,
+    };
 
     Router::new()
-      .merge(read.route_layer(gate("read")))
-      .merge(create.route_layer(gate("create")))
-      .merge(update.route_layer(gate("update")))
-      .merge(delete.route_layer(gate("delete")))
+      .merge(gate(read, "read"))
+      .merge(gate(create, "create"))
+      .merge(gate(update, "update"))
+      .merge(gate(delete, "delete"))
       .merge(ungated)
       .route_layer(UserGuardLayer::new(state.clone()))
   }
@@ -150,10 +156,36 @@ where
 mod tests {
   use super::ApiController;
   use crate::SumidaState;
+  use crate::controller::access_log::AccessLogController;
   use crate::controller::api_key::ApiKeyController;
+  use crate::controller::ban::BanController;
+  #[cfg(feature = "board")]
+  use crate::controller::bps::board::BoardController;
+  #[cfg(feature = "board")]
+  use crate::controller::bps::board_file::BoardFileController;
+  #[cfg(feature = "board")]
+  use crate::controller::bps::board_group::BoardGroupController;
+  #[cfg(feature = "board")]
+  use crate::controller::bps::board_post::BoardPostController;
+  #[cfg(feature = "board")]
+  use crate::controller::bps::board_post_reaction::BoardPostReactionController;
+  #[cfg(feature = "board")]
+  use crate::controller::bps::board_post_report::BoardPostReportController;
+  #[cfg(feature = "board")]
+  use crate::controller::bps::board_topic::BoardTopicController;
+  #[cfg(feature = "file")]
+  use crate::controller::fs::file::FileController;
+  #[cfg(feature = "mail-form")]
+  use crate::controller::mail_form::MailFormController;
+  #[cfg(feature = "membership")]
+  use crate::controller::membership::coupon::CouponController;
+  #[cfg(feature = "membership")]
+  use crate::controller::membership::plan::PlanController;
   use crate::controller::organization::OrganizationController;
+  use crate::controller::relation_tuple::RelationTupleController;
   use crate::controller::role::RoleController;
   use crate::controller::user::UserController;
+  use crate::controller::user_invitation::UserInvitationController;
 
   #[derive(Clone)]
   struct DummyState;
@@ -174,5 +206,32 @@ mod tests {
     assert!(UserController::new().router(&state).has_routes());
     assert!(OrganizationController::new().router(&state).has_routes());
     assert!(ApiKeyController::new().router(&state).has_routes());
+    assert!(AccessLogController::new().router(&state).has_routes());
+    assert!(BanController::new().router(&state).has_routes());
+    assert!(RelationTupleController::new().router(&state).has_routes());
+    assert!(UserInvitationController::new().router(&state).has_routes());
+
+    #[cfg(feature = "mail-form")]
+    assert!(MailFormController::new().router(&state).has_routes());
+
+    #[cfg(feature = "board")]
+    {
+      assert!(BoardController::new().router(&state).has_routes());
+      assert!(BoardFileController::new().router(&state).has_routes());
+      assert!(BoardGroupController::new().router(&state).has_routes());
+      assert!(BoardPostController::new().router(&state).has_routes());
+      assert!(BoardPostReactionController::new().router(&state).has_routes());
+      assert!(BoardPostReportController::new().router(&state).has_routes());
+      assert!(BoardTopicController::new().router(&state).has_routes());
+    }
+
+    #[cfg(feature = "file")]
+    assert!(FileController::new().router(&state).has_routes());
+
+    #[cfg(feature = "membership")]
+    {
+      assert!(CouponController::new().router(&state).has_routes());
+      assert!(PlanController::new().router(&state).has_routes());
+    }
   }
 }

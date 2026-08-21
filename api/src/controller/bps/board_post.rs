@@ -3,11 +3,11 @@ use axum::{Json, Router, routing};
 use error::SumidaError;
 use infra::session::UserSession;
 
-use crate::controller::ApiController;
+use crate::SumidaState;
+use crate::controller::{ApiController, ControllerRouter};
 use crate::service::bps::prelude::*;
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct BoardPostController<S: SumidaState>(std::marker::PhantomData<S>);
@@ -106,40 +106,24 @@ where
   S: SumidaState,
 {
   fn router(self, state: &S) -> Router<S> {
-    // Read operations - basic authentication required
-    let read = Router::new() //
-      .route("/", routing::get(Self::list))
-      .route("/{id}", routing::get(Self::get))
-      .route("/{id}/view", routing::post(Self::view))
-      .route("/{id}/viewers", routing::get(Self::viewers))
-      .route_layer(service_ap!(state, "board_post", read));
-
-    // 이 목록이 무엇을 받는지 알려 주는 서술. 목록과 같은 읽기 게이트 뒤에 있고, 아래 최상위
-    // `user_guard!` 를 함께 받는다 — 목록을 못 부르는 호출자가 필드 목록만 받아 가지 못한다.
-    let filters = filter_descriptor_router::<S, BoardPostFilter>(state, "board_post");
-
-    // Write operations - board-level permissions checked in handlers
-    let create = Router::new() //
-      .route("/", routing::post(Self::create))
-      // .route("/draft", routing::post(Self::create_draft))
-      .route_layer(service_ap!(state, "board_post", create));
-
-    // Update operations - ownership/moderate permissions checked in handlers
-    let update = Router::new() //
-      .route("/{id}", routing::patch(Self::update))
-      .route_layer(service_ap!(state, "board_post", update));
-
-    // Delete operations - ownership/moderate permissions checked in handlers
-    let delete = Router::new() //
-      .route("/{id}", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "board_post", delete));
-
-    Router::new() //
-      .merge(read)
-      .merge(filters)
-      .merge(create)
-      .merge(update)
-      .merge(delete)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "board_post")
+      .read(
+        Router::new() //
+          .route("/", routing::get(Self::list))
+          .route("/{id}", routing::get(Self::get))
+          .route("/{id}/view", routing::post(Self::view))
+          .route("/{id}/viewers", routing::get(Self::viewers)),
+      )
+      .descriptor::<BoardPostFilter>()
+      // Board-level permissions are checked in the service.
+      .create(
+        Router::new()
+          // .route("/draft", routing::post(Self::create_draft))
+          .route("/", routing::post(Self::create)),
+      )
+      // Ownership/moderate permissions are checked in the service.
+      .update(Router::new().route("/{id}", routing::patch(Self::update)))
+      .delete(Router::new().route("/{id}", routing::delete(Self::delete)))
+      .build()
   }
 }

@@ -4,13 +4,13 @@ use error::SumidaError;
 use infra::session::UserSession;
 use uuid::Uuid;
 
-use crate::controller::ApiController;
+use crate::SumidaState;
+use crate::controller::{ApiController, ControllerRouter};
 use crate::service::bps::board_file::BoardFileService;
 use crate::service::bps::board_file::dto::*;
 use crate::service::fs::dto::{FileUploadTrait, FileUploaded};
-use crate::util::filter::{ConditionQuery, filter_descriptor_router};
+use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};
-use crate::{SumidaState, service_ap, user_guard};
 
 #[derive(Clone, Debug, Default)]
 pub struct BoardFileController<S: SumidaState>(std::marker::PhantomData<S>);
@@ -68,25 +68,15 @@ where
   S: SumidaState,
 {
   fn router(self, state: &S) -> Router<S> {
-    let read = Router::new() //
-      .route("/", routing::get(Self::list))
-      .route("/file", routing::get(Self::get))
-      .route_layer(service_ap!(state, "board_file", read));
-    let route_filters = filter_descriptor_router::<S, BoardFileFilter>(state, "board_file");
-
-    let create = Router::new() //
-      .route("/", routing::post(Self::upload))
-      .route_layer(service_ap!(state, "board_file", create));
-
-    let delete = Router::new() //
-      .route("/", routing::delete(Self::delete))
-      .route_layer(service_ap!(state, "board_file", delete));
-
-    Router::new() //
-      .merge(read)
-      .merge(route_filters)
-      .merge(create)
-      .merge(delete)
-      .route_layer(user_guard!(state))
+    ControllerRouter::new(state, "board_file")
+      .read(
+        Router::new() //
+          .route("/", routing::get(Self::list))
+          .route("/file", routing::get(Self::get)),
+      )
+      .descriptor::<BoardFileFilter>()
+      .create(Router::new().route("/", routing::post(Self::upload)))
+      .delete(Router::new().route("/", routing::delete(Self::delete)))
+      .build()
   }
 }
