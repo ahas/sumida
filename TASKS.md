@@ -8,17 +8,22 @@
 
 ## 돌지 않는 테스트
 
-### DynamoDB JWT 스토어 라운드트립
-- `infra/src/jwt.rs` 의 `dynamo_jwt_store_roundtrip` 은 DynamoDB 스토어 빌드(redis off)에서만
-  컴파일되고, `SUMIDA_TEST_DYNAMO_TABLE` 이 실제 표를 가리킬 때만 돈다. 그 표가 없으면 조용히
-  건너뛰므로, 이 경로는 지금 아무 데서도 확인되지 않는다.
-- 실행: `cargo test -p infra --no-default-features --features session-store-aws-dynamodb dynamo_jwt_store_roundtrip`
-  (AWS 자격·리전 + pk/sk(string) + `ttl` 속성 표 필요)
+### DynamoDB JWT 스토어 라운드트립 — 기본 스위트 밖
+- 스토어는 둘 중 하나만 컴파일된다(`cfg_if`, 기본은 redis). 그래서 이 경로는 redis 를 끄고
+  dynamodb 를 켠 빌드에서만 존재하고, `scripts/test/suite.sh` 에는 들어오지 않는다.
+- 표는 `pk`/`sk` 둘 다 문자열 키에 TTL 속성이 `ttl` 이다. 그 표와 AWS 자격을 갖추고 아래를
+  돌리면 저장·조회·삭제와 블랙리스트 왕복이 실제 DynamoDB 에서 확인된다.
 
-### 고아 파일 정리의 스토리지 절반
-- 어느 파일이 대상인지를 고르는 질의는 `api/tests/file_lifecycle.rs` 가 실제 데이터베이스에서
-  확인한다. 남은 것은 그 뒤 — 스토리지 객체를 지우는 쪽이다. 객체 저장소를 세우지 않는
-  스위트에서는 그 절반이 돌지 않는다.
+  ```
+  SUMIDA_TEST_DYNAMO_TABLE=<표 이름> \
+    cargo test -p infra --no-default-features \
+      --features session-store-aws-dynamodb,jwt dynamo_jwt_store_roundtrip
+  ```
+
+### 고아 파일 정리의 S3 백엔드
+- 정리기는 로컬 파일시스템 백엔드로 `api/tests/file_lifecycle.rs` 가 확인한다 — 대상을 고르는
+  질의부터 객체와 행이 함께 사라지는 데까지. S3 백엔드는 같은 트레이트의 다른 구현이고, 그쪽
+  경로는 버킷 없이 돌지 않는다.
 
 ## 결제 — 2단계 결제 (제품 결정 + 샌드박스 필요)
 
