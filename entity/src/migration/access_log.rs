@@ -1,20 +1,31 @@
 use sea_orm::ConnectionTrait;
 use sea_orm_migration::prelude::*;
 
-/// Gives the sign-in log the identifier its model already assumes.
+/// The sign-in log's identifier and the indexes every read of it needs.
 ///
-/// The entity declares `id` as an auto-incrementing primary key, and the column does generate its
-/// own values, but the table carries no such constraint — so when the generator was once set back
-/// to the beginning, the numbers it handed out collided with numbers already in the table and
-/// nothing refused them. Every read by id therefore picked an arbitrary row among the duplicates,
-/// and a delete by id removed all of them.
+/// One row per authentication attempt, so it outgrows every other table in the installation and is
+/// the one most often read by recency. Three shapes read it, and it had nothing to seek by:
+///
+/// * newest-first, which the list's own default ordering and the dashboard's windowed aggregates
+///   both want — `created_at DESC`;
+/// * one value of `code` over a window, which the refusal reads ask for — `(code, created_at DESC)`,
+///   in that order so the planner seeks rather than filters;
+/// * one account's own recent attempts, narrowed by method and result, which is how the sign-in
+///   lockout decides whether a password has been missed too often — the three equalities first, the
+///   range and the ordering last. Without it that read scanned the whole table on the
+///   password-mismatch path, which is the one an attacker drives hardest.
+///
+/// The identifier is the other half. The entity declares `id` as an auto-incrementing primary key
+/// and the column does generate its own values, but the table carries no such constraint — so when
+/// the generator was once set back to the beginning, the numbers it handed out collided with
+/// numbers already there and nothing refused them. Every read by id then picked an arbitrary row
+/// among the duplicates, and a delete by id removed all of them.
 ///
 /// Rows are renumbered oldest first, so the order the identifiers imply matches the order the
 /// entries were written. Nothing references these values — no foreign key points here and no screen
-/// fetches a single entry — so renumbering costs nothing outside this table.
-///
-/// The whole step is skipped where a primary key already stands, which is what makes it safe to run
-/// against a database created after this landed, and what stops it from renumbering a second time.
+/// fetches a single entry — so renumbering costs nothing outside this table. The step is skipped
+/// wherever a primary key already stands, which is what makes it safe against a database that
+/// already has one and what stops it renumbering twice.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -22,6 +33,20 @@ pub struct Migration;
 impl MigrationTrait for Migration {
   async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
+
+    db.execute_unprepared(
+      r#"
+      CREATE INDEX IF NOT EXISTS idx_access_logs__created_at
+        ON access_logs (created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_access_logs__code__created_at
+        ON access_logs (code, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_access_logs__user_id__method__code__created_at
+        ON access_logs (user_id, method, code, created_at DESC);
+      "#,
+    )
+    .await?;
 
     db.execute_unprepared(
       r#"
@@ -78,6 +103,10 @@ impl MigrationTrait for Migration {
       ALTER TABLE access_logs DROP CONSTRAINT IF EXISTS access_logs_pkey;
       ALTER TABLE access_logs ALTER COLUMN id DROP DEFAULT;
       DROP SEQUENCE IF EXISTS access_logs_id_seq;
+
+      DROP INDEX IF EXISTS idx_access_logs__user_id__method__code__created_at;
+      DROP INDEX IF EXISTS idx_access_logs__code__created_at;
+      DROP INDEX IF EXISTS idx_access_logs__created_at;
       "#,
     )
     .await?;

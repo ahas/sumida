@@ -27,8 +27,9 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::rebac_backfill::Migration),
       // Takes the mirror trigger and its functions off that table.
       Box::new(entity::migration::rebac_mirror::Migration),
-      // The index the sign-in lockout reads the log by. It references nothing above it.
-      Box::new(entity::migration::access_log_account_index::Migration),
+      // The sign-in log's identifier and the indexes its readers seek by. It references nothing
+      // above it.
+      Box::new(entity::migration::access_log::Migration),
       // The moment an account last reset its credentials. An additive column on users.
       Box::new(entity::migration::user_credentials_reset_at::Migration),
       // The api key holder constraint. After rebac — the orphan sweep clears the grants those keys
