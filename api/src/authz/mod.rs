@@ -24,6 +24,7 @@
 //! * `write`    — the grants themselves: write, revoke, and "who holds this on this object".
 //! * `effective` — what one caller may do, for `/me/permissions`.
 //! * `schema_view` — the vocabulary, for `GET /authz/schema`.
+//! * `stream`   — a subscription's scope, and the per-connection memo of its row judgements.
 
 pub mod compile;
 pub mod effective;
@@ -31,6 +32,7 @@ pub mod ir;
 pub mod parse;
 pub mod registry;
 pub mod schema_view;
+pub mod stream;
 pub mod subject;
 pub mod validate;
 pub mod write;

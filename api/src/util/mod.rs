@@ -12,6 +12,7 @@ pub mod image;
 
 pub mod pagination;
 pub mod random;
+pub mod retry;
 
 #[cfg(feature = "aws-s3")]
 pub mod s3;
