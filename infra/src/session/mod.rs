@@ -221,6 +221,69 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct UserState {}
 
+/// Whether a live ban catches this attempt.
+///
+/// A ban row states a set of conditions that must **all** hold for it to catch a request: whom it
+/// targets, and which environment it targets. Every environment column defaults to the wildcard, so
+/// a row naming only an account leaves the rest open — which is what makes the conjunction the
+/// load-bearing part. Read as a disjunction, one open column would be enough to catch every
+/// request, and banning one account would lock out everybody.
+///
+/// This takes the account and the environment rather than a session, because those are the only
+/// things it reads. A session cannot be stood up without a request, and a rule this consequential
+/// has to be checkable without one.
+pub async fn is_banned<C: ConnectionTrait>(
+  user_id: Option<i32>,
+  env: &UserEnvironment,
+  db: &C,
+) -> Result<bool, SumidaError> {
+  // A column catches when the row left it open — the wildcard, or nothing at all — or when it names
+  // exactly what this request carries. A request carrying no value for a column is caught only by a
+  // row that left the column open.
+  fn column(col: BansColumn, value: Option<&str>) -> Condition {
+    let open = Condition::any().add(col.eq("*")).add(col.is_null());
+
+    match value {
+      Some(value) => open.add(col.eq(value)),
+      None => open,
+    }
+  }
+
+  let target = match user_id {
+    // An environment ban names no account and catches whoever arrives; an account ban catches only
+    // that account.
+    Some(user_id) => Condition::any()
+      .add(BansColumn::UserId.is_null())
+      .add(BansColumn::UserId.eq(user_id)),
+    // An attempt that never resolved to an account is caught by an environment ban alone.
+    None => Condition::all().add(BansColumn::UserId.is_null()),
+  };
+
+  let matches = Condition::all()
+    .add(target)
+    .add(column(BansColumn::IpAddress, Some(&env.ip_address)))
+    .add(column(BansColumn::UserAgent, Some(&env.user_agent)))
+    .add(column(BansColumn::OsFamily, Some(&env.os_family)))
+    .add(column(BansColumn::OsMajor, env.os_major.as_deref()))
+    .add(column(BansColumn::OsMinor, env.os_minor.as_deref()))
+    .add(column(BansColumn::OsPatch, env.os_patch.as_deref()))
+    .add(column(BansColumn::OsPatchMinor, env.os_patch_minor.as_deref()))
+    .add(column(BansColumn::DeviceFamily, Some(&env.device_family)))
+    .add(column(BansColumn::DeviceBrand, env.device_brand.as_deref()))
+    .add(column(BansColumn::DeviceModel, env.device_model.as_deref()));
+
+  // A disposition that was lifted, or whose term has run out, catches nothing.
+  let live = Condition::all()
+    .add(BansColumn::LiftedAt.is_null())
+    .add(
+      Condition::any()
+        .add(BansColumn::ExpiresAt.is_null())
+        .add(BansColumn::ExpiresAt.gt(Utc::now().fixed_offset())),
+    );
+
+  Ok(Bans::find().filter(Condition::all().add(matches).add(live)).count(db).await? > 0)
+}
+
 #[derive(Clone, Debug)]
 pub struct UserSession {
   pub inner:   Session,
@@ -307,110 +370,7 @@ impl UserSession {
     user_id: Option<i32>,
     db: &C,
   ) -> Result<bool, SumidaError> {
-    let lhs = {
-      let env = &self.env;
-      let mut cond = Condition::any();
-
-      // pub os_family:      String,
-      // pub os_major:       Option<String>,
-      // pub os_minor:       Option<String>,
-      // pub os_patch:       Option<String>,
-      // pub os_patch_minor: Option<String>,
-      //
-      // pub device_family: String,
-      // pub device_brand:  Option<String>,
-      // pub device_model:  Option<String>,
-
-      cond = cond
-        .add(
-          Condition::any()
-            .add(BansColumn::IpAddress.eq("*"))
-            .add(BansColumn::IpAddress.eq(&env.ip_address)),
-        )
-        .add(
-          Condition::any()
-            .add(BansColumn::UserAgent.eq("*"))
-            .add(BansColumn::UserAgent.eq(&env.user_agent)),
-        )
-        .add(
-          Condition::any()
-            .add(BansColumn::OsFamily.eq("*"))
-            .add(BansColumn::OsFamily.eq(&env.os_family)),
-        )
-        .add(
-          Condition::any()
-            .add(BansColumn::DeviceFamily.eq("*"))
-            .add(BansColumn::DeviceFamily.eq(&env.device_family)),
-        );
-
-      if let Some(user_id) = user_id {
-        cond = cond.add(BansColumn::UserId.eq(user_id));
-      }
-
-      if let Some(ref os_major) = env.os_major {
-        cond = cond.add(
-          Condition::any() //
-            .add(BansColumn::OsMajor.eq("*"))
-            .add(BansColumn::OsMajor.eq(os_major)),
-        );
-      }
-
-      if let Some(ref os_minor) = env.os_minor {
-        cond = cond.add(
-          Condition::any() //
-            .add(BansColumn::OsMinor.eq("*"))
-            .add(BansColumn::OsMinor.eq(os_minor)),
-        );
-      }
-
-      if let Some(ref os_patch) = env.os_patch {
-        cond = cond.add(
-          Condition::any() //
-            .add(BansColumn::OsPatch.eq("*"))
-            .add(BansColumn::OsPatch.eq(os_patch)),
-        );
-      }
-
-      if let Some(ref os_patch_minor) = env.os_patch_minor {
-        cond = cond.add(
-          Condition::any() //
-            .add(BansColumn::OsPatchMinor.eq("*"))
-            .add(BansColumn::OsPatchMinor.eq(os_patch_minor)),
-        );
-      }
-
-      if let Some(ref device_brand) = env.device_brand {
-        cond = cond.add(
-          Condition::any() //
-            .add(BansColumn::DeviceBrand.eq("*"))
-            .add(BansColumn::DeviceBrand.eq(device_brand)),
-        );
-      }
-
-      if let Some(ref device_model) = env.device_model {
-        cond = cond.add(
-          Condition::any() //
-            .add(BansColumn::DeviceModel.eq("*"))
-            .add(BansColumn::DeviceModel.eq(device_model)),
-        );
-      }
-
-      cond
-    };
-    let rhs = {
-      let now = Utc::now().fixed_offset();
-
-      Condition::all() //
-        .add(BansColumn::LiftedAt.is_null())
-        .add(
-          Condition::any() //
-            .add(BansColumn::ExpiresAt.is_null())
-            .add(BansColumn::ExpiresAt.gt(now)),
-        )
-    };
-    let cond = Condition::all().add(lhs).add(rhs);
-
-    Ok(Bans::find().filter(cond).count(db).await? > 0)
+    is_banned(user_id, &self.env, db).await
   }
 
   pub async fn ban_ip<C: ConnectionTrait>(

@@ -628,9 +628,9 @@ async fn bans_are_scoped_to_their_author_and_to_the_banned_users_managers() {
   let target = Member::create(&db, tree.child).await.expect("the banned user");
   let bystander = TestUser::create(&db).await.expect("an unrelated account");
 
-  // `lifted_at` 을 채워 둔다. `check_banned` 의 조건은 최상위가 `Condition::any()` 라서
-  // ip/user_agent/os/device 열이 전부 기본값 `*` 인 행 하나면 **모든** 계정의 로그인이 막힌다.
-  // 여기서 보려는 것은 `bans` 행의 열람 스코프이지 차단 동작이 아니므로, 해제된 처분을 쓴다.
+  // 해제된 처분을 쓴다. 여기서 보려는 것은 `bans` 행을 누가 열람하는가이지 그 처분이 누구를
+  // 잡는가가 아니고, 살아 있는 처분을 두면 이 케이스가 대상 계정의 로그인까지 함께 정하게 된다.
+  // 처분이 누구를 잡는지는 `ban_match` 가 따로 본다.
   let ban_id = Bans::insert(entity::bans::ActiveModel {
     user_id: Set(Some(target.user.model.id)),
     created_by: Set(Some(author.user.model.id)),
