@@ -1,0 +1,78 @@
+//! What a run of wrong passwords costs.
+//!
+//! The lockout is the one refusal that no single request can produce: it is decided from the log of
+//! the attempts before it, and it turns a sign-in that was being refused for one reason into one
+//! refused for another. Nothing else asks for it, and the policy it reads has defaults, so a
+//! threshold that stopped being reached — or one that started being reached at the first attempt —
+//! would look exactly like the suite passing.
+//!
+//! It sits in a binary of its own. The policy's default target is the address the attempts came
+//! from, so the ban this case provokes catches every request from the same place while it stands,
+//! including the ones another case would be making.
+
+use e2e::prelude::*;
+use entity::prelude::*;
+use sea_orm::EntityTrait;
+use serde_json::json;
+
+/// The default policy this case drives to its threshold. Nothing in the e2e settings names a ban
+/// policy, so these are the built-in defaults, and the case says which of them it depends on.
+const ALLOWED_FAILURES: usize = 10;
+
+async fn sign_in(http: &reqwest::Client, base: &str, username: &str, password: &str) -> (u16, String) {
+  let resp = http
+    .post(format!("{base}/auth/session"))
+    .json(&json!({ "username": username, "password": password, "rememberMe": false }))
+    .send()
+    .await
+    .expect("the sign-in request");
+
+  let status = resp.status().as_u16();
+  let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+  let code = body.get("code").and_then(|code| code.as_str()).unwrap_or_default().to_owned();
+
+  (status, code)
+}
+
+#[tokio::test]
+async fn test_a_run_of_wrong_passwords_locks_the_attempts_out() {
+  let mock = Mock::new().await;
+  let base = format!("http://{}", mock.server.addr);
+  let db = infra::db::connect().await;
+  let user = TestUser::create(&db).await.expect("an account");
+
+  let http = reqwest::Client::builder().cookie_store(true).build().expect("an http client");
+
+  // Up to the threshold, each attempt is answered as the wrong password it is. The account is not
+  // locked out on the way there, or the threshold would not be the threshold.
+  for attempt in 1..ALLOWED_FAILURES {
+    assert_eq!(
+      sign_in(&http, &base, &user.model.username, "not-the-password").await,
+      (401, "E1000".to_owned()),
+      "attempt {attempt} of {ALLOWED_FAILURES} is a wrong password and nothing more"
+    );
+  }
+
+  assert_eq!(
+    sign_in(&http, &base, &user.model.username, "not-the-password").await,
+    (401, "E1002".to_owned()),
+    "the attempt that completes the run is refused by the lockout it provoked, not by the password"
+  );
+
+  assert_eq!(
+    sign_in(&http, &base, &user.model.username, &user.password).await,
+    (401, "E1002".to_owned()),
+    "and the right password is refused too — a lockout that the correct password walks through is \
+     no lockout"
+  );
+
+  // The disposition is on the address these attempts came from, so it stands between that address
+  // and every account until it is cleared.
+  Bans::delete_many().exec(&db).await.expect("clear the lockout");
+
+  assert_eq!(
+    sign_in(&http, &base, &user.model.username, &user.password).await.0,
+    200,
+    "with the lockout gone the same password gets in — the run is what refused it, and nothing else"
+  );
+}

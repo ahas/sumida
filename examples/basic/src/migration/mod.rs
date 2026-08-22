@@ -21,6 +21,8 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::rebac_backfill::Migration),
       // Takes the mirror trigger and its functions off that table.
       Box::new(sumida::entity::migration::rebac_mirror::Migration),
+      // The moment an account last reset its credentials. An additive column on users.
+      Box::new(sumida::entity::migration::user_credentials_reset_at::Migration),
       // The api key holder constraint. After rebac — the orphan sweep clears the grants those keys
       // still hold before the keys themselves go.
       Box::new(sumida::entity::migration::api_key_holder_fk::Migration),

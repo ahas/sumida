@@ -174,20 +174,14 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     let refresh_data =
       self.jwt_store.get_refresh_token(&claims.jti).await?.ok_or(SumidaError::InvalidJwt)?;
 
-    // Verify user still exists and is active
+    // Verify the account may still be let in — it exists, it is enabled, and no ban catches it.
     let db = self.state.db();
-    let user = Users::find_by_id(refresh_data.user_id)
-      .one(db)
-      .await?
-      .ok_or(SumidaError::InvalidAccount)?;
+    let user = self.session.admitted_account(refresh_data.user_id, db).await?;
 
-    if !user.is_enabled {
-      return Err(SumidaError::InactiveAccount);
-    }
-
-    // Check if user is banned
-    if self.session.check_banned(Some(user.id), db).await? {
-      return Err(SumidaError::AccountBanned);
+    // A token the account has since disowned. The pair this one belongs to was handed out before
+    // the credentials were reset, so it cannot buy a new pair.
+    if infra::session::credentials_reset_since(&user, helper::issued_at(&claims)) {
+      return Err(SumidaError::InvalidJwt);
     }
 
     // Generate new token pair

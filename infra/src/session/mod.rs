@@ -284,6 +284,46 @@ pub async fn is_banned<C: ConnectionTrait>(
   Ok(Bans::find().filter(Condition::all().add(matches).add(live)).count(db).await? > 0)
 }
 
+/// The account behind a credential, or the reason it is refused.
+///
+/// Every way in asks this — a password sign-in, a bearer token, an api key, a session cookie —
+/// because what it asks about is the account, not the credential that arrived with the request. An
+/// account disabled or banned after a credential was handed out is refused from the next request
+/// on rather than from its next sign-in, so no credential can carry the answer with it.
+pub async fn admitted_account<C: ConnectionTrait>(
+  user_id: i32,
+  env: &UserEnvironment,
+  db: &C,
+) -> Result<entity::users::Model, SumidaError> {
+  let Some(user) = Users::find_by_id(user_id).one(db).await? else {
+    return Err(SumidaError::InvalidAccount);
+  };
+
+  if !user.is_enabled {
+    return Err(SumidaError::InactiveAccount);
+  }
+
+  if is_banned(Some(user.id), env, db).await? {
+    return Err(SumidaError::AccountBanned);
+  }
+
+  Ok(user)
+}
+
+/// Whether this account has reset its credentials since one established at `established_at`.
+///
+/// A password is changed because what was handed out before it may be in somebody else's hands,
+/// and a token or a cookie cannot be told apart from the same one held by whoever took it. So the
+/// moment of the reset voids every credential established up to it. A token records its own moment
+/// only to the second, and one minted during that second goes with the rest rather than surviving
+/// on the rounding.
+pub fn credentials_reset_since(
+  user: &entity::users::Model,
+  established_at: DateTimeWithTimeZone,
+) -> bool {
+  user.credentials_reset_at.is_some_and(|reset_at| established_at <= reset_at)
+}
+
 #[derive(Clone, Debug)]
 pub struct UserSession {
   pub inner:   Session,
@@ -320,14 +360,22 @@ impl UserSession {
     Ok(())
   }
 
+  /// Records an attempt, unless it resolved to no account.
+  ///
+  /// The column naming the account is a key into the accounts themselves, so there is no value in
+  /// it standing for nobody: a username no account answers to has nothing to write there. The
+  /// attempt is refused on its own terms, and the refusal is what the caller is answered with —
+  /// the write is not allowed to turn a turned-away sign-in into a failure of the server.
   pub async fn write_log(
     &self,
     user_id: Option<i32>,
     method: AccessMethod,
     code: AccessResultCode,
     db: &DatabaseConnection,
-  ) -> Result<InsertResult<entity::access_logs::ActiveModel>, DbErr> {
-    let user_id = self.resolve_user_id(user_id);
+  ) -> Result<Option<InsertResult<entity::access_logs::ActiveModel>>, DbErr> {
+    let Some(user_id) = user_id.or_else(|| self.profile.get_id()) else {
+      return Ok(None);
+    };
 
     // `count` is a plain fact about the row being written, with no policy in it: how many password
     // failures this account has run up since its last successful password sign-in, this one
@@ -340,7 +388,7 @@ impl UserSession {
       None
     };
 
-    AccessLogs::insert(entity::access_logs::ActiveModel {
+    let written = AccessLogs::insert(entity::access_logs::ActiveModel {
       user_id: Set(user_id),
       method: Set(method),
       code: Set(code),
@@ -358,7 +406,9 @@ impl UserSession {
       ..Default::default()
     })
     .exec(db)
-    .await
+    .await?;
+
+    Ok(Some(written))
   }
 
   pub fn resolve_user_id(&self, explicit: Option<i32>) -> i32 {
@@ -371,6 +421,14 @@ impl UserSession {
     db: &C,
   ) -> Result<bool, SumidaError> {
     is_banned(user_id, &self.env, db).await
+  }
+
+  pub async fn admitted_account<C: ConnectionTrait>(
+    &self,
+    user_id: i32,
+    db: &C,
+  ) -> Result<entity::users::Model, SumidaError> {
+    admitted_account(user_id, &self.env, db).await
   }
 
   pub async fn ban_ip<C: ConnectionTrait>(

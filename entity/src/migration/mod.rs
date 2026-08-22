@@ -20,3 +20,4 @@ pub mod rebac_mirror;
 pub mod system_settings;
 #[cfg(feature = "system-settings")]
 pub mod system_settings_category;
+pub mod user_credentials_reset_at;

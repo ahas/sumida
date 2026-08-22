@@ -312,9 +312,16 @@ impl<S: SumidaState> UserService<S> {
 
     let password = hash_password(&data.password).map_err(|e| SumidaError::Unsupported(e.to_string()))?;
 
+    // The row is addressed by its key: a single-row update filters on the primary key and on
+    // nothing else, so the key is what has to be in the model.
+    //
+    // Recording the moment alongside the new password is what makes the change reach the
+    // credentials already handed out: a token or a session established up to it is refused from
+    // here on, so whoever the password was changed because of is put out with it.
     let active_model = entity::users::ActiveModel {
-      username: Unchanged(data.username),
+      id: Unchanged(user.id),
       password: Set(password),
+      credentials_reset_at: Set(Some(Utc::now().fixed_offset())),
       ..Default::default()
     };
 
