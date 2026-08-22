@@ -4,7 +4,12 @@
 use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
 use sea_orm_migration::prelude::*;
 
-/// Depends on `organizations` (init); the board half additionally needs `board_groups`
+/// Also lays down the sumida-side columns and indexes the compiled rule set reads, since a rule
+/// that reads a column which does not exist is reported as drift by `Authz::boot` and refuses to
+/// start. Any further column a rule needs belongs to whichever definition declares it, and lands in
+/// that declarer's own migration.
+///
+/// Depends on `organizations` (init); the board half additionally needs `board_groups` and `boards`
 /// (board_system), so consumers that have boards must register this after that migration.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -36,6 +41,13 @@ async fn has_board_groups<C: ConnectionTrait>(db: &C) -> Result<bool, DbErr> {
 impl MigrationTrait for Migration {
   async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
+
+    // R1's flag branch is an uncorrelated `EXISTS (SELECT 1 FROM users WHERE is_admin AND id =
+    // ANY($2))` that Postgres hoists into an InitPlan, so it wants an index rather than a
+    // sequential scan once per statement. Partial, because a query only ever asks "is this account
+    // an admin"; the non-admin rows would be dead weight.
+    db.execute_unprepared("CREATE INDEX IF NOT EXISTS idx_users__is_admin ON users (id) WHERE is_admin;")
+      .await?;
 
     // ── the rule vocabulary ─────────────────────────────────────────────────────────────────
     //
@@ -277,6 +289,30 @@ impl MigrationTrait for Migration {
         AFTER INSERT OR DELETE OR UPDATE OF parent_id ON organizations
         FOR EACH STATEMENT EXECUTE FUNCTION tg_rebuild_org_closure();
 
+      -- The rebuild takes an advisory lock so two rebuilds cannot interleave their `DELETE` and
+      -- `INSERT`. Taken inside the rebuild it would come *after* the row locks the writing
+      -- transaction already holds, and two transactions writing different rows of the same tree
+      -- would then take their locks in opposite orders — each holding a row the other's rebuild has
+      -- to read for its foreign keys, each wanting the advisory lock the other holds. Postgres
+      -- breaks that cycle by killing one, and the caller sees a 500 on an ordinary write.
+      --
+      -- Taking it in a `BEFORE … FOR EACH STATEMENT` trigger fixes the order for every writer: the
+      -- advisory lock always first, rows always second. Advisory locks are re-entrant within a
+      -- transaction, so the rebuild still takes it and still holds it for anything reaching the
+      -- rebuild by another route. The lock is in the database rather than in the callers because a
+      -- caller that forgets it reopens the hole silently, and nothing about a write to
+      -- `organizations` announces that a whole table is about to be rebuilt underneath it.
+      CREATE OR REPLACE FUNCTION tg_lock_org_closure() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtext('org_closure'));
+        RETURN NULL;
+      END; $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_org_closure_lock ON organizations;
+      CREATE TRIGGER trg_org_closure_lock
+        BEFORE INSERT OR DELETE OR UPDATE OF parent_id ON organizations
+        FOR EACH STATEMENT EXECUTE FUNCTION tg_lock_org_closure();
+
       SELECT rebuild_org_closure();
       "#,
     )
@@ -368,7 +404,43 @@ impl MigrationTrait for Migration {
         AFTER INSERT OR DELETE OR UPDATE OF parent_id ON board_groups
         FOR EACH STATEMENT EXECUTE FUNCTION tg_rebuild_board_group_closure();
 
+      -- The lock ordering the organization half explains, for the other tree.
+      CREATE OR REPLACE FUNCTION tg_lock_board_group_closure() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtext('board_group_closure'));
+        RETURN NULL;
+      END; $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_board_group_closure_lock ON board_groups;
+      CREATE TRIGGER trg_board_group_closure_lock
+        BEFORE INSERT OR DELETE OR UPDATE OF parent_id ON board_groups
+        FOR EACH STATEMENT EXECUTE FUNCTION tg_lock_board_group_closure();
+
       SELECT rebuild_board_group_closure();
+      "#,
+    )
+    .await?;
+
+    // ── the column the board rule reads ─────────────────────────────────────────────────────
+    //
+    // **Nullable on purpose.** It is how "boards stay general-purpose" lives in the model instead
+    // of in a config flag: a public-board deployment leaves it NULL and the `org->manage_board`
+    // branch of the board rule is statically dead, while a business deployment sets it and
+    // organization managers reach their own boards. A `NOT NULL` column with a default would force
+    // every deployment into the second shape.
+    db.execute_unprepared(
+      r#"
+      ALTER TABLE boards
+        ADD COLUMN IF NOT EXISTS organization_id INTEGER NULL
+          REFERENCES organizations(id) ON DELETE SET NULL;
+
+      -- Partial: NULL means "this board is not organization-scoped", which is the common case in a
+      -- public-board deployment and never a value the rule looks up.
+      CREATE INDEX IF NOT EXISTS idx_boards__organization_id
+        ON boards (organization_id) WHERE organization_id IS NOT NULL;
+
+      COMMENT ON COLUMN boards.organization_id IS
+        'Optional owning organization. NULL leaves the board outside organization scoping; the rule''s org branch is then dead.';
       "#,
     )
     .await?;
@@ -382,6 +454,11 @@ impl MigrationTrait for Migration {
     if has_board_groups(db).await? {
       db.execute_unprepared(
         r#"
+      DROP INDEX IF EXISTS idx_boards__organization_id;
+      ALTER TABLE boards DROP COLUMN IF EXISTS organization_id;
+
+      DROP TRIGGER IF EXISTS trg_board_group_closure_lock ON board_groups;
+      DROP FUNCTION IF EXISTS tg_lock_board_group_closure();
       DROP TRIGGER IF EXISTS trg_board_group_closure ON board_groups;
       DROP TRIGGER IF EXISTS trg_board_group_cycle ON board_groups;
       DROP FUNCTION IF EXISTS tg_rebuild_board_group_closure();
@@ -395,6 +472,10 @@ impl MigrationTrait for Migration {
 
     db.execute_unprepared(
       r#"
+      DROP INDEX IF EXISTS idx_users__is_admin;
+
+      DROP TRIGGER IF EXISTS trg_org_closure_lock ON organizations;
+      DROP FUNCTION IF EXISTS tg_lock_org_closure();
       DROP TRIGGER IF EXISTS trg_org_closure ON organizations;
       DROP TRIGGER IF EXISTS trg_org_cycle ON organizations;
       DROP FUNCTION IF EXISTS tg_rebuild_org_closure();

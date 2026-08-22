@@ -2131,7 +2131,6 @@ name = "entity"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "blake3",
  "chrono",
  "error",
  "sea-orm",

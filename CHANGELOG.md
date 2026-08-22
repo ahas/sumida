@@ -92,13 +92,13 @@ and this project adheres to semantic versioning at the workspace level.
 
 ### Removed
 
-- **`rebac_backfill` and `rebac_mirror` are tombstones.** Both translated the legacy
-  `access_policies` table, and both carried the resource vocabulary of whichever services existed
-  when they were written — which is exactly what a framework must not hold. `access_policies` is
-  gone from every database they ran against. The modules survive because sea-orm tracks migrations
-  by file stem and deleting one breaks `migration up` on every database that applied it;
-  `rebac_backfill` still refuses to continue past policy rows it would once have translated, so a
-  stale dump restored onto a fresh checkout fails loudly instead of losing grants silently.
+- **`rebac_backfill`, `rebac_mirror` and `access_policies_drop` are gone.** All three translated
+  or removed the legacy `access_policies` table, and the first two carried the resource vocabulary
+  of whichever services existed when they were written — which is exactly what a framework must not
+  hold. Nothing in this estate creates `access_policies` any more: sumida never did, and the two
+  consumer migrations whose names suggest otherwise do something else (site-app's are guarded on the
+  table existing, lab-app's creates `site_permissions`). On a fresh database all three were already
+  no-ops that returned before their first statement.
 
   `api/tests/authz_evaluation.rs::the_mirror_writes_what_the_backfill_would_have` is **deleted with
   no replacement.** It asserted that two implementations of that translation agreed with each
@@ -132,9 +132,8 @@ and this project adheres to semantic versioning at the workspace level.
 
 - **`system_settings.category`.** A setting declares which kind of thing it governs — `auth`,
   `execution`, `retention`, `storage`, or `general` — so a settings screen can group by that instead
-  of listing every key flat. The column is added by its own migration (`system_settings_category`),
-  which also seeds the framework's own authentication settings; consumers add it to their `Migrator`
-  after the migration that creates the table. Rows that declare nothing get `general`.
+  of listing every key flat. The column stands with the table, and the migration that creates it
+  also seeds the framework's own authentication settings. Rows that declare nothing get `general`.
 
   `SystemSettingItem` gains a `category` field, so any client reading `GET /system-settings` sees it.
 
@@ -250,6 +249,42 @@ and this project adheres to semantic versioning at the workspace level.
 - **A secured API key bound to an administrator is no longer a superuser.** `users.is_admin` is now
   reachable only through the subject set as `platform#flagged`, so a secured key carries what the
   key holds and not what its owner is. Impacted: any integration depending on the old behaviour.
+
+- **The migration set states the schema as it stands, rather than the order it was reached in.**
+  Eight names no longer exist: `rebac_closure_lock`, `rebac_columns`, `user_credentials_reset_at`,
+  `api_key_holder_fk`, `system_settings_category`, `rebac_backfill`, `rebac_mirror` and
+  `access_policies_drop`. What the first five did now happens where the thing they amended is
+  created — the closure lock and the two rule-read columns in `rebac`, the credential reset stamp in
+  `init`, the setting category in `system_settings` — and the last three did nothing on a fresh
+  database at all. Consumers register five sumida migrations instead of thirteen.
+
+  Two of them were not registered everywhere, and folding them in repairs that: a consumer that
+  omitted `rebac_closure_lock` was one deadlock away from a 500 on an ordinary write to
+  `organizations`, and one that omitted `user_credentials_reset_at` had a `users` table its own
+  entity did not match.
+
+  **A database that applied any of the eight will refuse to migrate.** sea-orm tracks migrations by
+  file stem and aborts with `Migration file of version '...' is missing` when the ledger holds a
+  version with no file. Operators delete those rows once, before running the new binary:
+
+  ```sql
+  DELETE FROM seaql_migrations
+   WHERE version IN (
+     'rebac_closure_lock', 'rebac_columns', 'user_credentials_reset_at',
+     'api_key_holder_fk', 'system_settings_category',
+     'rebac_backfill', 'rebac_mirror', 'access_policies_drop'
+   );
+  ```
+
+  Keep the rows for the migrations they folded into — the resulting schema is the same either way,
+  and deleting one of those would replay a `CREATE TABLE` against populated tables. Fresh databases
+  are unaffected.
+
+- **The legacy plaintext API key conversion is gone.** `init` no longer calls
+  `hash_legacy_api_keys`, and the function is removed. Keys have been stored as blake3 hashes since
+  0.2.0; the sweep only ever moved keys that predate that, and it read every row of `api_keys` on
+  each `migration up` to do it. A database still holding plaintext keys must convert them before
+  upgrading past this point.
 
 ## [0.2.0] - 2026-06-10
 
