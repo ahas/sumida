@@ -131,5 +131,10 @@ e2e = { path = "./e2e", default-features = false }
 
 # 링커가 디버그 정보를 통째로 안고 있느라 빌드가 겹치면 OOM 이 난다. 실측 기준 링크 피크
 # 7.07GB → 3.50GB.
+# 디버그 정보를 줄 번호까지만 남긴다. 백트레이스는 그대로 읽히고, 디버거로 변수를 들여다보는
+# 것만 포기한다. 정적 링크라 테스트 바이너리 하나가 의존성을 통째로 품는데, 그중 생성 코드가
+# 거대한 크레이트(EC2 SDK 같은)가 섞이면 풀 디버그 정보로는 산출물이 기가 단위로 간다.
+# `split-debuginfo` 는 그것을 바이너리 밖으로 옮길 뿐 양을 줄이지 않는다.
 [profile.dev]
+debug = "line-tables-only"
 split-debuginfo = "unpacked"
