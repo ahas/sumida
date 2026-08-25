@@ -16,13 +16,19 @@ use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op,
 /// Every field is an **exact** match, never a substring one. A tuple's columns are identifiers — a resource type, a relation, a canonical subject key — and a substring
 /// search over identifiers is how `user:1` finds `user:12` and a support engineer revokes the wrong
 /// grant. The one thing this screen exists to make precise is *which* row.
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationTupleFilter {
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub resource_type: Option<OneOrMany<String>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub resource_id:   Option<OneOrMany<String>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub relation:      Option<OneOrMany<String>>,
   /// A canonical subject key — `user:7`, `role:3#member`, `organization:100#member`, `user:*`.
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub subject:       Option<OneOrMany<String>>,
 }
 
@@ -90,6 +96,7 @@ impl FilterSchema for RelationTupleFilter {
 /// What is *missing* is the point: there is no `effect`. Blocking is a rule construct
 /// (`board_post#view` subtracts `blocked`), not a row, so a column for it would be a field nobody
 /// can set and every reader would ask about.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationTupleListItem {
@@ -114,6 +121,7 @@ impl IntoResponse for RelationTupleListItem {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRelationTuple {
@@ -126,6 +134,7 @@ pub struct CreateRelationTuple {
   pub expires_at:    Option<DateTimeWithTimeZone>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationTupleCreated {

@@ -28,6 +28,9 @@ membership = ["mail-form", "entity/membership"]
 mail-form = ["entity/mail-form"]
 # 공용 운영 설정 — full-features 에 미포함. 필요한 소비자가 개별 enable 한다.
 system-settings = ["entity/system-settings", "infra/system-settings"]
+# 이 빌드가 세우는 라우트를 서술한 문서 조각(`api::openapi::fragment`). 켜지 않으면 모듈도
+# 어노테이션도 컴파일되지 않고, 라우터는 어느 쪽이든 같은 것이 선다.
+openapi = ["dep:utoipa", "dep:utoipa-config", "entity/openapi", "sea-orm-crud/utoipa"]
 # 기능 전체 묶음(기존 소비자 무영향: full-*가 전부 포함)
 full-features = ["board", "file", "membership", "mail-form"]
 
@@ -41,6 +44,11 @@ full-aws = [
   "full-features",
 ]
 
+[build-dependencies]
+# `DateTimeWithTimeZone` 가 chrono 의 무엇인지 파생 매크로에 알린다(build.rs 참고). 문서를 만들지
+# 않는 빌드에서는 링크되지 않고, 빌드 스크립트는 아무것도 쓰지 않는다.
+utoipa-config = { version = "0.1.2", optional = true }
+
 [dev-dependencies]
 e2e = { path = "../e2e" }
 # 멤버십 유지보수는 만기된 구독을 **데이터베이스 전체에서** 훑는다. 한 케이스가 그것을 부르면
@@ -50,6 +58,8 @@ serial_test = "3"
 # 플랫 필터 파라미터를 실제 쿼리스트링 그대로 파싱해 보기 위한 것. axum 이 `Query` 에 쓰는 것과
 # 같은 파서라, 테스트가 통과하면 라우트에서도 같게 읽힌다.
 serde_urlencoded = "0.7.1"
+# 라우터를 짓는 문장과 조작을 서술하는 문장을 컨트롤러 소스에서 나란히 긁어 맞대어 보는 검사용.
+regex = "1"
 
 [dependencies]
 # default-features=false: if infra's default (session-store-redis) is force-enabled,
@@ -87,6 +97,8 @@ tower-sessions-core = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 sysinfo = { workspace = true }
+
+utoipa = { workspace = true, optional = true }
 
 aws-sdk-s3 = { workspace = true, optional = true }
 aws-sdk-ssm = { workspace = true, optional = true }

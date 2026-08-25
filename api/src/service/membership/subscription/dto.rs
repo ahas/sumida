@@ -16,12 +16,18 @@ fn default_owner_kind() -> OwnerKind {
   OwnerKind::Personal
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionFilter {
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub owner_kind: Option<OneOrMany<OwnerKind>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub owner_id:   Option<OneOrMany<i32>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub status:     Option<OneOrMany<SubscriptionStatus>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub plan_code:  Option<OneOrMany<String>>,
 }
 
@@ -70,6 +76,7 @@ impl FilterSchema for SubscriptionFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionListItem {
@@ -88,6 +95,7 @@ pub struct SubscriptionListItem {
   pub updated_at:           DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetSubscription {
@@ -103,6 +111,7 @@ pub struct GetSubscription {
   pub cancel_at_period_end: bool,
   pub canceled_at:          Option<DateTimeWithTimeZone>,
   pub auto_renew:           bool,
+  #[cfg_attr(feature = "openapi", schema(value_type = Object))]
   pub allowed_actions:      JsonValue,
   pub created_at:           DateTimeWithTimeZone,
   pub updated_at:           DateTimeWithTimeZone,
@@ -114,6 +123,7 @@ impl IntoResponse for GetSubscription {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSubscription {
@@ -140,6 +150,7 @@ pub struct CreateSubscription {
 
 /// Toggle auto-renew on an existing subscription. Enabling requires a billing key
 /// (either supplied here or already stored).
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAutoRenew {
@@ -149,6 +160,7 @@ pub struct SetAutoRenew {
 }
 
 /// Switch an active subscription to a different plan mid-period (upgrade/downgrade).
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangePlan {
@@ -159,6 +171,7 @@ pub struct ChangePlan {
 /// units, prorated by the fraction of the current period still remaining. Actual
 /// money movement (charging `proration_amount` or crediting a negative one) is the
 /// PG layer's responsibility; this records the canonical breakdown.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProrationResult {
@@ -181,6 +194,8 @@ impl IntoResponse for ProrationResult {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelQuery {
@@ -188,6 +203,7 @@ pub struct CancelQuery {
   pub at_period_end: bool,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionCreated {

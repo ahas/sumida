@@ -13,6 +13,8 @@ use crate::util::db::wrap_ilike;
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct OrganizationFilter {
   /// A name to look for anywhere in the tree. It is what a reader types when they cannot find
   /// something, so it answers from every level rather than from the one being read.
@@ -75,22 +77,28 @@ impl OrganizationFilter {
   }
 }
 
+/// One organization on a page of them.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizationListItem {
   pub id:         i32,
   pub name:       String,
+  /// Null at a root.
   #[serde(default)]
   pub parent_id:  Nullable<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }
 
+/// One organization, read on its own.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GetOrganization {
   pub id:         i32,
   pub name:       String,
+  /// Null at a root.
   pub parent_id:  Option<i32>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
@@ -102,16 +110,23 @@ impl IntoResponse for GetOrganization {
   }
 }
 
+/// What adding an organization takes.
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateOrganization {
+  /// Left out, the server picks the identifier.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub id:        Optional<i32>,
   pub name:      String,
+  /// Where it hangs. Null or left out makes it a root.
   #[serde(default)]
   pub parent_id: Nullable<i32>,
 }
 
+/// The identifier of the organization that was added.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizationCreated {
   pub id: i32,
@@ -123,10 +138,15 @@ impl IntoResponse for OrganizationCreated {
   }
 }
 
+/// What changing an organization takes. Everything may be left out, and what is left out is left
+/// alone.
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateOrganization {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub name:      Optional<String>,
+  /// Where it hangs. Null makes it a root; leaving it out keeps it where it is.
   #[serde(default)]
   pub parent_id: Nullable<i32>,
 }
@@ -242,5 +262,40 @@ mod tests {
       scoped.ends_with(&format!(" AND ({bare})")),
       "the tree must be one more conjunct: {scoped}"
     );
+  }
+}
+
+/// What the document says may be left out, put to the reader that decides it.
+#[cfg(all(test, feature = "openapi"))]
+mod schema_tests {
+  use sea_orm_crud::openapi::{assert_params_required_matches_serde, assert_required_matches_serde};
+  use serde_json::json;
+
+  use super::*;
+
+  #[test]
+  fn what_adding_an_organization_takes_is_what_the_document_asks_for() {
+    assert_required_matches_serde::<CreateOrganization>(json!({
+      "id": 1,
+      "name": "Acme",
+      "parentId": 2,
+    }));
+  }
+
+  #[test]
+  fn what_changing_an_organization_takes_is_what_the_document_asks_for() {
+    assert_required_matches_serde::<UpdateOrganization>(json!({
+      "name": "Acme",
+      "parentId": 2,
+    }));
+  }
+
+  #[test]
+  fn every_parameter_the_list_names_is_one_the_reader_may_be_left_without() {
+    assert_params_required_matches_serde::<OrganizationFilter>(&[
+      ("search", "acme"),
+      ("name", "acme"),
+      ("parent_id", "1"),
+    ]);
   }
 }

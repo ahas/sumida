@@ -31,6 +31,7 @@ use super::registry::Registry;
 use super::{Authz, AuthzError};
 
 /// One grantable-or-derived relation, in the form the `/relation-tuples` form's selects need.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationView {
@@ -50,6 +51,7 @@ pub struct RelationView {
 }
 
 /// One permission and the rule behind it.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionView {
@@ -61,6 +63,7 @@ pub struct PermissionView {
 }
 
 /// The whole vocabulary. Both lists are sorted, so a client can diff two deployments' schemas.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaView {

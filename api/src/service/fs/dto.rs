@@ -25,12 +25,15 @@ pub fn inline_uri(uuid: Uuid) -> String {
   format!("/files/{uuid}/inline")
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct FileFilter {
   pub user:      Option<String>,
   pub dir:       Option<String>,
   pub name:      Option<String>,
   pub uri:       Option<String>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub status:    Option<OneOrMany<FileStatus>>,
   pub mime_type: Option<String>,
 }
@@ -106,6 +109,7 @@ impl FilterSchema for FileFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Users", from_query_result)]
 pub struct FileUser {
@@ -115,6 +119,7 @@ pub struct FileUser {
   pub name:     String,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Files", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -137,6 +142,7 @@ pub struct FileListItem {
   pub deleted_at:    Option<DateTimeWithTimeZone>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Files", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -169,6 +175,7 @@ impl IntoResponse for GetFile {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileUploadOptions {
@@ -314,6 +321,7 @@ impl FileUploadTrait for UploadFile {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileUploaded {
@@ -326,6 +334,7 @@ impl IntoResponse for FileUploaded {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteFile {
@@ -343,6 +352,7 @@ impl IntoResponse for FileDeleted {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStats {
@@ -352,6 +362,7 @@ pub struct FileStats {
   pub by_status:    Vec<FileStatusStats>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMimeTypeStats {
@@ -360,6 +371,7 @@ pub struct FileMimeTypeStats {
   pub total_size: i64,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStatusStats {

@@ -37,11 +37,22 @@ pub struct JwtClaims {
   pub token_type: String, // "access" or "refresh"
 }
 
+/// What the token route hands out.
+///
+/// **These keys are not renamed.** Unlike the rest of this API's bodies, they go out exactly as
+/// they are written here.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TokenPair {
+  /// Sent as `Authorization: Bearer <token>` to authenticate a request.
   pub access_token:  String,
+  /// Traded at the rotation route for the next pair. It buys exactly one, and is destroyed as the
+  /// next one is stored.
   pub refresh_token: String,
+  /// Always `Bearer`.
   pub token_type:    String,
+  /// How many seconds the access token has left. The refresh token outlives it, by how much is a
+  /// deployment setting.
   pub expires_in:    i64,
 }
 

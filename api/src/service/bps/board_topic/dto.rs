@@ -12,10 +12,14 @@ use serde_json::json;
 use crate::util::db::wrap_ilike;
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardTopicFilter {
   pub search:   Option<String>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub name:     Option<OneOrMany<String>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub board_id: Option<OneOrMany<i32>>,
 }
 
@@ -61,6 +65,7 @@ impl FilterSchema for BoardTopicFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -74,6 +79,7 @@ pub struct BoardTopicListItem {
   pub updated_at:  DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -93,16 +99,21 @@ impl IntoResponse for GetBoardTopic {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardTopic {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub id:          Optional<i32>,
   pub name:        String,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub description: Optional<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub order:       Optional<i32>,
   pub board_id:    i32,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardTopicCreated {
@@ -115,13 +126,17 @@ impl IntoResponse for BoardTopicCreated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardTopic {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub name:        Optional<String>,
   #[serde(default)]
   pub description: Nullable<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub order:       Optional<i32>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub board_id:    Optional<i32>,
 }
 

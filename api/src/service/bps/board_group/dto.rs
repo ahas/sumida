@@ -12,11 +12,14 @@ use serde_json::json;
 use crate::util::db::wrap_ilike;
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardGroupFilter {
   /// A name to look for anywhere in the tree. It is what a reader types when they cannot find
   /// something, so it answers from every level rather than from the one being read.
   pub search:    Option<String>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub name:      Option<OneOrMany<String>>,
   /// Which level of the tree is read. Saying nothing means the roots, not "every group", so it
   /// carries a meaning a declared key cannot have — an unmentioned key is unfiltered. It stays a
@@ -70,6 +73,7 @@ impl FilterSchema for BoardGroupFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +87,7 @@ pub struct BoardGroupListItem {
   pub updated_at:  DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Entity", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -101,16 +106,20 @@ impl IntoResponse for GetBoardGroup {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardGroup {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub id:          Optional<i32>,
   pub name:        String,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub description: Optional<String>,
   #[serde(default)]
   pub parent_id:   Nullable<i32>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardGroupCreated {
@@ -123,10 +132,13 @@ impl IntoResponse for BoardGroupCreated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardGroup {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub name:        Optional<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub description: Optional<String>,
   #[serde(default)]
   pub parent_id:   Nullable<i32>,

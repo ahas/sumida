@@ -14,6 +14,8 @@ membership = []
 mail-form = []
 # 공용 운영 설정. full-features 에 넣지 않는다 — enable 하지 않은 소비자는 테이블이 서지 않는다.
 system-settings = []
+# 전선에 실리는 열거형에 스키마를 붙인다. 문서를 만들지 않는 소비자는 utoipa 를 링크하지 않는다.
+openapi = ["dep:utoipa"]
 
 [dependencies]
 error = { path = "../error" }
@@ -25,3 +27,5 @@ sea-orm-migration = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+
+utoipa = { workspace = true, optional = true }

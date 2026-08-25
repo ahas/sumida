@@ -12,6 +12,7 @@ const TOP_ADDRESS_LIMIT: i64 = 5;
 const TOP_MIME_LIMIT: i64 = 6;
 
 /// One day of sign-in attempts, split by whether they were let through.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthDailyItem {
@@ -21,6 +22,7 @@ pub struct AuthDailyItem {
 }
 
 /// An address that has been refused repeatedly, and what it was refused for.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthOffender {
@@ -35,6 +37,7 @@ pub struct AuthOffender {
 /// a person mistyping, a banned account is a decision already taken, an unknown account from one
 /// address repeated is somebody guessing. The daily split answers "is this normal", the offender
 /// list answers "who".
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthActivity {
@@ -105,6 +108,7 @@ impl AuthActivity {
 }
 
 /// One media type and what it occupies.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageKind {
@@ -125,6 +129,7 @@ struct StorageTotal {
 /// The total is every stored file, and the breakdown names the heaviest media types with the rest
 /// summed into one row — a list with a row per type would be mostly noise. `unreferenced` counts
 /// files nothing points at any more, which is the number worth acting on.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageUsage {
@@ -189,6 +194,7 @@ impl StorageUsage {
 }
 
 /// One day of new accounts.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct SignupDailyItem {
@@ -210,6 +216,7 @@ struct AccountTotals {
 /// The totals answer "how big is this", the series answers "is that changing". Neither loses its
 /// meaning as the installation grows, which the newest few accounts do: past a few thousand users
 /// the last five to sign up say nothing about anything.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountActivity {

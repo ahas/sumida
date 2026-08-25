@@ -16,6 +16,7 @@ fn default_owner_kind() -> OwnerKind {
   OwnerKind::Personal
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequireActionRequest {
@@ -28,6 +29,7 @@ pub struct RequireActionRequest {
   pub idempotency_key: Option<String>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EntitlementOutcome {

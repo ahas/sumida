@@ -244,6 +244,37 @@ impl<'de> Deserialize<'de> for ConditionQuery {
   }
 }
 
+/// The `where` parameter, written out for a reader of the document.
+///
+/// The type reads itself rather than being derived from named fields — the parameter is spelled
+/// `where` and the tree arrives as one string — so the parameter is stated here, beside the reader
+/// it has to agree with.
+#[cfg(feature = "openapi")]
+impl utoipa::IntoParams for ConditionQuery {
+  fn into_params(
+    parameter_in_provider: impl Fn() -> Option<utoipa::openapi::path::ParameterIn>,
+  ) -> Vec<utoipa::openapi::path::Parameter> {
+    use utoipa::openapi::Required;
+    use utoipa::openapi::path::{ParameterBuilder, ParameterIn};
+    use utoipa::openapi::schema::{ObjectBuilder, Type};
+
+    vec![
+      ParameterBuilder::new()
+        .name("where")
+        .parameter_in(parameter_in_provider().unwrap_or(ParameterIn::Query))
+        .required(Required::False)
+        .description(Some(
+          "How several comparisons are grouped, as a JSON tree. Only the keys and operators this \
+           list declares may appear in it, and the caps on its size are the ones `filters` states. \
+           It narrows whatever the flat parameters already narrowed — sending both applies both. An \
+           empty value narrows nothing.",
+        ))
+        .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
+        .build(),
+    ]
+  }
+}
+
 /// Whether the value carried matches what the operator takes, and whether the pieces are inside the
 /// per-value caps. Types are the field's business and are checked when the tree is compiled.
 fn check_shape(key: &str, op: Op, value: Option<&JsonValue>) -> Result<(), ConditionError> {

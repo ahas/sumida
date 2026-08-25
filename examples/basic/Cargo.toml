@@ -8,6 +8,9 @@ default-run = "app"
 [features]
 default = ["full-local"]
 full-local = ["sumida/full-local"]
+# sumida 가 세우는 라우트의 문서 조각을 링크한다. 이 예제는 그것을 합쳐 내보내지 않으므로,
+# 켜도 서는 라우터는 같다 — 조각이 이 빌드에서도 만들어지는지를 확인하는 자리다.
+openapi = ["sumida/openapi"]
 
 [[bin]]
 name = "app"

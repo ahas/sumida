@@ -10,6 +10,7 @@ fn default_owner_kind() -> OwnerKind {
 
 /// Start a PG-backed purchase. Creates a pending purchase and returns the order
 /// id to register with the PG (PortOne `paymentId`).
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckoutRequest {
@@ -27,6 +28,7 @@ pub struct CheckoutRequest {
   pub coupon_codes: Option<Vec<String>>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckoutResult {
@@ -48,6 +50,7 @@ impl IntoResponse for CheckoutResult {
 }
 
 /// Confirm a purchase after the client has paid (server-side verification).
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmRequest {
@@ -56,6 +59,7 @@ pub struct ConfirmRequest {
   pub payment_id:    String,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmResult {
@@ -72,6 +76,7 @@ impl IntoResponse for ConfirmResult {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 pub struct WebhookAck {
   pub received: bool,
@@ -83,6 +88,7 @@ impl IntoResponse for WebhookAck {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentRefundRequest {
@@ -91,6 +97,7 @@ pub struct PaymentRefundRequest {
   pub reason:        Option<String>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentRefundResult {

@@ -20,9 +20,12 @@ fn holder(column: entity::users::Column) -> SimpleExpr {
   Expr::col((Alias::new("user"), column)).into()
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct ApiKeyFilter {
   pub key:      Option<String>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub user_id:  Option<OneOrMany<i32>>,
   pub username: Option<String>,
   pub name:     Option<String>,
@@ -82,6 +85,7 @@ impl FilterSchema for ApiKeyFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[sea_orm(entity = "entity::users::Entity")]
 pub struct ApiKeyUser {
@@ -93,6 +97,7 @@ pub struct ApiKeyUser {
   pub name:     String,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiKeyListItem {
@@ -105,6 +110,7 @@ pub struct ApiKeyListItem {
   pub created_at: DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetApiKey {
@@ -125,12 +131,14 @@ impl IntoResponse for GetApiKey {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateApiKey {
   pub user_id:         i32,
   pub expires_at:      Nullable<DateTimeWithTimeZone>,
   pub access_policies: Option<Vec<ApForUser>>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_secured:      Optional<bool>,
 }
 
@@ -145,6 +153,7 @@ impl IntoActiveModel<ActiveModel> for CreateApiKey {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiKeyCreated {
@@ -157,11 +166,13 @@ impl IntoResponse for ApiKeyCreated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateApiKey {
   pub expires_at:      Nullable<DateTimeWithTimeZone>,
   pub access_policies: Option<Vec<ApForUser>>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_secured:      Optional<bool>,
 }
 

@@ -12,8 +12,14 @@ use serde_json::json;
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct UserInvitationFilter {
+  /// One invited account or several.
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub user_id: Option<OneOrMany<i32>>,
+  /// One token or several. A value that is not a token is refused rather than dropped.
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub uuid:    Option<OneOrMany<Uuid>>,
 }
 
@@ -54,22 +60,32 @@ impl FilterSchema for UserInvitationFilter {
   }
 }
 
+/// One invitation on a page of them, whether or not it is still good.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationListItem {
+  /// The account the invitation was issued for.
   pub user_id: i32,
+  /// The token. It is what is presented to `POST /users/activate`.
   pub uuid:    Uuid,
 
+  /// When it stops working. 30 days from when it was issued.
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
 }
 
+/// One invitation, read on its own. Only one that is still good is ever answered with.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GetUserInvitation {
+  /// The account the invitation was issued for.
   pub user_id: i32,
+  /// The token. It is what is presented to `POST /users/activate`.
   pub uuid:    Uuid,
 
+  /// When it stops working. 30 days from when it was issued.
   pub expires_at: DateTimeWithTimeZone,
   pub created_at: DateTimeWithTimeZone,
 }
@@ -80,11 +96,16 @@ impl IntoResponse for GetUserInvitation {
   }
 }
 
+/// Carries nothing. The route that reads it names the account in its path, and that route cannot
+/// be reached.
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUserInvitation {}
 
+/// The token that was issued, and when it stops working.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationCreated {
   pub uuid:       Uuid,
@@ -97,7 +118,10 @@ impl IntoResponse for UserInvitationCreated {
   }
 }
 
+/// Carries nothing. The route that reads it names the account in its path, and that route cannot
+/// be reached.
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserInvitation {}
 
@@ -241,5 +265,30 @@ mod tests {
       scoped.ends_with(&format!(" AND ({bare})")),
       "the tree must be one more conjunct: {scoped}"
     );
+  }
+}
+
+/// What the document says may be left out, put to the reader that decides it.
+#[cfg(all(test, feature = "openapi"))]
+mod schema_tests {
+  use sea_orm_crud::openapi::{assert_params_required_matches_serde, assert_required_matches_serde};
+  use serde_json::json;
+
+  use super::*;
+
+  /// Both bodies carry nothing today, and the check is what keeps a field from being added to one
+  /// of them without being answered for.
+  #[test]
+  fn the_two_bodies_that_carry_nothing_ask_for_nothing() {
+    assert_required_matches_serde::<CreateUserInvitation>(json!({}));
+    assert_required_matches_serde::<UpdateUserInvitation>(json!({}));
+  }
+
+  #[test]
+  fn every_parameter_the_list_names_is_one_the_reader_may_be_left_without() {
+    assert_params_required_matches_serde::<UserInvitationFilter>(&[
+      ("user_id", "1,2"),
+      ("uuid", "0195b0a1-0000-7000-8000-000000000000"),
+    ]);
   }
 }

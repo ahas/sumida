@@ -11,9 +11,13 @@ use serde_json::json;
 
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostReportFilter {
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub post_id: Option<OneOrMany<i32>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub user_id: Option<OneOrMany<i32>>,
 }
 
@@ -50,6 +54,7 @@ impl FilterSchema for BoardPostReportFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostReportListItem {
@@ -60,6 +65,7 @@ pub struct BoardPostReportListItem {
   pub created_at: DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPostReport {
@@ -76,6 +82,7 @@ impl IntoResponse for GetBoardPostReport {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPostReport {
@@ -83,6 +90,7 @@ pub struct CreateBoardPostReport {
   pub reason:  String,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostReportCreated {

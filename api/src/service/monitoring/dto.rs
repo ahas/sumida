@@ -7,6 +7,7 @@ use sysinfo::System;
 
 use crate::service::monitoring::provider::SystemMetrics;
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardComponent {
@@ -15,6 +16,7 @@ pub struct DashboardComponent {
   pub description: &'static str,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardComponents {
@@ -27,6 +29,7 @@ impl IntoResponse for DashboardComponents {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
@@ -59,6 +62,7 @@ impl IntoResponse for SystemInfo {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadAverage {
@@ -77,6 +81,7 @@ impl LoadAverage {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceUsage {
@@ -97,6 +102,7 @@ impl ResourceUsage {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
@@ -105,6 +111,7 @@ pub enum HealthStatus {
   Unhealthy,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceHealth {
@@ -142,6 +149,7 @@ impl ServiceHealth {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringSnapshot {
@@ -162,6 +170,7 @@ impl MonitoringSnapshot {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringResponse {

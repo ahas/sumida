@@ -14,8 +14,12 @@ use crate::util::db::wrap_ilike;
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct RoleFilter {
+  /// Text looked for anywhere in the name.
   pub name:        Option<String>,
+  /// Text looked for anywhere in the description.
   pub description: Option<String>,
 }
 
@@ -59,7 +63,9 @@ impl FilterSchema for RoleFilter {
   }
 }
 
+/// One role on a page of them. What the role grants is not here; read the role to see it.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RoleListItem {
   pub id:          i32,
@@ -69,12 +75,15 @@ pub struct RoleListItem {
   pub updated_at:  DateTimeWithTimeZone,
 }
 
+/// One role, with every route gate it opens.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GetRole {
   pub id:              i32,
   pub name:            String,
   pub description:     Option<String>,
+  /// One entry per API this role opens. An empty list is a role that grants nothing.
   #[sea_orm(skip)]
   pub access_policies: Vec<ApForUser>,
   pub created_at:      DateTimeWithTimeZone,
@@ -87,13 +96,18 @@ impl IntoResponse for GetRole {
   }
 }
 
+/// What adding a role takes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRole {
+  /// Left out, the server picks the identifier.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub id:              Optional<i32>,
   pub name:            String,
   #[serde(default)]
   pub description:     Nullable<String>,
+  /// The route gates this role opens. An empty list is a role that grants nothing.
   pub access_policies: Vec<ApForUser>,
 }
 
@@ -108,7 +122,9 @@ impl IntoActiveModel<ActiveModel> for CreateRole {
   }
 }
 
+/// The identifier of the role that was added.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RoleCreated {
   pub id: i32,
@@ -120,12 +136,17 @@ impl IntoResponse for RoleCreated {
   }
 }
 
+/// What changing a role takes. Everything may be left out, and what is left out is left alone.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRole {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub name:            Optional<String>,
   #[serde(default)]
   pub description:     Nullable<String>,
+  /// Sent, it replaces the whole set rather than adding to it, so what is left out is taken away.
+  /// Left out, the role keeps what it carries.
   pub access_policies: Option<Vec<ApForUser>>,
 }
 
@@ -256,5 +277,45 @@ mod tests {
       scoped.ends_with(&format!(" AND ({bare})")),
       "the tree must be one more conjunct: {scoped}"
     );
+  }
+}
+
+/// What the document says may be left out, put to the reader that decides it.
+#[cfg(all(test, feature = "openapi"))]
+mod schema_tests {
+  use sea_orm_crud::openapi::{assert_params_required_matches_serde, assert_required_matches_serde};
+  use serde_json::json;
+
+  use super::*;
+
+  fn grant() -> serde_json::Value {
+    json!({ "namespace": "user", "object": ["service"], "action": ["read"], "effect": "allow" })
+  }
+
+  #[test]
+  fn what_adding_a_role_takes_is_what_the_document_asks_for() {
+    assert_required_matches_serde::<CreateRole>(json!({
+      "id": 1,
+      "name": "operator",
+      "description": "runs the place",
+      "accessPolicies": [grant()],
+    }));
+  }
+
+  #[test]
+  fn what_changing_a_role_takes_is_what_the_document_asks_for() {
+    assert_required_matches_serde::<UpdateRole>(json!({
+      "name": "operator",
+      "description": "runs the place",
+      "accessPolicies": [grant()],
+    }));
+  }
+
+  #[test]
+  fn every_parameter_the_list_names_is_one_the_reader_may_be_left_without() {
+    assert_params_required_matches_serde::<RoleFilter>(&[
+      ("name", "operator"),
+      ("description", "runs"),
+    ]);
   }
 }

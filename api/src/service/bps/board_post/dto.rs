@@ -23,6 +23,8 @@ pub trait Reply {
   fn get_parent_id(&self) -> Option<i32>;
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
 pub struct BoardPostFilter {
@@ -30,6 +32,7 @@ pub struct BoardPostFilter {
   pub title:  Option<String>,
   pub text:   Option<String>,
   pub kind:   Option<BoardPostKind>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub status: Option<OneOrMany<BoardPostStatus>>,
 
   // FTS
@@ -45,8 +48,11 @@ pub struct BoardPostFilter {
   pub snippet_highlight_all: bool,
 
   // Foreign Keys
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub topic_id:  Option<OneOrMany<i32>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub board_id:  Option<OneOrMany<i32>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub parent_id: Option<OneOrMany<i32>>,
 }
 
@@ -155,6 +161,7 @@ impl FilterSchema for BoardPostFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewBoardPost {
@@ -172,6 +179,7 @@ impl ViewBoardPost {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostViewerItem {
@@ -181,6 +189,7 @@ pub struct BoardPostViewerItem {
   pub viewed_at: DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostUser {
@@ -192,6 +201,7 @@ pub struct BoardPostUser {
   pub name:     String,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostBoard {
@@ -203,6 +213,7 @@ pub struct BoardPostBoard {
   pub group_id: Option<i32>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostTopic {
@@ -212,6 +223,7 @@ pub struct BoardPostTopic {
   pub name: String,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostCommon {
@@ -225,6 +237,7 @@ pub struct BoardPostCommon {
   pub reivision:    Nullable<i32>,
   pub tags:         Option<Vec<String>>,
   pub views:        i32,
+  #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
   pub reactions:    Option<JsonValue>,
   pub published_at: Option<DateTimeWithTimeZone>,
   pub scheduled_at: Option<DateTimeWithTimeZone>,
@@ -240,6 +253,7 @@ pub struct BoardPostCommon {
   pub user:  Option<BoardPostUser>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostListItem {
@@ -252,6 +266,8 @@ pub struct BoardPostListItem {
 
   #[sea_orm(skip)]
   #[serde(skip_serializing_if = "Option::is_none")]
+  // 이 가지는 자기 자신으로 돌아온다. 참조로 끊어 두지 않으면 스키마를 모으는 쪽이 영원히 내려간다.
+  #[cfg_attr(feature = "openapi", schema(no_recursion))]
   pub replies: Option<Vec<BoardPostListItem>>,
 
   pub snippet: Option<String>,
@@ -267,6 +283,7 @@ impl Reply for BoardPostListItem {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPost {
@@ -282,10 +299,14 @@ pub struct GetBoardPost {
 
   #[sea_orm(skip)]
   #[serde(skip_serializing_if = "Option::is_none")]
+  // 이 가지는 자기 자신으로 돌아온다. 참조로 끊어 두지 않으면 스키마를 모으는 쪽이 영원히 내려간다.
+  #[cfg_attr(feature = "openapi", schema(no_recursion))]
   pub comments: Option<Vec<GetBoardPost>>,
 
   #[sea_orm(skip)]
   #[serde(skip_serializing_if = "Option::is_none")]
+  // 이 가지는 자기 자신으로 돌아온다. 참조로 끊어 두지 않으면 스키마를 모으는 쪽이 영원히 내려간다.
+  #[cfg_attr(feature = "openapi", schema(no_recursion))]
   pub replies: Option<Vec<GetBoardPost>>,
 }
 
@@ -305,9 +326,11 @@ impl IntoResponse for GetBoardPost {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPost {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub id:                  Optional<i32>,
   pub board_id:            i32,
   #[serde(default)]
@@ -320,8 +343,11 @@ pub struct CreateBoardPost {
   #[serde(default)]
   pub content:             Nullable<String>,
   pub content_type:        BoardPostContentType,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub content_visibility:  Optional<BoardPostContentVisibility>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub kind:                Optional<BoardPostKind>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub status:              Optional<BoardPostStatus>,
   #[serde(default)]
   pub published_at:        Nullable<DateTimeWithTimeZone>,
@@ -354,6 +380,7 @@ impl CreateBoardPost {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostCreated {
@@ -366,18 +393,23 @@ impl IntoResponse for BoardPostCreated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPost {
   #[serde(default)]
   pub topic_id:            Nullable<i32>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub title:               Optional<String>,
   #[serde(default)]
   pub content:             Nullable<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub content_visibility:  Optional<BoardPostContentVisibility>,
   #[serde(default)]
   pub password:            Nullable<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub kind:                Optional<BoardPostKind>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub status:              Optional<BoardPostStatus>,
   #[serde(default)]
   pub published_at:        Nullable<DateTimeWithTimeZone>,

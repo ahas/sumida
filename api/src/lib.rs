@@ -4,6 +4,9 @@ pub mod authz;
 pub mod capability;
 pub mod controller;
 pub mod layer;
+/// 이 빌드가 세우는 라우트를 서술한 문서 조각. 소비자가 자기 문서에 합쳐 쓴다.
+#[cfg(feature = "openapi")]
+pub mod openapi;
 pub mod service;
 pub mod util;
 
@@ -122,15 +125,15 @@ where
       .nest("/api-keys", api_key_controller.router(state))
       .nest("/dashboard/monitoring", dashboard_monitoring_controller.router(state))
       .nest("/dashboard", dashboard_overview_controller.router(state))
-      .nest("/bans", ban_controller.router(state))
-      .nest("/organizations", org_controller.router(state))
-      .nest("/roles", role_controller.router(state))
-      .nest("/auth/session", auth_session_controller.router(state))
-      .nest("/auth/token", auth_token_controller.router(state))
-      .nest("/me", me_controller.router(state))
-      .nest("/users", user_controller.router(state))
-      .nest("/user-invitations", user_invitation_controller.router(state))
-      .nest("/user-verifications", user_verification_controller.router(state));
+      .nest(controller::ban::MOUNT, ban_controller.router(state))
+      .nest(controller::organization::MOUNT, org_controller.router(state))
+      .nest(controller::role::MOUNT, role_controller.router(state))
+      .nest(controller::auth::session::MOUNT, auth_session_controller.router(state))
+      .nest(controller::auth::token::MOUNT, auth_token_controller.router(state))
+      .nest(controller::me::MOUNT, me_controller.router(state))
+      .nest(controller::user::MOUNT, user_controller.router(state))
+      .nest(controller::user_invitation::MOUNT, user_invitation_controller.router(state))
+      .nest(controller::user_verification::MOUNT, user_verification_controller.router(state));
 
     // Mail Form (feature = "mail-form")
     #[cfg(feature = "mail-form")]

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bps::boards::BoardPostContentVisibility;
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -27,6 +28,7 @@ impl std::str::FromStr for BoardPostStatus {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -37,6 +39,7 @@ pub enum BoardPostKind {
   Reply,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
 #[serde(rename_all = "kebab-case")]

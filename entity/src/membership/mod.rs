@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Who owns a membership / wallet: an individual user or an organization.
 /// Also used as a plan's `scope` (which owner kind may subscribe).
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -38,6 +39,7 @@ impl std::str::FromStr for OwnerKind {
 }
 
 /// Billing model of a plan.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -58,6 +60,7 @@ impl std::str::FromStr for PlanKind {
 
 /// UX-facing label for a subscription plan's billing cadence.
 /// `duration_days` is the authoritative length; this is presentation only.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -70,6 +73,7 @@ pub enum BillingInterval {
 
 /// Lifecycle state of a subscription instance. `current_period_end` is the
 /// authoritative entitlement gate; `status` is a denormalization for reporting.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -105,6 +109,7 @@ pub enum SubscriptionEventKind {
 }
 
 /// Status of a purchase (canonical record of a payment event).
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -126,6 +131,7 @@ impl std::str::FromStr for PurchaseStatus {
 }
 
 /// Kind of credit ledger entry.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
@@ -144,6 +150,7 @@ pub enum CreditTxKind {
 }
 
 /// Lifecycle of a credit reservation (authorize → capture/release).
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]

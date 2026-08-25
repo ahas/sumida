@@ -12,6 +12,8 @@ use serde_json::json;
 use crate::util::db::wrap_ilike;
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct MailFormFilter {
   pub sender:  Option<String>,
@@ -53,6 +55,7 @@ impl MailFormFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct MailFormListItem {
@@ -64,6 +67,7 @@ pub struct MailFormListItem {
   pub updated_at: DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMailForm {
@@ -82,15 +86,18 @@ impl IntoResponse for GetMailForm {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMailForm {
   pub kind:    String,
   pub sender:  String,
   pub subject: String,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub content: Optional<String>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MailFormCreated {
@@ -103,12 +110,17 @@ impl IntoResponse for MailFormCreated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateMailForm {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub kind:    Optional<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub sender:  Optional<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub subject: Optional<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub content: Optional<String>,
 }
 

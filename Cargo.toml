@@ -35,6 +35,9 @@ aws-dynamodb = ["infra/aws-dynamodb"]
 aws-s3 = ["infra/aws-s3", "api/aws-s3"]
 image = ["api/image"]
 
+# 이 배포가 세우는 라우트를 서술한 문서 조각. 소비자가 자기 문서에 합쳐 쓴다.
+openapi = ["api/openapi"]
+
 session = []
 session-store-redis = ["session", "infra/session-store-redis", "api/session-store-redis"]
 session-store-aws-dynamodb = [
@@ -108,6 +111,9 @@ tower-sessions = "0.14.0"
 tower-sessions-core = "0.14.0"
 tracing = "0.1.41"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
+# 문서 서술은 핸들러와 타입 **옆**에 붙는 매크로다. 라우터 타입도 시그니처도 건드리지 않으므로
+# 이 크레이트를 링크하지 않는 소비자는 아무것도 달라지지 않는다.
+utoipa = { version = "5.5.0", features = ["chrono", "config", "uuid"] }
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 sysinfo = "0.38.2"
 reqwest = { version = "0.13.2", features = ["json"] }

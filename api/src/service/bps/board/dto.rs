@@ -14,10 +14,13 @@ use serde_json::{Value as JsonValue, json};
 use crate::util::db::wrap_ilike;
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFilter {
   pub search:   Option<String>,
   pub name:     Option<String>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub group_id: Option<OneOrMany<i32>>,
 }
 
@@ -70,6 +73,7 @@ impl FilterSchema for BoardFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "BoardGroups", from_query_result)]
 pub struct BoardBoardGroup {
@@ -77,6 +81,7 @@ pub struct BoardBoardGroup {
   pub name: String,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Boards", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -94,6 +99,7 @@ pub struct BoardListItem {
   pub updated_at:      DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "Boards", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +113,7 @@ pub struct GetBoard {
   pub can_upload_file:     bool,
   pub max_file_size:       i64,
   pub max_file_count:      i32,
+  #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
   pub allowed_file_types:  Option<JsonValue>,
   pub reaction_visibility: BoardPostRecordVisibility,
   pub viewer_visibility:   BoardPostRecordVisibility,
@@ -123,9 +130,11 @@ impl IntoResponse for GetBoard {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoard {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub id:                  Optional<i32>,
   #[serde(default)]
   pub group_id:            Nullable<i32>,
@@ -134,15 +143,23 @@ pub struct CreateBoard {
   pub name:                String,
   #[serde(default)]
   pub description:         Nullable<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub order:               Optional<i32>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub can_upload_file:     Optional<bool>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub max_file_size:       Optional<i64>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub max_file_count:      Optional<i32>,
   #[serde(default)]
   pub allowed_file_types:  Nullable<JsonValue>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub reaction_visibility: Optional<BoardPostRecordVisibility>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub viewer_visibility:   Optional<BoardPostRecordVisibility>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_versioned:        Optional<bool>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_enabled:          Optional<bool>,
 }
 
@@ -167,6 +184,7 @@ impl IntoActiveModel<ActiveModel> for CreateBoard {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardCreated {
@@ -179,6 +197,7 @@ impl IntoResponse for BoardCreated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoard {
@@ -186,17 +205,26 @@ pub struct UpdateBoard {
   pub group_id:            Nullable<i32>,
   #[serde(default)]
   pub topics:              Nullable<Vec<String>>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub name:                Optional<String>,
   pub description:         Nullable<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub order:               Optional<i32>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub can_upload_file:     Optional<bool>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub max_file_size:       Optional<i64>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub max_file_count:      Optional<i32>,
   #[serde(default)]
   pub allowed_file_types:  Nullable<JsonValue>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub reaction_visibility: Optional<BoardPostRecordVisibility>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub viewer_visibility:   Optional<BoardPostRecordVisibility>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_versioned:        Optional<bool>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_enabled:          Optional<bool>,
 }
 

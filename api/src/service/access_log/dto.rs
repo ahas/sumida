@@ -18,14 +18,20 @@ fn actor(column: entity::users::Column) -> SimpleExpr {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct AccessLogFilter {
+  /// Widens across the acting account's id, username and full name at once.
   pub search:     Option<String>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub user_id:    Option<OneOrMany<i32>>,
   pub username:   Option<String>,
   pub name:       Option<String>,
   /// The log's own columns. Everything above narrows by the account, which is no help on a page
   /// already pinned to one; these narrow by what the attempt was.
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub code:       Option<OneOrMany<AccessResultCode>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub method:     Option<OneOrMany<AccessMethod>>,
   pub ip_address: Option<String>,
   pub user_agent: Option<String>,
@@ -34,6 +40,7 @@ pub struct AccessLogFilter {
   ///
   /// Named as the wire names it. The key was already spoken as `createdAt` because it is what a
   /// caller orders by, and a key cannot be one word for sorting and another for filtering.
+  #[cfg_attr(feature = "openapi", param(inline))]
   #[serde(rename = "createdAt")]
   pub created_at: Option<Bounds<DateTimeWithTimeZone>>,
 }
@@ -142,6 +149,7 @@ impl FilterSchema for AccessLogFilter {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AccessLogUser {
   #[sea_orm(from_alias = "user_id")]
@@ -153,6 +161,7 @@ pub struct AccessLogUser {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AccessLogListItem {
   pub id:     i32,
@@ -181,6 +190,7 @@ pub struct AccessLogListItem {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GetAccessLog {
   pub id:     i32,

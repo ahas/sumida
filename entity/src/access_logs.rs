@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use super::users::Entity as Users;
 
+/// How a caller presented itself when the attempt was made.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
 pub enum AccessMethod {
   #[serde(rename = "password")]
@@ -17,7 +19,9 @@ pub enum AccessMethod {
   ApiKey,
 }
 
+/// How the attempt ended. Stored as a number and written on the wire as one of these words.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[sea_orm(rs_type = "i32", db_type = "Integer")]
 pub enum AccessResultCode {
   #[serde(rename = "success")]

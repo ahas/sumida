@@ -9,27 +9,40 @@ use serde_json::json;
 
 use crate::service::user::dto::{UserOrganization, UserRole};
 
+/// The account behind a request, as it sees itself.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Me {
   pub id:            i32,
+  /// The name signed in with.
   pub username:      String,
   pub full_name:     Option<String>,
   pub email:         Option<String>,
   pub phone:         Option<String>,
+  /// Whether the account is a platform administrator by its own column. A grant can confer the
+  /// same reach without this being set.
   pub is_admin:      bool,
+  /// Whether the account may be signed in to at all.
   pub is_enabled:    bool,
+  /// Whether a live ban names this account. A ban can instead name an address or a device, and
+  /// those are matched against the request rather than against the account — so this being `false`
+  /// is not a promise that the next request gets through.
   #[sea_orm(from_alias = "is_banned")]
   pub is_banned:     bool,
   #[sea_orm(nested)]
   pub organization:  UserOrganization,
   #[sea_orm(nested)]
   pub role:          UserRole,
+  /// When **this session** was authorized, not when the account was created.
   #[sea_orm(skip)]
   pub first_seen_at: DateTimeWithTimeZone,
+  /// When this session was last used.
   #[sea_orm(skip)]
   pub last_seen_at:  DateTimeWithTimeZone,
+  /// When the account row was created.
   pub created_at:    DateTimeWithTimeZone,
+  /// When the account row was last changed.
   pub updated_at:    DateTimeWithTimeZone,
 }
 
@@ -39,13 +52,32 @@ impl IntoResponse for Me {
   }
 }
 
+/// A change to one's own account.
+///
+/// Every key may be left out, and what leaving one out means differs by field. `username` and
+/// `password` are left alone. `email`, `fullName` and `phone` are **cleared** — for those three,
+/// absent and `null` are the same instruction, so a request meaning to change only one of them has
+/// to send the current value of the other two.
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateMe {
+  /// Ignored. The account keeps the name it signed in with, so sending a different one changes
+  /// nothing.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub username:  Optional<String>,
+  /// A new password, hashed before it is stored and never read back by any route. Absent or `null`
+  /// leaves the current one in place.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub password:  Optional<String>,
+  /// Absent or `null` clears it.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub email:     Nullable<String>,
+  /// Absent or `null` clears it.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub full_name: Nullable<String>,
+  /// Absent or `null` clears it.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub phone:     Nullable<String>,
 }
 

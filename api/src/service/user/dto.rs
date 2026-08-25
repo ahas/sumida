@@ -13,13 +13,24 @@ use crate::util::db::wrap_ilike;
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct UserFilter {
+  /// Text looked for in the username and in the full name at once.
   pub search:          Option<String>,
+  /// Text looked for anywhere in the username.
   pub username:        Option<String>,
+  /// Text looked for anywhere in the full name.
   pub name:            Option<String>,
+  /// One organization or several. With `recursive`, everything under them as well.
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub organization_id: Option<OneOrMany<i32>>,
+  /// One role or several.
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub role_id:         Option<OneOrMany<i32>>,
+  /// Only accounts that may sign in, or only accounts that may not.
   pub is_enabled:      Option<bool>,
+  /// Only administrators, or only accounts that are not.
   pub is_admin:        Option<bool>,
   /// Whether `organization_id` matches by equality or through the organization tree. It has no
   /// expression of its own — it selects which mechanism the other key uses — so it is a modifier of
@@ -139,6 +150,7 @@ impl FilterSchema for UserFilter {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserOrganization {
   #[sea_orm(from_alias = "org_id")]
@@ -157,6 +169,7 @@ impl From<infra::session::UserOrganization> for UserOrganization {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserRole {
   #[sea_orm(from_alias = "role_id")]
@@ -174,7 +187,9 @@ impl From<infra::session::UserRole> for UserRole {
   }
 }
 
+/// One account on a page of them.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserListItem {
   pub id:           i32,
@@ -194,7 +209,9 @@ pub struct UserListItem {
   pub updated_at:   DateTimeWithTimeZone,
 }
 
+/// One account, read on its own.
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GetUser {
   pub id:           i32,
@@ -220,22 +237,40 @@ impl IntoResponse for GetUser {
   }
 }
 
+/// What opening an account takes.
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUser {
+  /// Left out, the server picks the identifier.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub id:              Optional<i32>,
+  /// What the account signs in with.
   pub username:        String,
+  /// Stored hashed, and read back by no route.
   pub password:        String,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub full_name:       Nullable<String>,
+  /// Where an invitation and a verification code are sent. An account can be opened without one,
+  /// but it cannot then be invited.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub email:           Nullable<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub phone:           Nullable<String>,
+  /// Forced to false unless the caller is an administrator.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_admin:        Optional<bool>,
+  /// An account that is not enabled cannot sign in. Activating an invitation enables it.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_enabled:      Optional<bool>,
+  /// Forced to the caller's own organization unless the caller is an administrator.
   pub organization_id: i32,
   pub role_id:         i32,
 }
 
+/// The identifier of the account that was opened.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserCreated {
   pub id: i32,
@@ -247,17 +282,41 @@ impl IntoResponse for UserCreated {
   }
 }
 
+/// What changing somebody else's account takes.
+///
+/// Every property may be left out, but leaving one out does not always leave it alone. `email`,
+/// `fullName` and `phone` are **cleared** by their absence — an absent property and an explicit
+/// `null` are the same request for those three — while everything else keeps what is stored. To
+/// keep an address, send it back.
+///
+/// The four that decide privilege — `isAdmin`, `roleId`, `organizationId`, `isEnabled` — are dropped
+/// from a request that is not an administrator's rather than refusing it.
 #[derive(Clone, Debug, Serialize, Deserialize, DeriveIntoActiveModel)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUser {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub username:        Optional<String>,
+  /// A new password. It does not put out credentials already handed out; `/users/change-password`
+  /// is what does that.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub password:        Optional<String>,
+  /// Left out, it is cleared. Send it back to keep it.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub email:           Nullable<String>,
+  /// Left out, it is cleared. Send it back to keep it.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub full_name:       Nullable<String>,
+  /// Left out, it is cleared. Send it back to keep it.
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub phone:           Nullable<String>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_admin:        Optional<bool>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_enabled:      Optional<bool>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub organization_id: Optional<i32>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub role_id:         Optional<i32>,
 }
 
@@ -281,19 +340,30 @@ impl IntoResponse for UserDeleted {
   }
 }
 
+/// What setting a new password against a verification code takes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ChangePassword {
+  /// The account whose password is being set.
   pub username: String,
+  /// The new password.
   pub password: String,
+  /// The six digits sent for kind `password-change`. It is spent whether or not what follows
+  /// succeeds, so a second attempt needs a second code.
   pub code:     String,
 }
 
+/// What turning an invitation into a working account takes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UserActivation {
+  /// The account the invitation was issued for. An invitation is good for that one account only.
   pub user_id:  i32,
+  /// The password the account signs in with from now on.
   pub password: String,
+  /// The invitation token. It is spent here.
   pub uuid:     Uuid,
 }
 
@@ -425,5 +495,78 @@ mod filter_tests {
       scoped.ends_with(&format!(" AND ({bare})")),
       "the tree must be one more conjunct: {scoped}"
     );
+  }
+}
+
+/// What the document says may be left out, put to the reader that decides it.
+///
+/// An annotation sits beside a field rather than inside it, so it is free to disagree with the
+/// reader. Each check below drops every property the schema names, one at a time, and fails wherever
+/// the document and serde do not answer the same way.
+#[cfg(all(test, feature = "openapi"))]
+mod schema_tests {
+  use sea_orm_crud::openapi::{assert_params_required_matches_serde, assert_required_matches_serde};
+  use serde_json::json;
+
+  use super::*;
+
+  #[test]
+  fn what_opening_an_account_takes_is_what_the_document_asks_for() {
+    assert_required_matches_serde::<CreateUser>(json!({
+      "id": 1,
+      "username": "kim",
+      "password": "hunter2",
+      "fullName": "Kim",
+      "email": "kim@example.com",
+      "phone": "010-0000-0000",
+      "isAdmin": false,
+      "isEnabled": true,
+      "organizationId": 1,
+      "roleId": 1,
+    }));
+  }
+
+  #[test]
+  fn what_changing_an_account_takes_is_what_the_document_asks_for() {
+    assert_required_matches_serde::<UpdateUser>(json!({
+      "username": "kim",
+      "password": "hunter2",
+      "email": "kim@example.com",
+      "fullName": "Kim",
+      "phone": "010-0000-0000",
+      "isAdmin": false,
+      "isEnabled": true,
+      "organizationId": 1,
+      "roleId": 1,
+    }));
+  }
+
+  #[test]
+  fn what_the_two_pre_credential_routes_take_is_what_the_document_asks_for() {
+    assert_required_matches_serde::<ChangePassword>(json!({
+      "username": "kim",
+      "password": "hunter2",
+      "code": "123456",
+    }));
+
+    assert_required_matches_serde::<UserActivation>(json!({
+      "userId": 1,
+      "password": "hunter2",
+      "uuid": "0195b0a1-0000-7000-8000-000000000000",
+    }));
+  }
+
+  #[test]
+  fn every_parameter_the_list_names_is_one_the_reader_may_be_left_without() {
+    assert_params_required_matches_serde::<UserFilter>(&[
+      ("search", "kim"),
+      ("username", "kim"),
+      ("name", "Kim"),
+      ("organization_id", "1,2"),
+      ("role_id", "3"),
+      ("is_enabled", "true"),
+      ("is_admin", "false"),
+      ("recursive", "true"),
+    ]);
   }
 }

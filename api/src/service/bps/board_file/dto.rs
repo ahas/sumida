@@ -24,10 +24,14 @@ use crate::service::fs::dto::{
 };
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op, listed};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardFileFilter {
   /// The attachment's file uuid — `board_files.file_uuid`, which is what identifies the row.
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub id:      Option<OneOrMany<Uuid>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub post_id: Option<OneOrMany<i32>>,
 }
 
@@ -89,6 +93,7 @@ impl FilterSchema for BoardFileFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "BoardFiles", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +114,7 @@ pub struct BoardFileListItem {
   // pub updated_at:    DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, DerivePartialModel)]
 #[sea_orm(entity = "BoardFiles", from_query_result)]
 #[serde(rename_all = "camelCase")]
@@ -245,6 +251,7 @@ impl IntoResponse for BoardFileUpdated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteBoardFile {

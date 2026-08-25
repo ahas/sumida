@@ -28,11 +28,16 @@ use crate::authz::ServiceGrant;
 /// from [`from_service_grants`] or from `platform:root#superuser`. Deriving it from a table again
 /// would tie the payload the clients are pinned to back to a storage layout that is free to move.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ApForUser {
+  /// The API this entry is about. `*` on the administrator's entry, which stands for all of them.
   pub namespace: String,
+  /// Always `["service"]`, except on the administrator's entry, where it is `["*"]`.
   pub object:    Vec<String>,
+  /// The verbs granted — `create`, `read`, `update`, `delete`, or `*` on the administrator's entry.
   pub action:    Vec<String>,
+  /// Always `allow`. Nothing here withholds; a block is a rule, not a record.
   pub effect:    String,
 }
 

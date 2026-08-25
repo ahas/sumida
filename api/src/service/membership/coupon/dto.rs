@@ -14,6 +14,8 @@ fn default_owner_kind() -> OwnerKind {
   OwnerKind::Personal
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CouponFilter {
@@ -49,6 +51,7 @@ impl FilterSchema for CouponFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCoupon {
@@ -85,6 +88,7 @@ pub struct CreateCoupon {
   pub expires_at: Option<DateTimeWithTimeZone>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct CouponItem {
@@ -105,6 +109,9 @@ pub struct CouponItem {
 }
 
 /// Issue a coupon to a specific owner.
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantCoupon {
@@ -114,12 +121,14 @@ pub struct GrantCoupon {
 }
 
 /// Issue a coupon to many owners at once.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkGrantCoupon {
   pub owners: Vec<GrantCoupon>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkGrantResult {
@@ -167,6 +176,7 @@ impl IntoResponse for CouponRevoked {
 /// A coupon grant with its lifecycle timestamps (admin analytics). Status is
 /// `revoked` if `revokedAt` is set, else `redeemed` if `redeemedAt` is set, else
 /// `issued`.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct CouponGrantItem {
@@ -180,6 +190,7 @@ pub struct CouponGrantItem {
 }
 
 /// A coupon available to the calling owner ("my coupons").
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct MyCouponItem {
@@ -193,12 +204,14 @@ pub struct MyCouponItem {
 }
 
 /// Redeem a reward coupon (credits / free plan) for the calling user.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RedeemCoupon {
   pub code: String,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RedeemResult {
@@ -214,6 +227,7 @@ impl IntoResponse for RedeemResult {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CouponCreated {
@@ -229,6 +243,7 @@ impl IntoResponse for CouponCreated {
 
 /// Partial update; only present fields are changed. Use `is_active=false` to retire
 /// a coupon without deleting it.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCoupon {

@@ -5,6 +5,7 @@ use sea_orm::FromQueryResult;
 use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantCredit {
@@ -24,6 +25,7 @@ pub struct GrantCredit {
   pub idempotency_key: Option<String>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumeCredit {
@@ -42,6 +44,8 @@ fn default_owner_kind() -> OwnerKind {
   OwnerKind::Personal
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OwnerQuery {
@@ -60,6 +64,7 @@ impl Default for OwnerQuery {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RefundCredit {
@@ -74,6 +79,7 @@ pub struct RefundCredit {
   pub idempotency_key: Option<String>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WalletBalance {
@@ -94,6 +100,7 @@ impl IntoResponse for WalletBalance {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantResult {
@@ -108,6 +115,7 @@ impl IntoResponse for GrantResult {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumeResult {
@@ -122,6 +130,7 @@ impl IntoResponse for ConsumeResult {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReserveCredit {
@@ -142,6 +151,7 @@ pub struct ReserveCredit {
   pub expires_in_secs: Option<i64>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReservationResult {
@@ -159,6 +169,8 @@ impl IntoResponse for ReservationResult {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReservationFilter {
@@ -166,6 +178,7 @@ pub struct ReservationFilter {
   pub status:    Option<entity::membership::ReservationStatus>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct ReservationListItem {
@@ -179,6 +192,7 @@ pub struct ReservationListItem {
   pub created_at:     DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WalletAudit {
@@ -197,6 +211,8 @@ impl IntoResponse for WalletAudit {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditTxFilter {
@@ -204,6 +220,7 @@ pub struct CreditTxFilter {
   pub kind:      Option<CreditTxKind>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditTxItem {

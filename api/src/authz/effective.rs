@@ -46,6 +46,7 @@ const ACTIONS: [&str; 4] = ["create", "read", "update", "delete"];
 
 /// The payload of `GET /me/permissions`.
 #[derive(Debug, Clone, Default, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Effective {
   /// The identities this request is judged as, canonical form. Carried because the client's

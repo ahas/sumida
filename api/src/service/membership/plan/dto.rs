@@ -17,11 +17,15 @@ fn default_true() -> bool {
   true
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanFilter {
   pub search:          Option<String>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub kind:            Option<OneOrMany<PlanKind>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub scope:           Option<OneOrMany<OwnerKind>>,
   pub is_enabled:      Option<bool>,
   /// Include soft-deleted (retired) plans. Defaults to false.
@@ -100,6 +104,7 @@ impl FilterSchema for PlanFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanListItem {
@@ -120,6 +125,7 @@ pub struct PlanListItem {
   pub updated_at:       DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanActionItem {
@@ -128,6 +134,7 @@ pub struct PlanActionItem {
   pub quota_per_period: Option<i32>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetPlan {
@@ -142,6 +149,7 @@ impl IntoResponse for GetPlan {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanActionInput {
@@ -152,6 +160,7 @@ pub struct PlanActionInput {
   pub quota_per_period: Option<i32>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatePlan {
@@ -179,6 +188,7 @@ pub struct CreatePlan {
   pub actions:          Vec<PlanActionInput>,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanCreated {
@@ -192,6 +202,7 @@ impl IntoResponse for PlanCreated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePlan {

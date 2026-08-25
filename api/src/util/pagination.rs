@@ -20,12 +20,22 @@ where
   }
 }
 
+/// The page a list route is asked for. Every key may be left out; the whole struct has a default.
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[serde(default)]
 pub struct Pagination {
+  /// Counted from 1. `0` is read as the first page.
   pub page:  u64,
+  /// How many rows a page holds. A request over the ceiling is trimmed to it, and `filters`
+  /// answers what that ceiling is.
   pub limit: u64,
+  /// The key to order by. A key this list did not declare sortable is not an error — it falls
+  /// back to the declared default.
   pub sort:  Option<String>,
+  /// Only `desc` descends; anything else reads as ascending.
+  #[cfg_attr(feature = "openapi", param(value_type = String))]
   #[serde(deserialize_with = "deserialize_order")]
   pub order: Order,
 }
@@ -97,9 +107,13 @@ impl Default for Pagination {
   }
 }
 
+/// One page of a list, and how many rows there are behind it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct List<T> {
+  /// The rows on this page. Narrowing to nothing gives an empty array.
   items: Vec<T>,
+  /// How many rows match once paging is set aside.
   count: u64,
 }
 

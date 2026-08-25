@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(
   Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, EnumIter, DeriveActiveEnum,
 )]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
 pub enum BoardPostRecordVisibility {
@@ -20,6 +21,7 @@ pub enum BoardPostRecordVisibility {
 #[derive(
   Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, EnumIter, DeriveActiveEnum,
 )]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
 pub enum BoardPostContentVisibility {

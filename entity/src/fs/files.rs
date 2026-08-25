@@ -2,6 +2,7 @@ use chrono::Utc;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]

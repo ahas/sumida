@@ -11,6 +11,8 @@ use serde_json::json;
 
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct BoardPostReactionFilter {
   /// Which post's reactions are read. It is answered **before** the list query — a missing value is
@@ -18,6 +20,7 @@ pub struct BoardPostReactionFilter {
   /// rather than narrowing one, and it is deliberately not a declared field. Declared, its refusal
   /// would become an empty page, which tells the caller the post exists and carries no reactions.
   pub post_id: Option<i32>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub user_id: Option<OneOrMany<i32>>,
   pub value:   Option<String>,
 }
@@ -55,6 +58,7 @@ impl FilterSchema for BoardPostReactionFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostReactionListItem {
@@ -65,6 +69,7 @@ pub struct BoardPostReactionListItem {
   pub created_at: DateTimeWithTimeZone,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBoardPostReaction {
@@ -81,9 +86,11 @@ impl IntoResponse for GetBoardPostReaction {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPostReaction {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub id:      Optional<i32>,
   pub post_id: i32,
   pub user_id: Nullable<i32>,
@@ -102,6 +109,7 @@ impl IntoActiveModel<ActiveModel> for CreateBoardPostReaction {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardPostReactionCreated {
@@ -114,11 +122,14 @@ impl IntoResponse for BoardPostReactionCreated {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBoardPostReaction {
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub post_id: Optional<i32>,
   pub user_id: Nullable<i32>,
+  #[cfg_attr(feature = "openapi", schema(required = false))]
   pub value:   Optional<String>,
 }
 

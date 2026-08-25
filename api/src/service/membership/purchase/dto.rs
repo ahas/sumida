@@ -8,13 +8,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::util::filter::{FieldKind, FieldSpec, FilterSchema, MatchStrategy, Op};
 
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseFilter {
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub owner_kind: Option<OneOrMany<OwnerKind>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub owner_id:   Option<OneOrMany<i32>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub kind:       Option<OneOrMany<PlanKind>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub status:     Option<OneOrMany<PurchaseStatus>>,
+  #[cfg_attr(feature = "openapi", param(inline))]
   pub plan_code:  Option<OneOrMany<String>>,
 }
 
@@ -65,6 +72,7 @@ impl FilterSchema for PurchaseFilter {
   }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseListItem {
