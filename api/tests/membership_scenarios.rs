@@ -141,7 +141,7 @@ async fn scenario_saas_customer_lifecycle() {
 
   // Trial ends → auto-renew charges and starts a fresh period (quota resets).
   let mut a = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap().into_active_model();
-  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.current_period_end = Set(Utc::now() - Duration::hours(1));
   a.update(&db).await.unwrap();
   let (renewed, _) = maintenance::renew_due_subscriptions(&db).await.unwrap();
   assert!(renewed >= 1, "auto-renew charged the billing key");

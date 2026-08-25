@@ -146,7 +146,7 @@ pub async fn verify_api_key<S: SumidaState>(
     .ok_or(SumidaError::InvalidApiKey)?;
 
   // Reject expired keys.
-  if api_key.expires_at.is_some_and(|expires_at| expires_at < Utc::now().fixed_offset()) {
+  if api_key.expires_at.is_some_and(|expires_at| expires_at < Utc::now()) {
     return Err(SumidaError::InvalidApiKey);
   }
 

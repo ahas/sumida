@@ -64,8 +64,8 @@ pub struct UserProfile {
   pub is_admin:      bool,
   pub is_authorized: bool,
   pub api_key:       Option<String>,
-  pub first_seen_at: DateTimeWithTimeZone,
-  pub last_seen_at:  DateTimeWithTimeZone,
+  pub first_seen_at: DateTimeUtc,
+  pub last_seen_at:  DateTimeUtc,
   pub expiry:        Option<Expiry>,
 }
 
@@ -115,8 +115,8 @@ impl Default for UserProfile {
       is_admin:      false,
       is_authorized: false,
       api_key:       None,
-      first_seen_at: Utc::now().into(),
-      last_seen_at:  Utc::now().into(),
+      first_seen_at: Utc::now(),
+      last_seen_at:  Utc::now(),
       expiry:        None,
     }
   }
@@ -278,7 +278,7 @@ pub async fn is_banned<C: ConnectionTrait>(
     .add(
       Condition::any()
         .add(BansColumn::ExpiresAt.is_null())
-        .add(BansColumn::ExpiresAt.gt(Utc::now().fixed_offset())),
+        .add(BansColumn::ExpiresAt.gt(Utc::now())),
     );
 
   Ok(Bans::find().filter(Condition::all().add(matches).add(live)).count(db).await? > 0)
@@ -319,7 +319,7 @@ pub async fn admitted_account<C: ConnectionTrait>(
 /// on the rounding.
 pub fn credentials_reset_since(
   user: &entity::users::Model,
-  established_at: DateTimeWithTimeZone,
+  established_at: DateTimeUtc,
 ) -> bool {
   user.credentials_reset_at.is_some_and(|reset_at| established_at <= reset_at)
 }
@@ -348,7 +348,7 @@ impl UserSession {
     self.profile.username = username.to_owned();
     self.profile.is_authorized = true;
     self.profile.expiry = expiry;
-    self.profile.first_seen_at = Utc::now().fixed_offset();
+    self.profile.first_seen_at = Utc::now();
 
     self.inner.set_expiry(expiry);
     self.identify(db).await?;
@@ -438,11 +438,11 @@ impl UserSession {
     note: Option<&str>,
     db: &C,
   ) -> Result<(), SumidaError> {
-    let expires_at = duration.map(|x| (Utc::now() + x).fixed_offset());
+    let expires_at = duration.map(|x| Utc::now() + x);
 
     Bans::insert(entity::bans::ActiveModel {
       ip_address: Set(Some(self.env.ip_address.clone())),
-      created_at: Set(Utc::now().fixed_offset()),
+      created_at: Set(Utc::now()),
       reason: Set(Some(reason.to_string())),
       expires_at: Set(expires_at),
       note: Set(note.map(String::from)),
@@ -463,11 +463,11 @@ impl UserSession {
     db: &C,
   ) -> Result<(), SumidaError> {
     let user_id = self.resolve_user_id(user_id);
-    let expires_at = duration.map(|x| (Utc::now() + x).fixed_offset());
+    let expires_at = duration.map(|x| Utc::now() + x);
 
     Bans::insert(entity::bans::ActiveModel {
       user_id: Set(Some(user_id)),
-      created_at: Set(Utc::now().fixed_offset()),
+      created_at: Set(Utc::now()),
       reason: Set(Some(reason.to_string())),
       expires_at: Set(expires_at),
       note: Set(note.map(String::from)),
@@ -573,7 +573,7 @@ impl UserSession {
       self.profile = UserProfile::default();
     }
 
-    self.profile.last_seen_at = Utc::now().into();
+    self.profile.last_seen_at = Utc::now();
     self.store().await?;
 
     Ok(())
@@ -617,7 +617,7 @@ where
       env,
       state: user_state,
     };
-    session.profile.last_seen_at = Utc::now().into();
+    session.profile.last_seen_at = Utc::now();
     // tower-sessions stores only the expiry "instant" in the record, while the "policy" (Expiry) is
     // reset every request to the layer default (here None=OnSessionEnd). If the save() below overwrites
     // it with that None policy, the remember-me/expiry set at login is lost (the cookie is downgraded to
@@ -641,7 +641,7 @@ where
 async fn last_password_success<C: ConnectionTrait>(
   user_id: i32,
   db: &C,
-) -> Result<Option<DateTimeWithTimeZone>, DbErr> {
+) -> Result<Option<DateTimeUtc>, DbErr> {
   AccessLogs::find()
     .select_only()
     .column(AccessLogsColumn::CreatedAt)
@@ -649,7 +649,7 @@ async fn last_password_success<C: ConnectionTrait>(
     .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
     .filter(AccessLogsColumn::Code.eq(AccessResultCode::Success))
     .order_by_desc(AccessLogsColumn::CreatedAt)
-    .into_tuple::<DateTimeWithTimeZone>()
+    .into_tuple::<DateTimeUtc>()
     .one(db)
     .await
 }
@@ -677,7 +677,7 @@ async fn recent_password_failures<C: ConnectionTrait>(
   user_id: i32,
   limit: u64,
   db: &C,
-) -> Result<Vec<DateTimeWithTimeZone>, DbErr> {
+) -> Result<Vec<DateTimeUtc>, DbErr> {
   let mut query = AccessLogs::find()
     .select_only()
     .column(AccessLogsColumn::CreatedAt)
@@ -692,7 +692,7 @@ async fn recent_password_failures<C: ConnectionTrait>(
   query
     .order_by_desc(AccessLogsColumn::CreatedAt)
     .limit(limit)
-    .into_tuple::<DateTimeWithTimeZone>()
+    .into_tuple::<DateTimeUtc>()
     .all(db)
     .await
 }
@@ -702,7 +702,7 @@ async fn recent_password_failures<C: ConnectionTrait>(
 /// The walk starts at the newest and stops at the first gap between neighbours wider than
 /// `reset_after`: that gap is the window passing with nothing in it, which is where counting starts
 /// again from zero. With no window nothing breaks the run, and the whole slice is one streak.
-fn failure_streak(newest_first: &[DateTimeWithTimeZone], reset_after: Option<Duration>) -> u32 {
+fn failure_streak(newest_first: &[DateTimeUtc], reset_after: Option<Duration>) -> u32 {
   let Some((first, rest)) = newest_first.split_first() else {
     return 0;
   };
@@ -727,13 +727,13 @@ fn failure_streak(newest_first: &[DateTimeWithTimeZone], reset_after: Option<Dur
 #[cfg(test)]
 mod tests {
   use chrono::{Duration, TimeZone, Utc};
-  use sea_orm::prelude::DateTimeWithTimeZone;
+  use sea_orm::prelude::DateTimeUtc;
 
   use super::failure_streak;
 
   /// Failure moments the given number of minutes back from a fixed point, newest first.
-  fn minutes_ago(offsets: &[i64]) -> Vec<DateTimeWithTimeZone> {
-    let base = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap().fixed_offset();
+  fn minutes_ago(offsets: &[i64]) -> Vec<DateTimeUtc> {
+    let base = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
     offsets.iter().map(|offset| base - Duration::minutes(*offset)).collect()
   }
 

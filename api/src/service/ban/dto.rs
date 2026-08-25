@@ -140,14 +140,14 @@ pub struct BanListItem {
   pub user:       Option<BanUser>,
   /// Null on a ban that names only an account.
   pub ip_address: Option<String>,
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
   #[sea_orm(nested, alias = "c")]
   pub created_by: Option<BanCreatedBy>,
   // pub reason: String,
   /// Null on a ban that stands until it is lifted.
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at: Option<DateTimeUtc>,
   /// When it was lifted, or null while it still stands.
-  pub lifted_at:  Option<DateTimeWithTimeZone>,
+  pub lifted_at:  Option<DateTimeUtc>,
   // pub note: Option<String>,
 }
 
@@ -163,15 +163,15 @@ pub struct GetBan {
   pub user:       Option<BanUser>,
   /// Null on a ban that names only an account.
   pub ip_address: Option<String>,
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
   #[sea_orm(nested, alias = "c")]
   pub created_by: Option<BanUser>,
   /// What a person is told, if anything was written down.
   pub reason:     Option<String>,
   /// Null on a ban that stands until it is lifted.
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at: Option<DateTimeUtc>,
   /// When it was lifted, or null while it still stands.
-  pub lifted_at:  Option<DateTimeWithTimeZone>,
+  pub lifted_at:  Option<DateTimeUtc>,
   /// What the operators are told, which is not what the banned person is told.
   pub note:       Option<String>,
 }
@@ -191,8 +191,8 @@ pub struct BanSettings {
   #[serde(default)]
   pub reason:     Nullable<String>,
   /// When it stops. Null shuts the account out until the ban is lifted.
-  #[cfg_attr(feature = "openapi", schema(required = false, value_type = Option<DateTimeWithTimeZone>))]
-  pub expires_at: Nullable<DateTimeWithTimeZone>,
+  #[cfg_attr(feature = "openapi", schema(required = false, value_type = Option<DateTimeUtc>))]
+  pub expires_at: Nullable<DateTimeUtc>,
   /// What the operators are told, which is not what the banned person is told.
   #[cfg_attr(feature = "openapi", schema(required = false))]
   pub note:       Optional<String>,
@@ -213,8 +213,8 @@ pub struct CreateBan {
   #[serde(default)]
   pub reason:     Nullable<String>,
   /// When it stops. Null shuts the target out until the ban is lifted.
-  #[cfg_attr(feature = "openapi", schema(required = false, value_type = Option<DateTimeWithTimeZone>))]
-  pub expires_at: Nullable<DateTimeWithTimeZone>,
+  #[cfg_attr(feature = "openapi", schema(required = false, value_type = Option<DateTimeUtc>))]
+  pub expires_at: Nullable<DateTimeUtc>,
   /// What the operators are told, which is not what the banned person is told.
   #[cfg_attr(feature = "openapi", schema(required = false))]
   pub note:       Optional<String>,
@@ -255,8 +255,8 @@ pub struct UpdateBan {
   pub reason:     Nullable<String>,
   /// When it stops. A moment that has passed ends the ban; null, or left out, makes it stand until
   /// it is lifted.
-  #[cfg_attr(feature = "openapi", schema(required = false, value_type = Option<DateTimeWithTimeZone>))]
-  pub expires_at: Nullable<DateTimeWithTimeZone>,
+  #[cfg_attr(feature = "openapi", schema(required = false, value_type = Option<DateTimeUtc>))]
+  pub expires_at: Nullable<DateTimeUtc>,
   /// What the operators are told, which is not what the banned person is told.
   #[cfg_attr(feature = "openapi", schema(required = false))]
   pub note:       Optional<String>,

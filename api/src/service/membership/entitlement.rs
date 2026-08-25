@@ -73,7 +73,7 @@ impl<S: SumidaState> EntitlementService<S> {
     #[derive(FromQueryResult)]
     struct SubRow {
       id:                   i32,
-      current_period_start: sea_orm::prelude::DateTimeWithTimeZone,
+      current_period_start: sea_orm::prelude::DateTimeUtc,
       quota:                Option<serde_json::Value>,
     }
     let backend = db.get_database_backend();

@@ -649,7 +649,7 @@ impl<S: SumidaState> BoardPostService<S> {
     BoardPosts::update_many()
       .set(BoardPostsActiveModel {
         status: Set(BoardPostStatus::Deleted),
-        deleted_at: Set(Some(chrono::Utc::now().fixed_offset())),
+        deleted_at: Set(Some(chrono::Utc::now())),
         ..Default::default()
       })
       .filter(BoardPostsColumn::Id.is_in(ids.clone()))

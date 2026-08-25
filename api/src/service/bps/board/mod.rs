@@ -166,7 +166,7 @@ impl<S: SumidaState> BoardService<S> {
     // Soft delete: hide the board (and, via the post read filter, its posts) without dropping rows.
     Boards::update_many()
       .set(entity::bps::boards::ActiveModel {
-        deleted_at: Set(Some(chrono::Utc::now().fixed_offset())),
+        deleted_at: Set(Some(chrono::Utc::now())),
         ..Default::default()
       })
       .filter(entity::bps::boards::Column::Id.eq(id))

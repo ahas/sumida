@@ -11,12 +11,12 @@ pub mod portone;
 
 use std::sync::{Arc, OnceLock};
 
-use chrono::{DateTime, FixedOffset};
+use sea_orm::prelude::DateTimeUtc;
 use serde::Serialize;
 
 use crate::settings;
 
-pub type PaymentTime = DateTime<FixedOffset>;
+pub type PaymentTime = DateTimeUtc;
 
 /// Normalized payment status across providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

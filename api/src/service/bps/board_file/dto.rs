@@ -109,9 +109,9 @@ pub struct BoardFileListItem {
   // pub mime_type:     String,
   // pub status:        String,
   // pub is_temporary:  bool,
-  // pub expires_at:    Option<DateTimeWithTimeZone>,
-  // pub created_at:    DateTimeWithTimeZone,
-  // pub updated_at:    DateTimeWithTimeZone,
+  // pub expires_at:    Option<DateTimeUtc>,
+  // pub created_at:    DateTimeUtc,
+  // pub updated_at:    DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -133,9 +133,9 @@ pub struct GetBoardFile {
   // pub hash:          Option<String>,
   // pub status:        String,
   // pub is_temporary:  bool,
-  // pub expires_at:    Option<DateTimeWithTimeZone>,
-  // pub created_at:    DateTimeWithTimeZone,
-  // pub updated_at:    DateTimeWithTimeZone,
+  // pub expires_at:    Option<DateTimeUtc>,
+  // pub created_at:    DateTimeUtc,
+  // pub updated_at:    DateTimeUtc,
 }
 
 impl IntoResponse for GetBoardFile {

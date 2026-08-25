@@ -87,12 +87,12 @@ pub struct SubscriptionListItem {
   pub owner_kind:           OwnerKind,
   pub owner_id:             i32,
   pub status:               SubscriptionStatus,
-  pub current_period_start: DateTimeWithTimeZone,
-  pub current_period_end:   DateTimeWithTimeZone,
+  pub current_period_start: DateTimeUtc,
+  pub current_period_end:   DateTimeUtc,
   pub cancel_at_period_end: bool,
   pub auto_renew:           bool,
-  pub created_at:           DateTimeWithTimeZone,
-  pub updated_at:           DateTimeWithTimeZone,
+  pub created_at:           DateTimeUtc,
+  pub updated_at:           DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -106,15 +106,15 @@ pub struct GetSubscription {
   pub owner_kind:           OwnerKind,
   pub owner_id:             i32,
   pub status:               SubscriptionStatus,
-  pub current_period_start: DateTimeWithTimeZone,
-  pub current_period_end:   DateTimeWithTimeZone,
+  pub current_period_start: DateTimeUtc,
+  pub current_period_end:   DateTimeUtc,
   pub cancel_at_period_end: bool,
-  pub canceled_at:          Option<DateTimeWithTimeZone>,
+  pub canceled_at:          Option<DateTimeUtc>,
   pub auto_renew:           bool,
   #[cfg_attr(feature = "openapi", schema(value_type = Object))]
   pub allowed_actions:      JsonValue,
-  pub created_at:           DateTimeWithTimeZone,
-  pub updated_at:           DateTimeWithTimeZone,
+  pub created_at:           DateTimeUtc,
+  pub updated_at:           DateTimeUtc,
 }
 
 impl IntoResponse for GetSubscription {

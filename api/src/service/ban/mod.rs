@@ -1,10 +1,11 @@
 pub mod dto;
 
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::Utc;
 use entity::prelude::*;
 use error::SumidaError;
 use infra::session::UserSession;
 use sea_orm::ActiveValue::Set;
+use sea_orm::prelude::DateTimeUtc;
 use sea_orm::sea_query::{Alias, Asterisk, Expr, SimpleExpr};
 use sea_orm::{
   ColumnTrait,
@@ -69,7 +70,7 @@ impl<S: SumidaState> BanService<S> {
 
   /// 유효한 처분의 조건 — 해제되지 않았고, 만료되지도 않았다. `is_banned` 플래그와 해제가 같은
   /// 조건을 읽으므로 `lifted_at` 이 찍힌 행은 곧바로 플래그에서 빠진다.
-  fn active_at(now: DateTime<FixedOffset>) -> Condition {
+  fn active_at(now: DateTimeUtc) -> Condition {
     Condition::all() //
       .add(BansColumn::LiftedAt.is_null())
       .add(Condition::any().add(BansColumn::ExpiresAt.is_null()).add(BansColumn::ExpiresAt.gt(now)))
@@ -81,7 +82,7 @@ impl<S: SumidaState> BanService<S> {
         .select_only()
         .expr(Expr::val(1))
         .filter(Expr::col(BansColumn::UserId).eq(Expr::col((Users, entity::users::Column::Id))))
-        .filter(Self::active_at(Utc::now().fixed_offset()))
+        .filter(Self::active_at(Utc::now()))
         .limit(1)
         .into_query(),
     )
@@ -149,7 +150,7 @@ impl<S: SumidaState> BanService<S> {
   /// 않고 `lifted_at` 만 찍는다. 해제할 처분이 없으면 아무것도 바꾸지 않고 성공으로 답한다.
   pub async fn lift_by_user_id(&self, user_id: i32) -> Result<UpdateResult, SumidaError> {
     let txn = self.state.db().begin().await?;
-    let now = Utc::now().fixed_offset();
+    let now = Utc::now();
 
     let ids: Vec<i32> = Bans::find()
       .select_only()

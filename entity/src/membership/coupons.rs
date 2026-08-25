@@ -38,13 +38,13 @@ pub struct Model {
   #[sea_orm(default_value = false)]
   pub stackable: bool,
   #[sea_orm(nullable)]
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at: Option<DateTimeUtc>,
   #[sea_orm(default_value = true)]
   pub is_active: bool,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -48,13 +48,13 @@ pub struct Model {
   #[sea_orm(default_value = "0")]
   pub refs:          i32,
   #[sea_orm(nullable)]
-  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub expires_at:    Option<DateTimeUtc>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:    DateTimeWithTimeZone,
+  pub created_at:    DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at:    DateTimeWithTimeZone,
+  pub updated_at:    DateTimeUtc,
   #[sea_orm(nullable)]
-  pub deleted_at:    Option<DateTimeWithTimeZone>,
+  pub deleted_at:    Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -127,7 +127,7 @@ impl Model {
 
   pub fn is_expired(&self) -> bool {
     if let Some(expires_at) = self.expires_at {
-      expires_at < Utc::now().fixed_offset()
+      expires_at < Utc::now()
     } else {
       false
     }

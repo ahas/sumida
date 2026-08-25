@@ -321,7 +321,7 @@ impl<S: SumidaState> UserService<S> {
     let active_model = entity::users::ActiveModel {
       id: Unchanged(user.id),
       password: Set(password),
-      credentials_reset_at: Set(Some(Utc::now().fixed_offset())),
+      credentials_reset_at: Set(Some(Utc::now())),
       ..Default::default()
     };
 

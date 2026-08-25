@@ -66,7 +66,7 @@ pub struct BoardPostReactionListItem {
   pub post_id:    i32,
   pub user_id:    Option<i32>,
   pub value:      String,
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -77,7 +77,7 @@ pub struct GetBoardPostReaction {
   pub post_id:    i32,
   pub user_id:    Option<i32>,
   pub value:      String,
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
 }
 
 impl IntoResponse for GetBoardPostReaction {

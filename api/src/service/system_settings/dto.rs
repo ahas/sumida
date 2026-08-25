@@ -21,7 +21,7 @@ pub struct SystemSettingItem {
   pub is_editable: bool,
   /// 클라이언트가 설정 화면을 묶는 갈래 — auth·execution·retention·storage·general.
   pub category:    String,
-  pub updated_at:  DateTimeWithTimeZone,
+  pub updated_at:  DateTimeUtc,
   pub updated_by:  Option<i32>,
 }
 

@@ -105,9 +105,9 @@ pub struct ApiKeyListItem {
   pub key_prefix: Option<String>,
   #[sea_orm(nested, alias = "user")]
   pub user:       ApiKeyUser,
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at: Option<DateTimeUtc>,
   pub is_secured: bool,
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -120,9 +120,9 @@ pub struct GetApiKey {
   pub user:            ApiKeyUser,
   #[sea_orm(skip)]
   pub access_policies: Option<Vec<ApForUser>>,
-  pub expires_at:      Option<DateTimeWithTimeZone>,
+  pub expires_at:      Option<DateTimeUtc>,
   pub is_secured:      bool,
-  pub created_at:      DateTimeWithTimeZone,
+  pub created_at:      DateTimeUtc,
 }
 
 impl IntoResponse for GetApiKey {
@@ -136,7 +136,7 @@ impl IntoResponse for GetApiKey {
 #[serde(rename_all = "camelCase")]
 pub struct CreateApiKey {
   pub user_id:         i32,
-  pub expires_at:      Nullable<DateTimeWithTimeZone>,
+  pub expires_at:      Nullable<DateTimeUtc>,
   pub access_policies: Option<Vec<ApForUser>>,
   #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_secured:      Optional<bool>,
@@ -170,7 +170,7 @@ impl IntoResponse for ApiKeyCreated {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateApiKey {
-  pub expires_at:      Nullable<DateTimeWithTimeZone>,
+  pub expires_at:      Nullable<DateTimeUtc>,
   pub access_policies: Option<Vec<ApForUser>>,
   #[cfg_attr(feature = "openapi", schema(required = false))]
   pub is_secured:      Optional<bool>,

@@ -200,7 +200,7 @@ impl<S: SumidaState> PlanService<S> {
 
     MembershipPlans::update(MembershipPlansActiveModel {
       id: Unchanged(id),
-      deleted_at: Set(Some(Utc::now().into())),
+      deleted_at: Set(Some(Utc::now())),
       is_enabled: Set(false),
       ..Default::default()
     })

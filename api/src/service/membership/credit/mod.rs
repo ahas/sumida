@@ -7,7 +7,7 @@ use error::SumidaError;
 use infra::session::UserSession;
 use infra::settings;
 use sea_orm::ActiveValue::*;
-use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::DateTimeUtc;
 use sea_orm::{
   ColumnTrait,
   Condition,
@@ -207,7 +207,7 @@ impl<S: SumidaState> CreditService<S> {
     current_balance: i64,
     txn: &C,
   ) -> Result<i64, SumidaError> {
-    let now: DateTimeWithTimeZone = Utc::now().into();
+    let now = Utc::now();
     let expired = CreditGrants::find()
       .filter(CreditGrantsColumn::WalletId.eq(wallet_id))
       .filter(CreditGrantsColumn::AmountRemaining.gt(0_i64))
@@ -336,7 +336,7 @@ impl<S: SumidaState> CreditService<S> {
     }
 
     // Lock non-expired lots in FIFO order (expiry NULLS LAST, then created_at).
-    let now: DateTimeWithTimeZone = Utc::now().into();
+    let now = Utc::now();
     let lots = CreditGrants::find()
       .filter(CreditGrantsColumn::WalletId.eq(wallet.id))
       .filter(CreditGrantsColumn::AmountRemaining.gt(0_i64))
@@ -453,7 +453,7 @@ impl<S: SumidaState> CreditService<S> {
     owner_id: i32,
     amount: i64,
     plan_code: Option<&str>,
-    expiry_at: Option<DateTimeWithTimeZone>,
+    expiry_at: Option<DateTimeUtc>,
     reference_code: Option<&str>,
     idempotency_key: Option<&str>,
     txn: &C,
@@ -586,7 +586,7 @@ impl<S: SumidaState> CreditService<S> {
       settings::get()
         .membership
         .credit_default_expiry_days
-        .map(|d| (Utc::now() + chrono::Duration::days(d as i64)).into())
+        .map(|d| Utc::now() + chrono::Duration::days(d as i64))
     });
 
     let txn = self.state.db().begin().await?;
@@ -695,7 +695,7 @@ impl<S: SumidaState> CreditService<S> {
       });
     }
 
-    let expires_at = data.expires_in_secs.map(|s| (Utc::now() + Duration::seconds(s)).into());
+    let expires_at = data.expires_in_secs.map(|s| Utc::now() + Duration::seconds(s));
     let res = CreditReservations::insert(CreditReservationsActiveModel {
       wallet_id: Set(wallet.id),
       amount: Set(cost),

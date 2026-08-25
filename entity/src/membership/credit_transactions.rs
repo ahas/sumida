@@ -26,7 +26,7 @@ pub struct Model {
   pub idempotency_key: Option<String>,
   pub balance_after:   i64,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:      DateTimeWithTimeZone,
+  pub created_at:      DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

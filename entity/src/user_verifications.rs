@@ -11,9 +11,9 @@ pub struct Model {
   pub kind:       String,
   pub method:     String,
   pub code:       String,
-  pub expires_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -11,7 +11,7 @@ pub struct Model {
   /// When this account last reset its credentials. Everything issued to it up to that moment — a
   /// token, a session — is refused from then on; `None` is an account that has never reset them.
   #[sea_orm(nullable)]
-  pub credentials_reset_at: Option<DateTimeWithTimeZone>,
+  pub credentials_reset_at: Option<DateTimeUtc>,
   #[sea_orm(nullable)]
   pub email:                Option<String>,
   #[sea_orm(nullable)]
@@ -24,8 +24,8 @@ pub struct Model {
   pub role_id:              i32,
   #[sea_orm(indexed)]
   pub organization_id:      i32,
-  pub created_at:           DateTimeWithTimeZone,
-  pub updated_at:           DateTimeWithTimeZone,
+  pub created_at:           DateTimeUtc,
+  pub updated_at:           DateTimeUtc,
 }
 
 impl Model {

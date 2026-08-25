@@ -136,10 +136,10 @@ pub struct FileListItem {
   pub status:        String,
   pub tags:          Option<Vec<String>>,
   pub refs:          i32,
-  pub expires_at:    Option<DateTimeWithTimeZone>,
-  pub created_at:    DateTimeWithTimeZone,
-  pub updated_at:    DateTimeWithTimeZone,
-  pub deleted_at:    Option<DateTimeWithTimeZone>,
+  pub expires_at:    Option<DateTimeUtc>,
+  pub created_at:    DateTimeUtc,
+  pub updated_at:    DateTimeUtc,
+  pub deleted_at:    Option<DateTimeUtc>,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -160,10 +160,10 @@ pub struct GetFile {
   pub tags:          Option<Vec<String>>,
   pub status:        String,
   pub refs:          i32,
-  pub expires_at:    Option<DateTimeWithTimeZone>,
-  pub created_at:    DateTimeWithTimeZone,
-  pub updated_at:    DateTimeWithTimeZone,
-  pub deleted_at:    Option<DateTimeWithTimeZone>,
+  pub expires_at:    Option<DateTimeUtc>,
+  pub created_at:    DateTimeUtc,
+  pub updated_at:    DateTimeUtc,
+  pub deleted_at:    Option<DateTimeUtc>,
 
   #[sea_orm(skip)]
   pub access_policies: Option<Vec<ApForUser>>,
@@ -184,7 +184,7 @@ pub struct FileUploadOptions {
   #[serde(default)]
   pub dir:        String,
   #[serde(default)]
-  pub expires_at: Nullable<DateTimeWithTimeZone>,
+  pub expires_at: Nullable<DateTimeUtc>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

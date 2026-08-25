@@ -18,11 +18,11 @@ pub struct Model {
   /// When a "low balance" alert was last sent. Cleared on top-up above the
   /// configured threshold so a later drop can alert again.
   #[sea_orm(nullable)]
-  pub low_balance_notified_at: Option<DateTimeWithTimeZone>,
+  pub low_balance_notified_at: Option<DateTimeUtc>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -90,7 +90,7 @@ async fn test_run_once_skips_when_lock_held() {
   let sub_id = created["id"].as_i64().unwrap() as i32;
   // Make it due for expiry.
   let mut a = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap().into_active_model();
-  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.current_period_end = Set(Utc::now() - Duration::hours(1));
   a.update(&db).await.unwrap();
 
   // Hold the maintenance advisory lock on a separate session.
@@ -186,7 +186,7 @@ async fn test_stale_pending_purchase_reverses_coupon() {
     .unwrap()
     .unwrap();
   let mut a = purchase.into_active_model();
-  a.created_at = Set((Utc::now() - Duration::hours(48)).into());
+  a.created_at = Set(Utc::now() - Duration::hours(48));
   a.update(&db).await.unwrap();
 
   let expired = maintenance::expire_stale_pending_purchases::<MState>(&db).await.unwrap();
@@ -297,7 +297,7 @@ async fn test_maintenance_expires_due_subscription() {
   // Force the period to have ended (status stays active until the job runs).
   let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut a = sub.into_active_model();
-  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.current_period_end = Set(Utc::now() - Duration::hours(1));
   a.update(&db).await.unwrap();
 
   let n = maintenance::expire_due_subscriptions(&db).await.unwrap();
@@ -357,7 +357,7 @@ async fn test_maintenance_cancel_at_period_end_becomes_canceled() {
   let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut a = sub.into_active_model();
   a.cancel_at_period_end = Set(true);
-  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.current_period_end = Set(Utc::now() - Duration::hours(1));
   a.update(&db).await.unwrap();
 
   maintenance::expire_due_subscriptions(&db).await.unwrap();
@@ -603,7 +603,7 @@ async fn test_maintenance_auto_renew_success() {
   // Force the period to have ended.
   let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut a = sub.into_active_model();
-  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.current_period_end = Set(Utc::now() - Duration::hours(1));
   a.update(&db).await.unwrap();
 
   let (renewed, failed) = maintenance::renew_due_subscriptions(&db).await.unwrap();
@@ -654,7 +654,7 @@ async fn test_maintenance_auto_renew_failure_past_due() {
 
   let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut a = sub.into_active_model();
-  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.current_period_end = Set(Utc::now() - Duration::hours(1));
   a.update(&db).await.unwrap();
 
   let (renewed, _failed) = maintenance::renew_due_subscriptions(&db).await.unwrap();

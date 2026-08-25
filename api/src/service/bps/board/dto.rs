@@ -95,8 +95,8 @@ pub struct BoardListItem {
   pub can_upload_file: bool,
   pub is_versioned:    bool,
   pub is_enabled:      bool,
-  pub created_at:      DateTimeWithTimeZone,
-  pub updated_at:      DateTimeWithTimeZone,
+  pub created_at:      DateTimeUtc,
+  pub updated_at:      DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -120,8 +120,8 @@ pub struct GetBoard {
   pub content_visibility:  BoardPostRecordVisibility,
   pub is_versioned:        bool,
   pub is_enabled:          bool,
-  pub created_at:          DateTimeWithTimeZone,
-  pub updated_at:          DateTimeWithTimeZone,
+  pub created_at:          DateTimeUtc,
+  pub updated_at:          DateTimeUtc,
 }
 
 impl IntoResponse for GetBoard {

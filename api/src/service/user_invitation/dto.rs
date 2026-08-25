@@ -71,8 +71,8 @@ pub struct UserInvitationListItem {
   pub uuid:    Uuid,
 
   /// When it stops working. 30 days from when it was issued.
-  pub expires_at: DateTimeWithTimeZone,
-  pub created_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeUtc,
+  pub created_at: DateTimeUtc,
 }
 
 /// One invitation, read on its own. Only one that is still good is ever answered with.
@@ -86,8 +86,8 @@ pub struct GetUserInvitation {
   pub uuid:    Uuid,
 
   /// When it stops working. 30 days from when it was issued.
-  pub expires_at: DateTimeWithTimeZone,
-  pub created_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeUtc,
+  pub created_at: DateTimeUtc,
 }
 
 impl IntoResponse for GetUserInvitation {
@@ -109,7 +109,7 @@ pub struct CreateUserInvitation {}
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationCreated {
   pub uuid:       Uuid,
-  pub expires_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeUtc,
 }
 
 impl IntoResponse for UserInvitationCreated {
@@ -129,7 +129,7 @@ pub struct UpdateUserInvitation {}
 #[serde(rename_all = "camelCase")]
 pub struct UserInvitationUpdated {
   pub uuid:       Uuid,
-  pub expires_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeUtc,
 }
 
 impl IntoResponse for UserInvitationUpdated {

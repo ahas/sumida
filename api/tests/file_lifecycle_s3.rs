@@ -57,7 +57,7 @@ async fn place(db: &sea_orm::DatabaseConnection, with_object: bool) -> entity::f
     tags: Set(None),
     status: Set(FileStatus::Temporary),
     refs: Set(0),
-    expires_at: Set(Some((Utc::now() - Duration::hours(1)).fixed_offset())),
+    expires_at: Set(Some(Utc::now() - Duration::hours(1))),
     ..Default::default()
   }
   .insert(db)

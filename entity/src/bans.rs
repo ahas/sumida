@@ -34,15 +34,15 @@ pub struct Model {
   pub device_model:  Option<String>,
 
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
   #[sea_orm(nullable)]
   pub created_by: Option<i32>,
   #[sea_orm(nullable)]
   pub reason:     Option<String>,
   #[sea_orm(nullable)]
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at: Option<DateTimeUtc>,
   #[sea_orm(nullable)]
-  pub lifted_at:  Option<DateTimeWithTimeZone>,
+  pub lifted_at:  Option<DateTimeUtc>,
   #[sea_orm(nullable)]
   pub note:       Option<String>,
 }

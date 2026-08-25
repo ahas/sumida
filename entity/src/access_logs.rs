@@ -100,7 +100,7 @@ pub struct Model {
   #[sea_orm(nullable)]
   pub device_model:  Option<String>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:    DateTimeWithTimeZone,
+  pub created_at:    DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

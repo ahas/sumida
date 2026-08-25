@@ -83,8 +83,8 @@ pub struct BoardGroupListItem {
   pub description: Option<String>,
   pub order:       i32,
   pub parent_id:   Option<i32>,
-  pub created_at:  DateTimeWithTimeZone,
-  pub updated_at:  DateTimeWithTimeZone,
+  pub created_at:  DateTimeUtc,
+  pub updated_at:  DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -96,8 +96,8 @@ pub struct GetBoardGroup {
   pub parent_id:   Option<i32>,
   pub name:        String,
   pub description: Option<String>,
-  pub created_at:  DateTimeWithTimeZone,
-  pub updated_at:  DateTimeWithTimeZone,
+  pub created_at:  DateTimeUtc,
+  pub updated_at:  DateTimeUtc,
 }
 
 impl IntoResponse for GetBoardGroup {

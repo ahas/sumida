@@ -52,7 +52,7 @@ fn parse(payment_id: &str) -> PaymentVerification {
     status,
     amount,
     currency,
-    paid_at: status.is_paid().then(|| Utc::now().fixed_offset()),
+    paid_at: status.is_paid().then(Utc::now),
     raw_status: format!("{status:?}"),
   }
 }
@@ -94,7 +94,7 @@ impl PaymentProvider for MockProvider {
       status,
       amount,
       currency: currency.to_string(),
-      paid_at: status.is_paid().then(|| Utc::now().fixed_offset()),
+      paid_at: status.is_paid().then(Utc::now),
       raw_status: format!("{status:?}"),
     })
   }

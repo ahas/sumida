@@ -790,7 +790,7 @@ async fn test_subscription_expiry_denies_entitlement() {
   // Force the period to have ended.
   let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut am = sub.into_active_model();
-  am.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  am.current_period_end = Set(Utc::now() - Duration::hours(1));
   am.update(&db).await.unwrap();
 
   // No longer entitled (and no credit plan covers it).

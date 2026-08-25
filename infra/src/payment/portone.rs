@@ -9,7 +9,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
 use sha2::Sha256;
@@ -19,6 +19,7 @@ use super::{
   PaymentError,
   PaymentProvider,
   PaymentStatus,
+  PaymentTime,
   PaymentVerification,
   RefundResult,
   WebhookEvent,
@@ -49,16 +50,26 @@ impl PortOneProvider {
     }
   }
 
+  /// The moment a payment body says it was paid, if it says so at all.
+  ///
+  /// The provider writes it in whichever offset it keeps its own books in. What is stored and
+  /// answered is the instant, so it is read into UTC here rather than carried on in the offset it
+  /// arrived in.
+  fn paid_at(value: &Value) -> Option<PaymentTime> {
+    value
+      .get("paidAt")
+      .and_then(Value::as_str)
+      .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+      .map(|at| at.with_timezone(&Utc))
+  }
+
   /// Map a PortOne V2 payment JSON object (the body of GET /payments/{id} or the
   /// `payment` field of a billing-key payment response) into a [`PaymentVerification`].
   fn payment_from_json(value: &Value, fallback_id: &str, fallback_currency: &str) -> PaymentVerification {
     let raw_status = value.get("status").and_then(Value::as_str).unwrap_or("").to_string();
     let amount = value.get("amount").and_then(|a| a.get("total")).and_then(Value::as_i64).unwrap_or(0);
     let currency = value.get("currency").and_then(Value::as_str).unwrap_or(fallback_currency).to_string();
-    let paid_at = value
-      .get("paidAt")
-      .and_then(Value::as_str)
-      .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    let paid_at = Self::paid_at(value);
     PaymentVerification {
       payment_id: value.get("id").and_then(Value::as_str).unwrap_or(fallback_id).to_string(),
       transaction_id: value.get("transactionId").and_then(Value::as_str).map(str::to_string),
@@ -223,10 +234,7 @@ impl PaymentProvider for PortOneProvider {
     // PortOne V2's billing-key payment success returns a minimal `{ payment: { paidAt, pgTxId } }`
     // (no status/amount). A present `paidAt` means PAID; fall back to the full shape otherwise.
     let payment = v.get("payment").unwrap_or(&v);
-    let paid_at = payment
-      .get("paidAt")
-      .and_then(Value::as_str)
-      .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    let paid_at = Self::paid_at(payment);
     if paid_at.is_some() {
       return Ok(PaymentVerification {
         payment_id: order_code.to_string(),

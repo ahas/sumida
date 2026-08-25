@@ -54,7 +54,7 @@ async fn test_an_account_ban_catches_that_account() {
     entity::bans::ActiveModel {
       user_id: Set(Some(target.model.id)),
       reason: Set(Some("banned".into())),
-      created_at: Set(Utc::now().fixed_offset()),
+      created_at: Set(Utc::now()),
       ..Default::default()
     },
   )
@@ -83,7 +83,7 @@ async fn test_an_account_ban_does_not_catch_another_account() {
     entity::bans::ActiveModel {
       user_id: Set(Some(target.model.id)),
       reason: Set(Some("banned".into())),
-      created_at: Set(Utc::now().fixed_offset()),
+      created_at: Set(Utc::now()),
       ..Default::default()
     },
   )
@@ -108,7 +108,7 @@ async fn test_an_account_ban_does_not_catch_an_attempt_with_no_account() {
     entity::bans::ActiveModel {
       user_id: Set(Some(target.model.id)),
       reason: Set(Some("banned".into())),
-      created_at: Set(Utc::now().fixed_offset()),
+      created_at: Set(Utc::now()),
       ..Default::default()
     },
   )
@@ -136,7 +136,7 @@ async fn test_an_environment_ban_catches_whoever_arrives_from_there() {
     entity::bans::ActiveModel {
       ip_address: Set(Some("10.0.0.9".into())),
       reason: Set(Some("banned".into())),
-      created_at: Set(Utc::now().fixed_offset()),
+      created_at: Set(Utc::now()),
       ..Default::default()
     },
   )
@@ -171,7 +171,7 @@ async fn test_the_columns_are_read_together() {
       user_id: Set(Some(target.model.id)),
       ip_address: Set(Some("10.0.0.9".into())),
       reason: Set(Some("banned".into())),
-      created_at: Set(Utc::now().fixed_offset()),
+      created_at: Set(Utc::now()),
       ..Default::default()
     },
   )
@@ -200,8 +200,8 @@ async fn test_a_lifted_ban_catches_nobody() {
     entity::bans::ActiveModel {
       user_id: Set(Some(target.model.id)),
       reason: Set(Some("banned".into())),
-      created_at: Set(Utc::now().fixed_offset()),
-      lifted_at: Set(Some(Utc::now().fixed_offset())),
+      created_at: Set(Utc::now()),
+      lifted_at: Set(Some(Utc::now())),
       ..Default::default()
     },
   )
@@ -226,8 +226,8 @@ async fn test_a_term_that_has_run_out_catches_nobody() {
     entity::bans::ActiveModel {
       user_id: Set(Some(target.model.id)),
       reason: Set(Some("banned".into())),
-      created_at: Set((Utc::now() - Duration::hours(2)).fixed_offset()),
-      expires_at: Set(Some((Utc::now() - Duration::hours(1)).fixed_offset())),
+      created_at: Set(Utc::now() - Duration::hours(2)),
+      expires_at: Set(Some(Utc::now() - Duration::hours(1))),
       ..Default::default()
     },
   )
@@ -252,8 +252,8 @@ async fn test_a_term_still_running_holds() {
     entity::bans::ActiveModel {
       user_id: Set(Some(target.model.id)),
       reason: Set(Some("banned".into())),
-      created_at: Set(Utc::now().fixed_offset()),
-      expires_at: Set(Some((Utc::now() + Duration::hours(1)).fixed_offset())),
+      created_at: Set(Utc::now()),
+      expires_at: Set(Some(Utc::now() + Duration::hours(1))),
       ..Default::default()
     },
   )

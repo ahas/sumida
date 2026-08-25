@@ -182,8 +182,8 @@ pub async fn verify_jwt_token(token: &str) -> Result<JwtClaims, SumidaError> {
 ///
 /// A claim carries whole seconds, so this is the second the token was minted in rather than the
 /// instant.
-pub fn issued_at(claims: &JwtClaims) -> chrono::DateTime<chrono::FixedOffset> {
-  chrono::DateTime::from_timestamp(claims.iat, 0).unwrap_or_default().fixed_offset()
+pub fn issued_at(claims: &JwtClaims) -> sea_orm::prelude::DateTimeUtc {
+  chrono::DateTime::from_timestamp(claims.iat, 0).unwrap_or_default()
 }
 
 /// Access-token-only verification. Allows only `token_type == "access"`.

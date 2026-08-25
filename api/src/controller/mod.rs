@@ -255,3 +255,151 @@ mod tests {
     }
   }
 }
+
+/// What an instant looks like in what this surface writes, and what keeps it that way.
+///
+/// A timestamp column is `timestamptz`, and the two chrono types that can hold one differ in what
+/// they remember. `DateTime<FixedOffset>` keeps the offset the value arrived in — for a row read
+/// from the database that is the connection session's offset, which is deployment configuration
+/// and nothing the caller asked for, so the same code answers `+09:00` on one deployment and
+/// `+00:00` on another. `DateTime<Utc>` has no room for an offset at all: the instant is the same
+/// and the string is always the one written with a trailing `Z`.
+///
+/// So the spelling is not a step anything runs on the way out — it is the type, and the type is
+/// the only one the workspace names. A timestamp field written like the ones beside it is right
+/// with nothing for its author to remember, and the walk below refuses the offset-carrying
+/// spelling everywhere except this file, which is where the difference is stated.
+#[cfg(test)]
+mod instant_tests {
+  use std::fs;
+  use std::path::{Path, PathBuf};
+
+  use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+  use sea_orm::prelude::DateTimeUtc;
+
+  /// One second into 2026, the instant every case below is the same moment of.
+  fn instant() -> DateTimeUtc {
+    Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 1).single().expect("an unambiguous moment")
+  }
+
+  /// What a value is written as, without the quotes JSON puts around a string.
+  fn written<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_value(value).expect("an instant is JSON").as_str().expect("a string").to_owned()
+  }
+
+  /// The offsets a database session may be set to, spanning both signs and the far ends.
+  const SESSION_OFFSETS: [i32; 6] = [-11, -5, 0, 5, 9, 14];
+
+  /// Read through any session offset, one instant is written as one string.
+  ///
+  /// This answers for the type rather than for a field of it, so every timestamp the surface
+  /// carries today and every one added later is covered by this one case.
+  #[test]
+  fn an_instant_is_written_as_utc_whatever_session_it_was_read_through() {
+    for hours in SESSION_OFFSETS {
+      let session = FixedOffset::east_opt(hours * 3600).expect("an offset a session can be set to");
+      let as_read: DateTimeUtc = instant().with_timezone(&session).into();
+
+      assert_eq!(written(&as_read), "2026-01-01T00:00:01Z", "read through {hours:+}");
+    }
+  }
+
+  /// The type is what does it. Kept in the one that has room for an offset, the same instant is
+  /// written with the session's offset instead — which is the failure this whole arrangement is
+  /// against, and it is reproduced here so the case above cannot pass by accident.
+  #[test]
+  fn the_offset_carrying_type_writes_the_session_instead() {
+    let session = FixedOffset::east_opt(9 * 3600).expect("an offset a session can be set to");
+    let carried: DateTime<FixedOffset> = instant().with_timezone(&session);
+
+    assert_eq!(written(&carried), "2026-01-01T09:00:01+09:00");
+  }
+
+  /// A fraction of a second survives, and takes the same ending.
+  #[test]
+  fn a_fraction_of_a_second_is_written_with_the_same_ending() {
+    let precise = instant() + chrono::Duration::milliseconds(500);
+
+    assert_eq!(written(&precise), "2026-01-01T00:00:01.500Z");
+  }
+
+  /// Reading is unchanged: an offset is still accepted, and it names the instant it names.
+  ///
+  /// What this change settles is the spelling of an answer. A caller that has always sent its own
+  /// offset goes on being understood, and refusing it would be a new rejection of something the
+  /// surface takes today.
+  #[test]
+  fn an_instant_is_read_whatever_offset_it_arrives_in() {
+    for arriving in ["2026-01-01T00:00:01Z", "2026-01-01T09:00:01+09:00", "2025-12-31T19:00:01-05:00"] {
+      let read: DateTimeUtc =
+        serde_json::from_value(serde_json::Value::String(arriving.to_owned())).expect("readable");
+
+      assert_eq!(read, instant(), "`{arriving}` was read as another moment");
+    }
+  }
+
+  /// A range parameter reads the same way, so a filter is spelled however the caller spells it.
+  #[test]
+  fn a_range_parameter_is_read_whatever_offset_it_arrives_in() {
+    let asked: sea_orm_crud::Bounds<DateTimeUtc> =
+      serde_urlencoded::from_str::<std::collections::HashMap<String, sea_orm_crud::Bounds<DateTimeUtc>>>(
+        "at=2026-01-01T09%3A00%3A01%2B09%3A00..2026-01-01T09%3A00%3A01%2B09%3A00",
+      )
+      .expect("a readable range")
+      .remove("at")
+      .expect("the parameter that was sent");
+
+    assert_eq!(asked, sea_orm_crud::Bounds::Between(instant(), instant()));
+  }
+
+  /// Every `.rs` file in the workspace, `target` left out.
+  fn sources(from: &Path, into: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(from).expect("a directory that is there") {
+      let path = entry.expect("an entry that can be read").path();
+
+      if path.is_dir() {
+        if !matches!(path.file_name().and_then(|name| name.to_str()), Some("target" | ".git")) {
+          sources(&path, into);
+        }
+      } else if path.extension().is_some_and(|extension| extension == "rs") {
+        into.push(path);
+      }
+    }
+  }
+
+  /// Nothing outside this file names the type that carries an offset.
+  ///
+  /// A field cannot opt out of the spelling by forgetting something, only by naming the other type
+  /// on purpose — so that is what is watched for, and it is watched for across the workspace
+  /// rather than in the response types alone. An instant read into the offset-carrying type
+  /// anywhere reaches a response body eventually, and by then which field it came from tells
+  /// nobody anything.
+  #[test]
+  fn no_source_but_this_one_names_the_offset_carrying_instant() {
+    // Assembled rather than written out, so the file this rule is stated in is not the file that
+    // breaks it. It is skipped below in any case, and this keeps the two from depending on that.
+    let refused = [format!("Fixed{}", "Offset"), format!("DateTime{}", "WithTimeZone")];
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("a workspace above this crate");
+    let mut found = Vec::new();
+    sources(root, &mut found);
+
+    assert!(found.len() > 100, "the walk read {} files, which is not the workspace", found.len());
+
+    let mut named: Vec<String> = Vec::new();
+    for path in found {
+      if path.ends_with(file!()) {
+        continue;
+      }
+
+      let source = fs::read_to_string(&path).expect("a source file that can be read");
+      for spelling in &refused {
+        if source.contains(spelling.as_str()) {
+          named.push(format!("{} names `{spelling}`", path.display()));
+        }
+      }
+    }
+
+    assert!(named.is_empty(), "an instant has one spelling here: {named:#?}");
+  }
+}

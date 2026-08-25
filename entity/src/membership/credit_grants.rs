@@ -15,11 +15,11 @@ pub struct Model {
   pub amount_granted:   i64,
   pub amount_remaining: i64,
   #[sea_orm(nullable)]
-  pub expiry_at:        Option<DateTimeWithTimeZone>,
+  pub expiry_at:        Option<DateTimeUtc>,
   #[sea_orm(nullable)]
   pub reference_code:   Option<String>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:       DateTimeWithTimeZone,
+  pub created_at:       DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

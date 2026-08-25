@@ -635,7 +635,7 @@ async fn bans_are_scoped_to_their_author_and_to_the_banned_users_managers() {
     user_id: Set(Some(target.user.model.id)),
     created_by: Set(Some(author.user.model.id)),
     reason: Set(Some("scope".to_owned())),
-    lifted_at: Set(Some(chrono::Utc::now().fixed_offset())),
+    lifted_at: Set(Some(chrono::Utc::now())),
     ..Default::default()
   })
   .exec(&db)

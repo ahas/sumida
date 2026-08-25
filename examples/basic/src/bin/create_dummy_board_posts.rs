@@ -27,7 +27,7 @@ fn plain_text_to_html(text: &str) -> String {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let db = infra::db::connect().await;
-  let now = Utc::now().fixed_offset();
+  let now = Utc::now();
 
   println!("Starting dummy data creation...");
 

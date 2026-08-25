@@ -41,9 +41,16 @@ use crate::util::filter::DESCRIPTOR_PATH;
 ///
 /// The `info` this sits in is dropped when the fragment is merged, so it is repeated on nothing;
 /// what a consumer keeps is the operations, the components and the security schemes below.
+///
+/// The sentence about instants is here rather than on each field because it holds for all of them
+/// at once. `date-time` is RFC 3339, and RFC 3339 admits both a trailing `Z` and a numeric offset,
+/// so a field's own entry cannot tell a reader which of the two it will meet. This surface writes
+/// one of them, everywhere, and a reader may hold it to that.
 const DESCRIPTION: &str = "\
 The routes the sumida base mounts. A consumer merges this fragment into its own document, so the \
-title, the version and the servers a reader sees are that product's, not this one's.";
+title, the version and the servers a reader sees are that product's, not this one's.\n\n\
+Every `date-time` written by these routes is UTC, ending in `Z` — `2026-01-01T00:00:01Z`. On the \
+way in any RFC 3339 offset is accepted and names the instant it names.";
 
 /// The name a caller uses to prove who they are, and the three ways to present it.
 ///
@@ -1269,3 +1276,4 @@ mod tests {
     }
   }
 }
+

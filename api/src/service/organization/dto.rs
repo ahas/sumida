@@ -87,8 +87,8 @@ pub struct OrganizationListItem {
   /// Null at a root.
   #[serde(default)]
   pub parent_id:  Nullable<i32>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
+  pub updated_at: DateTimeUtc,
 }
 
 /// One organization, read on its own.
@@ -100,8 +100,8 @@ pub struct GetOrganization {
   pub name:       String,
   /// Null at a root.
   pub parent_id:  Option<i32>,
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
+  pub updated_at: DateTimeUtc,
 }
 
 impl IntoResponse for GetOrganization {

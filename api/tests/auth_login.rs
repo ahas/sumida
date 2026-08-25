@@ -77,7 +77,7 @@ async fn ban(db: &sea_orm::DatabaseConnection, user_id: i32) -> i32 {
   entity::bans::ActiveModel {
     user_id: Set(Some(user_id)),
     reason: Set(Some("banned".into())),
-    created_at: Set(Utc::now().fixed_offset()),
+    created_at: Set(Utc::now()),
     ..Default::default()
   }
   .insert(db)

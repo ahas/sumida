@@ -839,7 +839,7 @@ async fn seed_ban(db: &DatabaseConnection, target: i32, author: i32) -> i32 {
   Bans::insert(entity::bans::ActiveModel {
     user_id: Set(Some(target)),
     created_by: Set(Some(author)),
-    lifted_at: Set(Some(chrono::Utc::now().fixed_offset())),
+    lifted_at: Set(Some(chrono::Utc::now())),
     ..Default::default()
   })
   .exec(db)
@@ -866,7 +866,7 @@ async fn seed_invitation(db: &DatabaseConnection, invitee: i32) -> Uuid {
   UserInvitations::insert(entity::user_invitations::ActiveModel {
     uuid: Set(uuid),
     user_id: Set(invitee),
-    expires_at: Set((chrono::Utc::now() + chrono::Duration::days(30)).fixed_offset()),
+    expires_at: Set(chrono::Utc::now() + chrono::Duration::days(30)),
     ..Default::default()
   })
   .exec(db)

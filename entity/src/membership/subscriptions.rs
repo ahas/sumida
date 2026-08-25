@@ -19,12 +19,12 @@ pub struct Model {
   pub owner_kind: OwnerKind,
   pub owner_id: i32,
   pub status: SubscriptionStatus,
-  pub current_period_start: DateTimeWithTimeZone,
-  pub current_period_end: DateTimeWithTimeZone,
+  pub current_period_start: DateTimeUtc,
+  pub current_period_end: DateTimeUtc,
   #[sea_orm(default_value = false)]
   pub cancel_at_period_end: bool,
   #[sea_orm(nullable)]
-  pub canceled_at: Option<DateTimeWithTimeZone>,
+  pub canceled_at: Option<DateTimeUtc>,
   #[sea_orm(column_type = "JsonBinary")]
   pub allowed_actions: Json,
   #[sea_orm(nullable)]
@@ -44,20 +44,20 @@ pub struct Model {
   #[sea_orm(nullable)]
   pub provider_subscription_id: Option<String>,
   #[sea_orm(nullable)]
-  pub trial_ends_at: Option<DateTimeWithTimeZone>,
+  pub trial_ends_at: Option<DateTimeUtc>,
   #[sea_orm(nullable)]
-  pub grace_ends_at: Option<DateTimeWithTimeZone>,
+  pub grace_ends_at: Option<DateTimeUtc>,
   #[sea_orm(nullable)]
   pub prev_plan_id: Option<i32>,
   // ---
   /// When an "expiring soon" notice was last sent for the current period.
   /// Cleared on renewal so the next period can notify again.
   #[sea_orm(nullable)]
-  pub expiring_notified_at: Option<DateTimeWithTimeZone>,
+  pub expiring_notified_at: Option<DateTimeUtc>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at: DateTimeWithTimeZone,
+  pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

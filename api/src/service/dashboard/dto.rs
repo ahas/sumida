@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::response::IntoResponse;
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::Utc;
+use sea_orm::prelude::DateTimeUtc;
 use sea_orm::{ConnectionTrait, DbErr, FromQueryResult, Statement};
 use serde::Serialize;
 
@@ -28,7 +29,7 @@ pub struct AuthDailyItem {
 pub struct AuthOffender {
   pub ip_address:   String,
   pub refused:      i64,
-  pub last_attempt: DateTime<FixedOffset>,
+  pub last_attempt: DateTimeUtc,
 }
 
 /// What the sign-in log says about the recent past.
@@ -47,7 +48,7 @@ pub struct AuthActivity {
   pub to:         chrono::NaiveDate,
   pub daily:      Vec<AuthDailyItem>,
   pub offenders:  Vec<AuthOffender>,
-  pub created_at: DateTime<FixedOffset>,
+  pub created_at: DateTimeUtc,
 }
 
 impl IntoResponse for AuthActivity {
@@ -102,7 +103,7 @@ impl AuthActivity {
       to: today,
       daily,
       offenders,
-      created_at: Utc::now().fixed_offset(),
+      created_at: Utc::now(),
     })
   }
 }
@@ -137,7 +138,7 @@ pub struct StorageUsage {
   pub bytes:        i64,
   pub unreferenced: i64,
   pub kinds:        Vec<StorageKind>,
-  pub created_at:   DateTime<FixedOffset>,
+  pub created_at:   DateTimeUtc,
 }
 
 impl IntoResponse for StorageUsage {
@@ -188,7 +189,7 @@ impl StorageUsage {
       bytes: total.bytes,
       unreferenced: total.unreferenced,
       kinds,
-      created_at: Utc::now().fixed_offset(),
+      created_at: Utc::now(),
     })
   }
 }
@@ -228,7 +229,7 @@ pub struct AccountActivity {
   pub roles:         i64,
   pub api_keys:      i64,
   pub bans:          i64,
-  pub created_at:    DateTime<FixedOffset>,
+  pub created_at:    DateTimeUtc,
 }
 
 impl IntoResponse for AccountActivity {
@@ -290,7 +291,7 @@ impl AccountActivity {
       roles: totals.roles,
       api_keys: totals.api_keys,
       bans: totals.bans,
-      created_at: Utc::now().fixed_offset(),
+      created_at: Utc::now(),
     })
   }
 }

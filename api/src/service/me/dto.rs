@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::response::IntoResponse;
 use entity::users::*;
-use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::DateTimeUtc;
 use sea_orm::{DeriveIntoActiveModel, FromQueryResult};
 use sea_orm_crud::{Nullable, Optional};
 use serde::{Deserialize, Serialize};
@@ -36,14 +36,14 @@ pub struct Me {
   pub role:          UserRole,
   /// When **this session** was authorized, not when the account was created.
   #[sea_orm(skip)]
-  pub first_seen_at: DateTimeWithTimeZone,
+  pub first_seen_at: DateTimeUtc,
   /// When this session was last used.
   #[sea_orm(skip)]
-  pub last_seen_at:  DateTimeWithTimeZone,
+  pub last_seen_at:  DateTimeUtc,
   /// When the account row was created.
-  pub created_at:    DateTimeWithTimeZone,
+  pub created_at:    DateTimeUtc,
   /// When the account row was last changed.
-  pub updated_at:    DateTimeWithTimeZone,
+  pub updated_at:    DateTimeUtc,
 }
 
 impl IntoResponse for Me {

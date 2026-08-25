@@ -18,7 +18,7 @@ pub struct GrantCredit {
   #[serde(default)]
   pub plan_code:       Option<String>,
   #[serde(default)]
-  pub expiry_at:       Option<DateTimeWithTimeZone>,
+  pub expiry_at:       Option<DateTimeUtc>,
   #[serde(default)]
   pub reference_code:  Option<String>,
   #[serde(default)]
@@ -188,8 +188,8 @@ pub struct ReservationListItem {
   pub status:         entity::membership::ReservationStatus,
   pub action:         Option<String>,
   pub reference_code: Option<String>,
-  pub expires_at:     Option<DateTimeWithTimeZone>,
-  pub created_at:     DateTimeWithTimeZone,
+  pub expires_at:     Option<DateTimeUtc>,
+  pub created_at:     DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -231,5 +231,5 @@ pub struct CreditTxItem {
   pub action:         Option<String>,
   pub reference_code: Option<String>,
   pub balance_after:  i64,
-  pub created_at:     DateTimeWithTimeZone,
+  pub created_at:     DateTimeUtc,
 }

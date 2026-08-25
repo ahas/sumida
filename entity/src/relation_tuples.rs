@@ -21,9 +21,9 @@ pub struct Model {
   #[sea_orm(nullable)]
   pub resource_id_int:  Option<i32>,
   #[sea_orm(nullable)]
-  pub expires_at:       Option<DateTimeWithTimeZone>,
+  pub expires_at:       Option<DateTimeUtc>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:       DateTimeWithTimeZone,
+  pub created_at:       DateTimeUtc,
   #[sea_orm(default_value = "'system'")]
   pub created_by:       String,
 }

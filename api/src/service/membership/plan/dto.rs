@@ -121,8 +121,8 @@ pub struct PlanListItem {
   pub trial_days:       Option<i32>,
   pub credit_amount:    Option<i64>,
   pub is_enabled:       bool,
-  pub created_at:       DateTimeWithTimeZone,
-  pub updated_at:       DateTimeWithTimeZone,
+  pub created_at:       DateTimeUtc,
+  pub updated_at:       DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

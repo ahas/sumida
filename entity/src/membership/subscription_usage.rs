@@ -13,13 +13,13 @@ pub struct Model {
   #[sea_orm(indexed)]
   pub subscription_id: i32,
   pub action:          String,
-  pub period_start:    DateTimeWithTimeZone,
+  pub period_start:    DateTimeUtc,
   #[sea_orm(default_value = 0)]
   pub used:            i64,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:      DateTimeWithTimeZone,
+  pub created_at:      DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at:      DateTimeWithTimeZone,
+  pub updated_at:      DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

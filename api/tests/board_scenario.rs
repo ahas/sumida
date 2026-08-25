@@ -570,7 +570,7 @@ async fn scenario_file_upload_claim_and_orphan_reap() {
   let orphan = upload_board_file(&mock, board.id, "orphan.png").await;
   Files::update(entity::fs::files::ActiveModel {
     uuid: Unchanged(orphan),
-    expires_at: Set(Some((Utc::now() - Duration::hours(1)).fixed_offset())),
+    expires_at: Set(Some(Utc::now() - Duration::hours(1))),
     ..Default::default()
   })
   .exec(&db)
@@ -769,7 +769,7 @@ async fn scenario_scheduled_post_autopublish() {
     title: Set("scheduled".into()),
     content_type: Set(BoardPostContentType::Html),
     content_visibility: Set(BoardPostContentVisibility::Public),
-    scheduled_at: Set(Some((Utc::now() - Duration::hours(1)).fixed_offset())),
+    scheduled_at: Set(Some(Utc::now() - Duration::hours(1))),
     ..Default::default()
   })
   .exec(&db)

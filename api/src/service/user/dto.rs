@@ -205,8 +205,8 @@ pub struct UserListItem {
   pub organization: UserOrganization,
   #[sea_orm(nested, alias = "role")]
   pub role:         UserRole,
-  pub created_at:   DateTimeWithTimeZone,
-  pub updated_at:   DateTimeWithTimeZone,
+  pub created_at:   DateTimeUtc,
+  pub updated_at:   DateTimeUtc,
 }
 
 /// One account, read on its own.
@@ -227,8 +227,8 @@ pub struct GetUser {
   pub organization: UserOrganization,
   #[sea_orm(nested)]
   pub role:         UserRole,
-  pub created_at:   DateTimeWithTimeZone,
-  pub updated_at:   DateTimeWithTimeZone,
+  pub created_at:   DateTimeUtc,
+  pub updated_at:   DateTimeUtc,
 }
 
 impl IntoResponse for GetUser {

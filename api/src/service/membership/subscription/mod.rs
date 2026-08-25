@@ -196,8 +196,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       owner_kind: Set(owner_kind.clone()),
       owner_id: Set(owner_id),
       status: Set(SubscriptionStatus::Active),
-      current_period_start: Set(now.into()),
-      current_period_end: Set(period_end.into()),
+      current_period_start: Set(now),
+      current_period_end: Set(period_end),
       allowed_actions: Set(allowed),
       ..Default::default()
     })
@@ -351,7 +351,7 @@ impl<S: SumidaState> SubscriptionService<S> {
     let (period_end, trial_ends_at, charge_amount) = match trial_days {
       Some(td) => {
         let end = now + Duration::days(td as i64);
-        (end, Some(end.into()), 0)
+        (end, Some(end), 0)
       }
       None => {
         let duration = plan.duration_days.unwrap_or(30).max(0);
@@ -403,8 +403,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       owner_kind: Set(owner_kind.clone()),
       owner_id: Set(owner_id),
       status: Set(SubscriptionStatus::Active),
-      current_period_start: Set(now.into()),
-      current_period_end: Set(period_end.into()),
+      current_period_start: Set(now),
+      current_period_end: Set(period_end),
       trial_ends_at: Set(trial_ends_at),
       allowed_actions: Set(allowed),
       idempotency_key: Set(data.idempotency_key.clone()),
@@ -428,7 +428,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       amount: Set(amount),
       subtotal: Set(charge_amount),
       currency: Set(plan.currency.clone()),
-      paid_at: Set(Some(now.into())),
+      paid_at: Set(Some(now)),
       ..Default::default()
     })
     .exec(&txn)
@@ -487,7 +487,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       Subscriptions::update(SubscriptionsActiveModel {
         id: Unchanged(id),
         status: Set(SubscriptionStatus::Canceled),
-        canceled_at: Set(Some(Utc::now().into())),
+        canceled_at: Set(Some(Utc::now())),
         ..Default::default()
       })
       .exec(&txn)
@@ -511,8 +511,8 @@ impl<S: SumidaState> SubscriptionService<S> {
     let plan = MembershipPlans::find_by_id(sub.plan_id).one(&txn).await?;
     let duration = plan.and_then(|p| p.duration_days).unwrap_or(30).max(0);
 
-    let now_dt: sea_orm::prelude::DateTimeWithTimeZone = Utc::now().into();
-    let base = if sub.current_period_end > now_dt { sub.current_period_end } else { now_dt };
+    let now = Utc::now();
+    let base = if sub.current_period_end > now { sub.current_period_end } else { now };
     let new_end = base + Duration::days(duration as i64);
     let old = status_str(&sub.status);
 
@@ -617,8 +617,8 @@ impl<S: SumidaState> SubscriptionService<S> {
     Subscriptions::update(SubscriptionsActiveModel {
       id: Unchanged(id),
       status: Set(SubscriptionStatus::Active),
-      current_period_start: Set(now.into()),
-      current_period_end: Set(period_end.into()),
+      current_period_start: Set(now),
+      current_period_end: Set(period_end),
       canceled_at: Set(None),
       cancel_at_period_end: Set(false),
       expiring_notified_at: Set(None),
@@ -688,7 +688,7 @@ impl<S: SumidaState> SubscriptionService<S> {
 
     // Prorate by the fraction of the current period still remaining (i128 math to
     // avoid overflow on large prices).
-    let now: sea_orm::prelude::DateTimeWithTimeZone = Utc::now().into();
+    let now = Utc::now();
     let remaining = (sub.current_period_end - now).num_seconds().max(0);
     let total = (sub.current_period_end - sub.current_period_start).num_seconds().max(1);
     let prorate = |price: i64| -> i64 { ((price as i128 * remaining as i128) / total as i128) as i64 };

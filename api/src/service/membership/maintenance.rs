@@ -24,7 +24,6 @@ use entity::prelude::*;
 use error::SumidaError;
 use infra::{payment, settings};
 use sea_orm::ActiveValue::*;
-use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
   ColumnTrait,
@@ -105,7 +104,7 @@ pub struct MaintenanceReport {
 /// The provider call happens while the row lock is held — acceptable for a
 /// single-runner background job and it prevents a concurrent double-charge.
 pub async fn renew_due_subscriptions(db: &DatabaseConnection) -> Result<(usize, usize), SumidaError> {
-  let now: DateTimeWithTimeZone = Utc::now().into();
+  let now = Utc::now();
   let provider = payment::provider();
   let mut renewed = 0usize;
   let mut failed = 0usize;
@@ -252,7 +251,7 @@ pub async fn retry_dunning_subscriptions(db: &DatabaseConnection) -> Result<(usi
   if max == 0 {
     return Ok((0, 0));
   }
-  let now: DateTimeWithTimeZone = Utc::now().into();
+  let now = Utc::now();
   let provider = payment::provider();
   let mut recovered = 0usize;
   let mut failed = 0usize;
@@ -378,7 +377,7 @@ pub async fn retry_dunning_subscriptions(db: &DatabaseConnection) -> Result<(usi
 /// window has closed (or never opened) become `expired`. Each row is locked and
 /// re-checked inside its own transaction, with a matching audit event.
 pub async fn expire_due_subscriptions(db: &DatabaseConnection) -> Result<usize, SumidaError> {
-  let now: DateTimeWithTimeZone = Utc::now().into();
+  let now = Utc::now();
   let mut total = 0usize;
 
   loop {
@@ -491,7 +490,7 @@ pub async fn expire_stale_pending_purchases<S: SumidaState>(
   if ttl <= 0 {
     return Ok(0);
   }
-  let cutoff: DateTimeWithTimeZone = (Utc::now() - Duration::hours(ttl as i64)).into();
+  let cutoff = Utc::now() - Duration::hours(ttl as i64);
   let mut total = 0usize;
 
   loop {
@@ -540,7 +539,7 @@ pub async fn expire_stale_pending_purchases<S: SumidaState>(
 /// from a crashed async job). A bulk status flip frees their spendable amount;
 /// lots are untouched. Returns the number released.
 pub async fn release_expired_reservations(db: &DatabaseConnection) -> Result<usize, SumidaError> {
-  let now: DateTimeWithTimeZone = Utc::now().into();
+  let now = Utc::now();
   let res = CreditReservations::update_many()
     .col_expr(CreditReservationsColumn::Status, Expr::value("released"))
     .filter(CreditReservationsColumn::Status.eq(ReservationStatus::Held))
@@ -555,7 +554,7 @@ pub async fn release_expired_reservations(db: &DatabaseConnection) -> Result<usi
 /// write `expire` ledger rows, and correct the cached balance. Wallets are only
 /// otherwise swept when touched, so inactive wallets need this.
 pub async fn sweep_expired_lots<S: SumidaState>(db: &DatabaseConnection) -> Result<usize, SumidaError> {
-  let now: DateTimeWithTimeZone = Utc::now().into();
+  let now = Utc::now();
 
   let wallet_ids: Vec<i32> = CreditGrants::find()
     .select_only()
@@ -588,13 +587,12 @@ pub async fn notify_expiring_subscriptions<S: SumidaState>(
 ) -> Result<usize, SumidaError> {
   let days = settings::get().membership.expiring_soon_notify_days.max(0);
   let now = Utc::now();
-  let now_dt: DateTimeWithTimeZone = now.into();
-  let horizon: DateTimeWithTimeZone = (now + Duration::days(days as i64)).into();
+  let horizon = now + Duration::days(days as i64);
 
   let due = Subscriptions::find()
     .filter(SubColumn::Status.eq(SubscriptionStatus::Active))
     .filter(SubColumn::CancelAtPeriodEnd.eq(false))
-    .filter(SubColumn::CurrentPeriodEnd.gt(now_dt))
+    .filter(SubColumn::CurrentPeriodEnd.gt(now))
     .filter(SubColumn::CurrentPeriodEnd.lte(horizon))
     .filter(SubColumn::ExpiringNotifiedAt.is_null())
     .all(db)
@@ -605,7 +603,7 @@ pub async fn notify_expiring_subscriptions<S: SumidaState>(
     // Mark first so a slow/duplicated send never double-notifies.
     Subscriptions::update(SubscriptionsActiveModel {
       id: Unchanged(sub.id),
-      expiring_notified_at: Set(Some(now_dt)),
+      expiring_notified_at: Set(Some(now)),
       ..Default::default()
     })
     .exec(db)
@@ -634,7 +632,7 @@ pub async fn notify_low_balance_wallets<S: SumidaState>(
   let Some(threshold) = settings::get().membership.credit_low_balance_threshold else {
     return Ok(0);
   };
-  let now_dt: DateTimeWithTimeZone = Utc::now().into();
+  let now = Utc::now();
 
   let wallets = CreditWallets::find()
     .filter(CreditWalletsColumn::Balance.lte(threshold))
@@ -647,7 +645,7 @@ pub async fn notify_low_balance_wallets<S: SumidaState>(
     // Mark first so a slow/duplicated send never double-alerts.
     CreditWallets::update(CreditWalletsActiveModel {
       id: Unchanged(wallet.id),
-      low_balance_notified_at: Set(Some(now_dt)),
+      low_balance_notified_at: Set(Some(now)),
       ..Default::default()
     })
     .exec(db)

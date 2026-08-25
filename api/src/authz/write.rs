@@ -20,7 +20,7 @@
 //!   a revoked grant keeps working.
 
 use error::SumidaError;
-use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::DateTimeUtc;
 use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
 
 use super::ir::{RelationSource, SubjectSpec};
@@ -126,7 +126,7 @@ pub struct TupleWrite {
   pub subject:       SubjectKey,
   /// Expiry is the only condition a tuple can carry — there is no time-of-day, no weekday, no
   /// request-origin clause. `None` is a grant that does not expire.
-  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub expires_at:    Option<DateTimeUtc>,
 }
 
 impl TupleWrite {
@@ -140,7 +140,7 @@ impl TupleWrite {
     }
   }
 
-  pub fn expiring(mut self, at: DateTimeWithTimeZone) -> Self {
+  pub fn expiring(mut self, at: DateTimeUtc) -> Self {
     self.expires_at = Some(at);
     self
   }

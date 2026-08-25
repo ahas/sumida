@@ -25,11 +25,11 @@ pub struct Model {
   pub idempotency_key: Option<String>,
   /// Optional auto-release deadline; the maintenance job releases held rows past it.
   #[sea_orm(nullable)]
-  pub expires_at:      Option<DateTimeWithTimeZone>,
+  pub expires_at:      Option<DateTimeUtc>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:      DateTimeWithTimeZone,
+  pub created_at:      DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at:      DateTimeWithTimeZone,
+  pub updated_at:      DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -58,7 +58,7 @@ impl<S: SumidaState> UserInvitationService<S> {
     let active_model = entity::user_invitations::ActiveModel {
       user_id: Set(user_id),
       uuid: Set(uuid),
-      expires_at: Set((Utc::now() + Duration::days(30)).fixed_offset()),
+      expires_at: Set(Utc::now() + Duration::days(30)),
       ..Default::default()
     };
 
@@ -118,7 +118,7 @@ impl<S: SumidaState> UserInvitationService<S> {
     let active_model = entity::user_invitations::ActiveModel {
       user_id: Set(user_id),
       uuid: Set(uuid),
-      expires_at: Set(expires_at.fixed_offset()),
+      expires_at: Set(expires_at),
       ..Default::default()
     };
 
@@ -141,7 +141,7 @@ impl<S: SumidaState> UserInvitationService<S> {
     let active_model = entity::user_invitations::ActiveModel {
       user_id: Unchanged(user_id),
       uuid: Set(uuid),
-      expires_at: Set(expires_at.fixed_offset()),
+      expires_at: Set(expires_at),
       ..Default::default()
     };
 

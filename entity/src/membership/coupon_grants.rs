@@ -16,12 +16,12 @@ pub struct Model {
   pub owner_id:    i32,
   /// Set when consumed at checkout (one grant = one use for grant-gated coupons).
   #[sea_orm(nullable)]
-  pub redeemed_at: Option<DateTimeWithTimeZone>,
+  pub redeemed_at: Option<DateTimeUtc>,
   /// Set on recall. A revoked grant cannot be redeemed; re-granting re-issues it.
   #[sea_orm(nullable)]
-  pub revoked_at:  Option<DateTimeWithTimeZone>,
+  pub revoked_at:  Option<DateTimeUtc>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:  DateTimeWithTimeZone,
+  pub created_at:  DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

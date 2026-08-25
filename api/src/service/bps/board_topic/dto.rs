@@ -75,8 +75,8 @@ pub struct BoardTopicListItem {
   pub name:        String,
   pub description: Option<String>,
   pub order:       i32,
-  pub created_at:  DateTimeWithTimeZone,
-  pub updated_at:  DateTimeWithTimeZone,
+  pub created_at:  DateTimeUtc,
+  pub updated_at:  DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -89,8 +89,8 @@ pub struct GetBoardTopic {
   pub name:        String,
   pub description: Option<String>,
   pub order:       i32,
-  pub created_at:  DateTimeWithTimeZone,
-  pub updated_at:  DateTimeWithTimeZone,
+  pub created_at:  DateTimeUtc,
+  pub updated_at:  DateTimeUtc,
 }
 
 impl IntoResponse for GetBoardTopic {

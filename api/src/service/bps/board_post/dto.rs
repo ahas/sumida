@@ -186,7 +186,7 @@ pub struct BoardPostViewerItem {
   pub user_id:   Option<i32>,
   pub username:  Option<String>,
   pub name:      Option<String>,
-  pub viewed_at: DateTimeWithTimeZone,
+  pub viewed_at: DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -239,10 +239,10 @@ pub struct BoardPostCommon {
   pub views:        i32,
   #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
   pub reactions:    Option<JsonValue>,
-  pub published_at: Option<DateTimeWithTimeZone>,
-  pub scheduled_at: Option<DateTimeWithTimeZone>,
-  pub created_at:   DateTimeWithTimeZone,
-  pub updated_at:   DateTimeWithTimeZone,
+  pub published_at: Option<DateTimeUtc>,
+  pub scheduled_at: Option<DateTimeUtc>,
+  pub created_at:   DateTimeUtc,
+  pub updated_at:   DateTimeUtc,
 
   // Nested Data
   #[sea_orm(nested)]
@@ -350,7 +350,7 @@ pub struct CreateBoardPost {
   #[cfg_attr(feature = "openapi", schema(required = false))]
   pub status:              Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at:        Nullable<DateTimeWithTimeZone>,
+  pub published_at:        Nullable<DateTimeUtc>,
   #[serde(default)]
   pub tags:                Nullable<Vec<String>>,
   pub attached_file_uuids: Option<Vec<Uuid>>,
@@ -412,7 +412,7 @@ pub struct UpdateBoardPost {
   #[cfg_attr(feature = "openapi", schema(required = false))]
   pub status:              Optional<BoardPostStatus>,
   #[serde(default)]
-  pub published_at:        Nullable<DateTimeWithTimeZone>,
+  pub published_at:        Nullable<DateTimeUtc>,
   #[serde(default)]
   pub tags:                Nullable<Vec<String>>,
   pub attached_file_uuids: Option<Vec<Uuid>>,

@@ -16,15 +16,15 @@ use chrono::{Duration, Utc};
 use entity::fs::files::FileStatus;
 use entity::prelude::*;
 use error::SumidaError;
-use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::DateTimeUtc;
 use sea_orm::sea_query::Expr;
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set};
 use uuid::Uuid;
 
 /// `now + grace`, the TTL stamped on temporary/unattached files (grace from `storage.orphan_grace_hours`).
-pub fn grace_expiry() -> DateTimeWithTimeZone {
+pub fn grace_expiry() -> DateTimeUtc {
   let hours = infra::settings::get().storage.orphan_grace_hours;
-  (Utc::now() + Duration::hours(hours)).fixed_offset()
+  Utc::now() + Duration::hours(hours)
 }
 
 /// Mark a file as temporary and put it on the orphan TTL.
@@ -154,7 +154,7 @@ pub async fn find_orphan_files<C: ConnectionTrait>(
   limit: u64,
   db: &C,
 ) -> Result<Vec<entity::fs::files::Model>, SumidaError> {
-  let now = Utc::now().fixed_offset();
+  let now = Utc::now();
 
   let files = Files::find()
     .filter(FilesColumn::Status.eq(FileStatus::Temporary))

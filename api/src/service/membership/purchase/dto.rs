@@ -90,8 +90,8 @@ pub struct PurchaseListItem {
   pub tax_amount:      i64,
   pub coupon_code:     Option<String>,
   pub currency:        String,
-  pub paid_at:         Option<DateTimeWithTimeZone>,
-  pub created_at:      DateTimeWithTimeZone,
+  pub paid_at:         Option<DateTimeUtc>,
+  pub created_at:      DateTimeUtc,
 }
 
 #[cfg(test)]

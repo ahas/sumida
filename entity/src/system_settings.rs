@@ -58,7 +58,7 @@ pub struct Model {
   pub is_editable: bool,
   /// 설정이 속한 갈래 — auth·execution·retention·storage·general. 선언하지 않은 행은 general.
   pub category:    String,
-  pub updated_at:  DateTimeWithTimeZone,
+  pub updated_at:  DateTimeUtc,
   pub updated_by:  Option<i32>,
 }
 
@@ -125,7 +125,7 @@ impl Entity {
     let mut active = existing.into_active_model();
     active.value = Set(value);
     active.updated_by = Set(updated_by);
-    active.updated_at = Set(chrono::Utc::now().fixed_offset());
+    active.updated_at = Set(chrono::Utc::now());
     Self::update(active).exec(db).await?;
     Ok(())
   }
@@ -150,7 +150,7 @@ impl Entity {
       let mut active = existing.into_active_model();
       active.value = Set(value);
       active.updated_by = Set(updated_by);
-      active.updated_at = Set(chrono::Utc::now().fixed_offset());
+      active.updated_at = Set(chrono::Utc::now());
       Self::update(active).exec(db).await?;
       return Ok(());
     }
@@ -165,7 +165,7 @@ impl Entity {
       is_editable: Set(false),
       // 자동등록 setting 은 갈래를 선언하지 않는다 — 컬럼 기본값(general)이 붙는다.
       category:    NotSet,
-      updated_at:  Set(chrono::Utc::now().fixed_offset()),
+      updated_at:  Set(chrono::Utc::now()),
       updated_by:  Set(updated_by),
     };
     Self::insert(active).exec(db).await?;

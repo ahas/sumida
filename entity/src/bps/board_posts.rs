@@ -95,15 +95,15 @@ pub struct Model {
   #[sea_orm(column_type = "JsonBinary", nullable)]
   pub reactions:          Option<Json>,
   #[sea_orm(nullable)]
-  pub published_at:       Option<DateTimeWithTimeZone>,
+  pub published_at:       Option<DateTimeUtc>,
   #[sea_orm(nullable)]
-  pub scheduled_at:       Option<DateTimeWithTimeZone>,
+  pub scheduled_at:       Option<DateTimeUtc>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:         DateTimeWithTimeZone,
+  pub created_at:         DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at:         DateTimeWithTimeZone,
+  pub updated_at:         DateTimeUtc,
   #[sea_orm(nullable)]
-  pub deleted_at:         Option<DateTimeWithTimeZone>,
+  pub deleted_at:         Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -220,7 +220,7 @@ impl Model {
     }
 
     if let Some(scheduled_at) = self.scheduled_at {
-      scheduled_at <= Utc::now().fixed_offset()
+      scheduled_at <= Utc::now()
     } else {
       false
     }

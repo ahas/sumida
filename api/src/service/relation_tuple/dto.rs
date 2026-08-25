@@ -2,7 +2,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use entity::relation_tuples::Column;
-use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::prelude::DateTimeUtc;
 use sea_orm::sea_query::SimpleExpr;
 use sea_orm::{EntityTrait, FromQueryResult, IntoSimpleExpr, QueryFilter, QueryTrait, Select};
 use sea_orm_crud::OneOrMany;
@@ -108,8 +108,8 @@ pub struct RelationTupleListItem {
   /// because that is the form every other surface in this subsystem speaks (`SubjectSet::keys`,
   /// `created_by`, the design's own `user:7` / `role:3#member` notation).
   pub subject:       String,
-  pub expires_at:    Option<DateTimeWithTimeZone>,
-  pub created_at:    DateTimeWithTimeZone,
+  pub expires_at:    Option<DateTimeUtc>,
+  pub created_at:    DateTimeUtc,
   /// Who granted it. `access_policies` recorded no grantor at all, which is half the reason
   /// `assert_policy_within_authority` could not check that a granter holds what they grant.
   pub created_by:    String,
@@ -131,7 +131,7 @@ pub struct CreateRelationTuple {
   pub subject:       String,
   /// Expiry is the only condition a grant can carry. Absent is a grant that does not expire.
   #[serde(default)]
-  pub expires_at:    Option<DateTimeWithTimeZone>,
+  pub expires_at:    Option<DateTimeUtc>,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

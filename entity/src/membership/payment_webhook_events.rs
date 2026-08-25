@@ -13,9 +13,9 @@ pub struct Model {
   pub event_type:   String,
   pub payment_id:   String,
   #[sea_orm(nullable)]
-  pub processed_at: Option<DateTimeWithTimeZone>,
+  pub processed_at: Option<DateTimeUtc>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:   DateTimeWithTimeZone,
+  pub created_at:   DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

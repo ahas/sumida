@@ -85,7 +85,7 @@ pub struct CreateCoupon {
   #[serde(default)]
   pub plan_codes: Option<Vec<String>>,
   #[serde(default)]
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at: Option<DateTimeUtc>,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -103,9 +103,9 @@ pub struct CouponItem {
   pub redeemed_count: i32,
   pub requires_grant: bool,
   pub stackable: bool,
-  pub expires_at: Option<DateTimeWithTimeZone>,
+  pub expires_at: Option<DateTimeUtc>,
   pub is_active: bool,
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
 }
 
 /// Issue a coupon to a specific owner.
@@ -184,9 +184,9 @@ pub struct CouponGrantItem {
   pub coupon_id:   i32,
   pub owner_kind:  OwnerKind,
   pub owner_id:    i32,
-  pub redeemed_at: Option<DateTimeWithTimeZone>,
-  pub revoked_at:  Option<DateTimeWithTimeZone>,
-  pub created_at:  DateTimeWithTimeZone,
+  pub redeemed_at: Option<DateTimeUtc>,
+  pub revoked_at:  Option<DateTimeUtc>,
+  pub created_at:  DateTimeUtc,
 }
 
 /// A coupon available to the calling owner ("my coupons").
@@ -200,7 +200,7 @@ pub struct MyCouponItem {
   pub grant_credits:  Option<i64>,
   pub free_plan_code: Option<String>,
   pub currency:       Option<String>,
-  pub expires_at:     Option<DateTimeWithTimeZone>,
+  pub expires_at:     Option<DateTimeUtc>,
 }
 
 /// Redeem a reward coupon (credits / free plan) for the calling user.
@@ -258,7 +258,7 @@ pub struct UpdateCoupon {
   #[serde(default)]
   pub stackable:                 Option<bool>,
   #[serde(default)]
-  pub expires_at:                Option<DateTimeWithTimeZone>,
+  pub expires_at:                Option<DateTimeUtc>,
 }
 
 #[derive(Clone, Debug, Serialize)]

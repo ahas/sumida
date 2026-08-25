@@ -7,7 +7,6 @@ use error::SumidaError;
 use infra::session::UserSession;
 use infra::settings;
 use sea_orm::ActiveValue::*;
-use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
   ColumnTrait,
   Condition,
@@ -257,7 +256,7 @@ impl<S: SumidaState> CouponService<S> {
     if g.revoked_at.is_none() {
       CouponGrants::update(CouponGrantsActiveModel {
         id: Unchanged(g.id),
-        revoked_at: Set(Some(Utc::now().into())),
+        revoked_at: Set(Some(Utc::now())),
         ..Default::default()
       })
       .exec(db)
@@ -311,7 +310,7 @@ impl<S: SumidaState> CouponService<S> {
       return Ok((vec![], 0));
     }
 
-    let now: DateTimeWithTimeZone = Utc::now().into();
+    let now = Utc::now();
     let mut query = Coupons::find()
       .filter(CouponsColumn::Id.is_in(ids))
       .filter(CouponsColumn::IsActive.eq(true))
@@ -352,7 +351,7 @@ impl<S: SumidaState> CouponService<S> {
       }
       CouponGrants::update(CouponGrantsActiveModel {
         id: Unchanged(grant.id),
-        redeemed_at: Set(Some(Utc::now().into())),
+        redeemed_at: Set(Some(Utc::now())),
         ..Default::default()
       })
       .exec(txn)
@@ -480,7 +479,7 @@ impl<S: SumidaState> CouponService<S> {
       let expiry_at = settings::get()
         .membership
         .credit_default_expiry_days
-        .map(|d| (Utc::now() + chrono::Duration::days(d as i64)).into());
+        .map(|d| Utc::now() + chrono::Duration::days(d as i64));
       let reference = format!("coupon:{}", coupon.code);
       CreditService::<S>::grant_in_txn(
         &owner_kind,

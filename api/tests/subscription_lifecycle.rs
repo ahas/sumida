@@ -251,7 +251,7 @@ async fn test_grace_window_keeps_entitlement_then_expires() {
   // Force the period to end, then run the renewal job → declined → past_due + grace.
   let sub = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut a = sub.into_active_model();
-  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.current_period_end = Set(Utc::now() - Duration::hours(1));
   a.update(&db).await.unwrap();
 
   let (_renewed, failed) = maintenance::renew_due_subscriptions(&db).await.unwrap();
@@ -274,7 +274,7 @@ async fn test_grace_window_keeps_entitlement_then_expires() {
   // Push grace into the past → entitlement stops.
   let row = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut a = row.into_active_model();
-  a.grace_ends_at = Set(Some((Utc::now() - Duration::hours(1)).into()));
+  a.grace_ends_at = Set(Some(Utc::now() - Duration::hours(1)));
   a.update(&db).await.unwrap();
 
   let r = m
@@ -321,7 +321,7 @@ async fn past_due_with_grace(db: &sea_orm::DatabaseConnection, am: &Mock) -> (Mo
 
   let sub = Subscriptions::find_by_id(sub_id).one(db).await.unwrap().unwrap();
   let mut a = sub.into_active_model();
-  a.current_period_end = Set((Utc::now() - Duration::hours(1)).into());
+  a.current_period_end = Set(Utc::now() - Duration::hours(1));
   a.update(db).await.unwrap();
   maintenance::renew_due_subscriptions(db).await.unwrap();
   (m, sub_id)
@@ -418,7 +418,7 @@ async fn test_expire_finalizes_past_due_after_grace() {
   // Push grace into the past, then run the expiry job.
   let row = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   let mut a = row.into_active_model();
-  a.grace_ends_at = Set(Some((Utc::now() - Duration::hours(1)).into()));
+  a.grace_ends_at = Set(Some(Utc::now() - Duration::hours(1)));
   a.update(&db).await.unwrap();
 
   maintenance::expire_due_subscriptions(&db).await.unwrap();

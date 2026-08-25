@@ -43,15 +43,15 @@ pub struct Model {
   #[sea_orm(nullable)]
   pub idempotency_key:     Option<String>,
   #[sea_orm(nullable)]
-  pub paid_at:             Option<DateTimeWithTimeZone>,
+  pub paid_at:             Option<DateTimeUtc>,
   #[sea_orm(nullable)]
-  pub refunded_at:         Option<DateTimeWithTimeZone>,
+  pub refunded_at:         Option<DateTimeUtc>,
   #[sea_orm(column_type = "JsonBinary", nullable)]
   pub metadata:            Option<Json>,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at:          DateTimeWithTimeZone,
+  pub created_at:          DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub updated_at:          DateTimeWithTimeZone,
+  pub updated_at:          DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

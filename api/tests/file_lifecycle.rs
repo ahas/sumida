@@ -50,7 +50,7 @@ async fn place(
     tags: Set(None),
     status: Set(status),
     refs: Set(refs),
-    expires_at: Set(expires_in.map(|d| (Utc::now() + d).fixed_offset())),
+    expires_at: Set(expires_in.map(|d| Utc::now() + d)),
     ..Default::default()
   }
   .insert(db)

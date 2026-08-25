@@ -42,7 +42,7 @@ pub struct AccessLogFilter {
   /// caller orders by, and a key cannot be one word for sorting and another for filtering.
   #[cfg_attr(feature = "openapi", param(inline))]
   #[serde(rename = "createdAt")]
-  pub created_at: Option<Bounds<DateTimeWithTimeZone>>,
+  pub created_at: Option<Bounds<DateTimeUtc>>,
 }
 
 impl AccessLogFilter {
@@ -186,7 +186,7 @@ pub struct AccessLogListItem {
   pub device_brand:  Option<String>,
   pub device_model:  Option<String>,
 
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
@@ -215,7 +215,7 @@ pub struct GetAccessLog {
   pub device_brand:  Option<String>,
   pub device_model:  Option<String>,
 
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
 }
 
 impl IntoResponse for GetAccessLog {

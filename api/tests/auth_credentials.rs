@@ -161,7 +161,7 @@ async fn ban(db: &sea_orm::DatabaseConnection, user_id: i32) {
   entity::bans::ActiveModel {
     user_id: Set(Some(user_id)),
     reason: Set(Some("banned".into())),
-    created_at: Set(Utc::now().fixed_offset()),
+    created_at: Set(Utc::now()),
     ..Default::default()
   }
   .insert(db)
@@ -200,9 +200,9 @@ async fn api_key(
     key: Set(hash_api_key(&plaintext)),
     key_prefix: Set(Some(plaintext.chars().take(8).collect())),
     user_id: Set(user_id),
-    expires_at: Set(expires_at.map(|at| at.fixed_offset())),
+    expires_at: Set(expires_at),
     is_secured: Set(false),
-    created_at: Set(Utc::now().fixed_offset()),
+    created_at: Set(Utc::now()),
   }
   .insert(db)
   .await
@@ -574,8 +574,8 @@ fn test_changing_the_password_voids_the_credentials_issued_before_it() {
       kind: Set("password-change".to_owned()),
       method: Set("email".to_owned()),
       code: Set("123456".to_owned()),
-      expires_at: Set((Utc::now() + Duration::minutes(10)).fixed_offset()),
-      created_at: Set(Utc::now().fixed_offset()),
+      expires_at: Set(Utc::now() + Duration::minutes(10)),
+      created_at: Set(Utc::now()),
     }
     .insert(&db)
     .await

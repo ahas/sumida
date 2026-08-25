@@ -63,8 +63,8 @@ pub struct MailFormListItem {
   pub sender:  String,
   pub subject: String,
 
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
+  pub updated_at: DateTimeUtc,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -76,8 +76,8 @@ pub struct GetMailForm {
   pub subject: String,
   pub content: String,
 
-  pub created_at: DateTimeWithTimeZone,
-  pub updated_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
+  pub updated_at: DateTimeUtc,
 }
 
 impl IntoResponse for GetMailForm {

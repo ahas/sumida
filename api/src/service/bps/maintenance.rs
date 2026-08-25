@@ -13,7 +13,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 /// Publish scheduled posts whose `scheduled_at` has arrived. Returns how many were published.
 pub async fn publish_scheduled_posts(db: &DatabaseConnection) -> Result<usize, SumidaError> {
-  let now = Utc::now().fixed_offset();
+  let now = Utc::now();
 
   let result = BoardPosts::update_many()
     .set(entity::bps::board_posts::ActiveModel {

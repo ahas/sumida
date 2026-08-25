@@ -9,9 +9,9 @@ pub struct Model {
   pub uuid:       Uuid,
   #[sea_orm(indexed)]
   pub user_id:    i32,
-  pub expires_at: DateTimeWithTimeZone,
+  pub expires_at: DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
-  pub created_at: DateTimeWithTimeZone,
+  pub created_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -71,8 +71,8 @@ pub struct RoleListItem {
   pub id:          i32,
   pub name:        String,
   pub description: Option<String>,
-  pub created_at:  DateTimeWithTimeZone,
-  pub updated_at:  DateTimeWithTimeZone,
+  pub created_at:  DateTimeUtc,
+  pub updated_at:  DateTimeUtc,
 }
 
 /// One role, with every route gate it opens.
@@ -86,8 +86,8 @@ pub struct GetRole {
   /// One entry per API this role opens. An empty list is a role that grants nothing.
   #[sea_orm(skip)]
   pub access_policies: Vec<ApForUser>,
-  pub created_at:      DateTimeWithTimeZone,
-  pub updated_at:      DateTimeWithTimeZone,
+  pub created_at:      DateTimeUtc,
+  pub updated_at:      DateTimeUtc,
 }
 
 impl IntoResponse for GetRole {

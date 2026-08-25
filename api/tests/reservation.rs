@@ -332,7 +332,7 @@ async fn test_expired_reservation_auto_released() {
   // Backdate the expiry into the past.
   let row = CreditReservations::find_by_id(reservation_id).one(&db).await.unwrap().unwrap();
   let mut a = row.into_active_model();
-  a.expires_at = Set(Some((Utc::now() - Duration::hours(1)).into()));
+  a.expires_at = Set(Some(Utc::now() - Duration::hours(1)));
   a.update(&db).await.unwrap();
 
   let released = maintenance::release_expired_reservations(&db).await.unwrap();

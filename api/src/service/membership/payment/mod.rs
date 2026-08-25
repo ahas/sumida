@@ -260,7 +260,7 @@ impl<S: SumidaState> PaymentService<S> {
           Subscriptions::update(SubscriptionsActiveModel {
             id: Unchanged(s.id),
             status: Set(SubscriptionStatus::Canceled),
-            canceled_at: Set(Some(Utc::now().fixed_offset())),
+            canceled_at: Set(Some(Utc::now())),
             ..Default::default()
           })
           .exec(&txn)
@@ -307,7 +307,7 @@ impl<S: SumidaState> PaymentService<S> {
     MembershipPurchases::update(MembershipPurchasesActiveModel {
       id: Unchanged(purchase.id),
       status: Set(PurchaseStatus::Refunded),
-      refunded_at: Set(Some(Utc::now().fixed_offset())),
+      refunded_at: Set(Some(Utc::now())),
       ..Default::default()
     })
     .exec(&txn)
@@ -348,7 +348,7 @@ impl<S: SumidaState> PaymentService<S> {
         webhook_id: Set(headers.id.clone()),
         event_type: Set(event.event_type.clone()),
         payment_id: Set(event.payment_id.clone()),
-        processed_at: Set(Some(Utc::now().fixed_offset())),
+        processed_at: Set(Some(Utc::now())),
         ..Default::default()
       })
       .exec(&txn)
@@ -367,7 +367,7 @@ impl<S: SumidaState> PaymentService<S> {
         MembershipPurchases::update(MembershipPurchasesActiveModel {
           id: Unchanged(purchase.id),
           status: Set(PurchaseStatus::Refunded),
-          refunded_at: Set(Some(Utc::now().fixed_offset())),
+          refunded_at: Set(Some(Utc::now())),
           ..Default::default()
         })
         .exec(&txn)
@@ -427,7 +427,7 @@ impl<S: SumidaState> PaymentService<S> {
       provider_payment_id: Set(
         verification.transaction_id.clone().or_else(|| Some(payment_id.to_string())),
       ),
-      paid_at: Set(Some(Utc::now().fixed_offset())),
+      paid_at: Set(Some(Utc::now())),
       ..Default::default()
     })
     .exec(txn)
