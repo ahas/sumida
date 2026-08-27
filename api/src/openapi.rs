@@ -479,7 +479,7 @@ impl Modify for Credentials {
 /// The keys, the operators, the sortable fields and the page ceiling are not repeated here. The
 /// document states shapes and that route states values; keeping the values in both places splits
 /// them the moment one moves, and the deployed server is the one that is right.
-fn filter_descriptor(tag: &str, resource: &str) -> PathItem {
+pub fn filter_descriptor(tag: &str, resource: &str) -> PathItem {
   let operation = OperationBuilder::new()
     .operation_id(Some(format!("{resource}_filter_descriptor")))
     .tag(tag)
