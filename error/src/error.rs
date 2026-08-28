@@ -434,7 +434,41 @@ impl<T> From<S3Error<T>> for SumidaError {
 
 impl From<anyhow::Error> for SumidaError {
   fn from(value: anyhow::Error) -> Self {
-    tracing::error!("Unknown: {:?}", value.backtrace());
-    SumidaError::Unknown(500, value.to_string())
+    // An error of this kind that was carried inside an `anyhow::Error` keeps what it said. It
+    // already names a status and a reason, and flattening it to an unknown five hundred throws
+    // both away — the caller is told the server broke when it was told what it asked for was
+    // wrong. Only an error this crate has never seen becomes unknown.
+    match value.downcast::<SumidaError>() {
+      Ok(known) => known,
+      Err(value) => {
+        tracing::error!("Unknown: {:?}", value.backtrace());
+
+        SumidaError::Unknown(500, value.to_string())
+      }
+    }
+  }
+}
+
+/// What survives the trip through `anyhow::Error`.
+#[cfg(test)]
+mod anyhow_conversion_tests {
+  use super::*;
+
+  /// A layer that returns `anyhow::Error` still carries the status its caller chose. Without this,
+  /// a route that means "you asked for something that is not here" answers "the server broke".
+  #[test]
+  fn a_known_error_keeps_its_status() {
+    let carried: anyhow::Error = SumidaError::BadRequest("no such engine".to_owned()).into();
+    let recovered = SumidaError::from(carried);
+
+    assert!(matches!(recovered, SumidaError::BadRequest(ref reason) if reason == "no such engine"));
+  }
+
+  /// One this crate has never seen has no status to keep, so it becomes unknown.
+  #[test]
+  fn a_foreign_error_becomes_unknown() {
+    let foreign = anyhow::anyhow!("something else went wrong");
+
+    assert!(matches!(SumidaError::from(foreign), SumidaError::Unknown(500, _)));
   }
 }
