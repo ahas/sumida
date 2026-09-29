@@ -364,6 +364,7 @@ impl From<SumidaError> for StatusCode {
       SumidaError::FileUploadNotAllowed
       | SumidaError::FileReuseNotAllowed
       | SumidaError::TooManyFiles { .. }
+      | SumidaError::InvalidFilename(_)
       | SumidaError::FieldNotProvided(_) => Ok(StatusCode::BAD_REQUEST),
       SumidaError::InvalidFileType { .. } | SumidaError::UnsupportedMimeType(_) => {
         Ok(StatusCode::UNSUPPORTED_MEDIA_TYPE)
