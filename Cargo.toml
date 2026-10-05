@@ -59,7 +59,7 @@ members = ["api", "infra", "entity", "error", "examples/*", "e2e"]
 default-members = ["examples/basic"]
 
 [workspace.dependencies]
-sea-orm-crud = { path = "../vendor/rust/sea-orm-crud" }
+sea-orm-crud = { git = "https://github.com/ahas/sea-orm-crud", rev = "b6df446af3dc31ffc18f0379e0ef628c9bcb3cf2" }
 
 anyhow = "1.0.98"
 argon2 = "0.5.3"
