@@ -20,6 +20,8 @@ impl MigratorTrait for Migrator {
       // The sign-in log's identifier and the indexes its readers seek by. It references nothing
       // above it.
       Box::new(entity::migration::access_log::Migration),
+      // An account's removal takes its sign-in log with it. Only needs `init`.
+      Box::new(entity::migration::access_log_cascade::Migration),
     ]
   }
 }

@@ -605,7 +605,7 @@ impl MigrationTrait for Migration {
               .name("fk_access_logs__user_id")
               .from(AccessLogs::Table, AccessLogs::UserId)
               .to(Users::Table, Users::Id)
-              .on_delete(SetNull)
+              .on_delete(Cascade)
               .on_update(Cascade),
           )
           .to_owned(),

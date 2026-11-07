@@ -13,6 +13,8 @@ impl MigratorTrait for Migrator {
       // ReBAC data layer. After board_system — board_group_closure references board_groups, and
       // the column the board rule reads sits on boards.
       Box::new(sumida::entity::migration::rebac::Migration),
+      // An account's removal takes its sign-in log with it. Only needs init.
+      Box::new(sumida::entity::migration::access_log_cascade::Migration),
     ]
   }
 }

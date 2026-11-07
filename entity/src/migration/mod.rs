@@ -1,4 +1,5 @@
 pub mod access_log;
+pub mod access_log_cascade;
 #[cfg(feature = "board")]
 pub mod board_system;
 #[cfg(feature = "file")]
