@@ -34,6 +34,9 @@ pub async fn new_store(
   dynamodb_store::new(dynamodb).await
 }
 
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
+
 use axum::Json;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -44,6 +47,7 @@ use entity::access_logs::{AccessMethod, AccessResultCode};
 use entity::prelude::*;
 use error::SumidaError;
 use lazy_static::lazy_static;
+use lru::LruCache;
 use sea_orm::ActiveValue::{Set, Unchanged};
 use sea_orm::prelude::*;
 use sea_orm::{Condition, InsertResult, QueryOrder, QuerySelect, TransactionTrait};
@@ -175,12 +179,70 @@ pub struct UserEnvironment {
   pub device_model:  Option<String>,
 }
 
+/// What the user-agent patterns read out of one user-agent string: its operating system and device.
+#[derive(Clone, Debug, PartialEq)]
+struct AgentTraits {
+  os_family:      String,
+  os_major:       Option<String>,
+  os_minor:       Option<String>,
+  os_patch:       Option<String>,
+  os_patch_minor: Option<String>,
+  device_family:  String,
+  device_brand:   Option<String>,
+  device_model:   Option<String>,
+}
+
+/// How many distinct user-agent strings keep their parsed traits. A server sees few distinct clients
+/// at a time, so a small cache answers nearly every request without running a pattern.
+const AGENT_TRAITS_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(256).unwrap();
+
 lazy_static! {
+  /// The parser reads only the operating system and the device, the two things a session records.
+  /// Built with Unicode classes, the thousand patterns cost far more memory on build and again on
+  /// every thread that runs them. A header is read only when it is visible ASCII, so nothing is lost
+  /// without them.
   static ref UA_PARSER: UserAgentParser = {
     UserAgentParser::builder()
+      .with_unicode_support(false)
+      .with_user_agent(false)
       .build_from_bytes(include_bytes!("ua-regexes.yml"))
       .expect("valid ua-regexes.yml")
   };
+  static ref AGENT_TRAITS: Mutex<LruCache<String, AgentTraits>> =
+    Mutex::new(LruCache::new(AGENT_TRAITS_CACHE_SIZE));
+}
+
+impl AgentTraits {
+  /// The traits of one user-agent string, from the cache where it has been seen before.
+  fn of(user_agent: &str) -> Self {
+    if let Some(traits) = AGENT_TRAITS.lock().unwrap_or_else(|e| e.into_inner()).get(user_agent) {
+      return traits.clone();
+    }
+
+    // Parsed outside the lock, so a slow parse holds up no other request.
+    let traits = Self::parse(user_agent);
+    AGENT_TRAITS
+      .lock()
+      .unwrap_or_else(|e| e.into_inner())
+      .put(user_agent.to_owned(), traits.clone());
+    traits
+  }
+
+  fn parse(user_agent: &str) -> Self {
+    let ua_device = UA_PARSER.parse_device(user_agent);
+    let ua_os = UA_PARSER.parse_os(user_agent);
+
+    Self {
+      os_family:      ua_os.family.to_string(),
+      os_major:       ua_os.major.map(|x| x.to_string()),
+      os_minor:       ua_os.minor.map(|x| x.to_string()),
+      os_patch:       ua_os.patch.map(|x| x.to_string()),
+      os_patch_minor: ua_os.patch_minor.map(|x| x.to_string()),
+      device_family:  ua_device.family.to_string(),
+      device_brand:   ua_device.brand.map(|x| x.to_string()),
+      device_model:   ua_device.model.map(|x| x.to_string()),
+    }
+  }
 }
 
 impl<S> FromRequestParts<S> for UserEnvironment
@@ -196,23 +258,20 @@ where
       .and_then(|ua| ua.to_str().ok())
       .map(|s| s.to_string())
       .unwrap_or_default();
-    // let ua_regexes_bytes = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ua-regexes.yml"));
-    let ua_parser = &*UA_PARSER;
-    let ua_device = ua_parser.parse_device(user_agent.as_str());
-    let ua_os = ua_parser.parse_os(user_agent.as_str());
+    let traits = AgentTraits::of(&user_agent);
     let ClientIp(ip) = ClientIp::from_request_parts(req, state).await.map_err(anyhow::Error::from)?;
 
     Ok(Self {
       ip_address:     ip.to_string(),
-      user_agent:     user_agent.clone(),
-      os_family:      ua_os.family.to_string(),
-      os_major:       ua_os.major.map(|x| x.to_string()),
-      os_minor:       ua_os.minor.map(|x| x.to_string()),
-      os_patch:       ua_os.patch.map(|x| x.to_string()),
-      os_patch_minor: ua_os.patch_minor.map(|x| x.to_string()),
-      device_family:  ua_device.family.to_string(),
-      device_brand:   ua_device.brand.map(|x| x.to_string()),
-      device_model:   ua_device.model.map(|x| x.to_string()),
+      user_agent,
+      os_family:      traits.os_family,
+      os_major:       traits.os_major,
+      os_minor:       traits.os_minor,
+      os_patch:       traits.os_patch,
+      os_patch_minor: traits.os_patch_minor,
+      device_family:  traits.device_family,
+      device_brand:   traits.device_brand,
+      device_model:   traits.device_model,
     })
   }
 }
@@ -729,7 +788,7 @@ mod tests {
   use chrono::{Duration, TimeZone, Utc};
   use sea_orm::prelude::DateTimeUtc;
 
-  use super::failure_streak;
+  use super::{AgentTraits, failure_streak};
 
   /// Failure moments the given number of minutes back from a fixed point, newest first.
   fn minutes_ago(offsets: &[i64]) -> Vec<DateTimeUtc> {
@@ -763,5 +822,22 @@ mod tests {
   #[test]
   fn with_no_window_nothing_breaks_the_run() {
     assert_eq!(failure_streak(&minutes_ago(&[0, 5, 10, 70, 6000]), None), 5);
+  }
+
+  #[test]
+  fn the_ascii_parser_reads_the_os_and_the_device() {
+    let iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like \
+                  Gecko) Version/17.4 Mobile/15E148 Safari/604.1";
+    let traits = AgentTraits::of(iphone);
+
+    assert_eq!(traits.os_family, "iOS");
+    assert_eq!(traits.os_major.as_deref(), Some("17"));
+    assert_eq!(traits.os_minor.as_deref(), Some("4"));
+    assert_eq!(traits.os_patch.as_deref(), Some("1"));
+    assert_eq!(traits.device_family, "iPhone");
+    assert_eq!(traits.device_brand.as_deref(), Some("Apple"));
+    assert_eq!(traits.device_model.as_deref(), Some("iPhone"));
+    // The second reading comes out of the cache and says the same.
+    assert_eq!(AgentTraits::of(iphone), traits);
   }
 }
