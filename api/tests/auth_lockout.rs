@@ -76,3 +76,60 @@ async fn test_a_run_of_wrong_passwords_locks_the_attempts_out() {
     "with the lockout gone the same password gets in — the run is what refused it, and nothing else"
   );
 }
+
+#[tokio::test]
+async fn test_a_password_set_anew_against_a_code_lifts_the_lockout_and_starts_the_count_again() {
+  use chrono::{Duration, Utc};
+  use sea_orm::{ActiveModelTrait, Set};
+
+  let mock = Mock::new().await;
+  let base = format!("http://{}", mock.server.addr);
+  let db = infra::db::connect().await;
+  let user = TestUser::create(&db).await.expect("an account");
+  let http = reqwest::Client::builder().cookie_store(true).build().expect("an http client");
+
+  for _ in 0..ALLOWED_FAILURES {
+    sign_in(&http, &base, &user.model.username, "not-the-password").await;
+  }
+
+  assert_eq!(
+    sign_in(&http, &base, &user.model.username, &user.password).await,
+    (401, "E1002".to_owned()),
+    "the run has locked the attempts out"
+  );
+
+  // The owner of the account proves it with the code they were sent and sets a new password.
+  entity::user_verifications::ActiveModel {
+    user_id: Set(user.model.id),
+    kind: Set("password-change".to_owned()),
+    method: Set("email".to_owned()),
+    code: Set("123456".to_owned()),
+    expires_at: Set(Utc::now() + Duration::minutes(10)),
+    created_at: Set(Utc::now()),
+  }
+  .insert(&db)
+  .await
+  .expect("place the verification code");
+
+  let changed = http
+    .post(format!("{base}/users/change-password"))
+    .json(
+      &json!({ "username": user.model.username, "password": "a-new-password-entirely", "code": "123456" }),
+    )
+    .send()
+    .await
+    .expect("the change-password request");
+
+  assert_eq!(changed.status().as_u16(), 200, "the change is taken");
+
+  // The lockout is lifted, and the failures before the change no longer count: one more wrong password is a
+  // wrong password and nothing more, and the new password gets in.
+  assert_eq!(
+    sign_in(&http, &base, &user.model.username, "not-the-password").await,
+    (401, "E1000".to_owned()),
+    "a wrong password after the change starts a new run rather than completing the old one"
+  );
+  assert_eq!(sign_in(&http, &base, &user.model.username, "a-new-password-entirely").await.0, 200);
+
+  Bans::delete_many().exec(&db).await.expect("leave no lockout behind");
+}

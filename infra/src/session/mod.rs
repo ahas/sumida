@@ -701,7 +701,7 @@ async fn last_password_success<C: ConnectionTrait>(
   user_id: i32,
   db: &C,
 ) -> Result<Option<DateTimeUtc>, DbErr> {
-  AccessLogs::find()
+  let signed_in: Option<DateTimeUtc> = AccessLogs::find()
     .select_only()
     .column(AccessLogsColumn::CreatedAt)
     .filter(AccessLogsColumn::UserId.eq(user_id))
@@ -710,7 +710,18 @@ async fn last_password_success<C: ConnectionTrait>(
     .order_by_desc(AccessLogsColumn::CreatedAt)
     .into_tuple::<DateTimeUtc>()
     .one(db)
-    .await
+    .await?;
+  // A password set anew against a verification code ends the run as a sign-in does: the failures
+  // before it were made against a password that no longer stands.
+  let reset: Option<DateTimeUtc> = Users::find_by_id(user_id)
+    .select_only()
+    .column(entity::users::Column::CredentialsResetAt)
+    .into_tuple::<Option<DateTimeUtc>>()
+    .one(db)
+    .await?
+    .flatten();
+
+  Ok(signed_in.max(reset))
 }
 
 /// How many password failures this account has run up since its last successful password sign-in.

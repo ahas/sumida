@@ -8,6 +8,7 @@ use sea_orm::ActiveValue::*;
 use sea_orm::sea_query::{Alias, Asterisk, Expr};
 use sea_orm::{
   ColumnTrait,
+  Condition,
   DeleteResult,
   EntityTrait,
   InsertResult,
@@ -326,6 +327,21 @@ impl<S: SumidaState> UserService<S> {
     };
 
     Users::update(active_model).exec(&txn).await?;
+
+    // Whoever proved the account theirs with the code is let back in: the bans in force on the account,
+    // and on the address the change came from, are lifted with it.
+    Bans::update_many()
+      .col_expr(entity::bans::Column::LiftedAt, Expr::value(Utc::now()))
+      .filter(entity::bans::Column::LiftedAt.is_null())
+      .filter(
+        Condition::any().add(entity::bans::Column::UserId.eq(user.id)).add(
+          Condition::all()
+            .add(entity::bans::Column::UserId.is_null())
+            .add(entity::bans::Column::IpAddress.eq(self.session.env.ip_address.clone())),
+        ),
+      )
+      .exec(&txn)
+      .await?;
 
     txn.commit().await?;
 

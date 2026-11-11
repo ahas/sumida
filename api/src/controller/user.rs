@@ -389,6 +389,10 @@ async fn activate<S: SumidaState>(
 ///
 /// The change voids every credential the account already handed out — sessions, access tokens —
 /// from the moment it takes effect. API keys are issued on their own terms and are not touched.
+///
+/// It also lets a banned account back in: the bans in force on the account, and on the address the
+/// change comes from, are lifted, and the password failures before the change no longer count
+/// towards a ban.
 #[cfg_attr(feature = "openapi", utoipa::path(
   post,
   path = CHANGE_PASSWORD,

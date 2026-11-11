@@ -55,7 +55,8 @@ impl<S: SumidaState> AuthSessionController<S> {
 /// are deployment settings.
 ///
 /// Consecutive password failures on one account can get the account or the address banned, which
-/// then refuses even the right password.
+/// then refuses even the right password, answered with the code `E1002`. Setting a new password
+/// against a verification code lifts the ban (`POST /users/change-password`).
 #[cfg_attr(feature = "openapi", utoipa::path(
   post,
   path = "",
