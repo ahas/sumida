@@ -608,7 +608,7 @@ Recommended AWS services:
 
 ### Code Style
 - Follow Rust 2024 edition conventions
-- Use `cargo fmt` for formatting
+- Format with `cargo +nightly fmt`: `rustfmt.toml` uses nightly-only options
 - Run `cargo clippy` for linting
 - Ensure tests pass: `cargo test`
 

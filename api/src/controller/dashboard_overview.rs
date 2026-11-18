@@ -67,9 +67,7 @@ async fn auth_activity<S: SumidaState>(State(state): State<S>) -> Result<AuthAct
     Refused,
   ),
 ))]
-async fn account_activity<S: SumidaState>(
-  State(state): State<S>,
-) -> Result<AccountActivity, SumidaError> {
+async fn account_activity<S: SumidaState>(State(state): State<S>) -> Result<AccountActivity, SumidaError> {
   DashboardService::account_activity(state.db()).await
 }
 

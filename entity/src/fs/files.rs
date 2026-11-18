@@ -126,11 +126,7 @@ impl Model {
   }
 
   pub fn is_expired(&self) -> bool {
-    if let Some(expires_at) = self.expires_at {
-      expires_at < Utc::now()
-    } else {
-      false
-    }
+    if let Some(expires_at) = self.expires_at { expires_at < Utc::now() } else { false }
   }
 
   pub fn format_file_size(&self) -> String {

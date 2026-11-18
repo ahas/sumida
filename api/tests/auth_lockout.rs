@@ -100,10 +100,10 @@ async fn test_a_password_set_anew_against_a_code_lifts_the_lockout_and_starts_th
 
   // The owner of the account proves it with the code they were sent and sets a new password.
   entity::user_verifications::ActiveModel {
-    user_id: Set(user.model.id),
-    kind: Set("password-change".to_owned()),
-    method: Set("email".to_owned()),
-    code: Set("123456".to_owned()),
+    user_id:    Set(user.model.id),
+    kind:       Set("password-change".to_owned()),
+    method:     Set("email".to_owned()),
+    code:       Set("123456".to_owned()),
     expires_at: Set(Utc::now() + Duration::minutes(10)),
     created_at: Set(Utc::now()),
   }

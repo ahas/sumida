@@ -284,7 +284,11 @@ mod instant_tests {
 
   /// What a value is written as, without the quotes JSON puts around a string.
   fn written<T: serde::Serialize>(value: &T) -> String {
-    serde_json::to_value(value).expect("an instant is JSON").as_str().expect("a string").to_owned()
+    serde_json::to_value(value)
+      .expect("an instant is JSON")
+      .as_str()
+      .expect("a string")
+      .to_owned()
   }
 
   /// The offsets a database session may be set to, spanning both signs and the far ends.

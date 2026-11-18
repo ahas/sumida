@@ -115,10 +115,7 @@ async fn test_a_file_without_a_deadline_is_never_collected() {
   // would delete every such file on the first pass.
   let file = place(&db, FileStatus::Temporary, 0, None).await;
 
-  assert!(
-    !is_orphan_candidate(&db, file).await,
-    "no deadline means no collection"
-  );
+  assert!(!is_orphan_candidate(&db, file).await, "no deadline means no collection");
 }
 
 #[tokio::test]
@@ -129,9 +126,7 @@ async fn test_promoted_file_leaves_the_candidate_set() {
 
   assert!(is_orphan_candidate(&db, file).await);
 
-  file_lifecycle::promote_active(file, &db)
-    .await
-    .expect("promote");
+  file_lifecycle::promote_active(file, &db).await.expect("promote");
 
   assert!(
     !is_orphan_candidate(&db, file).await,
@@ -145,18 +140,14 @@ async fn test_reference_count_moves_with_add_refs() {
   let db = db().await;
   let file = place(&db, FileStatus::Temporary, 0, Some(Duration::hours(-1))).await;
 
-  file_lifecycle::add_refs(file, 1, &db)
-    .await
-    .expect("add ref");
+  file_lifecycle::add_refs(file, 1, &db).await.expect("add ref");
 
   assert!(
     !is_orphan_candidate(&db, file).await,
     "the count the reaper reads is the one attach and detach move"
   );
 
-  file_lifecycle::add_refs(file, -1, &db)
-    .await
-    .expect("drop ref");
+  file_lifecycle::add_refs(file, -1, &db).await.expect("drop ref");
 
   assert!(
     is_orphan_candidate(&db, file).await,
@@ -191,11 +182,7 @@ async fn object_exists(path: &str) -> bool {
 async fn test_reaper_removes_both_the_object_and_the_row() {
   let db = db().await;
   let file = place(&db, FileStatus::Temporary, 0, Some(Duration::hours(-1))).await;
-  let row = Files::find_by_id(file)
-    .one(&db)
-    .await
-    .expect("read back")
-    .expect("row present");
+  let row = Files::find_by_id(file).one(&db).await.expect("read back").expect("row present");
 
   store_object(&row.dir, &row.name).await;
   assert!(object_exists(&row.get_path()).await, "the object is there to begin with");
@@ -235,11 +222,7 @@ async fn test_the_reaper_leaves_held_files_alone() {
   // Everything the reaper reads says "keep" except that this file is temporary. Running the whole
   // pass — not just the query — is what shows the two halves agree.
   let held = place(&db, FileStatus::Temporary, 1, Some(Duration::hours(-1))).await;
-  let row = Files::find_by_id(held)
-    .one(&db)
-    .await
-    .expect("read back")
-    .expect("row present");
+  let row = Files::find_by_id(held).one(&db).await.expect("read back").expect("row present");
 
   store_object(&row.dir, &row.name).await;
 
@@ -249,8 +232,5 @@ async fn test_the_reaper_leaves_held_files_alone() {
     Files::find_by_id(held).one(&db).await.expect("read back").is_some(),
     "a referenced file survives the pass"
   );
-  assert!(
-    object_exists(&row.get_path()).await,
-    "and so does its object"
-  );
+  assert!(object_exists(&row.get_path()).await, "and so does its object");
 }

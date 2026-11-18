@@ -203,16 +203,17 @@ async fn logout<S: SumidaState>(
   Json(body): Json<LogoutRequest>,
 ) -> Result<(StatusCode, Json<LoggedOut>), SumidaError> {
   // Extract the current access token from Authorization: Bearer <access_token> and revoke it as well.
-  let access_token = headers
-    .get(axum::http::header::AUTHORIZATION)
-    .and_then(|v| v.to_str().ok())
-    .and_then(|v| {
-      let mut parts = v.split_whitespace();
-      match (parts.next(), parts.next()) {
-        (Some(scheme), Some(token)) if scheme.eq_ignore_ascii_case("bearer") => Some(token.to_string()),
-        _ => None,
-      }
-    });
+  let access_token =
+    headers
+      .get(axum::http::header::AUTHORIZATION)
+      .and_then(|v| v.to_str().ok())
+      .and_then(|v| {
+        let mut parts = v.split_whitespace();
+        match (parts.next(), parts.next()) {
+          (Some(scheme), Some(token)) if scheme.eq_ignore_ascii_case("bearer") => Some(token.to_string()),
+          _ => None,
+        }
+      });
 
   let jwt_store = create_jwt_store().await?;
   let mut service = AuthTokenService::new(state, session, jwt_store);

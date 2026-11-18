@@ -5,15 +5,7 @@ use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
 #[cfg(feature = "openapi")]
-use crate::openapi::{
-  EmptyObject,
-  ErrorBody,
-  NotFound,
-  Refused,
-  SUBSCRIPTION_TAG,
-  Unreadable,
-  WrongBody,
-};
+use crate::openapi::{EmptyObject, ErrorBody, NotFound, Refused, SUBSCRIPTION_TAG, Unreadable, WrongBody};
 use crate::service::prelude::*;
 use crate::util::filter::{ConditionQuery, filter_descriptor_route};
 use crate::util::pagination::{List, Pagination};

@@ -176,10 +176,7 @@ pub async fn verify_api_key<S: SumidaState>(
 /// rule. What it carries was written at sign-in, and a ban or a deactivation raised after that
 /// moment is exactly the case where the two disagree — the cookie still says authorized, and the
 /// account no longer is.
-pub async fn verify_session<S: SumidaState>(
-  session: &UserSession,
-  state: S,
-) -> Result<(), SumidaError> {
+pub async fn verify_session<S: SumidaState>(session: &UserSession, state: S) -> Result<(), SumidaError> {
   session.verify()?;
 
   let db = state.db();

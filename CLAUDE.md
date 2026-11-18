@@ -16,9 +16,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   `struct_field_align_threshold` 등)을 쓰는데, stable rustfmt 는 그것들을 경고 한 줄만 내고
   무시한 뒤 **저장소 전체를 자기 기본값으로 다시 쓴다.** 한 번 돌리면 손대지 않은 파일 수백 개가
   함께 바뀐다.
-- 그리고 이 검사는 게이트가 아니다. **`cargo +nightly fmt --check` 는 지금 HEAD 에서도
-  통과하지 않는다** — 예전에 들어온 드리프트가 남아 있다. 그러므로 "fmt 가 실패한다"는 신호만으로
-  내 변경 탓인지 알 수 없다. 돌린 뒤 **내가 건드린 파일 밖에서 바뀐 것은 되돌린다.**
+- **`cargo +nightly fmt --check` 는 워크스페이스 전체에서 통과한다.** 그러므로 이것이 실패하면
+  그 차이는 지금 변경이 만든 것이다. 커밋 전에 `cargo +nightly fmt` 로 맞춘다.
 - `cargo clippy --all-targets --all-features` — 푸시 전 필수
 - `cargo tarpaulin --out Html` — 커버리지 리포트
 

@@ -449,7 +449,10 @@ fn every_route_is_described_and_every_description_has_a_route() {
   for (source, mount) in controllers() {
     let wired = wired(source);
 
-    assert!(!wired.is_empty(), "`{mount}`: read no route at all — the scan and the source have parted");
+    assert!(
+      !wired.is_empty(),
+      "`{mount}`: read no route at all — the scan and the source have parted"
+    );
     assert_eq!(wired, described(source), "`{mount}`: wires and describes different routes");
   }
 }

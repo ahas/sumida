@@ -262,16 +262,16 @@ where
     let ClientIp(ip) = ClientIp::from_request_parts(req, state).await.map_err(anyhow::Error::from)?;
 
     Ok(Self {
-      ip_address:     ip.to_string(),
+      ip_address: ip.to_string(),
       user_agent,
-      os_family:      traits.os_family,
-      os_major:       traits.os_major,
-      os_minor:       traits.os_minor,
-      os_patch:       traits.os_patch,
+      os_family: traits.os_family,
+      os_major: traits.os_major,
+      os_minor: traits.os_minor,
+      os_patch: traits.os_patch,
       os_patch_minor: traits.os_patch_minor,
-      device_family:  traits.device_family,
-      device_brand:   traits.device_brand,
-      device_model:   traits.device_model,
+      device_family: traits.device_family,
+      device_brand: traits.device_brand,
+      device_model: traits.device_model,
     })
   }
 }
@@ -311,9 +311,7 @@ pub async fn is_banned<C: ConnectionTrait>(
   let target = match user_id {
     // An environment ban names no account and catches whoever arrives; an account ban catches only
     // that account.
-    Some(user_id) => Condition::any()
-      .add(BansColumn::UserId.is_null())
-      .add(BansColumn::UserId.eq(user_id)),
+    Some(user_id) => Condition::any().add(BansColumn::UserId.is_null()).add(BansColumn::UserId.eq(user_id)),
     // An attempt that never resolved to an account is caught by an environment ban alone.
     None => Condition::all().add(BansColumn::UserId.is_null()),
   };
@@ -332,13 +330,11 @@ pub async fn is_banned<C: ConnectionTrait>(
     .add(column(BansColumn::DeviceModel, env.device_model.as_deref()));
 
   // A disposition that was lifted, or whose term has run out, catches nothing.
-  let live = Condition::all()
-    .add(BansColumn::LiftedAt.is_null())
-    .add(
-      Condition::any()
-        .add(BansColumn::ExpiresAt.is_null())
-        .add(BansColumn::ExpiresAt.gt(Utc::now())),
-    );
+  let live = Condition::all().add(BansColumn::LiftedAt.is_null()).add(
+    Condition::any()
+      .add(BansColumn::ExpiresAt.is_null())
+      .add(BansColumn::ExpiresAt.gt(Utc::now())),
+  );
 
   Ok(Bans::find().filter(Condition::all().add(matches).add(live)).count(db).await? > 0)
 }
@@ -376,10 +372,7 @@ pub async fn admitted_account<C: ConnectionTrait>(
 /// moment of the reset voids every credential established up to it. A token records its own moment
 /// only to the second, and one minted during that second goes with the rest rather than surviving
 /// on the rounding.
-pub fn credentials_reset_since(
-  user: &entity::users::Model,
-  established_at: DateTimeUtc,
-) -> bool {
+pub fn credentials_reset_since(user: &entity::users::Model, established_at: DateTimeUtc) -> bool {
   user.credentials_reset_at.is_some_and(|reset_at| established_at <= reset_at)
 }
 

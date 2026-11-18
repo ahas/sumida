@@ -203,7 +203,10 @@ async fn test_the_token_endpoint_admits_the_right_password() {
 
   let body: serde_json::Value = resp.json().await.expect("a token pair");
   assert!(
-    body.get("access_token").and_then(|token| token.as_str()).is_some_and(|token| !token.is_empty()),
+    body
+      .get("access_token")
+      .and_then(|token| token.as_str())
+      .is_some_and(|token| !token.is_empty()),
     "and the pair carries an access token: {body}"
   );
 }

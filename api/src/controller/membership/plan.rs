@@ -178,11 +178,7 @@ async fn delete<S: SumidaState>(
 impl<S: SumidaState> ApiController<S> for PlanController<S> {
   fn router(self, state: &S) -> Router<S> {
     ControllerRouter::new(state, "membership_plan")
-      .read(
-        Router::new()
-          .route("/", routing::get(list::<S>))
-          .route(ONE, routing::get(get::<S>)),
-      )
+      .read(Router::new().route("/", routing::get(list::<S>)).route(ONE, routing::get(get::<S>)))
       .descriptor::<PlanFilter>()
       .create(Router::new().route("/", routing::post(create::<S>)))
       .update(Router::new().route(ONE, routing::patch(update::<S>)))

@@ -81,9 +81,7 @@ async fn snapshot<S: SumidaState>(State(state): State<S>) -> Result<MonitoringRe
     Refused,
   ),
 ))]
-async fn snapshot_at_path<S: SumidaState>(
-  state: State<S>,
-) -> Result<MonitoringResponse, SumidaError> {
+async fn snapshot_at_path<S: SumidaState>(state: State<S>) -> Result<MonitoringResponse, SumidaError> {
   snapshot(state).await
 }
 
@@ -100,9 +98,7 @@ async fn snapshot_at_path<S: SumidaState>(
     Refused,
   ),
 ))]
-async fn components<S: SumidaState>(
-  State(state): State<S>,
-) -> Result<DashboardComponents, SumidaError> {
+async fn components<S: SumidaState>(State(state): State<S>) -> Result<DashboardComponents, SumidaError> {
   Ok(MonitoringService::new(state).components())
 }
 

@@ -12,7 +12,7 @@ Sumida is a Rust workspace that composes layered crates. `api/` exposes Axum con
 - `cargo test --features test-suite` enables feature-gated checks used by CI.
 
 ## Coding Style & Naming Conventions
-Code targets Rust 2024 with repository-wide rustfmt settings: 2-space indentation, 108-column width, module/import reordering. Format with `cargo fmt` before committing and keep modules, files, and feature flags in `snake_case`. Lint with `cargo clippy --all-targets --all-features`, resolving warnings or documenting intentional deviations.
+Code targets Rust 2024 with repository-wide rustfmt settings: 2-space indentation, 108-column width, module/import reordering. Format with `cargo +nightly fmt` before committing (the settings use nightly-only options, and stable rustfmt rewrites the whole tree) and keep modules, files, and feature flags in `snake_case`. Lint with `cargo clippy --all-targets --all-features`, resolving warnings or documenting intentional deviations.
 
 ## Testing Guidelines
 Place focused unit tests alongside implementation modules under `#[cfg(test)]`. Use the SeaORM in-memory helpers from `infra` for database-heavy cases instead of ad-hoc connections. E2E scenarios in `e2e/` should document the required feature flags in their module docs. Generate coverage locally with `cargo tarpaulin --out Html` and keep coverage steady when introducing new user-facing flows.
