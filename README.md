@@ -79,12 +79,12 @@ cargo run --bin migration
 
 #### 🏠 Local Development
 ```bash
-cargo run --features full-local --example basic
+cargo run -p basic
 ```
 
 #### ☁️ AWS Production
 ```bash
-cargo run --features full-aws --example basic
+cargo run -p basic --no-default-features --features full-aws
 ```
 
 ## 🏗️ Architecture
@@ -571,19 +571,21 @@ sumida = { path = ".", features = ["full-aws", "image"] }
 docker-compose up -d postgres redis
 
 # Run application
-cargo run --features full-local --example basic
+cargo run -p basic
 ```
 
 ### Docker Deployment
 ```dockerfile
-FROM rust:1.70 as builder
+FROM rust:1-bookworm AS builder
+# .cargo/config.toml links with mold.
+RUN apt-get update && apt-get install -y mold
 WORKDIR /app
 COPY . .
-RUN cargo build --release --features full-aws
+RUN cargo build --release -p basic --no-default-features --features full-aws
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates
-COPY --from=builder /app/target/release/basic /usr/local/bin/app
+COPY --from=builder /app/target/release/app /usr/local/bin/app
 CMD ["app"]
 ```
 
@@ -602,7 +604,7 @@ Recommended AWS services:
 2. Set up local PostgreSQL and Redis instances  
 3. Copy `.env.example` to `.env` and configure
 4. Run database migrations: `cargo run --bin migration`
-5. Start development server: `cargo run --features full-local --example basic`
+5. Start development server: `cargo run -p basic`
 
 ### Code Style
 - Follow Rust 2024 edition conventions

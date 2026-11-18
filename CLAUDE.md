@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 자주 쓰는 명령
 
 - `cargo run --bin migration` — 엔티티/마이그레이션 수정 후 스키마 적용
-- `cargo run --features full-local --example basic` — 로컬 스택(Redis+local-fs)으로 기본 예제 서버 실행
-- `cargo run --features full-aws --example basic` — AWS 스택(DynamoDB+S3+SSM) 검증
+- `cargo run -p basic` — 로컬 스택(Redis+local-fs)으로 기본 예제 서버 실행
+- `cargo run -p basic --no-default-features --features full-aws` — AWS 스택(DynamoDB+S3+SSM) 검증
 - `bash scripts/test/suite.sh` — 통합 테스트 전체. **통합 테스트는 이걸로 돌린다.**
 - `cargo test` — 유닛 테스트용. 통합 테스트까지 함께 돌리면 결과를 믿을 수 없다(아래)
 - `cargo test --package e2e` — E2E 시나리오만

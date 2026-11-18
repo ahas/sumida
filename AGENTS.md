@@ -5,8 +5,8 @@ Sumida is a Rust workspace that composes layered crates. `api/` exposes Axum con
 
 ## Build, Test, and Development Commands
 - `cargo run --bin migration` prepares the database schema; run after editing entities or merging migrations.
-- `cargo run --features full-local --example basic` spins up the default local server once Redis/Postgres are available.
-- `cargo run --features full-aws --example basic` validates AWS-specific wiring before deploying.
+- `cargo run -p basic` spins up the default local server once Redis/Postgres are available.
+- `cargo run -p basic --no-default-features --features full-aws` validates AWS-specific wiring before deploying.
 - `cargo test` covers unit and integration suites across all crates.
 - `cargo test --package e2e` executes scenario tests located in `e2e/`.
 - `cargo test --features test-suite` enables feature-gated checks used by CI.
