@@ -94,10 +94,10 @@ impl<K: Copy + Eq + Hash + Into<ObjectKey>> RowAdmission<K> {
   /// Only reached for a key the memo does not hold, so `order` never carries the same key twice.
   fn remember(&mut self, id: K, allowed: bool) {
     if let Some(cap) = self.cap {
-      if self.memo.len() >= cap {
-        if let Some(oldest) = self.order.pop_front() {
-          self.memo.remove(&oldest);
-        }
+      if self.memo.len() >= cap
+        && let Some(oldest) = self.order.pop_front()
+      {
+        self.memo.remove(&oldest);
       }
       self.order.push_back(id);
     }

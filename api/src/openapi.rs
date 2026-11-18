@@ -977,10 +977,10 @@ mod tests {
       match value {
         JsonValue::Object(map) => {
           for (key, child) in map {
-            if key == "$ref" {
-              if let Some(name) = child.as_str().and_then(|reference| reference.rsplit('/').next()) {
-                into.insert(name.to_owned());
-              }
+            if key == "$ref"
+              && let Some(name) = child.as_str().and_then(|reference| reference.rsplit('/').next())
+            {
+              into.insert(name.to_owned());
             }
             collect(child, into);
           }
@@ -1242,7 +1242,6 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::SumidaState;
-    use crate::controller::ApiController;
 
     #[derive(Clone)]
     struct ProbeState(DatabaseConnection);

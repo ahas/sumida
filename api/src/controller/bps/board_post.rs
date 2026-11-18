@@ -19,6 +19,7 @@ const VIEW: &str = "/{id}/view";
 const VIEWERS: &str = "/{id}/viewers";
 
 /// The four kinds one table carries, said once because every operation here depends on it.
+#[cfg(feature = "openapi")]
 const KINDS: &str = "An article, a notice, a comment and a reply are all rows of this one resource, \
 told apart by `kind`. A comment and a reply hang from another post through `parentId`; an article \
 and a notice hang from a board.";

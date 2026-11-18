@@ -24,6 +24,7 @@ const STREAM: &str = "/stream";
 
 /// The `event:` names the stream carries, read off the emitter rather than off the handler names.
 /// A subscriber that does not know them has nowhere to hang a listener.
+#[cfg(feature = "openapi")]
 const STREAM_EVENTS: &str = "Three `event:` names ride here. `dashboard.components` and \
 `dashboard.system_info` arrive once each, first, and describe the host rather than its load. \
 `dashboard.snapshot` follows every second and carries one `MonitoringSnapshot` — the same body \

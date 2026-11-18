@@ -24,6 +24,7 @@ const ONE: &str = "/{id}";
 
 /// The paragraph every operation here repeats, because a caller who reads only one of them still
 /// has to know which of two refusals it got.
+#[cfg(feature = "openapi")]
 const TWO_GATES: &str = "Both refusals are `403` and they mean different things, so branch on \
 `code` and not on the status. `E1009` is the route gate: the caller holds no `access_policy` \
 capability at all and the handler never ran. `E1008` is the row check inside the handler: the \

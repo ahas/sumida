@@ -23,6 +23,7 @@ const REDEEM: &str = "/redeem";
 
 /// What the two halves of this resource ask for. Repeated on the routes it applies to, because a
 /// caller reading one operation has no reason to look at the others.
+#[cfg(feature = "openapi")]
 const HOLDER: &str = "This is the holder's side of the resource and it takes no coupon-administration \
 capability — being signed in is enough. Requiring one would stop an ordinary account from using \
 what was issued to it.";
