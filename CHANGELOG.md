@@ -48,6 +48,23 @@ and this project adheres to semantic versioning at the workspace level.
   composite is `(user_id, method, code, created_at DESC)`. Consumers must register it in their own
   migrator.
 
+### Fixed
+
+- **The `access_log` migration stopped on a sign-in log whose `id` is a serial column and which has
+  no primary key**, with `column "id" of relation "access_logs" already has a default value`. That
+  is the shape an auto-incrementing integer column takes on PostgreSQL, and the step that renumbers
+  the log and adds the primary key only runs where none stands. It now takes off the column's
+  default and the sequence the column owns, as well as an identity, before it adds its own identity,
+  and it names the primary key `pk_access_logs__id`, as `init` does. A sequence the default only
+  borrows from another table is left to that table.
+
+- **The `access_log` migration's `down` left a sign-in log with no id generator.** It dropped the
+  primary key only under PostgreSQL's default name, while `init` names it `pk_access_logs__id`, so
+  on a database `init` created the key stayed, the next `up` skipped its step, and the column was
+  left with nothing to generate its values. It also failed outright on the identity `up` leaves.
+  `down` now drops whichever primary key stands and the generator in either form, so a rollback and
+  a second `up` give the table its identity and key back.
+
 ### Changed
 
 - **sumida no longer knows its consumers.** The framework shipped every downstream product's
