@@ -74,6 +74,7 @@ grace-days = 0                              # entitlement grace window after a f
 max-dunning-attempts = 0                    # renewal-charge retries during grace; 0 = none
 tax-percent-bp = 0                          # sales tax at checkout, in basis points (1000 = 10%); 0 = none
 pending-purchase-ttl-hours = 0              # expire unconfirmed pending purchases (reversing coupons) after N hours; 0 = off
+reservation-ttl-secs = 3600                 # lifetime of a wallet/quota hold whose caller names none; an extension restarts it
 
 # Payment gateway (PG). provider: "none" (default, disabled) | "portone" | "mock" (tests).
 [membership.payment]

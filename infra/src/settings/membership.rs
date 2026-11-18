@@ -46,6 +46,10 @@ pub struct MembershipSettings {
   /// redemptions reversed). 0 = disabled (never auto-expire).
   #[serde(default)]
   pub pending_purchase_ttl_hours: i32,
+  /// Lifetime, in seconds, of a wallet or quota hold whose caller names none. An extension
+  /// restarts it. Every hold expires, so one a caller walked away from never strands its amount.
+  #[serde(default = "default_reservation_ttl_secs")]
+  pub reservation_ttl_secs: i64,
   /// Payment-gateway (PG) configuration.
   #[serde(default)]
   pub payment: PaymentSettings,
@@ -87,6 +91,10 @@ fn default_expiring_soon_notify_days() -> i32 {
   7
 }
 
+fn default_reservation_ttl_secs() -> i64 {
+  3600
+}
+
 fn default_provider() -> String {
   "none".to_string()
 }
@@ -116,6 +124,7 @@ impl Default for MembershipSettings {
       max_dunning_attempts: 0,
       tax_percent_bp: 0,
       pending_purchase_ttl_hours: 0,
+      reservation_ttl_secs: default_reservation_ttl_secs(),
       payment: PaymentSettings::default(),
     }
   }

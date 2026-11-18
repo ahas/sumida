@@ -1046,3 +1046,28 @@ async fn test_membership_purchase_tracked() {
   assert_eq!(item["discountAmount"].as_i64().unwrap(), 0);
   assert_eq!(item["taxAmount"].as_i64().unwrap(), 0);
 }
+
+// ---------------------------------------------------------------------------
+// A plain user cannot put credits into, or take them out of, their own wallet.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_plain_user_self_grant_and_refund_refused() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let (m, u) = new_user_mock(&db).await;
+
+  for (route, body) in [
+    ("/credits/grant", json!({ "amount": 1000 })),
+    (
+      "/credits/grant",
+      json!({ "ownerKind": "personal", "ownerId": u.model.id, "amount": 1000 }),
+    ),
+    ("/credits/refund", json!({ "amount": 1 })),
+  ] {
+    let r = m.client.post(route).json(&body).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN, "{route} on one's own wallet must be refused");
+  }
+
+  let bal: Value = m.client.get("/credits/balance").send().await.unwrap().json().await.unwrap();
+  assert_eq!(bal["balance"].as_i64().unwrap(), 0, "the refused grant left nothing behind");
+}

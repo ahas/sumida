@@ -129,9 +129,10 @@ pub struct PlanListItem {
 #[derive(Clone, Debug, Serialize, Deserialize, FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanActionItem {
-  pub action:           String,
-  pub credit_cost:      Option<i64>,
-  pub quota_per_period: Option<i32>,
+  pub action:                  String,
+  pub credit_cost:             Option<i64>,
+  pub quota_per_period:        Option<i32>,
+  pub amount_quota_per_period: Option<i64>,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -153,11 +154,14 @@ impl IntoResponse for GetPlan {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanActionInput {
-  pub action:           String,
+  pub action:                  String,
   #[serde(default)]
-  pub credit_cost:      Option<i64>,
+  pub credit_cost:             Option<i64>,
   #[serde(default)]
-  pub quota_per_period: Option<i32>,
+  pub quota_per_period:        Option<i32>,
+  /// The amount a subscription may spend on the action per billing period; left out, unlimited.
+  #[serde(default)]
+  pub amount_quota_per_period: Option<i64>,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

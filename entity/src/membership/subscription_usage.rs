@@ -1,10 +1,11 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Per-period usage counter for quota-limited subscription actions. Keyed by the
-/// subscription's `current_period_start`, so quota resets automatically each
-/// period (renewal advances the period start). Only actions whose plan defines a
-/// `quota_per_period` are counted; unlimited actions are never recorded here.
+/// Per-period usage of a subscription action. Keyed by the subscription's
+/// `current_period_start`, so quota resets automatically each period (renewal
+/// advances the period start). `used` counts uses of actions whose plan defines a
+/// `quota_per_period`; `amount_used` sums the amounts captured or consumed against
+/// the action, a cache of its `quota_entries`.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "subscription_usage")]
 pub struct Model {
@@ -16,6 +17,8 @@ pub struct Model {
   pub period_start:    DateTimeUtc,
   #[sea_orm(default_value = 0)]
   pub used:            i64,
+  #[sea_orm(default_value = 0)]
+  pub amount_used:     i64,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]
   pub created_at:      DateTimeUtc,
   #[sea_orm(default_value = "CURRENT_TIMESTAMP")]

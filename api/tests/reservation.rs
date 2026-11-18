@@ -8,7 +8,7 @@ use chrono::{Duration, Utc};
 use e2e::prelude::*;
 use entity::prelude::*;
 use reqwest::StatusCode;
-use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 use serde_json::{Value, json};
 
 fn rnd() -> String {
@@ -335,6 +335,17 @@ async fn test_expired_reservation_auto_released() {
   a.expires_at = Set(Some(Utc::now() - Duration::hours(1)));
   a.update(&db).await.unwrap();
 
+  // Past its expiry the hold stops counting before the scheduler runs, and can no longer be spent.
+  let bal: Value = m.client.get("/credits/balance").send().await.unwrap().json().await.unwrap();
+  assert_eq!(bal["reserved"].as_i64().unwrap(), 0, "an expired hold reserves nothing");
+  let r = m
+    .client
+    .post(&format!("/credits/reservations/{reservation_id}/capture"))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(r.status(), StatusCode::CONFLICT, "an expired hold cannot be captured");
+
   let released = maintenance::release_expired_reservations(&db).await.unwrap();
   assert!(released >= 1, "the expired hold should be released");
 
@@ -344,9 +355,177 @@ async fn test_expired_reservation_auto_released() {
     entity::membership::ReservationStatus::Released,
     "expired reservation must be released"
   );
+  let entries = CreditTransactions::find()
+    .filter(CreditTransactionsColumn::WalletId.eq(after.wallet_id))
+    .filter(CreditTransactionsColumn::Kind.eq(entity::membership::CreditTxKind::Release))
+    .all(&db)
+    .await
+    .unwrap();
+  assert_eq!(entries.len(), 1, "the scheduler's release is recorded in the ledger");
 
   // Spendable is restored.
   let bal: Value = m.client.get("/credits/balance").send().await.unwrap().json().await.unwrap();
   assert_eq!(bal["reserved"].as_i64().unwrap(), 0);
   assert_eq!(bal["spendable"].as_i64().unwrap(), 100);
+}
+
+async fn post(client: &TestClient, path: &str, body: Value) -> reqwest::Response {
+  client.post(path).json(&body).send().await.unwrap()
+}
+
+async fn admin_mock(db: &sea_orm::DatabaseConnection) -> Mock {
+  let m = Mock::new().await;
+  TestUser::create_admin(db).await.unwrap().login(&m.client).await;
+  m
+}
+
+// ---------------------------------------------------------------------------
+// Amount steps: consume, hold, extend and a capture over the hold that leaves debt,
+// repaid by the next grant; every step answers a repeated key as the first call did,
+// and the audit reconciles debt as well as balance.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_amount_steps_debt_and_repayment() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let (user, _action, wallet_id, m) = setup_wallet(&db, 100, 10).await;
+  let am = admin_mock(&db).await;
+  let label = format!("metered-{}", rnd());
+
+  let r: Value = post(&m.client, "/credits/consume", json!({ "amount": 15, "action": &label }))
+    .await
+    .json()
+    .await
+    .unwrap();
+  assert_eq!(r["consumed"].as_i64().unwrap(), 15, "the amount given is spent, not the action's cost");
+  assert_eq!(r["balance"].as_i64().unwrap(), 85);
+
+  let hold: Value = post(&m.client, "/credits/reserve", json!({ "amount": 50, "idempotencyKey": "h-1" }))
+    .await
+    .json()
+    .await
+    .unwrap();
+  let id = hold["reservationId"].as_i64().unwrap();
+  assert_eq!(hold["spendable"].as_i64().unwrap(), 35);
+  assert!(hold["expiresAt"].is_string(), "a hold with no lifetime given still expires");
+
+  let extend = format!("/credits/reservations/{id}/extend");
+  for _ in 0..2 {
+    let r: Value = post(&m.client, &extend, json!({ "amount": 30, "idempotencyKey": "h-2" }))
+      .await
+      .json()
+      .await
+      .unwrap();
+    assert_eq!(r["amount"].as_i64().unwrap(), 80, "a repeated extension grows the hold once");
+    assert_eq!(r["spendable"].as_i64().unwrap(), 5);
+  }
+  let r = post(&m.client, &extend, json!({ "amount": 10 })).await;
+  assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "an extension past spendable is refused");
+
+  // Actual 100 against a hold of 80 and a balance of 85: 15 short.
+  let capture = format!("/credits/reservations/{id}/capture");
+  let r = post(&m.client, &capture, json!({ "amount": 100 })).await;
+  assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "no debt limit refuses the shortfall");
+  let r = post(&m.client, &capture, json!({ "amount": 100, "debtLimit": 50 })).await;
+  assert_eq!(r.status(), StatusCode::FORBIDDEN, "the owner may not allow their own debt");
+  let r = post(&am.client, &capture, json!({ "amount": 100, "debtLimit": 10 })).await;
+  assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "a shortfall over the limit is refused");
+  let held = CreditReservations::find_by_id(id as i32).one(&db).await.unwrap().unwrap();
+  assert_eq!(
+    held.status,
+    entity::membership::ReservationStatus::Held,
+    "a refused capture changes nothing"
+  );
+
+  for _ in 0..2 {
+    let r: Value =
+      post(&am.client, &capture, json!({ "amount": 100, "debtLimit": 20, "idempotencyKey": "h-3" }))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["consumed"].as_i64().unwrap(), 85);
+    assert_eq!(r["debtIncurred"].as_i64().unwrap(), 15);
+    assert_eq!(r["balance"].as_i64().unwrap(), 0);
+    assert_eq!(r["debt"].as_i64().unwrap(), 15, "a repeated capture records the debt once");
+  }
+
+  let bal: Value = m.client.get("/credits/balance").send().await.unwrap().json().await.unwrap();
+  assert_eq!(bal["debt"].as_i64().unwrap(), 15);
+  assert_eq!(bal["spendable"].as_i64().unwrap(), 0);
+
+  let g: Value = post(&am.client, "/credits/grant", json!({ "ownerId": user.model.id, "amount": 40 }))
+    .await
+    .json()
+    .await
+    .unwrap();
+  assert_eq!(g["balance"].as_i64().unwrap(), 25, "the grant repays the debt first");
+  assert_eq!(g["debt"].as_i64().unwrap(), 0);
+
+  let audit: Value = m
+    .client
+    .get(&format!("/credits/wallets/{wallet_id}/audit"))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  assert_eq!(audit["ledgerSum"].as_i64().unwrap(), 25);
+  assert_eq!(audit["ledgerDebt"].as_i64().unwrap(), 0);
+  assert!(
+    !audit["diverged"].as_bool().unwrap(),
+    "the ledger accounts for the debt and its repayment"
+  );
+
+  let release_hold: Value =
+    post(&m.client, "/credits/reserve", json!({ "amount": 5 })).await.json().await.unwrap();
+  let release =
+    format!("/credits/reservations/{}/release", release_hold["reservationId"].as_i64().unwrap());
+  for _ in 0..2 {
+    let r = post(&m.client, &release, json!({ "idempotencyKey": "h-4" })).await;
+    assert_eq!(r.status(), StatusCode::OK, "a repeated release answers as the first did");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// On an organization's wallet, allowing debt is for its credit editors, not for
+// every member who may spend.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_org_debt_needs_credit_editor() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let org = TestOrg::create(&db).await.unwrap();
+  let owner = json!({ "ownerKind": "organization", "ownerId": org.model.id });
+  post(
+    &am.client,
+    "/credits/grant",
+    json!({ "ownerKind": "organization", "ownerId": org.model.id, "amount": 10 }),
+  )
+  .await;
+
+  let member = Mock::new().await;
+  TestUser::create_in_org(&db, org.model.id).await.unwrap().login(&member.client).await;
+  let editor_user = TestUser::create_in_org(&db, org.model.id).await.unwrap();
+  e2e::ap_test_utils::grant_org_scope(&db, &editor_user, org.model.id, "credit_editor")
+    .await
+    .unwrap();
+  let editor = Mock::new().await;
+  editor_user.login(&editor.client).await;
+
+  let mut body = owner.clone();
+  body["amount"] = json!(10);
+  let hold: Value = post(&member.client, "/credits/reserve", body).await.json().await.unwrap();
+  let capture = format!("/credits/reservations/{}/capture", hold["reservationId"].as_i64().unwrap());
+
+  let r = post(&member.client, &capture, json!({ "amount": 12, "debtLimit": 5 })).await;
+  assert_eq!(r.status(), StatusCode::FORBIDDEN, "a plain member may spend but not allow debt");
+  let r: Value = post(&editor.client, &capture, json!({ "amount": 12, "debtLimit": 5 }))
+    .await
+    .json()
+    .await
+    .unwrap();
+  assert_eq!(r["debtIncurred"].as_i64().unwrap(), 2);
 }

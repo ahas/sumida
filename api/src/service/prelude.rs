@@ -51,6 +51,10 @@ pub use super::membership::purchase::PurchaseService;
 #[cfg(feature = "membership")]
 pub use super::membership::purchase::dto::*;
 #[cfg(feature = "membership")]
+pub use super::membership::quota::QuotaService;
+#[cfg(feature = "membership")]
+pub use super::membership::quota::dto::*;
+#[cfg(feature = "membership")]
 pub use super::membership::subscription::SubscriptionService;
 #[cfg(feature = "membership")]
 pub use super::membership::subscription::dto::*;

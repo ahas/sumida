@@ -6,10 +6,10 @@ use serde_json::json;
 
 use super::helper::*;
 
-/// Single migration for the whole membership/billing domain (subscriptions,
-/// credits + reservations, entitlement usage, payments, coupons). Kept as one
-/// migration intentionally — the feature is unreleased, so there is no value in a
-/// chain of incremental ALTERs; this is the authoritative final schema.
+/// The base schema of the membership/billing domain (subscriptions, credits +
+/// reservations, entitlement usage, payments, coupons). Databases already hold it,
+/// so a later change to these tables is a migration of its own after this one
+/// (`membership_metering`).
 
 #[derive(DeriveIden)]
 enum MembershipPlans {

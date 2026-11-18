@@ -4,7 +4,9 @@ The membership domain adds subscription + credit plans, a FIFO credit ledger wit
 reservations, a hybrid entitlement gate, coupons/tax, a PG abstraction (PortOne
 V2 first-class), and a background maintenance scheduler.
 
-- Entities: `entity/src/membership/*`, schema in the single `entity/src/migration/membership.rs`
+- Entities: `entity/src/membership/*`; schema in the `membership` migration and the
+  `membership_metering` migration after it, which a consumer registers after its other
+  migrations
 - Services: `api/src/service/membership/*`
 - Controllers nest at: `/membership-plans`, `/subscriptions`, `/credits`,
   `/entitlements`, `/membership-purchases`, `/payments`, `/coupons`
@@ -55,7 +57,21 @@ scope on that organization.
 
 ### Personal subscriptions and credit
 
-Nothing to grant. The owner is the session user and the rule reads it off the row.
+Nothing to grant for using them. The owner is the session user and the rule reads it off the row:
+the owner subscribes, reads the balance and the ledger, spends, holds, extends, captures and
+releases on their own wallet.
+
+**Putting credits into a wallet, or taking them back, is not the owner's.** Grants and refunds
+through the credit routes are refused to everybody but:
+
+| Wallet | Who may grant and refund |
+|---|---|
+| personal | a platform administrator (`platform:root#superuser`) |
+| organization | `credit_manager` or `manager` on the organization (or an ancestor), and a platform administrator |
+
+Credits a payment buys or a coupon awards are granted inside the server by the payment confirmation
+and the coupon redemption, never through the grant route, so an owner needs no grant permission to
+receive them.
 
 ### The coupon catalogue — a route gate
 
@@ -100,6 +116,7 @@ See `settings.example.toml` for the full annotated block. Keys (kebab-case):
 | `max-dunning-attempts` | `0` | renewal-charge retries during grace (0 = none) |
 | `tax-percent-bp` | `0` | checkout sales tax in basis points (1000 = 10%) |
 | `pending-purchase-ttl-hours` | `0` | expire unconfirmed pending purchases (reversing their coupons) after N hours; 0 = off |
+| `reservation-ttl-secs` | `3600` | lifetime of a wallet or quota hold the caller gives no `expiresInSecs`; an extension restarts it |
 | `[membership.payment] provider` | `none` | `none` \| `portone` \| `mock` |
 | `[membership.payment] api-secret` / `store-id` / `channel-key` / `webhook-secret` | — | PortOne V2 credentials |
 
@@ -116,7 +133,8 @@ sumida::api::service::membership::maintenance::spawn(
 ```
 
 `run_once` performs, in order: auto-renew due subscriptions → dunning retries →
-expire ended/grace-closed subscriptions → release expired reservations → sweep
+expire ended/grace-closed subscriptions → release expired reservations (wallet holds
+and quota holds alike, each leaving a `release` entry in its ledger) → sweep
 expired credit lots → "expiring soon" notices → "low balance" alerts. Each job is
 idempotent and independently fault-isolated.
 
@@ -160,7 +178,105 @@ injection the key is verified with the PG (`PaymentProvider::verify_billing_key`
 so an invalid/inactive key is rejected up front rather than failing at the first
 auto-renew. No server-side issuance webhook is required.
 
-## 6. Capabilities & limitations
+## 6. Metered spending — amounts, debt and quotas
+
+Every spending step can take the amount from the caller instead of from the action's fixed cost,
+so a consumer that meters usage (a duration, a size, a cost reported after the fact) spends exactly
+what was used. The same steps run against two sources: the credit **wallet**, and the **amount
+quota** an active subscription carries for an action.
+
+```mermaid
+flowchart TD
+  R[reserve: hold an amount] --> E{needs more?}
+  E -->|extend| R2[hold grows, expiry restarts]
+  R2 --> E
+  E -->|done| C[capture the actual amount]
+  E -->|abandoned| L[release]
+  R -.->|expiry passes| X[scheduler releases]
+  C --> D{source covers it?}
+  D -->|yes| S[spent]
+  D -->|shortfall within the caller's limit| B[spent, shortfall recorded]
+  D -->|shortfall beyond it| N[402, nothing changes]
+```
+
+### What a step costs
+
+- A step that takes `amount` spends that amount. `action` beside it is only a label on the record.
+- A step without `amount` spends the action's fixed `creditCost` under a credit plan, as it always
+  has; a step with neither is refused with 400.
+- An amount is never negative; a hold and an extension are positive.
+
+### The wallet
+
+- **Four numbers.** `balance` is what the live lots hold and never goes below zero. `reserved` is the
+  sum of the holds that are held and not past their expiry. `debt` is what captures could not cover.
+  `spendable` is `balance − reserved − debt`, never below zero, and decides every step.
+- **Steps.** consume (`POST /credits/consume`), reserve (`POST /credits/reserve`), extend
+  (`POST /credits/reservations/{id}/extend`), capture (`…/capture`) and release (`…/release`).
+  Consume, reserve and extend are refused with 402 when `spendable` is short, and change nothing.
+- **Capture takes the actual amount.** Left out, it is the hold's amount. It may be more than the
+  hold: the hold stops counting as reserved, the wallet pays what `spendable` then covers, and the
+  shortfall is recorded as debt when it is no more than the `debtLimit` the capture passes. A
+  shortfall over that limit is refused with 402 and the hold stays as it was. `debtLimit` left out
+  is 0, which refuses any shortfall.
+- **Allowing debt is not the spender's to decide.** A capture whose `debtLimit` is above zero needs
+  `edit_credit` on the owning organization (`credit_editor`, `credit_manager` or `manager`), and on
+  a personal wallet a platform administrator. A consumer that decides the limit itself calls the
+  service's step functions inside its own server, where no session is asked.
+- **Debt is repaid first.** Balance not taken by a live hold goes to the debt before anything else
+  can spend it: a grant repays from its new lot, and a release, an expired hold or any later step
+  on the wallet repays from what it freed. A `repay` entry records each repayment. While a wallet
+  holds debt, none of its balance outside the live holds is spendable.
+
+### The amount quota
+
+- **Declared on the plan.** A plan action carries `amountQuotaPerPeriod` beside `quotaPerPeriod`.
+  It is snapshotted into the subscription's `amountQuotas` at activation, as `allowedActions` is,
+  so a plan edit never changes a live subscription.
+- **Measured per period.** The usage row of (subscription, action, period start) keeps `used`, the
+  count, and `amountUsed`, the amount. Room is the limit less `amountUsed` less the live quota
+  holds. An action covered with no amount limit has unlimited room, and its amounts are still
+  recorded.
+- **Steps.** reserve (`POST /entitlements/reserve`), extend, capture and release
+  (`POST /entitlements/reservations/{id}/extend|capture|release`). The subscription is the live one
+  that covers the action, chosen as the entitlement gate chooses it; none is 403. Short room is 402.
+- **Capture records the actual amount** into the period the hold was taken in. Past the room, it
+  is recorded when the excess is no more than the `overageLimit` the capture passes, and refused
+  with 402 otherwise. The excess stays in that period's usage and is not carried into the next.
+  An `overageLimit` above zero needs `edit_subscription` on the owning organization, and on a
+  personal subscription a platform administrator.
+- **The entitlement gate takes an amount too.** `POST /entitlements/check` with `amount` records one
+  use and that amount against the subscription when both the count quota and the amount room allow,
+  and otherwise spends the amount from the wallet, in the configured gate order.
+- **Included usage is metered here, never granted.** A plan's included amount is the quota; no
+  credits are put in a wallet per period for it, so included usage and bought credits never mix
+  in one wallet.
+
+### Holds expire
+
+- Every wallet hold and quota hold has an expiry: `expiresInSecs` when the caller gives it, else
+  `reservation-ttl-secs`. An extension restarts it the same way.
+- A hold past its expiry stops counting at once, before the scheduler gets to it. Extending or
+  capturing it is refused with 409; the caller spends with a direct step instead. Releasing it is
+  allowed.
+- The scheduler releases expired holds of both kinds.
+
+### Records and idempotency
+
+- **The wallet ledger is append-only and the source of truth.** Every entry carries `amount`, its
+  change to `balance`, and `debtChange`, its change to `debt`. Kinds: `grant`, `consume`, `refund`,
+  `expire`, `adjust`, `reserve`, `extend`, `capture`, `release`, `repay`; the hold kinds move
+  nothing and only record the step.
+- **The audit reconciles both.** `GET /credits/wallets/{id}/audit` sets the cached `balance` beside
+  the sum of `amount`, and the cached `debt` beside the sum of `debtChange`; `diverged` is true when
+  either pair disagrees.
+- **The quota ledger** (`quota_entries`) is append-only in the same way, one entry per step, each
+  with its change to the usage amount and to the held amount.
+- **Every step takes an `idempotencyKey`.** A key seen again on the same wallet, or the same
+  subscription for a quota step, answers what the first call did and changes nothing. A reserve's
+  key lives on its hold; every other step's key lives on its ledger entry.
+
+## 7. Capabilities & limitations
 
 What this domain can and cannot do today.
 
@@ -172,10 +288,13 @@ What this domain can and cannot do today.
   **reactivation**, **mid-period plan change with proration** (upgrade charges the
   billing key; decline aborts).
 - **Trials**: free first period, **once per (owner, plan)** (re-subscribe is paid).
-- **Credits**: grant (with expiry, FIFO lots), consume (idempotent), **reserve /
-  capture / release** (authorize-capture), refund, balance/spendable, ledger +
-  reservation lists, consistency **audit**.
-- **Entitlement**: hybrid subscription/credit gate with per-period **quota**;
+- **Credits**: grant (with expiry, FIFO lots; admin- or org-manager-only), consume
+  (idempotent), **reserve / extend / capture / release** (authorize-capture) at a fixed
+  action cost or a caller-passed **amount**, capture of the actual amount with bounded
+  **debt** repaid by the next grant, refund, balance/spendable/debt, ledger +
+  reservation lists, consistency **audit** of balance and debt.
+- **Entitlement**: hybrid subscription/credit gate with per-period count **quota** and
+  **amount quota** (reserve / extend / capture / release, bounded overage);
   route-layer (`entitlement_guard!`) or in-handler (`require_action`).
 - **Payments (PortOne V2)**: checkout → confirm/webhook → verify → activate;
   refund; recurring billing-key charge (auto-renew, dunning, proration); webhook
@@ -217,7 +336,10 @@ What this domain can and cannot do today.
   (one wallet per owner); money currency lives only on plans/purchases and a
   coupon's discount scope. Multi-currency *plan pricing* (a price book) is the
   open item if regional pricing is ever needed.
-- **Usage-based / overage billing** — quotas *block*; they do not bill the excess.
+- **Billing an overage** — a quota capture may go past the limit by the caller's
+  `overageLimit`, and that excess is recorded, but nothing charges money for it.
+- **Periodic credit allowances** — a renewal grants no credits; a plan's included
+  usage is an amount quota instead (§6).
 - **Reserve/capture tied to an external PG authorize-capture** — credit holds are
   internal-ledger only.
 - **Reward-coupon owner scope** — `POST /coupons/redeem` grants to the calling

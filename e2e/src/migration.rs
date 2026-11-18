@@ -22,6 +22,8 @@ impl MigratorTrait for Migrator {
       Box::new(entity::migration::access_log::Migration),
       // An account's removal takes its sign-in log with it. Only needs `init`.
       Box::new(entity::migration::access_log_cascade::Migration),
+      // Debt, amount quotas and quota holds. Alters and references the membership tables.
+      Box::new(entity::migration::membership_metering::Migration),
     ]
   }
 }

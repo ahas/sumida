@@ -118,6 +118,10 @@ pub enum SumidaError {
   InsufficientCredits { required: i64, available: i64 },
   #[error("refund amount {0} exceeds available balance {1}")]
   RefundWouldExceedBalance(i64, i64),
+  #[error("insufficient quota: required {required}, available {available}")]
+  QuotaExceeded { required: i64, available: i64 },
+  #[error("reservation `{0}` has expired")]
+  ReservationExpired(i32),
   #[error("credit wallet balance diverges from ledger (wallet `{0}`)")]
   BalanceDivergence(i32),
   #[error("purchase `{0}` not found")]
@@ -229,6 +233,8 @@ impl SumidaError {
       Self::PaymentNotCompleted(_) => 8012,
       Self::PaymentAmountMismatch { .. } => 8013,
       Self::WebhookVerificationFailed => 8014,
+      Self::QuotaExceeded { .. } => 8015,
+      Self::ReservationExpired(_) => 8016,
 
       Self::DatabaseError(..) => 7000,
       #[cfg(feature = "aws-s3")]
@@ -339,7 +345,10 @@ impl From<SumidaError> for StatusCode {
       SumidaError::NoActiveSubscription
       | SumidaError::SubscriptionExpired
       | SumidaError::MembershipActionNotAllowed(_) => Ok(StatusCode::FORBIDDEN),
-      SumidaError::InsufficientCredits { .. } => Ok(StatusCode::PAYMENT_REQUIRED),
+      SumidaError::InsufficientCredits { .. } | SumidaError::QuotaExceeded { .. } => {
+        Ok(StatusCode::PAYMENT_REQUIRED)
+      }
+      SumidaError::ReservationExpired(_) => Ok(StatusCode::CONFLICT),
       SumidaError::MembershipPlanScopeMismatch | SumidaError::RefundWouldExceedBalance(..) => {
         Ok(StatusCode::BAD_REQUEST)
       }

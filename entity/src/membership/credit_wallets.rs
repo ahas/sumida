@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use super::OwnerKind;
 
 /// One wallet per owner (plan-agnostic shared pool). `balance` is a cache of the
-/// sum of non-expired grant lots' `amount_remaining`; the lots + ledger are
-/// authoritative.
+/// sum of non-expired grant lots' `amount_remaining`, and `debt` a cache of what
+/// captures could not cover; the lots + ledger are authoritative for both.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "credit_wallets")]
 pub struct Model {
@@ -15,6 +15,9 @@ pub struct Model {
   pub owner_id: i32,
   #[sea_orm(default_value = 0)]
   pub balance: i64,
+  /// Owed by the wallet: never negative, and repaid before any balance is spendable again.
+  #[sea_orm(default_value = 0)]
+  pub debt: i64,
   /// When a "low balance" alert was last sent. Cleared on top-up above the
   /// configured threshold so a later drop can alert again.
   #[sea_orm(nullable)]

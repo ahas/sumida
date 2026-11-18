@@ -113,6 +113,9 @@ pub struct GetSubscription {
   pub auto_renew:           bool,
   #[cfg_attr(feature = "openapi", schema(value_type = Object))]
   pub allowed_actions:      JsonValue,
+  /// `{action: limit}` — the amount each covered action may spend per period.
+  #[cfg_attr(feature = "openapi", schema(value_type = Object))]
+  pub amount_quotas:        JsonValue,
   pub created_at:           DateTimeUtc,
   pub updated_at:           DateTimeUtc,
 }

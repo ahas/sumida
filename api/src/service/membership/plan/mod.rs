@@ -106,6 +106,7 @@ impl<S: SumidaState> PlanService<S> {
         action: Set(action.action),
         credit_cost: Set(action.credit_cost),
         quota_per_period: Set(action.quota_per_period),
+        amount_quota_per_period: Set(action.amount_quota_per_period),
         ..Default::default()
       })
       .exec(db)

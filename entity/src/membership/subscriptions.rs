@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use super::{OwnerKind, SubscriptionStatus};
 
 /// A subscription instance owned by a user or organization.
-/// `allowed_actions` snapshots the plan's allowed actions at activation so plan
-/// edits never apply retroactively.
+/// `allowed_actions` snapshots the plan's allowed actions at activation, and
+/// `amount_quotas` their per-period amount limits, so plan edits never apply
+/// retroactively.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "subscriptions")]
 pub struct Model {
@@ -27,6 +28,9 @@ pub struct Model {
   pub canceled_at: Option<DateTimeUtc>,
   #[sea_orm(column_type = "JsonBinary")]
   pub allowed_actions: Json,
+  /// `{action: limit}` for each covered action whose plan caps the amount per period.
+  #[sea_orm(column_type = "JsonBinary")]
+  pub amount_quotas: Json,
   #[sea_orm(nullable)]
   pub idempotency_key: Option<String>,
   /// When true, the maintenance renewal job charges `billing_key` at period end

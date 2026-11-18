@@ -201,6 +201,22 @@ pub use super::membership::plan_actions::{
   Relation as PlanActionsRelation,
 };
 #[cfg(feature = "membership")]
+pub use super::membership::quota_entries::{
+  ActiveModel as QuotaEntriesActiveModel,
+  Column as QuotaEntriesColumn,
+  Entity as QuotaEntries,
+  Model as QuotaEntriesModel,
+  Relation as QuotaEntriesRelation,
+};
+#[cfg(feature = "membership")]
+pub use super::membership::quota_reservations::{
+  ActiveModel as QuotaReservationsActiveModel,
+  Column as QuotaReservationsColumn,
+  Entity as QuotaReservations,
+  Model as QuotaReservationsModel,
+  Relation as QuotaReservationsRelation,
+};
+#[cfg(feature = "membership")]
 pub use super::membership::subscription_events::{
   ActiveModel as SubscriptionEventsActiveModel,
   Column as SubscriptionEventsColumn,

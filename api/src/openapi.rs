@@ -324,10 +324,15 @@ struct BoardRoutes;
     crate::controller::membership::credit::refund,
     crate::controller::membership::credit::reserve,
     crate::controller::membership::credit::reservations,
+    crate::controller::membership::credit::extend,
     crate::controller::membership::credit::capture,
     crate::controller::membership::credit::release,
     crate::controller::membership::credit::audit,
     crate::controller::membership::entitlement::check,
+    crate::controller::membership::entitlement::reserve,
+    crate::controller::membership::entitlement::extend,
+    crate::controller::membership::entitlement::capture,
+    crate::controller::membership::entitlement::release,
     crate::controller::membership::purchase::list,
     crate::controller::membership::payment::checkout,
     crate::controller::membership::payment::confirm,
@@ -857,9 +862,10 @@ mod tests {
         let name = signature.rsplit_once("async fn ").expect("a handler is a function").1;
         let name = name.split_once('<').map_or(name, |(name, _)| name);
 
-        // Four readers take a body: `Json(..)` destructures one, `Multipart` walks it one part at a
-        // time, `Bytes` hands the bytes over untouched so a signature can be checked against exactly
-        // what arrived, and `Request` carries the whole thing to a reader chosen inside the handler.
+        // Five readers take a body: `Json(..)` destructures one, `Option<Json<..>>` reads one when
+        // it was sent at all, `Multipart` walks it one part at a time, `Bytes` hands the bytes over
+        // untouched so a signature can be checked against exactly what arrived, and `Request`
+        // carries the whole thing to a reader chosen inside the handler.
         // Everything else a handler takes — the state, the session, a path segment, a query, the
         // headers — is read from somewhere other than the body.
         //
@@ -868,7 +874,7 @@ mod tests {
         let parameters = signature.split_once('(').expect("a function takes a list").1;
         let parameters = parameters.rsplit_once(')').expect("that list closes").0;
 
-        let reads_a_body = ["Json(", "Multipart", "Bytes", "Request"]
+        let reads_a_body = ["Json(", "Option<Json<", "Multipart", "Bytes", "Request"]
           .iter()
           .any(|reader| parameters.contains(reader));
 

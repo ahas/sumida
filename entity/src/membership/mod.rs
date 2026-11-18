@@ -10,6 +10,8 @@ pub mod membership_plans;
 pub mod membership_purchases;
 pub mod payment_webhook_events;
 pub mod plan_actions;
+pub mod quota_entries;
+pub mod quota_reservations;
 pub mod subscription_events;
 pub mod subscription_usage;
 pub mod subscriptions;
@@ -146,6 +148,28 @@ pub enum CreditTxKind {
   /// A reservation confirmed into a real spend (debits lots; amount negative).
   Capture,
   /// A reservation cancelled without spending (no balance change; amount 0).
+  Release,
+  /// A reservation grown by a further amount (no balance change; amount 0).
+  Extend,
+  /// Debt paid off from free balance (amount and debt change both negative).
+  Repay,
+}
+
+/// Kind of amount-quota ledger entry.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub enum QuotaEntryKind {
+  /// An amount spent straight away through the entitlement gate.
+  Consume,
+  /// A hold placed.
+  Reserve,
+  /// A hold grown.
+  Extend,
+  /// A hold turned into usage at the actual amount.
+  Capture,
+  /// A hold dropped, by its caller or by its expiry.
   Release,
 }
 

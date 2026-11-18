@@ -41,6 +41,13 @@ fn status_str(status: &SubscriptionStatus) -> &'static str {
   }
 }
 
+/// What a subscription carries from its plan's actions: coverage with count quotas, and amount
+/// quotas.
+pub(crate) struct ActionSnapshot {
+  allowed:       serde_json::Value,
+  amount_quotas: serde_json::Value,
+}
+
 pub struct SubscriptionService<S: SumidaState> {
   state:   S,
   session: UserSession,
@@ -156,20 +163,28 @@ impl<S: SumidaState> SubscriptionService<S> {
     Ok(())
   }
 
-  /// Snapshot a plan's actions as a JSON object `{action: quota_per_period|null}`.
-  /// Key existence = coverage (checked via `jsonb_exists`); the value carries the
-  /// per-period quota (`null` = unlimited). Snapshotted at activation so plan
-  /// edits don't retroactively change a live subscription's coverage.
+  /// Snapshot a plan's actions as two JSON objects. `allowed` is `{action: quota_per_period|null}`:
+  /// key existence = coverage (checked via `jsonb_exists`), the value the per-period count quota
+  /// (`null` = unlimited). `amount_quotas` is `{action: amount_quota_per_period}` for the actions
+  /// whose amount per period is capped. Snapshotted at activation so plan edits don't
+  /// retroactively change a live subscription's coverage.
   pub(crate) async fn snapshot_allowed_actions<C: ConnectionTrait>(
     plan_id: i32,
     txn: &C,
-  ) -> Result<serde_json::Value, SumidaError> {
+  ) -> Result<ActionSnapshot, SumidaError> {
     let rows = PlanActions::find().filter(PlanActionsColumn::PlanId.eq(plan_id)).all(txn).await?;
-    let mut map = serde_json::Map::new();
+    let mut allowed = serde_json::Map::new();
+    let mut amount_quotas = serde_json::Map::new();
     for a in rows {
-      map.insert(a.action, a.quota_per_period.map(|q| json!(q)).unwrap_or(serde_json::Value::Null));
+      if let Some(limit) = a.amount_quota_per_period {
+        amount_quotas.insert(a.action.clone(), json!(limit));
+      }
+      allowed.insert(a.action, a.quota_per_period.map(|q| json!(q)).unwrap_or(serde_json::Value::Null));
     }
-    Ok(serde_json::Value::Object(map))
+    Ok(ActionSnapshot {
+      allowed:       serde_json::Value::Object(allowed),
+      amount_quotas: serde_json::Value::Object(amount_quotas),
+    })
   }
 
   /// Build an active subscription from a plan (snapshot + period + created event),
@@ -198,7 +213,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       status: Set(SubscriptionStatus::Active),
       current_period_start: Set(now),
       current_period_end: Set(period_end),
-      allowed_actions: Set(allowed),
+      allowed_actions: Set(allowed.allowed),
+      amount_quotas: Set(allowed.amount_quotas),
       ..Default::default()
     })
     .exec_with_returning(txn)
@@ -406,7 +422,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       current_period_start: Set(now),
       current_period_end: Set(period_end),
       trial_ends_at: Set(trial_ends_at),
-      allowed_actions: Set(allowed),
+      allowed_actions: Set(allowed.allowed),
+      amount_quotas: Set(allowed.amount_quotas),
       idempotency_key: Set(data.idempotency_key.clone()),
       auto_renew: Set(data.auto_renew),
       billing_key: Set(data.billing_key.clone()),
@@ -622,7 +639,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       canceled_at: Set(None),
       cancel_at_period_end: Set(false),
       expiring_notified_at: Set(None),
-      allowed_actions: Set(allowed),
+      allowed_actions: Set(allowed.allowed),
+      amount_quotas: Set(allowed.amount_quotas),
       ..Default::default()
     })
     .exec(&txn)
@@ -728,7 +746,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       plan_id: Set(new_plan.id),
       plan_code: Set(new_plan.code.clone()),
       prev_plan_id: Set(Some(sub.plan_id)),
-      allowed_actions: Set(allowed),
+      allowed_actions: Set(allowed.allowed),
+      amount_quotas: Set(allowed.amount_quotas),
       ..Default::default()
     })
     .exec(&txn)

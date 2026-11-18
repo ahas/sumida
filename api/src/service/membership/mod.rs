@@ -5,6 +5,7 @@ pub mod maintenance;
 pub mod payment;
 pub mod plan;
 pub mod purchase;
+pub mod quota;
 pub mod subscription;
 
 use entity::membership::OwnerKind;
@@ -17,6 +18,7 @@ use serde::Serialize;
 
 use crate::SumidaState;
 use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::authz::write::SubjectKey;
 use crate::service::mail_form::{MailFormSendOptions, MailFormService};
 use crate::util::random::generate_url_safe_string;
@@ -64,6 +66,38 @@ pub fn resolve_owner(
       (OwnerKind::Organization, owner_id.unwrap_or(session.profile.organization.id))
     }
   }
+}
+
+/// Whether `subject` may let a step go past what its source covers: a wallet capture into debt,
+/// a quota capture into overage. The spender never decides that for itself, so a personal owner's
+/// overrun is a platform administrator's alone, and an organization's is whoever holds
+/// `permission` on it.
+pub(crate) async fn authorize_overrun<C: ConnectionTrait>(
+  subject: &SubjectSet,
+  owner_kind: &OwnerKind,
+  owner_id: i32,
+  permission: &str,
+  db: &C,
+) -> Result<(), SumidaError> {
+  if Authz::is_superuser(subject, db).await? {
+    return Ok(());
+  }
+  match owner_kind {
+    OwnerKind::Personal => Err(SumidaError::NoAccessPermission),
+    OwnerKind::Organization => Authz::try_check("organization", owner_id, permission, subject, db).await,
+  }
+}
+
+/// When a hold placed or extended now stops counting: `expires_in_secs` from now, or the
+/// configured lifetime when the caller names none.
+pub(crate) fn hold_expiry(
+  expires_in_secs: Option<i64>,
+) -> Result<sea_orm::prelude::DateTimeUtc, SumidaError> {
+  let secs = expires_in_secs.unwrap_or(settings::get().membership.reservation_ttl_secs);
+  if secs <= 0 {
+    return Err(SumidaError::BadRequest("a hold's lifetime must be positive".into()));
+  }
+  Ok(chrono::Utc::now() + chrono::Duration::seconds(secs))
 }
 
 /// Emails to notify for an owner: the user's own email for a personal owner, or

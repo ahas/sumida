@@ -13,18 +13,11 @@ use std::time::Duration as StdDuration;
 
 use chrono::{Duration, Utc};
 use entity::membership::subscriptions::Column as SubColumn;
-use entity::membership::{
-  PlanKind,
-  PurchaseStatus,
-  ReservationStatus,
-  SubscriptionEventKind,
-  SubscriptionStatus,
-};
+use entity::membership::{PlanKind, PurchaseStatus, SubscriptionEventKind, SubscriptionStatus};
 use entity::prelude::*;
 use error::SumidaError;
 use infra::{payment, settings};
 use sea_orm::ActiveValue::*;
-use sea_orm::sea_query::Expr;
 use sea_orm::{
   ColumnTrait,
   Condition,
@@ -535,19 +528,43 @@ pub async fn expire_stale_pending_purchases<S: SumidaState>(
   Ok(total)
 }
 
-/// Release credit reservations whose `expires_at` has passed (stale holds, e.g.
-/// from a crashed async job). A bulk status flip frees their spendable amount;
-/// lots are untouched. Returns the number released.
+/// Release the wallet holds and quota holds whose `expires_at` has passed (stale
+/// holds, e.g. from a caller that crashed). Each release flips the hold and appends
+/// a `release` entry to its ledger in the same statement; lots and usage are
+/// untouched, and a wallet's debt is repaid from the freed balance on its next
+/// step. Returns the number released, of both kinds together.
 pub async fn release_expired_reservations(db: &DatabaseConnection) -> Result<usize, SumidaError> {
-  let now = Utc::now();
-  let res = CreditReservations::update_many()
-    .col_expr(CreditReservationsColumn::Status, Expr::value("released"))
-    .filter(CreditReservationsColumn::Status.eq(ReservationStatus::Held))
-    .filter(CreditReservationsColumn::ExpiresAt.is_not_null())
-    .filter(CreditReservationsColumn::ExpiresAt.lte(now))
-    .exec(db)
+  let backend = db.get_database_backend();
+  let wallet = db
+    .execute(Statement::from_string(
+      backend,
+      r#"WITH released AS (
+           UPDATE credit_reservations SET status = 'released'
+           WHERE status = 'held' AND expires_at IS NOT NULL AND expires_at <= now()
+           RETURNING wallet_id, action, reference_code
+         )
+         INSERT INTO credit_transactions
+           (wallet_id, kind, amount, debt_change, balance_after, action, reference_code)
+         SELECT r.wallet_id, 'release', 0, 0, w.balance, r.action, r.reference_code
+         FROM released r JOIN credit_wallets w ON w.id = r.wallet_id"#,
+    ))
     .await?;
-  Ok(res.rows_affected as usize)
+  let quota = db
+    .execute(Statement::from_string(
+      backend,
+      r#"WITH released AS (
+           UPDATE quota_reservations SET status = 'released'
+           WHERE status = 'held' AND expires_at <= now()
+           RETURNING id, subscription_id, action, period_start, amount, reference_code
+         )
+         INSERT INTO quota_entries
+           (subscription_id, action, period_start, kind, amount_change, held_change, reservation_id,
+            reference_code)
+         SELECT subscription_id, action, period_start, 'release', 0, -amount, id, reference_code
+         FROM released"#,
+    ))
+    .await?;
+  Ok((wallet.rows_affected() + quota.rows_affected()) as usize)
 }
 
 /// Expire lapsed credit lots across all wallets that have any: zero the lots,

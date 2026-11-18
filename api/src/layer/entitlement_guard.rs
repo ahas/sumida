@@ -92,7 +92,7 @@ where
       let req = Request::from_parts(parts, body);
 
       let outcome = EntitlementService::new(state, session)
-        .require_action(&action, OwnerKind::Personal, None, None)
+        .require_action(&action, OwnerKind::Personal, None, None, None)
         .await;
 
       match outcome {
