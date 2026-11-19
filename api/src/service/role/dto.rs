@@ -313,9 +313,6 @@ mod schema_tests {
 
   #[test]
   fn every_parameter_the_list_names_is_one_the_reader_may_be_left_without() {
-    assert_params_required_matches_serde::<RoleFilter>(&[
-      ("name", "operator"),
-      ("description", "runs"),
-    ]);
+    assert_params_required_matches_serde::<RoleFilter>(&[("name", "operator"), ("description", "runs")]);
   }
 }

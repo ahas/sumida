@@ -1,17 +1,19 @@
 use sea_orm::ConnectionTrait;
 use sea_orm_migration::prelude::*;
 
-/// A ban stays in force when the account that issued it is removed.
+/// Removing the account that issued a ban leaves the ban in force and empties who issued it.
 ///
-/// `bans.created_by` records who acted, not who the ban applies to: the row names its own account
-/// and its own address, and it holds until it is lifted or its term runs out. So removing the
-/// issuer must leave the row standing and only empty the column that names the issuer — the column
-/// is nullable, which is what makes a null the value the constraint can write. Letting the row go
-/// instead would lift the disposition silently, on every account and address it still names, and
-/// would erase the record that it was ever written.
+/// A ban is an operation record: an operator auditing the installation wants to see that the
+/// disposition was written down even after the account that wrote it is gone. `bans.created_by`
+/// records who acted, not who the ban shuts out — the row names its own account and its own
+/// address — so removing the issuer keeps the row and only leaves that column naming nobody, and
+/// the ban keeps shutting its target out. Cascading instead lifted the disposition silently, on
+/// every account and address it still named, and left no record that it was ever written.
 ///
-/// `bans.user_id` keeps its own rule: that column names who the ban shuts out, and a row shutting
+/// `bans.user_id` keeps its cascade: that column names who the ban shuts out, and a row shutting
 /// out an account that no longer exists describes nothing, so those rows still follow the account.
+/// The issuer column is already nullable, so a null is a value the constraint can write and the
+/// column needs no turn of its own.
 ///
 /// The constraint is dropped and recreated because PostgreSQL has no `ALTER CONSTRAINT` for a
 /// foreign key's delete action. This migration only needs `bans` and `users`, both from `init`.

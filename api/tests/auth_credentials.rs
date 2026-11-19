@@ -102,7 +102,11 @@ async fn token_pair(base: SocketAddr, user: &TestUser) -> (String, String) {
 
   let body: serde_json::Value = resp.json().await.expect("a token pair");
   let read = |key: &str| {
-    body.get(key).and_then(|token| token.as_str()).expect("the pair carries both tokens").to_owned()
+    body
+      .get(key)
+      .and_then(|token| token.as_str())
+      .expect("the pair carries both tokens")
+      .to_owned()
   };
 
   (read("access_token"), read("refresh_token"))
@@ -197,9 +201,9 @@ async fn api_key(
   let plaintext = format!("test-key-{}", Uuid::new_v4());
 
   entity::api_keys::ActiveModel {
-    key: Set(hash_api_key(&plaintext)),
+    key:        Set(hash_api_key(&plaintext)),
     key_prefix: Set(Some(plaintext.chars().take(8).collect())),
-    user_id: Set(user_id),
+    user_id:    Set(user_id),
     expires_at: Set(expires_at),
     is_secured: Set(false),
     created_at: Set(Utc::now()),
@@ -293,8 +297,7 @@ fn test_an_expired_access_token_is_refused() {
     let user = TestUser::create(&db).await.expect("an account");
 
     let now = Utc::now();
-    let expired =
-      mint(&user, &jwt_secret(), "access", now - Duration::hours(2), now - Duration::hours(1));
+    let expired = mint(&user, &jwt_secret(), "access", now - Duration::hours(2), now - Duration::hours(1));
 
     assert_eq!(
       presenting(base, &format!("Bearer {expired}")).await,
@@ -564,16 +567,20 @@ fn test_changing_the_password_voids_the_credentials_issued_before_it() {
     let (access, refresh) = token_pair(base, &user).await;
     let browser = signed_in(base, &user).await;
 
-    assert_eq!(presenting(base, &format!("Bearer {access}")).await.0, 200, "both are good to begin with");
+    assert_eq!(
+      presenting(base, &format!("Bearer {access}")).await.0,
+      200,
+      "both are good to begin with"
+    );
     assert_eq!(carrying_only_the_jar(&browser, base).await.0, 200, "both are good to begin with");
 
     // The change is verified by a code the account was sent. Placing it is the fixture; what the case
     // is about is what the change does to everything already handed out.
     entity::user_verifications::ActiveModel {
-      user_id: Set(user.model.id),
-      kind: Set("password-change".to_owned()),
-      method: Set("email".to_owned()),
-      code: Set("123456".to_owned()),
+      user_id:    Set(user.model.id),
+      kind:       Set("password-change".to_owned()),
+      method:     Set("email".to_owned()),
+      code:       Set("123456".to_owned()),
       expires_at: Set(Utc::now() + Duration::minutes(10)),
       created_at: Set(Utc::now()),
     }

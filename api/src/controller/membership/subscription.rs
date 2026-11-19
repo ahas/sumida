@@ -5,15 +5,7 @@ use axum::{Json, Router, routing};
 
 use crate::controller::ApiController;
 #[cfg(feature = "openapi")]
-use crate::openapi::{
-  EmptyObject,
-  ErrorBody,
-  NotFound,
-  Refused,
-  SUBSCRIPTION_TAG,
-  Unreadable,
-  WrongBody,
-};
+use crate::openapi::{EmptyObject, ErrorBody, NotFound, Refused, SUBSCRIPTION_TAG, Unreadable, WrongBody};
 use crate::service::prelude::*;
 use crate::util::filter::{ConditionQuery, filter_descriptor_route};
 use crate::util::pagination::{List, Pagination};
@@ -31,6 +23,7 @@ const CHANGE_PLAN: &str = "/{id}/change-plan";
 
 /// Who these routes let through, repeated on each of them because a caller reading one operation
 /// has no reason to look at the others.
+#[cfg(feature = "openapi")]
 const OWNERSHIP: &str = "Being signed in is all the route itself asks for. Whether this particular \
 subscription may be read or acted on is settled inside the handler: its owner may, and so may an \
 administrator of the organization that owns it. Anyone else is refused after the request was \

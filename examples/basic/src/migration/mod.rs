@@ -15,8 +15,12 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::rebac::Migration),
       // An account's removal takes its sign-in log with it. Only needs init.
       Box::new(sumida::entity::migration::access_log_cascade::Migration),
-      // A ban stays in force when the account that issued it is removed. Only needs init.
-      Box::new(sumida::entity::migration::ban_issuer_removal::Migration),
+      // Supersedes the cascade for the sign-in log: the rows stay and the account column goes
+      // nullable. Only needs init.
+      Box::new(sumida::entity::migration::access_log_set_null::Migration),
+      // Supersedes the cascade on the issuer key: the disposition stays in force and only the
+      // column naming who wrote it down goes empty. Only needs init.
+      Box::new(sumida::entity::migration::bans_created_by_set_null::Migration),
       // Debt, amount quotas and quota holds. Alters and references the membership tables.
       Box::new(sumida::entity::migration::membership_metering::Migration),
     ]

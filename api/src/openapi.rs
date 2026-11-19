@@ -16,6 +16,14 @@ use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder
 use utoipa::openapi::{ContentBuilder, OpenApi as OpenApiDocument, Ref, Response, ResponseBuilder};
 use utoipa::{IntoResponses, Modify, OpenApi, ToSchema};
 
+#[cfg(feature = "board")]
+use crate::controller::bps;
+#[cfg(feature = "file")]
+use crate::controller::fs;
+#[cfg(feature = "mail-form")]
+use crate::controller::mail_form;
+#[cfg(feature = "membership")]
+use crate::controller::membership;
 use crate::controller::{
   access_log,
   api_key,
@@ -26,14 +34,6 @@ use crate::controller::{
   user,
   user_invitation,
 };
-#[cfg(feature = "board")]
-use crate::controller::bps;
-#[cfg(feature = "file")]
-use crate::controller::fs;
-#[cfg(feature = "mail-form")]
-use crate::controller::mail_form;
-#[cfg(feature = "membership")]
-use crate::controller::membership;
 use crate::layer::session::DEFAULT_COOKIE_NAME;
 use crate::util::filter::DESCRIPTOR_PATH;
 
@@ -566,7 +566,6 @@ fn refused(description: &str) -> Response {
     .build()
 }
 
-
 // The error layer builds its body as a value rather than as a type, so there is no type here to
 // hang a derive on. What stands in its place is mirrored below and held against a real response by
 // `the_error_body_is_the_one_the_server_writes`.
@@ -681,7 +680,10 @@ mod tests {
       (include_str!("controller/role.rs"), role::MOUNT),
       (include_str!("controller/ban.rs"), ban::MOUNT),
       (include_str!("controller/user_invitation.rs"), user_invitation::MOUNT),
-      (include_str!("controller/user_verification.rs"), crate::controller::user_verification::MOUNT),
+      (
+        include_str!("controller/user_verification.rs"),
+        crate::controller::user_verification::MOUNT,
+      ),
       (include_str!("controller/access_log.rs"), access_log::MOUNT),
       (include_str!("controller/api_key.rs"), api_key::MOUNT),
       (include_str!("controller/authz.rs"), crate::controller::authz::MOUNT),
@@ -703,28 +705,16 @@ mod tests {
       (include_str!("controller/bps/board_group.rs"), bps::board_group::MOUNT),
       (include_str!("controller/bps/board_topic.rs"), bps::board_topic::MOUNT),
       (include_str!("controller/bps/board_post.rs"), bps::board_post::MOUNT),
-      (
-        include_str!("controller/bps/board_post_reaction.rs"),
-        bps::board_post_reaction::MOUNT,
-      ),
-      (
-        include_str!("controller/bps/board_post_report.rs"),
-        bps::board_post_report::MOUNT,
-      ),
+      (include_str!("controller/bps/board_post_reaction.rs"), bps::board_post_reaction::MOUNT),
+      (include_str!("controller/bps/board_post_report.rs"), bps::board_post_report::MOUNT),
       (include_str!("controller/bps/board_file.rs"), bps::board_file::MOUNT),
     ]);
     #[cfg(feature = "membership")]
     sources.extend([
       (include_str!("controller/membership/plan.rs"), membership::plan::MOUNT),
-      (
-        include_str!("controller/membership/subscription.rs"),
-        membership::subscription::MOUNT,
-      ),
+      (include_str!("controller/membership/subscription.rs"), membership::subscription::MOUNT),
       (include_str!("controller/membership/credit.rs"), membership::credit::MOUNT),
-      (
-        include_str!("controller/membership/entitlement.rs"),
-        membership::entitlement::MOUNT,
-      ),
+      (include_str!("controller/membership/entitlement.rs"), membership::entitlement::MOUNT),
       (include_str!("controller/membership/purchase.rs"), membership::purchase::MOUNT),
       (include_str!("controller/membership/payment.rs"), membership::payment::MOUNT),
       (include_str!("controller/membership/coupon.rs"), membership::coupon::MOUNT),
@@ -806,8 +796,7 @@ mod tests {
 
       for method in METHODS {
         // The first handler is spelled `routing::get(...)`, and one chained onto it `.get(...)`.
-        if handlers.contains(&format!("routing::{method}(")) || handlers.contains(&format!(".{method}("))
-        {
+        if handlers.contains(&format!("routing::{method}(")) || handlers.contains(&format!(".{method}(")) {
           built.insert((method.to_owned(), normalize(path)));
         }
       }
@@ -953,11 +942,9 @@ mod tests {
                 "{at}: points at something other than the failure body"
               ),
               // What a reader writes when it will not read something. One line of plain text.
-              "text/plain" => assert_eq!(
-                body["schema"]["type"],
-                JsonValue::from("string"),
-                "{at}: is not plain text"
-              ),
+              "text/plain" => {
+                assert_eq!(body["schema"]["type"], JsonValue::from("string"), "{at}: is not plain text")
+              }
               other => panic!("{at}: nothing answers a failure as `{other}`"),
             }
           }
@@ -977,10 +964,10 @@ mod tests {
       match value {
         JsonValue::Object(map) => {
           for (key, child) in map {
-            if key == "$ref" {
-              if let Some(name) = child.as_str().and_then(|reference| reference.rsplit('/').next()) {
-                into.insert(name.to_owned());
-              }
+            if key == "$ref"
+              && let Some(name) = child.as_str().and_then(|reference| reference.rsplit('/').next())
+            {
+              into.insert(name.to_owned());
             }
             collect(child, into);
           }
@@ -1017,11 +1004,7 @@ mod tests {
 
     assert_eq!(
       defined,
-      BTreeSet::from([
-        scheme::SESSION.to_owned(),
-        scheme::BEARER.to_owned(),
-        scheme::API_KEY.to_owned(),
-      ])
+      BTreeSet::from([scheme::SESSION.to_owned(), scheme::BEARER.to_owned(), scheme::API_KEY.to_owned(),])
     );
 
     for (path, item) in document["paths"].as_object().expect("a path table") {
@@ -1131,8 +1114,7 @@ mod tests {
 
       let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("a body");
       let written: JsonValue = serde_json::from_slice(&body).expect("the body is JSON");
-      let sent: BTreeSet<String> =
-        written.as_object().expect("an object").keys().cloned().collect();
+      let sent: BTreeSet<String> = written.as_object().expect("an object").keys().cloned().collect();
 
       assert!(sent.is_subset(&named), "a key the document does not name is written: {sent:?}");
       assert!(required.is_subset(&sent), "a key the document requires is missing: {sent:?}");
@@ -1242,7 +1224,6 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::SumidaState;
-    use crate::controller::ApiController;
 
     #[derive(Clone)]
     struct ProbeState(DatabaseConnection);
@@ -1282,4 +1263,3 @@ mod tests {
     }
   }
 }
-

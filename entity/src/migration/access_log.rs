@@ -1,4 +1,4 @@
-use sea_orm::{ConnectionTrait, Statement};
+use sea_orm::ConnectionTrait;
 use sea_orm_migration::prelude::*;
 
 /// The sign-in log's identifier and the indexes every read of it needs.
@@ -25,91 +25,9 @@ use sea_orm_migration::prelude::*;
 /// entries were written. Nothing references these values — no foreign key points here and no screen
 /// fetches a single entry — so renumbering costs nothing outside this table. The step is skipped
 /// wherever a primary key already stands, which is what makes it safe against a database that
-/// already has one and what stops it renumbering twice. Where it runs, the table ends with an
-/// identity column and a primary key named as `init` names it, `pk_access_logs__id`.
+/// already has one and what stops it renumbering twice.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
-
-/// Takes the generator off `access_logs.id`, in either form it may stand in.
-///
-/// A table created with an auto-incrementing integer has a serial column: a default drawing on a
-/// sequence the column owns. A table this migration renumbered has an identity instead. An
-/// identity cannot be added while a default stands, and a default cannot be dropped from an
-/// identity column, so both forms come off, the identity first. Only a sequence the column owns is
-/// dropped: a default can also draw on another table's sequence, which that table still uses.
-const DROP_ID_GENERATOR: &str = r#"
-  DO $$
-  DECLARE
-    serial_sequence text;
-  BEGIN
-    ALTER TABLE access_logs ALTER COLUMN id DROP IDENTITY IF EXISTS;
-    ALTER TABLE access_logs ALTER COLUMN id DROP DEFAULT;
-
-    serial_sequence := pg_get_serial_sequence('access_logs', 'id');
-    IF serial_sequence IS NOT NULL THEN
-      EXECUTE format('DROP SEQUENCE %s', serial_sequence);
-    END IF;
-  END
-  $$;
-"#;
-
-/// Drops the primary key of `access_logs`, whatever it is named: `init` and this migration name it
-/// `pk_access_logs__id`, and a key added without a name carries PostgreSQL's default instead.
-const DROP_PRIMARY_KEY: &str = r#"
-  DO $$
-  DECLARE
-    primary_key name;
-  BEGIN
-    SELECT conname INTO primary_key FROM pg_constraint
-    WHERE conrelid = 'access_logs'::regclass AND contype = 'p';
-
-    IF primary_key IS NOT NULL THEN
-      EXECUTE format('ALTER TABLE access_logs DROP CONSTRAINT %I', primary_key);
-    END IF;
-  END
-  $$;
-"#;
-
-/// Gives every entry its own id, oldest first, then an identity continuing past the last row
-/// rather than from one — starting over is how the collisions arose — and the primary key.
-///
-/// `ctid` is the only handle on a row here, precisely because `id` does not identify one.
-const RENUMBER: &str = r#"
-  DO $$
-  DECLARE
-    next_id bigint;
-  BEGIN
-    WITH renumbered AS (
-      SELECT ctid AS row_id, row_number() OVER (ORDER BY created_at, ctid) AS ordinal
-      FROM access_logs
-    )
-    UPDATE access_logs
-    SET id = renumbered.ordinal
-    FROM renumbered
-    WHERE access_logs.ctid = renumbered.row_id;
-
-    SELECT COALESCE(max(id), 0) + 1 INTO next_id FROM access_logs;
-
-    EXECUTE format(
-      'ALTER TABLE access_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (RESTART WITH %s)',
-      next_id
-    );
-
-    ALTER TABLE access_logs ADD CONSTRAINT pk_access_logs__id PRIMARY KEY (id);
-  END
-  $$;
-"#;
-
-async fn has_primary_key<C: ConnectionTrait>(db: &C) -> Result<bool, DbErr> {
-  let key = db
-    .query_one(Statement::from_string(
-      db.get_database_backend(),
-      "SELECT 1 FROM pg_constraint WHERE conrelid = 'access_logs'::regclass AND contype = 'p'",
-    ))
-    .await?;
-
-  Ok(key.is_some())
-}
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
@@ -130,28 +48,90 @@ impl MigrationTrait for Migration {
     )
     .await?;
 
-    if has_primary_key(db).await? {
-      return Ok(());
-    }
+    db.execute_unprepared(
+      r#"
+      DO $$
+      DECLARE
+        next_id bigint;
+        owned record;
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conrelid = 'access_logs'::regclass AND contype = 'p'
+        ) THEN
+          RETURN;
+        END IF;
 
-    // The column generates its own values, which is also why they cannot simply be rewritten.
-    db.execute_unprepared(DROP_ID_GENERATOR).await?;
-    db.execute_unprepared(RENUMBER).await?;
+        -- The column generates its own values, which is also why they cannot simply be rewritten.
+        -- It comes off for the renumbering and goes back on afterwards, continuing past the last
+        -- row rather than from one — starting over is how the collisions arose.
+        --
+        -- What the column arrives with is not fixed: a table made by sea-orm's
+        -- `integer().auto_increment()` carries a serial-style default over a sequence the column
+        -- owns, and one whose generator was removed elsewhere is a plain column or an identity.
+        -- Every generator comes off first — ADD GENERATED refuses a column that still answers for
+        -- its own values, and a sequence still owned by the column would survive beside the
+        -- identity's own with nothing left to ever drop it.
+        ALTER TABLE access_logs ALTER COLUMN id DROP IDENTITY IF EXISTS;
+        ALTER TABLE access_logs ALTER COLUMN id DROP DEFAULT;
+
+        FOR owned IN
+          SELECT ns.nspname, s.relname
+          FROM pg_depend d
+          JOIN pg_class s ON s.oid = d.objid AND s.relkind = 'S'
+          JOIN pg_namespace ns ON ns.oid = s.relnamespace
+          WHERE d.classid = 'pg_class'::regclass
+            AND d.objsubid = 0
+            AND d.deptype = 'a'
+            AND d.refobjid = 'access_logs'::regclass
+            AND d.refobjsubid = (
+              SELECT attnum FROM pg_attribute
+              WHERE attrelid = 'access_logs'::regclass AND attname = 'id'
+            )
+        LOOP
+          EXECUTE format('DROP SEQUENCE IF EXISTS %I.%I', owned.nspname, owned.relname);
+        END LOOP;
+
+        -- `ctid` is the only handle on a row here, precisely because `id` does not identify one.
+        WITH renumbered AS (
+          SELECT ctid AS row_id, row_number() OVER (ORDER BY created_at, ctid) AS ordinal
+          FROM access_logs
+        )
+        UPDATE access_logs
+        SET id = renumbered.ordinal
+        FROM renumbered
+        WHERE access_logs.ctid = renumbered.row_id;
+
+        SELECT COALESCE(max(id), 0) + 1 INTO next_id FROM access_logs;
+
+        EXECUTE format(
+          'ALTER TABLE access_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (RESTART WITH %s)',
+          next_id
+        );
+
+        ALTER TABLE access_logs ADD PRIMARY KEY (id);
+      END
+      $$;
+      "#,
+    )
+    .await?;
 
     Ok(())
   }
 
   /// The identifiers are not restored: the values this replaced identified nothing, so there is
-  /// nothing to return to. Dropping the primary key, whichever stands, and the generator is enough
-  /// to undo the shape; the next `up` then finds no key and gives the table its identity and key
-  /// again.
+  /// nothing to return to. Dropping the constraint, the generator however it stands, and the
+  /// sequence it leaves unbound is enough to undo the shape.
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
 
-    db.execute_unprepared(DROP_PRIMARY_KEY).await?;
-    db.execute_unprepared(DROP_ID_GENERATOR).await?;
     db.execute_unprepared(
       r#"
+      ALTER TABLE access_logs DROP CONSTRAINT IF EXISTS access_logs_pkey;
+      ALTER TABLE access_logs ALTER COLUMN id DROP IDENTITY IF EXISTS;
+      ALTER TABLE access_logs ALTER COLUMN id DROP DEFAULT;
+      DROP SEQUENCE IF EXISTS access_logs_id_seq;
+
       DROP INDEX IF EXISTS idx_access_logs__user_id__method__code__created_at;
       DROP INDEX IF EXISTS idx_access_logs__code__created_at;
       DROP INDEX IF EXISTS idx_access_logs__created_at;

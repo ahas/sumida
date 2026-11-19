@@ -171,9 +171,7 @@ async fn test_the_reaper_leaves_held_files_alone() {
   let row = place(&db, true).await;
 
   // One reference is all it takes. Everything else about this file says "collect me".
-  api::util::file_lifecycle::add_refs(row.uuid, 1, &db)
-    .await
-    .expect("add ref");
+  api::util::file_lifecycle::add_refs(row.uuid, 1, &db).await.expect("add ref");
 
   reap_orphan_files(&db).await.expect("reap");
 

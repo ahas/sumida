@@ -1,6 +1,7 @@
 pub mod access_log;
 pub mod access_log_cascade;
-pub mod ban_issuer_removal;
+pub mod access_log_set_null;
+pub mod bans_created_by_set_null;
 #[cfg(feature = "board")]
 pub mod board_system;
 #[cfg(feature = "file")]

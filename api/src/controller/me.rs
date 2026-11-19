@@ -81,10 +81,7 @@ impl<S: SumidaState> MeController<S> {
     Unauthenticated,
   ),
 ))]
-async fn get_me<S: SumidaState>(
-  session: UserSession,
-  State(state): State<S>,
-) -> Result<Me, SumidaError> {
+async fn get_me<S: SumidaState>(session: UserSession, State(state): State<S>) -> Result<Me, SumidaError> {
   MeService::new(state, session).get_session().await?.ok_or(SumidaError::InvalidAccount)
 }
 

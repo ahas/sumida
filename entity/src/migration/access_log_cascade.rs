@@ -11,6 +11,9 @@ use sea_orm_migration::prelude::*;
 /// The constraint is dropped and recreated because PostgreSQL has no `ALTER CONSTRAINT` for a
 /// foreign key's delete action. This migration only needs `access_logs` and `users`, both from
 /// `init`.
+///
+/// `access_log_set_null` supersedes this keeping: the sign-in rows now outlive the account with a
+/// NULL account column, so the premise above holds only up to that step.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 

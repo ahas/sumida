@@ -4,7 +4,7 @@ use axum::{Json, Router, routing};
 use crate::SumidaState;
 use crate::controller::{ApiController, ControllerRouter};
 #[cfg(feature = "openapi")]
-use crate::openapi::{REACTION_TAG, EmptyObject, ErrorBody, NotFound, Refused, Unreadable, WrongBody};
+use crate::openapi::{EmptyObject, ErrorBody, NotFound, REACTION_TAG, Refused, Unreadable, WrongBody};
 use crate::service::prelude::*;
 use crate::util::filter::ConditionQuery;
 use crate::util::pagination::{List, Pagination};

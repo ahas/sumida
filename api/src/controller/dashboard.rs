@@ -24,6 +24,7 @@ const STREAM: &str = "/stream";
 
 /// The `event:` names the stream carries, read off the emitter rather than off the handler names.
 /// A subscriber that does not know them has nowhere to hang a listener.
+#[cfg(feature = "openapi")]
 const STREAM_EVENTS: &str = "Three `event:` names ride here. `dashboard.components` and \
 `dashboard.system_info` arrive once each, first, and describe the host rather than its load. \
 `dashboard.snapshot` follows every second and carries one `MonitoringSnapshot` — the same body \
@@ -80,9 +81,7 @@ async fn snapshot<S: SumidaState>(State(state): State<S>) -> Result<MonitoringRe
     Refused,
   ),
 ))]
-async fn snapshot_at_path<S: SumidaState>(
-  state: State<S>,
-) -> Result<MonitoringResponse, SumidaError> {
+async fn snapshot_at_path<S: SumidaState>(state: State<S>) -> Result<MonitoringResponse, SumidaError> {
   snapshot(state).await
 }
 
@@ -99,9 +98,7 @@ async fn snapshot_at_path<S: SumidaState>(
     Refused,
   ),
 ))]
-async fn components<S: SumidaState>(
-  State(state): State<S>,
-) -> Result<DashboardComponents, SumidaError> {
+async fn components<S: SumidaState>(State(state): State<S>) -> Result<DashboardComponents, SumidaError> {
   Ok(MonitoringService::new(state).components())
 }
 

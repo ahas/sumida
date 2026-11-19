@@ -1,0 +1,4 @@
+testbed = 0
+
+[check]
+format_toolchain = "nightly"

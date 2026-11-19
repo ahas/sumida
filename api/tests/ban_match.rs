@@ -12,7 +12,7 @@
 use chrono::{Duration, Utc};
 use e2e::prelude::*;
 use entity::prelude::*;
-use infra::session::{is_banned, UserEnvironment};
+use infra::session::{UserEnvironment, is_banned};
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
 async fn db() -> sea_orm::DatabaseConnection {

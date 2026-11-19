@@ -114,7 +114,6 @@ pub struct Relation {
 }
 
 /// A userset rewrite.
-//
 // The tree comes back to itself through several of its branches, so the schema is broken at
 // this type rather than at each of them.
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

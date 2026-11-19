@@ -75,7 +75,10 @@ impl std::str::FromStr for AccessResultCode {
 pub struct Model {
   #[sea_orm(primary_key, auto_increment = true)]
   pub id:      i32,
-  pub user_id: i32,
+  /// The account the attempt was made against. An account's removal leaves its sign-in rows behind
+  /// with this column NULL, so a read of the whole model must not demand the account.
+  #[sea_orm(nullable)]
+  pub user_id: Option<i32>,
   pub method:  AccessMethod,
   pub code:    AccessResultCode,
   #[sea_orm(nullable)]
@@ -110,7 +113,7 @@ pub enum Relation {
     from = "Column::UserId",
     to = "super::users::Column::Id"
     on_update = "Cascade",
-    on_delete = "Cascade",
+    on_delete = "SetNull",
   )]
   User,
 }

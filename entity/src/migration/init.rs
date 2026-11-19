@@ -415,7 +415,7 @@ impl MigrationTrait for Migration {
               .name("fk_bans__created_by")
               .from(Bans::Table, Bans::CreatedBy)
               .to(Users::Table, Users::Id)
-              .on_delete(SetNull)
+              .on_delete(Cascade)
               .on_update(Cascade),
           )
           .to_owned(),
