@@ -1,5 +1,6 @@
 pub mod access_log;
 pub mod access_log_cascade;
+pub mod ban_issuer_removal;
 #[cfg(feature = "board")]
 pub mod board_system;
 #[cfg(feature = "file")]

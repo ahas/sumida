@@ -3,6 +3,7 @@ use api::util::pagination::List;
 use e2e::ap_test_utils;
 use e2e::prelude::*;
 use entity::prelude::*;
+use infra::session::{UserEnvironment, is_banned};
 use sea_orm::{DatabaseConnection, EntityTrait, Set};
 
 #[tokio::test]
@@ -199,6 +200,48 @@ async fn deleting_an_account_removes_its_access_logs() {
       .expect("Failed to read access logs")
       .is_none(),
     "The account's sign-in log should go with it"
+  );
+}
+
+/// Removing the account that issued a ban leaves that ban in force.
+///
+/// `bans.created_by` records who acted, not who the ban applies to, so the row survives with its
+/// issuer column emptied rather than being removed along the issuer — the ban names its own account,
+/// and a disposition still holds whatever becomes of the person who wrote it down.
+#[tokio::test]
+async fn removing_the_issuing_admin_leaves_the_ban_in_force() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+
+  let issuer = TestUser::create_admin(&db).await.expect("Failed to create the issuing admin");
+  let operator = TestUser::create_admin(&db).await.expect("Failed to create the removing admin");
+  let target = TestUser::create(&db).await.expect("Failed to create target user");
+  let ban_id = seed_ban(&db, target.model.id, issuer.model.id).await;
+
+  operator.login(&mock.client).await;
+  let resp = mock
+    .client
+    .delete(&format!("/users/{}", issuer.model.id))
+    .send()
+    .await
+    .expect("Failed to send DELETE request");
+  assert_eq!(
+    resp.status(),
+    reqwest::StatusCode::OK,
+    "Removing an admin that had issued a ban should succeed"
+  );
+
+  let ban = Bans::find_by_id(ban_id).one(&db).await.expect("Failed to read the ban");
+  assert!(ban.is_some(), "The ban should still be recorded after its issuer was removed");
+  assert!(
+    ban.unwrap().created_by.is_none(),
+    "The issuer column is emptied rather than the row removed"
+  );
+  assert!(
+    is_banned(Some(target.model.id), &arriving_from("127.0.0.1"), &db)
+      .await
+      .expect("Failed to ask whether the ban holds"),
+    "The account the ban names is still shut out"
   );
 }
 
@@ -697,5 +740,31 @@ async fn seed_access_log(db: &DatabaseConnection, user_id: i32) -> i32 {
   .exec(db)
   .await
   .expect("Failed to seed an access log")
+  .last_insert_id
+}
+
+/// The environment a request arrives with. A ban that names an account leaves every environment
+/// column at its wildcard, so the ip it is asked about is not what decides the answer.
+fn arriving_from(ip: &str) -> UserEnvironment {
+  UserEnvironment {
+    ip_address: ip.to_owned(),
+    user_agent: "ban-removal-test".to_owned(),
+    os_family: "ban-removal-test".to_owned(),
+    device_family: "ban-removal-test".to_owned(),
+    ..Default::default()
+  }
+}
+
+/// Writes one live ban on `user_id`, issued by `issuer`, and returns its identifier.
+async fn seed_ban(db: &DatabaseConnection, user_id: i32, issuer: i32) -> i32 {
+  Bans::insert(entity::bans::ActiveModel {
+    user_id: Set(Some(user_id)),
+    created_by: Set(Some(issuer)),
+    reason: Set(Some("issued by an admin".into())),
+    ..Default::default()
+  })
+  .exec(db)
+  .await
+  .expect("Failed to seed a ban")
   .last_insert_id
 }
