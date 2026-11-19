@@ -53,6 +53,7 @@ impl MigrationTrait for Migration {
       DO $$
       DECLARE
         next_id bigint;
+        owned record;
       BEGIN
         IF EXISTS (
           SELECT 1 FROM pg_constraint
@@ -64,7 +65,32 @@ impl MigrationTrait for Migration {
         -- The column generates its own values, which is also why they cannot simply be rewritten.
         -- It comes off for the renumbering and goes back on afterwards, continuing past the last
         -- row rather than from one — starting over is how the collisions arose.
+        --
+        -- What the column arrives with is not fixed: a table made by sea-orm's
+        -- `integer().auto_increment()` carries a serial-style default over a sequence the column
+        -- owns, and one whose generator was removed elsewhere is a plain column or an identity.
+        -- Every generator comes off first — ADD GENERATED refuses a column that still answers for
+        -- its own values, and a sequence still owned by the column would survive beside the
+        -- identity's own with nothing left to ever drop it.
         ALTER TABLE access_logs ALTER COLUMN id DROP IDENTITY IF EXISTS;
+        ALTER TABLE access_logs ALTER COLUMN id DROP DEFAULT;
+
+        FOR owned IN
+          SELECT ns.nspname, s.relname
+          FROM pg_depend d
+          JOIN pg_class s ON s.oid = d.objid AND s.relkind = 'S'
+          JOIN pg_namespace ns ON ns.oid = s.relnamespace
+          WHERE d.classid = 'pg_class'::regclass
+            AND d.objsubid = 0
+            AND d.deptype = 'a'
+            AND d.refobjid = 'access_logs'::regclass
+            AND d.refobjsubid = (
+              SELECT attnum FROM pg_attribute
+              WHERE attrelid = 'access_logs'::regclass AND attname = 'id'
+            )
+        LOOP
+          EXECUTE format('DROP SEQUENCE IF EXISTS %I.%I', owned.nspname, owned.relname);
+        END LOOP;
 
         -- `ctid` is the only handle on a row here, precisely because `id` does not identify one.
         WITH renumbered AS (
@@ -94,13 +120,15 @@ impl MigrationTrait for Migration {
   }
 
   /// The identifiers are not restored: the values this replaced identified nothing, so there is
-  /// nothing to return to. Dropping the constraint and the default is enough to undo the shape.
+  /// nothing to return to. Dropping the constraint, the generator however it stands, and the
+  /// sequence it leaves unbound is enough to undo the shape.
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     let db = manager.get_connection();
 
     db.execute_unprepared(
       r#"
       ALTER TABLE access_logs DROP CONSTRAINT IF EXISTS access_logs_pkey;
+      ALTER TABLE access_logs ALTER COLUMN id DROP IDENTITY IF EXISTS;
       ALTER TABLE access_logs ALTER COLUMN id DROP DEFAULT;
       DROP SEQUENCE IF EXISTS access_logs_id_seq;
 
