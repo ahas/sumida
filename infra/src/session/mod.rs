@@ -441,7 +441,7 @@ impl UserSession {
     };
 
     let written = AccessLogs::insert(entity::access_logs::ActiveModel {
-      user_id: Set(user_id),
+      user_id: Set(Some(user_id)),
       method: Set(method),
       code: Set(code),
       count: Set(count),

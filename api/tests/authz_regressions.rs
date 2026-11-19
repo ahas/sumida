@@ -877,7 +877,7 @@ async fn seed_invitation(db: &DatabaseConnection, invitee: i32) -> Uuid {
 
 async fn seed_access_log(db: &DatabaseConnection, user_id: i32) -> i32 {
   AccessLogs::insert(entity::access_logs::ActiveModel {
-    user_id: Set(user_id),
+    user_id: Set(Some(user_id)),
     method: Set(entity::access_logs::AccessMethod::Password),
     code: Set(entity::access_logs::AccessResultCode::Success),
     ip_address: Set("127.0.0.1".to_owned()),

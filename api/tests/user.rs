@@ -158,12 +158,12 @@ async fn test_user_delete_permissions_comprehensive() {
   test_suite.test_delete_permission(&mock, target_user.model.id).await;
 }
 
-/// Removing an account takes its sign-in log with it.
+/// Removing an account leaves its sign-in rows behind, naming no account.
 ///
-/// The log's `user_id` is NOT NULL, so a log cannot outlive its account; the delete must remove the
-/// rows rather than try to null them.
+/// The log's `user_id` is nullable and its key answers a delete with `SET NULL`, so the operation
+/// record outlives the account; reading the whole row back is what proves the kept row decodes.
 #[tokio::test]
-async fn deleting_an_account_removes_its_access_logs() {
+async fn deleting_an_account_keeps_its_access_logs() {
   let mock = Mock::new().await;
   let db = infra::db::connect().await;
 
@@ -192,14 +192,12 @@ async fn deleting_an_account_removes_its_access_logs() {
       .is_none(),
     "The account should be gone"
   );
-  assert!(
-    AccessLogs::find_by_id(log_id)
-      .one(&db)
-      .await
-      .expect("Failed to read access logs")
-      .is_none(),
-    "The account's sign-in log should go with it"
-  );
+  let kept = AccessLogs::find_by_id(log_id)
+    .one(&db)
+    .await
+    .expect("Failed to read access logs")
+    .expect("The account's sign-in row should outlive the account");
+  assert_eq!(kept.user_id, None, "the kept row names no account");
 }
 
 #[tokio::test]
@@ -685,7 +683,7 @@ async fn test_wildcard_object_permissions() {
 /// Writes one sign-in attempt for `user_id` and returns its identifier.
 async fn seed_access_log(db: &DatabaseConnection, user_id: i32) -> i32 {
   AccessLogs::insert(entity::access_logs::ActiveModel {
-    user_id: Set(user_id),
+    user_id: Set(Some(user_id)),
     method: Set(entity::access_logs::AccessMethod::Password),
     code: Set(entity::access_logs::AccessResultCode::Success),
     ip_address: Set("127.0.0.1".to_owned()),

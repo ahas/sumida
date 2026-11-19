@@ -15,6 +15,9 @@ impl MigratorTrait for Migrator {
       Box::new(sumida::entity::migration::rebac::Migration),
       // An account's removal takes its sign-in log with it. Only needs init.
       Box::new(sumida::entity::migration::access_log_cascade::Migration),
+      // Supersedes the cascade for the sign-in log: the rows stay and the account column goes
+      // nullable. Only needs init.
+      Box::new(sumida::entity::migration::access_log_set_null::Migration),
       // Debt, amount quotas and quota holds. Alters and references the membership tables.
       Box::new(sumida::entity::migration::membership_metering::Migration),
     ]

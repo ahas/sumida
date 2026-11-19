@@ -320,7 +320,7 @@ definition ban on bans.id int {
 }
 
 definition access_log on access_logs.id int {
-  relation subject_user: sumida_user = column(access_logs.user_id -> sumida_user)
+  relation subject_user: sumida_user = column(access_logs.user_id -> sumida_user where access_logs.user_id IS NOT NULL)
 
   permission view   = subject_user->view | service:access_log->operate_read
   permission remove = service:access_log->operate_delete
