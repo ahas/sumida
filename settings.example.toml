@@ -10,6 +10,13 @@ host = "0.0.0.0:7997"
 stage = "dev"
 logging = "info"
 
+# Pages on other origins this server answers with the visitor's cookie: the CORS allow-list, and the
+# pages besides the server's own that a cookie-authenticated state-changing request or a socket may
+# come from. A deployment behind a proxy that rewrites `Host` lists its own public origin here too.
+# "*" is ignored.
+# [server.cors]
+# allow_origins = ["https://app.example.com"]
+
 [database]
 url = "postgres://user:password@localhost:5432/sumida"
 logging = "INFO"

@@ -15,9 +15,16 @@ and this project adheres to semantic versioning at the workspace level.
   credential now authenticates its own request and nothing after it. A client that relied on the
   cookie it used to get back has to keep presenting its credential.
 - **A secured API key is judged as the key alone, everywhere.** The key's hash is part of the
-  identity the request is established with, and impersonation, an account's security fields and
-  issuing keys in another account's name ask `platform:root#superuser` rather than the owner's
-  administrator flag. A secured key can issue only secured keys.
+  identity the request is established with, and impersonation, an account's security fields,
+  issuing keys in another account's name, a post's password and content visibility, a board's
+  author-only reaction and viewer lists, naming another account as a billing owner and the full
+  purchase list ask `platform:root#superuser` rather than the owner's administrator flag. A secured
+  key can issue only secured keys.
+- **A cookie-authenticated request that would change something is refused from another site's
+  page.** Any method but `GET`, `HEAD`, `OPTIONS` and `TRACE`, authenticated by the session cookie,
+  is answered `403` (`E1019`) when its `Origin` — or, absent, its `Referer` — is neither the
+  server's own nor listed in `server.cors.allow_origins`. A deployment behind a proxy that rewrites
+  `Host` lists its public origin there. Requests with a header credential are not affected.
 - **Verification codes can no longer be searched.** One code may be presented
   `security.verification.max_failed_attempts` times (default 5); asking for and presenting codes are
   limited per account and per address (`issue_limit`, `attempt_limit`, `window`), answered `429`

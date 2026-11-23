@@ -584,6 +584,9 @@ ssm_path = "/sumida/prod/jwt-secret"  # default: /sumida/{stage}/jwt-secret
 [`docs/authentication.md`](docs/authentication.md) にあります。
 
 ```toml
+[server.cors]
+allow_origins = []           # 訪問者の Cookie 付きで応答する他オリジンのページ。"*" は無視される
+
 [session.cookie]
 same_site = "lax"            # "lax"(既定) | "strict" | "none"。それ以外の値では起動を拒否する
 
@@ -596,7 +599,9 @@ window = "1h"
 
 ヘッダーの資格情報(`Authorization: Bearer …` または `ApiKey …`)はそのリクエスト一つだけを認証し、
 セッション Cookie を発行しません。認証コードは `mail-form` フィーチャーを有効にしたビルドで
-`method = "email"` のときだけ保存されます。
+`method = "email"` のときだけ保存されます。Cookie で認証するリクエストのうち何かを変更するもの
+(`GET`・`HEAD`・`OPTIONS` 以外のメソッド)は、`Origin` — なければ `Referer` — が示すページがサーバー
+自身のものでも `server.cors.allow_origins` のいずれでもなければ拒否されます。
 
 ### フィーチャーの構成
 

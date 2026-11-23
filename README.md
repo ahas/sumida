@@ -585,6 +585,9 @@ These are optional; the defaults shown are what an unset key means. What each on
 [`docs/authentication.md`](docs/authentication.md).
 
 ```toml
+[server.cors]
+allow_origins = []           # pages on other origins answered with the visitor's cookie; "*" is ignored
+
 [session.cookie]
 same_site = "lax"            # "lax" (default) | "strict" | "none"; any other value refuses to start
 
@@ -597,7 +600,9 @@ window = "1h"
 
 A header credential (`Authorization: Bearer …` or `ApiKey …`) authenticates its own request and never
 sets a session cookie. Verification codes are stored only for `method = "email"` in a build with the
-`mail-form` feature.
+`mail-form` feature. A cookie-authenticated request that would change something (any method but
+`GET`, `HEAD`, `OPTIONS`) is refused when its `Origin` — or, absent, its `Referer` — names a page that
+is neither the server's own nor one of `server.cors.allow_origins`.
 
 ### Feature Configuration
 

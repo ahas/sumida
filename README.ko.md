@@ -584,6 +584,9 @@ ssm_path = "/sumida/prod/jwt-secret"  # default: /sumida/{stage}/jwt-secret
 [`docs/authentication.md`](docs/authentication.md)에 있다.
 
 ```toml
+[server.cors]
+allow_origins = []           # 방문자의 쿠키로 응답받는 다른 출처의 페이지. "*" 는 무시된다
+
 [session.cookie]
 same_site = "lax"            # "lax"(기본) | "strict" | "none". 그 밖의 값이면 기동을 거부한다
 
@@ -595,7 +598,10 @@ window = "1h"
 ```
 
 헤더 자격(`Authorization: Bearer …` 또는 `ApiKey …`)은 그 요청 하나만 인증하며 세션 쿠키를 만들지
-않는다. 인증 코드는 `mail-form` 기능이 켜진 빌드에서 `method = "email"` 일 때만 저장된다.
+않는다. 인증 코드는 `mail-form` 기능이 켜진 빌드에서 `method = "email"` 일 때만 저장된다. 쿠키로
+인증하는 요청 가운데 무언가를 바꾸는 것(`GET`·`HEAD`·`OPTIONS` 밖의 메서드)은 `Origin` — 없으면
+`Referer` — 이 가리키는 페이지가 서버 자신의 것도 `server.cors.allow_origins` 의 하나도 아니면
+거부된다.
 
 ### 기능 구성
 

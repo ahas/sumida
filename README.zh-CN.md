@@ -583,6 +583,9 @@ ssm_path = "/sumida/prod/jwt-secret"  # default: /sumida/{stage}/jwt-secret
 [`docs/authentication.md`](docs/authentication.md)。
 
 ```toml
+[server.cors]
+allow_origins = []           # 可携带访客 Cookie 获得应答的其他源页面;"*" 会被忽略
+
 [session.cookie]
 same_site = "lax"            # "lax"(默认) | "strict" | "none";其他值会拒绝启动
 
@@ -594,7 +597,9 @@ window = "1h"
 ```
 
 请求头凭据(`Authorization: Bearer …` 或 `ApiKey …`)只认证当次请求,不会设置会话 Cookie。
-验证码只在启用 `mail-form` 功能的构建中、且 `method = "email"` 时才会保存。
+验证码只在启用 `mail-form` 功能的构建中、且 `method = "email"` 时才会保存。以 Cookie 认证、
+会改变状态的请求(`GET`、`HEAD`、`OPTIONS` 以外的方法),若其 `Origin`(缺失时为 `Referer`)所指的页面
+既不是服务器自身的,也不在 `server.cors.allow_origins` 之中,即被拒绝。
 
 ### 功能配置
 

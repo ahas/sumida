@@ -36,9 +36,16 @@ everything those hold.
 
 A **secured** key is only itself: it is judged as the key and holds only what was granted to the key.
 It reaches none of its owner's grants and none of its owner's platform authority, even when the owner
-is an administrator. The administrator routes, impersonation, an account's security fields and
-issuing a key in another account's name ask the rule (`platform:root#superuser`) rather than reading
-the account's administrator flag, so a secured key cannot borrow its owner's.
+is an administrator. Every place that lets a platform administrator past a check asks the rule
+(`platform:root#superuser`) rather than reading the account's administrator flag, so a secured key
+cannot borrow its owner's: the administrator routes, impersonation, an account's security fields,
+issuing a key in another account's name, a post's password and content visibility, the reaction and
+viewer lists a board keeps to their author, naming another account as the owner of a billing
+request, and reading every account's purchases.
+
+Rows the key's owner owns stay the owner's: what a key writes is written in its owner's name, and a
+route that answers about the caller's own rows — their purchases, their personal credit — answers
+about the owner's.
 
 Impersonation hands back a cookie session, so it is refused to a request that came in on a header
 credential.
@@ -56,6 +63,22 @@ state-changing routes itself. Any other value is refused at startup.
 
 A password reset (by a verification code or through `/me`) moves the account's reset moment, which
 voids every session and token established up to it.
+
+### Requests from another site's page
+
+`SameSite` keeps the cookie off most requests another site's page sends, but not all of them: `none`
+sends it everywhere, and a sibling subdomain counts as the same site under `lax` and `strict`. So the
+guard also asks where a request that would change something came from. A request authenticated by
+the cookie, with any method but `GET`, `HEAD`, `OPTIONS` or `TRACE`, is refused (`403`, `E1019`) when
+the page it names is neither the server's own nor one of `server.cors.allow_origins`. The page is the
+request's `Origin`, or, when the browser leaves that out, the origin of its `Referer`; `null` names no
+page this server answers. The server's own origin is the one the request was addressed to — its
+`Host` — so a deployment behind a proxy that rewrites `Host` lists its public origin in
+`server.cors.allow_origins`. A request that names no page at all is left to its cookie, since a
+browser names the page on every request another site's page makes.
+
+A request that carries a header credential is not asked: another site's page cannot add one to a
+visitor's request, so the header already shows the request was not forged.
 
 ## 4. Changing one's own account
 
@@ -104,10 +127,10 @@ A token store implemented outside sumida has to provide that step itself.
 
 A socket connection to the `/user` namespace is admitted on the same terms as an HTTP request: an
 authorized cookie, an account that is enabled, not banned and not reset since. A connection is
-refused when its `Origin` names a page that is neither one of `server.cors.allow_origins` nor the
-server's own — CORS does not apply to a WebSocket upgrade, so this is what keeps another site's page
-from opening a socket with a visitor's cookie. A handshake with no `Origin` did not come from
-another site's page and is judged on its credentials alone. The administrator room is joined by an
+refused when the page it names is neither one of `server.cors.allow_origins` nor the server's own,
+judged exactly as a state-changing request is (§3) — CORS does not apply to a WebSocket upgrade, so
+this is what keeps another site's page from opening a socket with a visitor's cookie. A handshake
+that names no page did not come from another site's page and is judged on its credentials alone. The administrator room is joined by an
 account that is an administrator now, and never by a key that carries only its own grants.
 
 ## 8. Writes held to the row they reach
