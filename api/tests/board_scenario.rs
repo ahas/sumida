@@ -1405,3 +1405,51 @@ async fn scenario_search_snippet_escapes_post_markup() {
     assert!(snippet.contains("&gt;"), "the post's text is escaped, not dropped: {snippet}");
   }
 }
+
+/// A comment hangs under a post of the board it is written in. Naming a post of another board as
+/// its parent is refused, and a client-chosen id is not taken.
+#[tokio::test]
+async fn scenario_comment_parent_must_share_the_board() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let writable =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+  let read_only =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let staff_mock = Mock::new().await;
+  let staff = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &staff, &read_only, &["read", "create"]).await;
+  staff.login(&staff_mock.client).await;
+  let notice = create_published_article(&staff_mock, read_only.id, "official").await;
+
+  let mock = Mock::new().await;
+  let user = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &user, &writable, &["read", "create"]).await;
+  grant_post_perms(&db, &user, &read_only, &["read"]).await;
+  user.login(&mock.client).await;
+
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": writable.id, "parentId": notice, "title": "re", "content": "<p>phish</p>",
+      "contentType": "text/html", "kind": "comment", "status": "published", "contentVisibility": "public"
+    }),
+  )
+  .await;
+  assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "a parent in another board is refused");
+
+  let own = create_published_article(&mock, writable.id, "own").await;
+  let chosen = own + 100_000;
+  let resp = create_post(
+    &mock,
+    json!({
+      "id": chosen, "boardId": writable.id, "parentId": own, "title": "re", "content": "<p>c</p>",
+      "contentType": "text/html", "kind": "comment", "status": "published", "contentVisibility": "public"
+    }),
+  )
+  .await;
+  assert_eq!(resp.status(), StatusCode::CREATED, "a parent in the same board is fine");
+  let id = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap() as i32;
+  assert_ne!(id, chosen, "the client does not pick the row's id");
+}

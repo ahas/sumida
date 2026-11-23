@@ -326,8 +326,6 @@ impl IntoResponse for GetBoardPost {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBoardPost {
-  #[cfg_attr(feature = "openapi", schema(required = false))]
-  pub id:                  Optional<i32>,
   pub board_id:            i32,
   #[serde(default)]
   pub topic_id:            Nullable<i32>,
@@ -355,7 +353,6 @@ pub struct CreateBoardPost {
 impl CreateBoardPost {
   pub fn into_active_model(self) -> entity::bps::board_posts::ActiveModel {
     entity::bps::board_posts::ActiveModel {
-      id: self.id.into_active_value(),
       board_id: Set(self.board_id),
       topic_id: self.topic_id.into_active_value(),
       parent_id: self.parent_id.into_active_value(),

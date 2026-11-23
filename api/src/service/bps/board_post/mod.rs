@@ -487,6 +487,12 @@ impl<S: SumidaState> BoardPostService<S> {
     // 갈래가 죽고 게시판 자체의 권한만 남는다.
     Authz::try_check("board", board.id, "create", &self.subject(), &txn).await?;
 
+    // A reply or a comment hangs under a post of the board the caller was just allowed to write in.
+    let parent_id: Option<i32> = data.parent_id.clone().into();
+    if let Some(parent_id) = parent_id {
+      self.guard_parent(parent_id, board.id, &txn).await?;
+    }
+
     // Store attached file IDs for later processing
     let attached_file_uuids = data.attached_file_uuids.clone();
     let content_type = data.content_type.clone();
@@ -526,6 +532,53 @@ impl<S: SumidaState> BoardPostService<S> {
     txn.commit().await?;
 
     Ok(result)
+  }
+
+  /// The parent a new post names: a live post in the same board, which this caller can see. Without
+  /// this, a comment written where the caller may write would show under a post of a board they may
+  /// only read, or under a post they cannot read at all.
+  async fn guard_parent<C: ConnectionTrait>(
+    &self,
+    parent_id: i32,
+    board_id: i32,
+    txn: &C,
+  ) -> Result<(), SumidaError> {
+    let parent = BoardPosts::find_by_id(parent_id)
+      .filter(BoardPostsColumn::DeletedAt.is_null())
+      .one(txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("BoardPost".to_string(), parent_id.to_string()))?;
+    if parent.board_id != board_id {
+      return Err(SumidaError::BadRequest("a post's parent must be in the same board".into()));
+    }
+    self.guard_visible(&parent, txn).await
+  }
+
+  /// The post is one this caller's `board_post#view` scope reaches, and its content visibility lets
+  /// them see it.
+  async fn guard_visible<C: ConnectionTrait>(
+    &self,
+    post: &BoardPostsModel,
+    txn: &C,
+  ) -> Result<(), SumidaError> {
+    if self.select(BoardPosts::find_by_id(post.id))?.count(txn).await? == 0 {
+      return Err(SumidaError::NoAccessPermission);
+    }
+    let board = Boards::find_by_id(post.board_id)
+      .one(txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("Board".to_string(), post.board_id.to_string()))?;
+    let user_id = if self.session.profile.is_authorized { Some(self.session.profile.id) } else { None };
+    if !util::check_post_visible(
+      user_id,
+      post.user_id,
+      self.session.profile.is_admin,
+      board.content_visibility,
+      post.content_visibility.clone(),
+    )? {
+      return Err(SumidaError::NoAccessPermission);
+    }
+    Ok(())
   }
 
   /// Permission check for editing/deleting a post.
