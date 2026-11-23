@@ -470,7 +470,7 @@ async fn main() -> Result<(), anyhow::Error> {
     sumida::infra::tracing::subscribe();
     let state = AppState { db: sumida::infra::db::connect().await };
 
-    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer();
+    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer(state.db.clone());
     let session_store = sumida::infra::session::new_store(&settings.session).await?;
 
     // Build application; `&[]` declares no rule files beyond sumida's own
@@ -577,6 +577,25 @@ bucket = "sumida-storage"
 [jwt]
 ssm_path = "/sumida/prod/jwt-secret"  # default: /sumida/{stage}/jwt-secret
 ```
+
+#### 보안 설정
+
+모두 선택 항목이며, 적힌 값이 키를 비워 두었을 때의 기본값이다. 각 값이 무엇을 다스리는지는
+[`docs/authentication.md`](docs/authentication.md)에 있다.
+
+```toml
+[session.cookie]
+same_site = "lax"            # "lax"(기본) | "strict" | "none". 그 밖의 값이면 기동을 거부한다
+
+[security.verification]
+max_failed_attempts = 5      # 인증 코드 하나를 제시할 수 있는 횟수. 이 횟수에 닿으면 코드가 소진된다
+issue_limit = 5              # 창 하나 동안 계정별·주소별로 요청할 수 있는 코드 수
+attempt_limit = 20           # 창 하나 동안 계정별·주소별로 제시할 수 있는 코드 수
+window = "1h"
+```
+
+헤더 자격(`Authorization: Bearer …` 또는 `ApiKey …`)은 그 요청 하나만 인증하며 세션 쿠키를 만들지
+않는다. 인증 코드는 `mail-form` 기능이 켜진 빌드에서 `method = "email"` 일 때만 저장된다.
 
 ### 기능 구성
 

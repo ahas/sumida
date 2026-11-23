@@ -469,7 +469,7 @@ async fn main() -> Result<(), anyhow::Error> {
     sumida::infra::tracing::subscribe();
     let state = AppState { db: sumida::infra::db::connect().await };
 
-    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer();
+    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer(state.db.clone());
     let session_store = sumida::infra::session::new_store(&settings.session).await?;
 
     // Build application; `&[]` declares no rule files beyond sumida's own
@@ -576,6 +576,25 @@ bucket = "sumida-storage"
 [jwt]
 ssm_path = "/sumida/prod/jwt-secret"  # default: /sumida/{stage}/jwt-secret
 ```
+
+#### 安全设置
+
+均为可选项，所示值即未设置该键时的默认值。各项的作用见
+[`docs/authentication.md`](docs/authentication.md)。
+
+```toml
+[session.cookie]
+same_site = "lax"            # "lax"(默认) | "strict" | "none";其他值会拒绝启动
+
+[security.verification]
+max_failed_attempts = 5      # 一个验证码可提交的次数,达到后该验证码作废
+issue_limit = 5              # 每个窗口内按账户、按地址可请求的验证码数
+attempt_limit = 20           # 每个窗口内按账户、按地址可提交的验证码数
+window = "1h"
+```
+
+请求头凭据(`Authorization: Bearer …` 或 `ApiKey …`)只认证当次请求,不会设置会话 Cookie。
+验证码只在启用 `mail-form` 功能的构建中、且 `method = "email"` 时才会保存。
 
 ### 功能配置
 

@@ -8,6 +8,43 @@ and this project adheres to semantic versioning at the workspace level.
 
 ### Security fixes
 
+- **A header credential no longer leaves a cookie session behind — read this before upgrading.**
+  A request carrying `Authorization: Bearer …` or `ApiKey …` used to be written into the cookie
+  session and answered with a `Set-Cookie`; that cookie then outlived the key's deletion or the
+  token's revocation, and for a secured key it carried the owner's whole identity. A header
+  credential now authenticates its own request and nothing after it. A client that relied on the
+  cookie it used to get back has to keep presenting its credential.
+- **A secured API key is judged as the key alone, everywhere.** The key's hash is part of the
+  identity the request is established with, and impersonation, an account's security fields and
+  issuing keys in another account's name ask `platform:root#superuser` rather than the owner's
+  administrator flag. A secured key can issue only secured keys.
+- **Verification codes can no longer be searched.** One code may be presented
+  `security.verification.max_failed_attempts` times (default 5); asking for and presenting codes are
+  limited per account and per address (`issue_limit`, `attempt_limit`, `window`), answered `429`
+  past the limit. A code is stored only together with the mail that carries it, so a request over
+  any `method` but `email`, or in a build without `mail-form`, makes no code at all.
+- **`PATCH /me` asks for proof before changing the password or the email** — `currentPassword`, or a
+  `verificationCode` of kind `account-change` — and a new password voids every other session and
+  token of the account.
+- **The session cookie is `SameSite=Lax` unless the settings say otherwise**, and a
+  `session.cookie.same_site` that is not `lax`, `strict` or `none` (any case) refuses to start. It
+  used to fall back to `None` for an unset or misspelt value.
+- **Socket connections are admitted like HTTP requests.** The `/user` namespace refuses a handshake
+  whose `Origin` is neither listed in `server.cors.allow_origins` nor the server's own, and one whose
+  account is disabled, banned or reset since the cookie was issued; the administrator room follows
+  the account's flag as it is now. `infra::messenger::new_layer` takes the database connection.
+- **The administrator routes re-check the cookie against the account**, as every other guarded route
+  does, so a reset, a deactivation or a ban puts a stolen administrator cookie out.
+- **Row checks on writes the route gate alone used to admit:** opening an account in a role the
+  caller may not grant or under a chosen id; bans on accounts out of reach, address bans without the
+  operator tier, and bans that name nobody; invitations to accounts out of reach or that are
+  disabled; moving an organization out from under, or in under, a parent the caller may not edit;
+  and replacing service grants that take away a namespace the caller may not grant.
+- **Removing an account or an organization removes the grants it held and the grants on it**, so a
+  later row under the same id inherits nothing.
+- **A refresh token buys one pair even when presented several times at once.** The token store takes
+  the token out in one step (`JwtTokenStore::take_refresh_token`, a required method).
+
 - **The sign-in lockout never locked anybody out, and it does now — read this before upgrading.**
   The failure tally the check compared against `security.ban.max_failed_attempts` was written by
   reading "the last" failure row for the account with no ordering at all, so the database returned

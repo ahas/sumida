@@ -176,8 +176,9 @@ fn router(self, state: &S) -> Router<S> {
 것 같은)이 여기 온다 — 세션 가드는 그대로 받는다.
 
 레이어 종류:
-- `user_guard!(state)` — 세션 또는 `Authorization: Bearer <jwt>` / `APIKEY <key>` 검증
-- `admin_guard!(state)` — `profile.is_admin` 체크
+- `user_guard!(state)` — 세션 또는 `Authorization: Bearer <jwt>` / `APIKEY <key>` 검증. 헤더 자격은 그 요청
+  하나만 인증하고 쿠키 세션에 남기지 않는다([`docs/authentication.md`](docs/authentication.md))
+- `admin_guard!(state)` — `user_guard` 와 같은 검증 뒤에 `platform:root#superuser` 를 규칙에 묻는다
 - `service_ap!(state,"ns",action)` — 라우트 게이트 자체. `ControllerRouter` 가 액션마다 이것을 건다
 
 **모든 컨트롤러가 이 형태인 것은 아니다.** 인가를 서비스 안에서 규칙으로 푸는 리소스는 라우트

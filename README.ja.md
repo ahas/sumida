@@ -470,7 +470,7 @@ async fn main() -> Result<(), anyhow::Error> {
     sumida::infra::tracing::subscribe();
     let state = AppState { db: sumida::infra::db::connect().await };
 
-    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer();
+    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer(state.db.clone());
     let session_store = sumida::infra::session::new_store(&settings.session).await?;
 
     // Build application; `&[]` declares no rule files beyond sumida's own
@@ -577,6 +577,26 @@ bucket = "sumida-storage"
 [jwt]
 ssm_path = "/sumida/prod/jwt-secret"  # default: /sumida/{stage}/jwt-secret
 ```
+
+#### セキュリティ設定
+
+いずれも省略可能で、示した値はキーを省いたときの既定値です。それぞれが何を左右するかは
+[`docs/authentication.md`](docs/authentication.md) にあります。
+
+```toml
+[session.cookie]
+same_site = "lax"            # "lax"(既定) | "strict" | "none"。それ以外の値では起動を拒否する
+
+[security.verification]
+max_failed_attempts = 5      # 認証コード一つを提示できる回数。この回数に達するとコードは消費される
+issue_limit = 5              # 一つの窓の間にアカウントごと・アドレスごとに要求できるコード数
+attempt_limit = 20           # 一つの窓の間にアカウントごと・アドレスごとに提示できるコード数
+window = "1h"
+```
+
+ヘッダーの資格情報(`Authorization: Bearer …` または `ApiKey …`)はそのリクエスト一つだけを認証し、
+セッション Cookie を発行しません。認証コードは `mail-form` フィーチャーを有効にしたビルドで
+`method = "email"` のときだけ保存されます。
 
 ### フィーチャーの構成
 

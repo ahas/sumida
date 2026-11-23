@@ -44,7 +44,14 @@ allowed-file-types = []            # lowercase extension whitelist; empty = allo
 [session.cookie]
 name = "sumida.sid"
 secure = true
-same_site = "strict"
+same_site = "strict"               # "lax" (default) | "strict" | "none"; anything else refuses to start
+
+# Verification codes (password reset and account changes). All keys are optional; defaults shown.
+# [security.verification]
+# max_failed_attempts = 5          # presentations one code allows before it is spent
+# issue_limit = 5                  # codes asked for per window, per account and per address
+# attempt_limit = 20               # codes presented per window, per account and per address
+# window = "1h"
 
 [smtp]
 username = "smtp_user"

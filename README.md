@@ -471,7 +471,7 @@ async fn main() -> Result<(), anyhow::Error> {
     sumida::infra::tracing::subscribe();
     let state = AppState { db: sumida::infra::db::connect().await };
 
-    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer();
+    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer(state.db.clone());
     let session_store = sumida::infra::session::new_store(&settings.session).await?;
 
     // Build application; `&[]` declares no rule files beyond sumida's own
@@ -578,6 +578,26 @@ bucket = "sumida-storage"
 [jwt]
 ssm_path = "/sumida/prod/jwt-secret"  # default: /sumida/{stage}/jwt-secret
 ```
+
+#### Security Settings
+
+These are optional; the defaults shown are what an unset key means. What each one governs is
+[`docs/authentication.md`](docs/authentication.md).
+
+```toml
+[session.cookie]
+same_site = "lax"            # "lax" (default) | "strict" | "none"; any other value refuses to start
+
+[security.verification]
+max_failed_attempts = 5      # presentations one verification code allows before it is spent
+issue_limit = 5              # codes asked for per window, per account and per address
+attempt_limit = 20           # codes presented per window, per account and per address
+window = "1h"
+```
+
+A header credential (`Authorization: Bearer …` or `ApiKey …`) authenticates its own request and never
+sets a session cookie. Verification codes are stored only for `method = "email"` in a build with the
+`mail-form` feature.
 
 ### Feature Configuration
 
