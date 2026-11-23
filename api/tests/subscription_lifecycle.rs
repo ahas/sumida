@@ -235,11 +235,12 @@ async fn test_grace_window_keeps_entitlement_then_expires() {
   .await;
 
   // Auto-renew with a billing key the mock PG declines.
-  let (m, _u) = user_mock(&db).await;
-  let created: Value = m
+  let (m, u) = user_mock(&db).await;
+  // A priced first period takes no payment here, so the administrator grants it.
+  let created: Value = am
     .client
     .post("/subscriptions")
-    .json(&json!({ "planCode": code, "autoRenew": true, "billingKey": "mock:bill:fail" }))
+    .json(&json!({ "ownerId": u.model.id, "planCode": code, "autoRenew": true, "billingKey": "mock:bill:fail" }))
     .send()
     .await
     .unwrap()
@@ -306,11 +307,12 @@ async fn past_due_with_grace(db: &sea_orm::DatabaseConnection, am: &Mock) -> (Mo
     }),
   )
   .await;
-  let (m, _u) = user_mock(db).await;
-  let created: Value = m
+  let (m, u) = user_mock(db).await;
+  // A priced first period takes no payment here, so the administrator grants it.
+  let created: Value = am
     .client
     .post("/subscriptions")
-    .json(&json!({ "planCode": code, "autoRenew": true, "billingKey": "mock:bill:fail" }))
+    .json(&json!({ "ownerId": u.model.id, "planCode": code, "autoRenew": true, "billingKey": "mock:bill:fail" }))
     .send()
     .await
     .unwrap()
@@ -461,11 +463,12 @@ async fn test_change_plan_prorates_and_switches_coverage() {
   )
   .await;
 
-  let (m, _u) = user_mock(&db).await;
-  let created: Value = m
+  let (m, u) = user_mock(&db).await;
+  // A priced first period takes no payment here, so the administrator grants it.
+  let created: Value = am
     .client
     .post("/subscriptions")
-    .json(&json!({ "planCode": cheap }))
+    .json(&json!({ "ownerId": u.model.id, "planCode": cheap }))
     .send()
     .await
     .unwrap()
@@ -474,8 +477,9 @@ async fn test_change_plan_prorates_and_switches_coverage() {
     .unwrap();
   let sub_id = created["id"].as_i64().unwrap() as i32;
 
-  // Upgrade immediately (≈ full period remaining): net ≈ 3000 - 1000 = 2000.
-  let res: Value = m
+  // Upgrade immediately (≈ full period remaining): net ≈ 3000 - 1000 = 2000. No billing key is
+  // stored, so the difference is waived by the administrator's hand.
+  let res: Value = am
     .client
     .post(&format!("/subscriptions/{sub_id}/change-plan"))
     .json(&json!({ "planCode": pricey }))
@@ -541,11 +545,12 @@ async fn test_change_plan_same_plan_rejected() {
   )
   .await;
 
-  let (m, _u) = user_mock(&db).await;
-  let created: Value = m
+  let (m, u) = user_mock(&db).await;
+  // A priced first period takes no payment here, so the administrator grants it.
+  let created: Value = am
     .client
     .post("/subscriptions")
-    .json(&json!({ "planCode": code }))
+    .json(&json!({ "ownerId": u.model.id, "planCode": code }))
     .send()
     .await
     .unwrap()
@@ -668,10 +673,21 @@ async fn test_trial_granted_only_once() {
       .status(),
     StatusCode::OK
   );
-  let second: Value = m
+  // The paid period is not the user's to start without paying; the administrator grants it.
+  assert_eq!(
+    m.client
+      .post("/subscriptions")
+      .json(&json!({ "planCode": code }))
+      .send()
+      .await
+      .unwrap()
+      .status(),
+    StatusCode::PAYMENT_REQUIRED
+  );
+  let second: Value = am
     .client
     .post("/subscriptions")
-    .json(&json!({ "planCode": code }))
+    .json(&json!({ "ownerId": _u.model.id, "planCode": code }))
     .send()
     .await
     .unwrap()
@@ -712,11 +728,14 @@ async fn test_change_plan_settles_via_billing_key() {
   )
   .await;
 
-  let (m, _u) = user_mock(&db).await;
-  let created: Value = m
+  let (m, u) = user_mock(&db).await;
+  // A priced first period takes no payment here, so the administrator grants it.
+  let created: Value = am
     .client
     .post("/subscriptions")
-    .json(&json!({ "planCode": cheap, "autoRenew": true, "billingKey": "mock:bill:ok" }))
+    .json(
+      &json!({ "ownerId": u.model.id, "planCode": cheap, "autoRenew": true, "billingKey": "mock:bill:ok" }),
+    )
     .send()
     .await
     .unwrap()
@@ -773,11 +792,12 @@ async fn test_change_plan_charge_decline_aborts() {
   )
   .await;
 
-  let (m, _u) = user_mock(&db).await;
-  let created: Value = m
+  let (m, u) = user_mock(&db).await;
+  // A priced first period takes no payment here, so the administrator grants it.
+  let created: Value = am
     .client
     .post("/subscriptions")
-    .json(&json!({ "planCode": cheap, "autoRenew": true, "billingKey": "mock:bill:fail" }))
+    .json(&json!({ "ownerId": u.model.id, "planCode": cheap, "autoRenew": true, "billingKey": "mock:bill:fail" }))
     .send()
     .await
     .unwrap()
@@ -798,4 +818,162 @@ async fn test_change_plan_charge_decline_aborts() {
   // Plan unchanged.
   let still = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
   assert_eq!(still.plan_code, cheap, "a declined charge must not switch the plan");
+}
+
+/// Buy one period of `plan` through the PG checkout as `m`'s user; returns the subscription id.
+async fn buy(m: &Mock, plan: &str) -> i32 {
+  let co: Value = m
+    .client
+    .post("/payments/checkout")
+    .json(&json!({ "kind": "subscription", "planCode": plan }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  let purchase = co["purchaseCode"].as_str().unwrap();
+  let cf: Value = m
+    .client
+    .post("/payments/confirm")
+    .json(&json!({ "purchaseCode": purchase }))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+  cf["subscriptionId"].as_i64().expect("paid subscription") as i32
+}
+
+// ---------------------------------------------------------------------------
+// POST /subscriptions takes no payment, so an owner cannot start a priced period through it.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_priced_subscribe_refused_without_payment() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("pz-{}", rnd()), "name": "Pricey", "kind": "subscription", "scope": "personal",
+      "price": 99000, "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  let (m, u) = user_mock(&db).await;
+  let r = m.client.post("/subscriptions").json(&json!({ "planCode": code })).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "a priced plan is bought through checkout");
+
+  let subs: Value = m.client.get("/subscriptions").send().await.unwrap().json().await.unwrap();
+  assert_eq!(subs["count"].as_u64().unwrap(), 0, "no subscription was started");
+  let purchases = MembershipPurchases::find()
+    .filter(PurchaseCol::OwnerId.eq(u.model.id))
+    .all(&db)
+    .await
+    .unwrap();
+  assert!(purchases.is_empty(), "no completed purchase was recorded for money never collected");
+}
+
+// ---------------------------------------------------------------------------
+// An owner holding one paid period cannot extend it, or start a fresh one after cancelling, by
+// asking: renew and reactivate take no payment. An administrator still may.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_owner_cannot_renew_or_reactivate_priced_plan_for_free() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let code = create_plan(
+    &am.client,
+    json!({
+      "code": format!("pr-{}", rnd()), "name": "Paid", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  let (m, _u) = user_mock(&db).await;
+  let sub_id = buy(&m, &code).await;
+  let before = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+
+  let r = m.client.post(&format!("/subscriptions/{sub_id}/renew")).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "a renewal by hand is free service");
+  let after = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(after.current_period_end, before.current_period_end, "the period was not extended");
+
+  assert_eq!(
+    m.client.post(&format!("/subscriptions/{sub_id}/cancel")).send().await.unwrap().status(),
+    StatusCode::OK
+  );
+  let r = m.client.post(&format!("/subscriptions/{sub_id}/reactivate")).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED, "a reactivation starts an unpaid period");
+  let after = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(format!("{:?}", after.status), "Canceled", "still canceled");
+
+  // The administrator's hand is the explicit path.
+  let r = am.client.post(&format!("/subscriptions/{sub_id}/reactivate")).send().await.unwrap();
+  assert_eq!(r.status(), StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
+// An upgrade whose difference no stored billing key can pay is refused, and the subscription keeps
+// its plan and coverage.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_upgrade_without_billing_key_refused() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let cheap = create_plan(
+    &am.client,
+    json!({
+      "code": format!("uc-{}", rnd()), "name": "Cheap", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "old-act" }],
+    }),
+  )
+  .await;
+  let pricey = create_plan(
+    &am.client,
+    json!({
+      "code": format!("up-{}", rnd()), "name": "Pricey", "kind": "subscription", "scope": "personal",
+      "price": 90000, "durationDays": 30, "actions": [{ "action": "new-act" }],
+    }),
+  )
+  .await;
+
+  let (m, u) = user_mock(&db).await;
+  let sub_id = buy(&m, &cheap).await;
+
+  let r = m
+    .client
+    .post(&format!("/subscriptions/{sub_id}/change-plan"))
+    .json(&json!({ "planCode": pricey }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(
+    r.status(),
+    StatusCode::PAYMENT_REQUIRED,
+    "the difference is owed and nothing can pay it"
+  );
+
+  let row = Subscriptions::find_by_id(sub_id).one(&db).await.unwrap().unwrap();
+  assert_eq!(row.plan_code, cheap, "still on the cheap plan");
+  let r = m
+    .client
+    .post("/entitlements/check")
+    .json(&json!({ "action": "new-act" }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(r.status(), StatusCode::FORBIDDEN, "the pricey plan's coverage was not granted");
+  let purchases = MembershipPurchases::find()
+    .filter(PurchaseCol::OwnerId.eq(u.model.id))
+    .all(&db)
+    .await
+    .unwrap();
+  assert_eq!(purchases.len(), 1, "only the paid checkout is recorded");
 }

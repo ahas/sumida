@@ -798,8 +798,9 @@ async fn test_checkout_confirm_with_coupon() {
 }
 
 // ---------------------------------------------------------------------------
-// Free-subscribe path (POST /subscriptions) also applies discount coupons,
-// discounting the recorded first-period purchase amount.
+// Free-subscribe path (POST /subscriptions) also applies discount coupons. It takes no payment, so a
+// coupon that leaves money owed is refused there (the plan goes through checkout), while one that
+// covers the whole first period starts it, recording the discounted purchase.
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn test_free_subscribe_applies_coupon() {
@@ -807,8 +808,10 @@ async fn test_free_subscribe_applies_coupon() {
   let db = infra::db::connect().await;
   let am = admin_mock(&db).await;
 
-  let code = format!("SUBPCT-{}", rnd());
-  create_coupon(&am.client, json!({ "code": code, "percentOff": 25 })).await;
+  let partial = format!("SUBPCT-{}", rnd());
+  create_coupon(&am.client, json!({ "code": partial, "percentOff": 25 })).await;
+  let whole = format!("SUBFREE-{}", rnd());
+  create_coupon(&am.client, json!({ "code": whole, "percentOff": 100 })).await;
   let plan = create_sub_plan(&am.client, 1000).await; // paid first period (no trial)
 
   // a user subscribes with the coupon (no PG checkout)
@@ -818,13 +821,22 @@ async fn test_free_subscribe_applies_coupon() {
   let resp = m
     .client
     .post("/subscriptions")
-    .json(&json!({ "planCode": plan, "couponCode": code }))
+    .json(&json!({ "planCode": plan, "couponCode": partial }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED, "750 still owed and nothing paid");
+
+  let resp = m
+    .client
+    .post("/subscriptions")
+    .json(&json!({ "planCode": plan, "couponCode": whole }))
     .send()
     .await
     .unwrap();
   assert_eq!(resp.status(), StatusCode::CREATED);
 
-  // the recorded purchase reflects the discount: subtotal 1000, amount 750
+  // the recorded purchase reflects the discount: subtotal 1000, amount 0
   use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
   let purchase = entity::prelude::MembershipPurchases::find()
     .filter(entity::membership::membership_purchases::Column::OwnerId.eq(user.model.id))
@@ -834,7 +846,7 @@ async fn test_free_subscribe_applies_coupon() {
     .unwrap()
     .expect("purchase recorded");
   assert_eq!(purchase.subtotal, 1000);
-  assert_eq!(purchase.amount, 750, "25% off 1000");
+  assert_eq!(purchase.amount, 0, "100% off 1000");
 }
 
 // ---------------------------------------------------------------------------

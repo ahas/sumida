@@ -51,11 +51,32 @@ pub(crate) struct ActionSnapshot {
 pub struct SubscriptionService<S: SumidaState> {
   state:   S,
   session: UserSession,
+  /// Whether the caller settles the money side itself, so a priced period may start without a
+  /// payment captured here. Set only by [`Self::trusted`].
+  trusted: bool,
 }
 
 impl<S: SumidaState> SubscriptionService<S> {
+  /// The service as a session's request reaches it: a priced period — a paid subscribe, a renewal, a
+  /// reactivation or an upgrade's difference — needs a payment captured through the PG, or a platform
+  /// administrator acting by hand.
   pub fn new(state: S, session: UserSession) -> Self {
-    Self { state, session }
+    Self {
+      state,
+      session,
+      trusted: false,
+    }
+  }
+
+  /// The service for server code that has decided the money side itself (a product granting a plan
+  /// it bills elsewhere): a priced period starts without a payment captured here. Authorization on
+  /// the owner is still the session's. Never hand this to a route that takes the request's word.
+  pub fn trusted(state: S, session: UserSession) -> Self {
+    Self {
+      state,
+      session,
+      trusted: true,
+    }
   }
 
   /// 호출자의 인가 주체 집합. 보안 API 키는 키 자신이 곧 정체성이라 소유자의
@@ -138,6 +159,17 @@ impl<S: SumidaState> SubscriptionService<S> {
         Authz::try_check("organization", owner_id, permission, &self.subject(), db).await
       }
     }
+  }
+
+  /// Refuse to put `owed` money's worth of service in place without a payment, unless the caller is
+  /// the server's trusted entry point or a platform administrator acting by hand.
+  async fn require_payment_waived<C: ConnectionTrait>(&self, owed: i64, db: &C) -> Result<(), SumidaError> {
+    if owed <= 0 || self.trusted || Authz::is_superuser(&self.subject(), db).await? {
+      return Ok(());
+    }
+    Err(SumidaError::PaymentNotCompleted(
+      "no payment captured: a priced period is bought through /payments/checkout".into(),
+    ))
   }
 
   async fn record_event<C: ConnectionTrait>(
@@ -411,6 +443,8 @@ impl<S: SumidaState> SubscriptionService<S> {
       }
     }
     let amount = (charge_amount - discount).max(0);
+    // Nothing is charged here, so a first period that costs money is the PG checkout's to sell.
+    self.require_payment_waived(amount, &txn).await?;
 
     let sub = Subscriptions::insert(SubscriptionsActiveModel {
       code: Set(code.clone()),
@@ -526,6 +560,9 @@ impl<S: SumidaState> SubscriptionService<S> {
     self.authorize(&sub.owner_kind, sub.owner_id, "manage", &txn).await?;
 
     let plan = MembershipPlans::find_by_id(sub.plan_id).one(&txn).await?;
+    // A priced renewal is charged to the stored billing key by the scheduler; by hand it is free
+    // service, which only the trusted entry point or an administrator may give.
+    self.require_payment_waived(plan.as_ref().map_or(0, |p| p.price), &txn).await?;
     let duration = plan.and_then(|p| p.duration_days).unwrap_or(30).max(0);
 
     let now = Utc::now();
@@ -587,8 +624,9 @@ impl<S: SumidaState> SubscriptionService<S> {
   }
 
   /// Reactivate a canceled / expired / past-due subscription into a fresh period
-  /// starting now (no payment is taken here — manual/owner reactivation). The plan
-  /// must still exist (not retired) and the owner must not already hold an active
+  /// starting now. No payment is taken here, so a priced plan is reactivated only through the
+  /// trusted entry point or by a platform administrator; an owner buys a new period at checkout.
+  /// The plan must still exist (not retired) and the owner must not already hold an active
   /// subscription on it. Re-snapshots `allowed_actions` from the current plan.
   pub async fn reactivate(&self, id: i32) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
@@ -612,6 +650,7 @@ impl<S: SumidaState> SubscriptionService<S> {
       .one(&txn)
       .await?
       .ok_or_else(|| SumidaError::PlanNotFound(sub.plan_code.clone()))?;
+    self.require_payment_waived(plan.price, &txn).await?;
 
     // The partial-unique index forbids two active subs per (owner, plan); fail fast.
     let conflict = Subscriptions::find()
@@ -720,9 +759,10 @@ impl<S: SumidaState> SubscriptionService<S> {
     let purchase_code = gen_code("pur");
 
     // Settle an upgrade's positive proration via the stored billing key when present.
-    // A decline aborts the change (the transaction rolls back). A downgrade
-    // (proration_amount <= 0) or a subscription without a billing key records the
-    // breakdown only — actual money movement is then the operator's/PG's concern.
+    // A decline aborts the change (the transaction rolls back). An upgrade without a billing key
+    // is refused unless the trusted entry point or an administrator waives the difference. A
+    // downgrade (proration_amount <= 0) records the breakdown only — paying money back out is
+    // then the operator's/PG's concern.
     let (settle_provider, settle_payment_id) = if proration_amount > 0 {
       if let Some(billing_key) = sub.billing_key.clone() {
         let provider = infra::payment::provider();
@@ -735,6 +775,7 @@ impl<S: SumidaState> SubscriptionService<S> {
         }
         (provider.name().to_string(), charge.transaction_id)
       } else {
+        self.require_payment_waived(proration_amount, &txn).await?;
         ("none".to_string(), None)
       }
     } else {

@@ -109,7 +109,8 @@ async fn get<S: SumidaState>(
 ///
 /// This route does not take a payment. It records the subscription and starts its first period — a
 /// free trial where the plan has one — so a plan that has to be paid for goes through
-/// `POST /payments/checkout` instead.
+/// `POST /payments/checkout` instead: a first period that would cost money is refused with 402
+/// unless a platform administrator asks.
 ///
 /// `idempotencyKey` makes a retry safe: the same key twice answers with the subscription the first
 /// call made rather than starting a second one. `autoRenew` needs a `billingKey`, which is what the
@@ -124,6 +125,7 @@ async fn get<S: SumidaState>(
   request_body = CreateSubscription,
   responses(
     (status = 201, description = "The subscription's identifier and its code", body = SubscriptionCreated),
+    (status = 402, description = "The first period costs money and no payment was captured", body = ErrorBody),
     (status = 404, description = "No plan is stored under that code", body = ErrorBody),
     (status = 409, description = "This owner already has an active subscription to that plan", body = ErrorBody),
     Unreadable,
@@ -170,7 +172,9 @@ async fn cancel<S: SumidaState>(
 
 /// Begin the next period at once, without waiting for the current one to run out.
 ///
-/// The body is not read: the path says which subscription, and there is nothing else to decide.
+/// No payment is taken, so on a priced plan only a platform administrator may do this; an owner's
+/// paid renewal is the scheduler's charge to the stored billing key. The body is not read: the path
+/// says which subscription, and there is nothing else to decide.
 #[cfg_attr(feature = "openapi", utoipa::path(
   post,
   path = RENEW,
@@ -181,6 +185,7 @@ async fn cancel<S: SumidaState>(
   params(("id" = i32, Path, description = "The subscription's identifier")),
   responses(
     (status = 200, description = "Renewed. The body is an empty object and names nothing", body = EmptyObject),
+    (status = 402, description = "The plan costs money and only an administrator renews it by hand", body = ErrorBody),
     Unreadable,
     NotFound,
     Refused,
@@ -228,7 +233,8 @@ async fn set_auto_renew<S: SumidaState>(
 
 /// Take back a cancellation that has not taken effect yet, or bring a lapsed subscription back.
 ///
-/// The body is not read.
+/// A fresh period starts and no payment is taken, so on a priced plan only a platform administrator
+/// may do this; an owner buys a new period through `POST /payments/checkout`. The body is not read.
 #[cfg_attr(feature = "openapi", utoipa::path(
   post,
   path = REACTIVATE,
@@ -239,6 +245,7 @@ async fn set_auto_renew<S: SumidaState>(
   params(("id" = i32, Path, description = "The subscription's identifier")),
   responses(
     (status = 200, description = "Revived. The body is an empty object and names nothing", body = EmptyObject),
+    (status = 402, description = "The plan costs money and only an administrator revives it by hand", body = ErrorBody),
     Unreadable,
     NotFound,
     Refused,
@@ -257,8 +264,9 @@ async fn reactivate<S: SumidaState>(
 ///
 /// The answer says what the two sides came to: what the unused part of the old plan is worth back,
 /// what the new plan costs for the rest of the period, and the net of the two. A negative net is
-/// owed to the customer rather than by them. A purchase row is written for the difference either
-/// way, and `purchaseCode` names it.
+/// owed to the customer rather than by them. A positive net is charged to the stored billing key; with
+/// none stored the change is refused with 402 unless a platform administrator asks. A purchase row is
+/// written for the difference either way, and `purchaseCode` names it.
 #[cfg_attr(feature = "openapi", utoipa::path(
   post,
   path = CHANGE_PLAN,
@@ -270,6 +278,7 @@ async fn reactivate<S: SumidaState>(
   request_body = ChangePlan,
   responses(
     (status = 200, description = "What the change came to, and the purchase written for it", body = ProrationResult),
+    (status = 402, description = "The difference is owed and no billing key is stored, or its charge was declined", body = ErrorBody),
     (status = 404, description = "No plan is stored under that code", body = ErrorBody),
     Unreadable,
     WrongBody,

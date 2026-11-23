@@ -97,13 +97,13 @@ async fn test_personal_subscription_and_entitlement() {
     &admin_mock.client,
     json!({
       "code": format!("sub-{}", rnd()), "name": "Pro", "kind": "subscription", "scope": "personal",
-      "price": 1000, "durationDays": 30,
+      "price": 0, "durationDays": 30,
       "actions": [{ "action": "read-article" }],
     }),
   )
   .await;
 
-  // A normal user subscribes to their personal membership.
+  // A normal user subscribes to their personal membership (free: this route takes no payment).
   let user_mock = Mock::new().await;
   let user = TestUser::create(&db).await.unwrap();
   user.login(&user_mock.client).await;
@@ -1020,9 +1020,16 @@ async fn test_membership_purchase_tracked() {
   )
   .await;
 
-  let (user_mock, _user) = new_user_mock(&db).await;
+  let (user_mock, user) = new_user_mock(&db).await;
+  // A priced period is not the user's to start without paying; the administrator grants it.
   assert_eq!(
     subscribe(&user_mock.client, json!({ "planCode": code })).await.status(),
+    StatusCode::PAYMENT_REQUIRED
+  );
+  assert_eq!(
+    subscribe(&admin_mock.client, json!({ "ownerId": user.model.id, "planCode": code }))
+      .await
+      .status(),
     StatusCode::CREATED
   );
 

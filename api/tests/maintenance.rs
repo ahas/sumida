@@ -560,13 +560,26 @@ async fn test_maintenance_low_balance_alert_dedup_and_topup_rearms() {
   assert!(topped.balance > threshold, "balance must now exceed the threshold");
 }
 
-/// Subscribe `client` as a logged-in user; returns the new subscription id.
-async fn subscribe_user(db: &sea_orm::DatabaseConnection, body: Value) -> (Mock, i32) {
+/// A new logged-in user holding a subscription made from `body`; returns the user's mock and the
+/// subscription id. A priced first period takes no payment on this route, so an administrator grants
+/// it on the user's behalf.
+async fn subscribe_user(db: &sea_orm::DatabaseConnection, mut body: Value) -> (Mock, i32) {
   let m = Mock::new().await;
   let user = TestUser::create(db).await.unwrap();
   user.login(&m.client).await;
-  let created: Value =
-    m.client.post("/subscriptions").json(&body).send().await.unwrap().json().await.unwrap();
+  let admin = Mock::new().await;
+  TestUser::create_admin(db).await.unwrap().login(&admin.client).await;
+  body["ownerId"] = json!(user.model.id);
+  let created: Value = admin
+    .client
+    .post("/subscriptions")
+    .json(&body)
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
   let id = created["id"].as_i64().expect("subscription id") as i32;
   (m, id)
 }
