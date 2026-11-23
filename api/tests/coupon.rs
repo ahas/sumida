@@ -717,10 +717,11 @@ async fn test_failed_payment_reverses_coupon_grant() {
   let pc = co["purchaseCode"].as_str().unwrap();
   assert!(!mine_has(&m, &code).await, "grant consumed during checkout");
 
+  infra::payment::mock::script(pc, "mock:failed");
   let cf = m
     .client
     .post("/payments/confirm")
-    .json(&json!({ "purchaseCode": pc, "paymentId": "mock:failed" }))
+    .json(&json!({ "purchaseCode": pc, "paymentId": pc }))
     .send()
     .await
     .unwrap();

@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+
 use chrono::Utc;
 use serde_json::Value;
 
@@ -26,9 +29,29 @@ use super::{
 /// - `mock:bill:ok`   → PAID with the requested amount
 /// - anything else    → FAILED (a declined recurring charge)
 ///
+/// A test can [`script`] what the PG reports for one payment id, so a decline or a short payment is
+/// reported for the very payment a purchase is bound to rather than for another id.
+///
 /// `verify_webhook` skips signature checking and reads `{type, data.paymentId}`
 /// straight from the body so webhook handling can be exercised end-to-end.
 pub struct MockProvider;
+
+/// Outcomes scripted per payment id, each written in the `mock:...` encoding above.
+static SCRIPTED: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
+
+/// Make `verify(payment_id)` report `outcome` (a `mock:...` encoding) for that payment id.
+pub fn script(payment_id: &str, outcome: &str) {
+  if let Ok(mut map) = SCRIPTED.lock() {
+    map.insert(payment_id.to_string(), outcome.to_string());
+  }
+}
+
+/// Drop a scripted outcome, so the payment id reports its own encoding again.
+pub fn unscript(payment_id: &str) {
+  if let Ok(mut map) = SCRIPTED.lock() {
+    map.remove(payment_id);
+  }
+}
 
 fn parse(payment_id: &str) -> PaymentVerification {
   let parts: Vec<&str> = payment_id.split(':').collect();
@@ -64,7 +87,16 @@ impl PaymentProvider for MockProvider {
   }
 
   async fn verify(&self, payment_id: &str) -> Result<PaymentVerification, PaymentError> {
-    Ok(parse(payment_id))
+    let scripted = SCRIPTED.lock().ok().and_then(|map| map.get(payment_id).cloned());
+    let Some(outcome) = scripted else {
+      return Ok(parse(payment_id));
+    };
+    // The PG reports on the payment it was asked about, whatever the scripted outcome says.
+    Ok(PaymentVerification {
+      payment_id: payment_id.to_string(),
+      transaction_id: Some(format!("mocktxn-{payment_id}")),
+      ..parse(&outcome)
+    })
   }
 
   async fn cancel(

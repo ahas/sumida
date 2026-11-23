@@ -55,8 +55,10 @@ impl IntoResponse for CheckoutResult {
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmRequest {
   pub purchase_code: String,
-  /// PG payment id. For PortOne V2 this equals `purchase_code`.
-  pub payment_id:    String,
+  /// PG payment id. The purchase is always verified against the payment registered under its own
+  /// code (for PortOne V2 the `paymentId` is the `purchaseCode`); an id given here must equal it.
+  #[serde(default)]
+  pub payment_id:    Option<String>,
 }
 
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

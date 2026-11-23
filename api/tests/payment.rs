@@ -2,8 +2,10 @@
 //! `mock` payment provider (settings.e2e.toml → `[membership.payment] provider = "mock"`).
 //!
 //! The mock encodes the outcome in the order id / payment id:
-//! `mock:paid:<amount>` → PAID, `mock:failed` → FAILED. Checkout generates a
-//! `mock:paid:<price>:…` order code, so the happy path verifies a matching amount.
+//! `mock:paid:<amount>:<currency>` → PAID, `mock:failed` → FAILED. Checkout generates a
+//! `mock:paid:<price>:<currency>:…` order code, so the happy path verifies a matching amount. A
+//! purchase is only ever verified against its own code, so a decline or a short payment is
+//! scripted for that code with `infra::payment::mock::script`.
 
 use api::util::random::generate_url_safe_string;
 use e2e::prelude::*;
@@ -118,7 +120,8 @@ async fn test_payment_amount_mismatch_rejected() {
   let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
 
   // Verified amount (500) != expected (1000) → 400.
-  let cf = confirm(&user_mock.client, &purchase_code, "mock:paid:500").await;
+  infra::payment::mock::script(&purchase_code, "mock:paid:500:KRW");
+  let cf = confirm(&user_mock.client, &purchase_code, &purchase_code).await;
   assert_eq!(cf.status(), StatusCode::BAD_REQUEST, "amount mismatch must be rejected");
 
   // No subscription was created.
@@ -153,7 +156,8 @@ async fn test_payment_failed_status_rejected() {
   let co = checkout(&user_mock.client, json!({ "kind": "subscription", "planCode": code })).await;
   let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
 
-  let cf = confirm(&user_mock.client, &purchase_code, "mock:failed").await;
+  infra::payment::mock::script(&purchase_code, "mock:failed");
+  let cf = confirm(&user_mock.client, &purchase_code, &purchase_code).await;
   assert_eq!(cf.status(), StatusCode::PAYMENT_REQUIRED, "unpaid payment → 402");
 }
 
@@ -381,4 +385,149 @@ async fn test_payment_org_checkout_requires_manager() {
     .await
     .unwrap();
   assert_eq!(resp.status(), StatusCode::FORBIDDEN, "non-manager cannot checkout for the org");
+}
+
+async fn purchase_status(db: &sea_orm::DatabaseConnection, code: &str) -> String {
+  let purchase = MembershipPurchases::find()
+    .filter(entity::membership::membership_purchases::Column::Code.eq(code))
+    .one(db)
+    .await
+    .unwrap()
+    .unwrap();
+  format!("{:?}", purchase.status)
+}
+
+// ---------------------------------------------------------------------------
+// One real payment settles exactly one purchase: confirming a second pending purchase with the
+// first one's payment id is refused, and the second stays pending with nothing granted.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_payment_confirm_refuses_another_purchases_payment() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  let admin_mock = Mock::new().await;
+  let admin = TestUser::create_admin(&db).await.unwrap();
+  admin.login(&admin_mock.client).await;
+  let code = create_plan(
+    &admin_mock.client,
+    json!({
+      "code": format!("pb-{}", rnd()), "name": "Credits", "kind": "credit", "scope": "personal",
+      "price": 5000, "creditAmount": 100, "actions": [{ "action": "x", "creditCost": 1 }],
+    }),
+  )
+  .await;
+
+  let user_mock = Mock::new().await;
+  let user = TestUser::create(&db).await.unwrap();
+  user.login(&user_mock.client).await;
+
+  let paid = checkout(&user_mock.client, json!({ "kind": "credit", "planCode": code })).await;
+  let paid = paid["purchaseCode"].as_str().unwrap().to_string();
+  let unpaid = checkout(&user_mock.client, json!({ "kind": "credit", "planCode": code })).await;
+  let unpaid = unpaid["purchaseCode"].as_str().unwrap().to_string();
+  // The second purchase was never paid at the PG.
+  infra::payment::mock::script(&unpaid, "mock:pending");
+
+  assert_eq!(confirm(&user_mock.client, &paid, &paid).await.status(), StatusCode::OK);
+
+  // The paid purchase's payment id offered for the unpaid one: refused before the PG is asked.
+  let cf = confirm(&user_mock.client, &unpaid, &paid).await;
+  assert_eq!(cf.status(), StatusCode::BAD_REQUEST, "a payment binds to its own purchase only");
+  // Leaving the id out verifies the unpaid purchase's own payment, which has not been paid.
+  let cf = user_mock
+    .client
+    .post("/payments/confirm")
+    .json(&json!({ "purchaseCode": unpaid }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(cf.status(), StatusCode::PAYMENT_REQUIRED);
+
+  assert_eq!(
+    purchase_status(&db, &unpaid).await,
+    "Pending",
+    "an unfinished payment leaves it pending"
+  );
+  let bal: Value = user_mock.client.get("/credits/balance").send().await.unwrap().json().await.unwrap();
+  assert_eq!(bal["balance"].as_i64().unwrap(), 100, "only the one paid purchase granted credits");
+}
+
+// ---------------------------------------------------------------------------
+// A payment in another currency than the purchase's does not settle it.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_payment_currency_mismatch_rejected() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  let admin_mock = Mock::new().await;
+  let admin = TestUser::create_admin(&db).await.unwrap();
+  admin.login(&admin_mock.client).await;
+  let code = create_plan(
+    &admin_mock.client,
+    json!({
+      "code": format!("pcur-{}", rnd()), "name": "Pro", "kind": "subscription", "scope": "personal",
+      "price": 1000, "currency": "KRW", "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  let user_mock = Mock::new().await;
+  let user = TestUser::create(&db).await.unwrap();
+  user.login(&user_mock.client).await;
+
+  let co = checkout(&user_mock.client, json!({ "kind": "subscription", "planCode": code })).await;
+  let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
+  let amount = co["amount"].as_i64().unwrap();
+  infra::payment::mock::script(&purchase_code, &format!("mock:paid:{amount}:USD"));
+
+  let cf = confirm(&user_mock.client, &purchase_code, &purchase_code).await;
+  assert_eq!(cf.status(), StatusCode::BAD_REQUEST, "same number in another currency is not the price");
+  let subs: Value = user_mock.client.get("/subscriptions").send().await.unwrap().json().await.unwrap();
+  assert_eq!(subs["count"].as_u64().unwrap(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// A failed purchase stays failed: once a decline has given its coupons back, a later confirm of the
+// same purchase — even after the PG reports it paid — is refused and grants nothing.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_payment_failed_purchase_is_not_settled_later() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  let admin_mock = Mock::new().await;
+  let admin = TestUser::create_admin(&db).await.unwrap();
+  admin.login(&admin_mock.client).await;
+  let code = create_plan(
+    &admin_mock.client,
+    json!({
+      "code": format!("pfl-{}", rnd()), "name": "Pro", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  let user_mock = Mock::new().await;
+  let user = TestUser::create(&db).await.unwrap();
+  user.login(&user_mock.client).await;
+
+  let co = checkout(&user_mock.client, json!({ "kind": "subscription", "planCode": code })).await;
+  let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
+
+  infra::payment::mock::script(&purchase_code, "mock:failed");
+  assert_eq!(
+    confirm(&user_mock.client, &purchase_code, &purchase_code).await.status(),
+    StatusCode::PAYMENT_REQUIRED
+  );
+  assert_eq!(purchase_status(&db, &purchase_code).await, "Failed");
+
+  // The PG now answers PAID for the same payment: the failed purchase is still not settled.
+  infra::payment::mock::unscript(&purchase_code);
+  let cf = confirm(&user_mock.client, &purchase_code, &purchase_code).await;
+  assert_eq!(cf.status(), StatusCode::CONFLICT, "only a pending purchase is settled");
+  assert_eq!(purchase_status(&db, &purchase_code).await, "Failed");
+  let subs: Value = user_mock.client.get("/subscriptions").send().await.unwrap().json().await.unwrap();
+  assert_eq!(subs["count"].as_u64().unwrap(), 0, "nothing activated");
 }

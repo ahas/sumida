@@ -4,11 +4,11 @@ use chrono::Utc;
 use entity::membership::{CreditTxKind, OwnerKind, PlanKind, PurchaseStatus, SubscriptionStatus};
 use entity::prelude::*;
 use error::SumidaError;
-use infra::payment::{self, PaymentError, WebhookHeaders};
+use infra::payment::{self, PaymentError, PaymentStatus, WebhookHeaders};
 use infra::session::UserSession;
 use infra::settings;
 use sea_orm::ActiveValue::*;
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait};
 
 use self::dto::*;
 use super::coupon::CouponService;
@@ -29,11 +29,11 @@ fn map_pay_err(e: PaymentError) -> SumidaError {
   }
 }
 
-/// Merchant order id. For the mock provider, encode the amount so the deterministic
+/// Merchant order id. For the mock provider, encode the amount and currency so the deterministic
 /// mock returns a matching PAID verification for the happy path.
-fn order_code(provider: &str, amount: i64) -> String {
+fn order_code(provider: &str, amount: i64, currency: &str) -> String {
   match provider {
-    "mock" => format!("mock:paid:{amount}:{}", gen_code("ord")),
+    "mock" => format!("mock:paid:{amount}:{currency}:{}", gen_code("ord")),
     _ => gen_code("pur"),
   }
 }
@@ -161,7 +161,7 @@ impl<S: SumidaState> PaymentService<S> {
     let total = taxable + tax;
 
     let provider = payment::provider();
-    let code = order_code(provider.name(), total);
+    let code = order_code(provider.name(), total, &plan.currency);
 
     MembershipPurchases::insert(MembershipPurchasesActiveModel {
       code: Set(code.clone()),
@@ -207,24 +207,37 @@ impl<S: SumidaState> PaymentService<S> {
     let triggered_by = session.profile.id;
 
     let txn = self.state.db().begin().await?;
+    // Locked: a webhook, a second confirm and the stale-purchase sweep settle or fail the same row,
+    // and only one of them may act on it.
     let purchase = MembershipPurchases::find()
       .filter(Column::Code.eq(req.purchase_code.clone()))
+      .lock_exclusive()
       .one(&txn)
       .await?
       .ok_or_else(|| SumidaError::PurchaseNotFound(req.purchase_code.clone()))?;
 
     self.authorize(&purchase.kind, &purchase.owner_kind, purchase.owner_id, &txn).await?;
 
+    // The PG payment a purchase is settled by is the one registered under its own code. A client
+    // naming another payment is refused before the PG is asked, and the purchase is left as it was.
+    if let Some(payment_id) = &req.payment_id
+      && payment_id != &purchase.code
+    {
+      return Err(SumidaError::BadRequest("paymentId does not belong to this purchase".into()));
+    }
+
     // Commit either way: on a declined payment, settle has marked the purchase
     // failed and reversed its coupons — those writes must persist (a `?` here would
     // roll them back along with the error).
-    let result = self.settle(&purchase, &req.payment_id, Some(triggered_by), &txn).await;
+    let result = self.settle(&purchase, Some(triggered_by), &txn).await;
     txn.commit().await?;
     result
   }
 
   /// Refund a completed purchase: reverse the entitlement, cancel at the PG,
-  /// and mark the purchase refunded.
+  /// and mark the purchase refunded. Taking money back out is not the owner's to decide — a
+  /// refund of the whole amount after the period was used would be free service — so only a
+  /// platform administrator may refund.
   pub async fn refund(
     &self,
     purchase_code: &str,
@@ -357,12 +370,13 @@ impl<S: SumidaState> PaymentService<S> {
 
     let purchase = MembershipPurchases::find()
       .filter(Column::Code.eq(event.payment_id.clone()))
+      .lock_exclusive()
       .one(&txn)
       .await?;
 
     if let Some(purchase) = purchase {
       if event.is_paid() && purchase.status == PurchaseStatus::Pending {
-        self.settle(&purchase, &event.payment_id, None, &txn).await?;
+        self.settle(&purchase, None, &txn).await?;
       } else if event.is_cancelled() && purchase.status != PurchaseStatus::Refunded {
         MembershipPurchases::update(MembershipPurchasesActiveModel {
           id: Unchanged(purchase.id),
@@ -379,27 +393,45 @@ impl<S: SumidaState> PaymentService<S> {
     Ok(())
   }
 
-  /// Verify a payment, complete the purchase, and activate the entitlement.
-  /// Idempotent: a completed purchase is returned unchanged.
+  /// Verify the purchase's own PG payment, complete the purchase, and activate the entitlement.
+  /// Idempotent: a completed purchase is returned unchanged. Only a pending purchase is settled —
+  /// a failed or refunded one has given its coupons back or its money out and stays as it is. The
+  /// caller holds the purchase row locked.
   async fn settle<C: ConnectionTrait>(
     &self,
     purchase: &entity::membership::membership_purchases::Model,
-    payment_id: &str,
     triggered_by: Option<i32>,
     txn: &C,
   ) -> Result<ConfirmResult, SumidaError> {
-    if purchase.status == PurchaseStatus::Completed {
-      return Ok(ConfirmResult {
-        purchase_code:   purchase.code.clone(),
-        status:          "completed".to_string(),
-        kind:            purchase.kind.clone(),
-        subscription_id: None,
-        wallet_id:       None,
-      });
+    match purchase.status {
+      PurchaseStatus::Completed => {
+        return Ok(ConfirmResult {
+          purchase_code:   purchase.code.clone(),
+          status:          "completed".to_string(),
+          kind:            purchase.kind.clone(),
+          subscription_id: None,
+          wallet_id:       None,
+        });
+      }
+      PurchaseStatus::Pending => {}
+      PurchaseStatus::Failed | PurchaseStatus::Refunded => {
+        return Err(SumidaError::Conflict(format!(
+          "purchase `{}` is {:?} and can no longer be settled",
+          purchase.code, purchase.status
+        )));
+      }
     }
 
+    // The PG is asked about the payment registered under this purchase's code and no other, so one
+    // payment settles exactly one purchase.
     let provider = payment::provider();
-    let verification = provider.verify(payment_id).await.map_err(map_pay_err)?;
+    let verification = provider.verify(&purchase.code).await.map_err(map_pay_err)?;
+    if verification.payment_id != purchase.code {
+      return Err(SumidaError::PaymentProviderError(format!(
+        "the PG answered for payment `{}` when asked for `{}`",
+        verification.payment_id, purchase.code
+      )));
+    }
 
     let fail = |txn_status: PurchaseStatus| MembershipPurchasesActiveModel {
       id: Unchanged(purchase.id),
@@ -408,8 +440,16 @@ impl<S: SumidaState> PaymentService<S> {
     };
 
     if !verification.status.is_paid() {
-      MembershipPurchases::update(fail(PurchaseStatus::Failed)).exec(txn).await?;
-      CouponService::<S>::reverse_for_purchase(&purchase.code, txn).await?;
+      // Only a payment the PG has finished without money fails the purchase; one still under way
+      // (ready, pending, a virtual account awaiting its transfer) leaves it pending for a later
+      // confirm or the webhook.
+      if matches!(
+        verification.status,
+        PaymentStatus::Failed | PaymentStatus::Cancelled | PaymentStatus::PartialCancelled
+      ) {
+        MembershipPurchases::update(fail(PurchaseStatus::Failed)).exec(txn).await?;
+        CouponService::<S>::reverse_for_purchase(&purchase.code, txn).await?;
+      }
       return Err(SumidaError::PaymentNotCompleted(verification.raw_status));
     }
     if verification.amount != purchase.amount {
@@ -420,13 +460,19 @@ impl<S: SumidaState> PaymentService<S> {
         actual:   verification.amount,
       });
     }
+    if !verification.currency.eq_ignore_ascii_case(&purchase.currency) {
+      MembershipPurchases::update(fail(PurchaseStatus::Failed)).exec(txn).await?;
+      CouponService::<S>::reverse_for_purchase(&purchase.code, txn).await?;
+      return Err(SumidaError::BadRequest(format!(
+        "payment currency mismatch: expected {}, paid {}",
+        purchase.currency, verification.currency
+      )));
+    }
 
     MembershipPurchases::update(MembershipPurchasesActiveModel {
       id: Unchanged(purchase.id),
       status: Set(PurchaseStatus::Completed),
-      provider_payment_id: Set(
-        verification.transaction_id.clone().or_else(|| Some(payment_id.to_string())),
-      ),
+      provider_payment_id: Set(verification.transaction_id.clone().or_else(|| Some(purchase.code.clone()))),
       paid_at: Set(Some(Utc::now())),
       ..Default::default()
     })
