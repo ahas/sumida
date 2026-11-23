@@ -27,6 +27,42 @@ fn percent_encode_rfc5987(s: &str) -> String {
   out
 }
 
+/// `Content-Disposition` for a file handed over as a download. RFC 6266/5987: an ASCII fallback with
+/// dangerous characters stripped beside the full UTF-8 name. The name is the user-controlled original
+/// name received at upload, so interpolating quotes/control characters as-is would allow header
+/// injection and filename spoofing.
+pub fn attachment_disposition(file_name: &str) -> String {
+  let ascii_fallback: String = file_name
+    .chars()
+    .filter(|c| c.is_ascii() && !c.is_ascii_control() && *c != '"' && *c != '\\')
+    .collect();
+  format!(
+    "attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{}",
+    percent_encode_rfc5987(file_name)
+  )
+}
+
+/// The policy a stored file is served under: the bytes are a document of their own that loads nothing
+/// and runs nothing, sandboxed away from the API's origin.
+const FILE_CONTENT_SECURITY_POLICY: &str = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+/// Headers every response carrying a stored file's bytes sets: the browser never sniffs another type
+/// than the one stated, and (but for a PDF, which the browser's own viewer renders and a sandbox would
+/// blank) the document runs under [`FILE_CONTENT_SECURITY_POLICY`].
+pub fn harden_file_response(
+  builder: axum::http::response::Builder,
+  content_type: &str,
+) -> axum::http::response::Builder {
+  use axum::http::header;
+
+  let builder = builder.header(header::X_CONTENT_TYPE_OPTIONS, "nosniff");
+  if content_type == "application/pdf" {
+    builder
+  } else {
+    builder.header(header::CONTENT_SECURITY_POLICY, FILE_CONTENT_SECURITY_POLICY)
+  }
+}
+
 #[derive(Clone, Debug)]
 pub struct StaticFile {
   pub name:          String,
@@ -94,19 +130,9 @@ pub trait Storage: Send + Sync {
     let stream = ReaderStream::new(file_stream);
     let body = Body::from_stream(stream);
 
-    // RFC 6266/5987: provide both an ASCII fallback (dangerous characters stripped) and the full UTF-8 representation.
-    // file_name is the user-controlled original_name received at upload, so interpolating quotes/control characters
-    // as-is allows header injection and filename spoofing.
-    let ascii_fallback: String = file_name
-      .chars()
-      .filter(|c| c.is_ascii() && !c.is_ascii_control() && *c != '"' && *c != '\\')
-      .collect();
-    let content_disposition = format!(
-      "attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{}",
-      percent_encode_rfc5987(&file_name)
-    );
+    let content_disposition = attachment_disposition(&file_name);
 
-    let response = Response::builder()
+    let response = harden_file_response(Response::builder(), &content_type)
       .status(StatusCode::OK)
       .header(header::CONTENT_TYPE, content_type)
       .header(header::CONTENT_LENGTH, file_size.to_string())

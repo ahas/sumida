@@ -109,6 +109,8 @@ jsonwebtoken = { workspace = true, optional = true }
 
 axum-extra = { version = "0.12.1", features = ["query"] }
 futures = "0.3.31"
+# An upload's content type is read from its leading bytes, never taken from the client.
+infer = "0.22"
 markdown = { version = "1.0.0" }
 scraper = "0.25.0"
 serde_qs = { version = "1.0.0", features = ["axum"] }

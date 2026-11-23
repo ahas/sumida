@@ -1244,3 +1244,67 @@ async fn scenario_full_text_under_a_condition_tree() {
   let titles = list_titles(&mock, &format!("search={marker}")).await;
   assert_eq!(titles.len(), 2, "the flat integrated search still spans both posts");
 }
+
+/// Upload `bytes` under `filename` to `board_id`, declaring `declared` as the part's content type.
+async fn upload_board_bytes(
+  mock: &Mock,
+  board_id: i32,
+  filename: &str,
+  declared: &str,
+  bytes: &[u8],
+) -> Uuid {
+  let part = reqwest::multipart::Part::bytes(bytes.to_vec())
+    .file_name(filename.to_string())
+    .mime_str(declared)
+    .unwrap();
+  let form = reqwest::multipart::Form::new()
+    .text("board_id", board_id.to_string())
+    .text("metadata", "{}")
+    .part("file", part);
+  let resp = mock.client.post("/board-files").multipart(form).send().await.unwrap();
+  assert_eq!(resp.status(), StatusCode::CREATED, "board file upload");
+  Uuid::parse_str(resp.json::<Value>().await.unwrap()["uuid"].as_str().unwrap()).unwrap()
+}
+
+/// The stored type is the server's reading of the bytes, never the client's word, and whatever can
+/// script is handed over as an attachment that cannot run on the API's origin.
+#[tokio::test]
+async fn scenario_upload_type_is_the_servers_and_scripts_never_render_inline() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, true).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  allow(&db, &author, "board_file", "service", &["create"]).await;
+  author.login(&mock.client).await;
+
+  // HTML named and declared as a PNG: stored as what the bytes are.
+  let html = b"<!DOCTYPE html><html><body><script>fetch('/api/me')</script></body></html>";
+  let uuid = upload_board_bytes(&mock, board.id, "pic.png", "image/png", html).await;
+  let stored = Files::find_by_id(uuid).one(&db).await.unwrap().unwrap();
+  assert_eq!(stored.mime_type, "text/html", "the bytes decide the stored type");
+
+  // HTML declared as text/html and SVG declared as image/svg+xml: neither renders inline.
+  let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>"#;
+  let svg_uuid = upload_board_bytes(&mock, board.id, "logo.svg", "image/svg+xml", svg).await;
+  let html_uuid = upload_board_bytes(&mock, board.id, "page.html", "text/html", html).await;
+  for id in [uuid, svg_uuid, html_uuid] {
+    let resp = mock.client.get(&format!("/files/{id}/inline")).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let headers = resp.headers();
+    assert_eq!(headers.get("content-type").unwrap(), "application/octet-stream");
+    assert!(headers.get("content-disposition").unwrap().to_str().unwrap().starts_with("attachment"));
+    assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+    assert!(headers.get("content-security-policy").unwrap().to_str().unwrap().contains("sandbox"));
+  }
+
+  // A real PNG declared as HTML is stored and served as the image it is.
+  let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89";
+  let png_uuid = upload_board_bytes(&mock, board.id, "x.html", "text/html", png).await;
+  let resp = mock.client.get(&format!("/files/{png_uuid}/inline")).send().await.unwrap();
+  assert_eq!(resp.headers().get("content-type").unwrap(), "image/png");
+  assert_eq!(resp.headers().get("content-disposition").unwrap(), "inline");
+  assert_eq!(resp.headers().get("x-content-type-options").unwrap(), "nosniff");
+}

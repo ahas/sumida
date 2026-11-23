@@ -221,6 +221,48 @@ impl FileValidator {
   }
 }
 
+/// The content type the server stores for an upload, read from the file's leading bytes and, where
+/// they name no known format, from its file name. What the client declared is never consulted: a
+/// declared type is the attacker's choice of how the bytes are replayed later.
+pub fn resolve_mime_type(filename: &str, bytes: &[u8]) -> String {
+  match infer::get(bytes) {
+    Some(kind) => kind.mime_type().to_string(),
+    None => detect_mime_type_from_extension(filename),
+  }
+}
+
+/// Whether a stored type is rendered by a browser without running script, so its bytes may be served
+/// inline on the API's origin. Anything else — HTML, SVG, XML, JavaScript, and types nobody listed —
+/// is served as an attachment.
+pub fn is_inline_safe(mime_type: &str) -> bool {
+  matches!(
+    mime_type,
+    "image/png"
+      | "image/jpeg"
+      | "image/gif"
+      | "image/webp"
+      | "image/avif"
+      | "image/bmp"
+      | "image/x-icon"
+      | "image/vnd.microsoft.icon"
+      | "application/pdf"
+      | "text/plain"
+      | "audio/mpeg"
+      | "audio/ogg"
+      | "audio/wav"
+      | "audio/x-wav"
+      | "audio/mp4"
+      | "audio/aac"
+      | "audio/x-aac"
+      | "audio/x-flac"
+      | "audio/webm"
+      | "video/mp4"
+      | "video/webm"
+      | "video/ogg"
+      | "video/quicktime"
+  )
+}
+
 /// Detect MIME type from file extension as fallback
 fn detect_mime_type_from_extension(filename: &str) -> String {
   let extension = Path::new(filename)

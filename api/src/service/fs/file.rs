@@ -14,10 +14,15 @@ use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
 use crate::authz::write::TupleFilter;
-use crate::util::file_validation::{FileValidationConfig, FileValidator};
+use crate::util::file_validation::{
+  FileValidationConfig,
+  FileValidator,
+  is_inline_safe,
+  resolve_mime_type,
+};
 use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
-use crate::util::storage::{Storage, SumidaStorage};
+use crate::util::storage::{Storage, SumidaStorage, attachment_disposition, harden_file_response};
 
 /// 이 서비스가 판정하는 정의(`schema.sz`의 `namespace file service = file`).
 const RESOURCE: &str = "file";
@@ -90,8 +95,11 @@ impl<S: SumidaState> FileService<S> {
     }))
   }
 
-  pub async fn upload(&self, data: UploadFile) -> Result<FileUploaded, SumidaError> {
+  pub async fn upload(&self, mut data: UploadFile) -> Result<FileUploaded, SumidaError> {
     let db = self.state.db();
+
+    // The stored type is the server's reading of the bytes, whatever the caller put in the DTO.
+    data.file.mime_type = resolve_mime_type(&data.file.original_name, &data.file.bytes);
 
     // General-purpose upload validation: size/extension/MIME checks based on the global storage.upload limits.
     // (Unlike board uploads, there is no per-board policy, so the global limits apply. Even if the limits are empty,
@@ -164,8 +172,11 @@ impl<S: SumidaState> FileService<S> {
   }
 
   /// Serve a file for inline rendering (e.g. a tiptap `<img>` / preview) with
-  /// `Content-Disposition: inline` and the real content-type. Authorization: a board-attached file
-  /// follows its post's content visibility; an unattached/generic file requires `file:read`.
+  /// `Content-Disposition: inline` and the stored content-type, when that type is one a browser renders
+  /// without running script. Any other type — HTML, SVG, XML, script — is handed over as an
+  /// `application/octet-stream` attachment instead, so no upload runs on the API's origin.
+  /// Authorization: a board-attached file follows its post's read gate; an unattached/generic file
+  /// requires `file:read`.
   pub async fn inline(&self, uuid: Uuid) -> Result<Response<Body>, SumidaError> {
     let txn = self.state.db().begin().await?;
     let Some(file) = Files::find_by_id(uuid).one(&txn).await? else {
@@ -183,11 +194,17 @@ impl<S: SumidaState> FileService<S> {
     let size = storage.get_file_size(&path).await?;
     let body = Body::from_stream(ReaderStream::new(stream));
 
-    Response::builder()
+    let (content_type, disposition) = if is_inline_safe(&file.mime_type) {
+      (file.mime_type.clone(), "inline".to_string())
+    } else {
+      ("application/octet-stream".to_string(), attachment_disposition(&file.original_name))
+    };
+
+    harden_file_response(Response::builder(), &content_type)
       .status(StatusCode::OK)
-      .header(header::CONTENT_TYPE, file.mime_type)
+      .header(header::CONTENT_TYPE, content_type)
       .header(header::CONTENT_LENGTH, size.to_string())
-      .header(header::CONTENT_DISPOSITION, "inline")
+      .header(header::CONTENT_DISPOSITION, disposition)
       .body(body)
       .map_err(|_| SumidaError::InternalServerError("Failed to create response".into()))
   }

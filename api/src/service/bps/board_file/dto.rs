@@ -195,16 +195,18 @@ impl FileUploadTrait for UploadBoardFile {
         }
         "file" => {
           let filename = field.file_name().unwrap_or("unknown").to_string();
-          let content_type = field.content_type().unwrap_or("application/octet-stream").to_string();
           let data = field
             .bytes()
             .await
             .map_err(|err| SumidaError::BadRequest(format!("Failed to read file: {err}")))?;
+          // The part's declared Content-Type is the client's word and is not read: the type is the
+          // server's reading of the bytes.
+          let mime_type = crate::util::file_validation::resolve_mime_type(&filename, &data);
 
           file_data = Some(FileUploadData {
             original_name: filename,
-            bytes:         data.to_vec(),
-            mime_type:     content_type,
+            bytes: data.to_vec(),
+            mime_type,
           });
         }
         _ => {}
