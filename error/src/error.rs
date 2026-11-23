@@ -58,6 +58,8 @@ pub enum SumidaError {
   OnlyAdminAllowed,
   #[error("invalid user agent")]
   InvalidUserAgent,
+  #[error("a state-changing request from another site's page is refused")]
+  CrossSiteRequest,
 
   #[error("no mail form `{0}`")]
   NoMailForm(String),
@@ -188,6 +190,7 @@ impl SumidaError {
       Self::InvalidAuthorizationMethod(_) => 1016,
       Self::OnlyAdminAllowed => 1017,
       Self::InvalidUserAgent => 1018,
+      Self::CrossSiteRequest => 1019,
 
       Self::NoData(..) => 2000,
 
@@ -337,6 +340,7 @@ impl From<SumidaError> for StatusCode {
       | SumidaError::OnlyAdminAllowed
       | SumidaError::VerificationFailed => Ok(StatusCode::UNAUTHORIZED),
       SumidaError::NoAccessPermission => Ok(StatusCode::FORBIDDEN),
+      SumidaError::CrossSiteRequest => Ok(StatusCode::FORBIDDEN),
       SumidaError::NoServiceAvailable => Ok(StatusCode::FORBIDDEN),
       SumidaError::InvalidAuthorizationMethod(_) => Ok(StatusCode::NOT_IMPLEMENTED),
 

@@ -2,6 +2,7 @@ use std::task::{Context, Poll};
 
 use axum::body::Body;
 use axum::extract::FromRequestParts;
+use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Request, Response};
 use axum::response::IntoResponse;
@@ -86,8 +87,11 @@ where
 /// A header credential is checked and established for this request alone: its identity is handed to
 /// every later extractor through the request's extensions, and nothing of it reaches the cookie
 /// session. A request with no header credential is admitted on its cookie session, re-checked
-/// against the account as it stands now.
+/// against the account as it stands now — and, when it would change something, only from a page
+/// this server answers (see [`refuse_cross_site`]).
 pub async fn admit<S: SumidaState>(parts: &mut Parts, state: S) -> Result<UserSession, SumidaError> {
+  refuse_cross_site(parts)?;
+
   let mut session = UserSession::from_request_parts(parts, &())
     .await
     .map_err(|_| SumidaError::NoCredentials)?;
@@ -99,6 +103,25 @@ pub async fn admit<S: SumidaState>(parts: &mut Parts, state: S) -> Result<UserSe
   }
 
   Ok(session)
+}
+
+/// Refuses a state-changing request that rides on the cookie from another site's page.
+///
+/// A browser attaches the session cookie to whatever request a page sends to this server, whichever
+/// site the page is on, as far as the cookie's `SameSite` lets it — and `None` lets it everywhere.
+/// So a request that would change something (any method but `GET`, `HEAD`, `OPTIONS` and `TRACE`)
+/// and authenticates by the cookie is refused when the page it names, in `Origin` or else
+/// `Referer`, is neither the server's own nor one of `server.cors.allow_origins`. A request that
+/// carries a header credential is unaffected: another site's page cannot add one to a visitor's
+/// request, so its presence already says the request was not forged.
+fn refuse_cross_site(parts: &Parts) -> Result<(), SumidaError> {
+  if parts.method.is_safe() || parts.headers.contains_key(AUTHORIZATION) {
+    return Ok(());
+  }
+  if infra::origin::source_allowed(parts, infra::origin::allowed_origins()) {
+    return Ok(());
+  }
+  Err(SumidaError::CrossSiteRequest)
 }
 
 pub async fn verify_jwt<S: SumidaState>(

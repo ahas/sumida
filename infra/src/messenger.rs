@@ -1,6 +1,4 @@
 use axum::extract::FromRequestParts;
-use axum::http::HeaderMap;
-use axum::http::header::{HOST, ORIGIN};
 use error::SumidaError;
 use sea_orm::DatabaseConnection;
 use socketioxide::extract::{SocketRef, State};
@@ -9,8 +7,8 @@ use socketioxide::layer::SocketIoLayer;
 use socketioxide::{BroadcastError, SocketIo};
 use socketioxide_core::adapter::{Room, RoomParam};
 
+use crate::origin::{allowed_origins, source_allowed};
 use crate::session::{UserSession, admitted_account, credentials_reset_since};
-use crate::settings;
 
 /// What the socket handshake needs to admit a connection: the database the account is re-read from.
 #[derive(Clone, Debug)]
@@ -97,34 +95,6 @@ pub async fn get_session(
   UserSession::from_request_parts(&mut req_parts, state).await
 }
 
-/// Whether a handshake's `Origin` is one this server answers.
-///
-/// A browser names the page that opened a WebSocket in `Origin` on every handshake, and on every
-/// cross-site polling request, and CORS does not apply to a WebSocket upgrade — so this check is the
-/// only thing that keeps another site's page from opening a socket with the visitor's cookie. The
-/// origins allowed are `allowed` (the CORS settings' list) plus the server's own. A handshake with no
-/// `Origin` at all did not come from another site's page — a browser always sends one there — and is
-/// admitted on its credentials alone.
-pub fn origin_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
-  let Some(origin) = headers.get(ORIGIN) else {
-    return true;
-  };
-  let Ok(origin) = origin.to_str() else {
-    return false;
-  };
-
-  if allowed.iter().any(|allowed| allowed != "*" && allowed == origin) {
-    return true;
-  }
-
-  // The server's own origin: the authority the page named is the one this request was sent to.
-  let authority = origin.split_once("://").map_or(origin, |(_, authority)| authority);
-  headers
-    .get(HOST)
-    .and_then(|host| host.to_str().ok())
-    .is_some_and(|host| host == authority)
-}
-
 /// Admits a socket connection to `/user` and joins it to its rooms, or refuses it.
 ///
 /// It runs before the connection is accepted, so a refusal reaches the client as a connection
@@ -137,12 +107,9 @@ pub async fn admit(
   socket: SocketRef,
   State(state): State<SumidaMessengerState>,
 ) -> Result<(), SumidaError> {
-  let allowed = settings::get()
-    .server
-    .cors
-    .as_ref()
-    .map_or(&[][..], |cors| cors.allow_origins.as_slice());
-  if !origin_allowed(&socket.req_parts().headers, allowed) {
+  // CORS does not apply to a WebSocket upgrade, so this is the only thing that keeps another site's
+  // page from opening a socket with the visitor's cookie.
+  if !source_allowed(socket.req_parts(), allowed_origins()) {
     return Err(SumidaError::NoAccessPermission);
   }
 
@@ -195,48 +162,4 @@ pub fn new_layer(db: DatabaseConnection) -> (SocketIoLayer, SumidaMessenger) {
   io.ns("/user", on_connect.with(admit));
 
   (layer, SumidaMessenger::new(io))
-}
-
-#[cfg(test)]
-mod tests {
-  use axum::http::header::{HOST, ORIGIN};
-  use axum::http::{HeaderMap, HeaderValue};
-
-  use super::origin_allowed;
-
-  fn handshake(origin: Option<&str>, host: &str) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(HOST, HeaderValue::from_str(host).unwrap());
-    if let Some(origin) = origin {
-      headers.insert(ORIGIN, HeaderValue::from_str(origin).unwrap());
-    }
-    headers
-  }
-
-  #[test]
-  fn another_sites_page_is_refused() {
-    let allowed = vec!["https://app.example.com".to_owned()];
-
-    assert!(!origin_allowed(&handshake(Some("https://evil.example"), "api.example.com"), &allowed));
-  }
-
-  #[test]
-  fn a_listed_origin_and_the_servers_own_are_admitted() {
-    let allowed = vec!["https://app.example.com".to_owned()];
-
-    assert!(origin_allowed(&handshake(Some("https://app.example.com"), "api.example.com"), &allowed));
-    assert!(origin_allowed(&handshake(Some("https://api.example.com"), "api.example.com"), &allowed));
-  }
-
-  #[test]
-  fn a_wildcard_in_the_list_admits_nobody_by_itself() {
-    let allowed = vec!["*".to_owned()];
-
-    assert!(!origin_allowed(&handshake(Some("https://evil.example"), "api.example.com"), &allowed));
-  }
-
-  #[test]
-  fn a_handshake_with_no_origin_is_left_to_its_credentials() {
-    assert!(origin_allowed(&handshake(None, "api.example.com"), &[]));
-  }
 }

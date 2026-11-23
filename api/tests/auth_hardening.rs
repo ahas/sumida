@@ -580,3 +580,98 @@ fn test_a_socket_is_held_to_the_account_as_it_stands() {
     );
   });
 }
+
+// ─── cross-site requests ───────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_a_cookie_request_from_another_sites_page_is_refused() {
+  runtime().block_on(async {
+    let (_mock, base, db) = serving().await;
+    let user = TestUser::create(&db).await.expect("an account");
+    let http = signed_in(base, &user).await;
+    let own = format!("http://{base}");
+
+    let rename = |page: Option<(reqwest::header::HeaderName, String)>| {
+      let request = http
+        .patch(at(base, "/me"))
+        .json(&json!({ "fullName": "renamed", "email": user.model.email }));
+      let request = match page {
+        Some((header, value)) => request.header(header, value),
+        None => request,
+      };
+      async move { outcome(request.send().await.expect("the /me request")).await }
+    };
+
+    assert_eq!(
+      rename(Some((reqwest::header::ORIGIN, "https://evil.example".to_owned()))).await,
+      (403, "E1019".to_owned()),
+      "another site's page cannot change the account with the visitor's cookie"
+    );
+    assert_eq!(
+      rename(Some((reqwest::header::REFERER, "https://evil.example/form.html".to_owned()))).await,
+      (403, "E1019".to_owned()),
+      "where the browser leaves out `Origin`, the `Referer` names the page"
+    );
+    assert_eq!(
+      rename(Some((reqwest::header::ORIGIN, "null".to_owned()))).await,
+      (403, "E1019".to_owned()),
+      "an opaque origin is no page this server answers"
+    );
+
+    let reread = Users::find_by_id(user.model.id).one(&db).await.unwrap().unwrap();
+    assert_ne!(reread.full_name.as_deref(), Some("renamed"), "none of the refused requests changed it");
+
+    assert_eq!(
+      rename(Some((reqwest::header::ORIGIN, own.clone()))).await.0,
+      200,
+      "the server's own page is answered"
+    );
+    assert_eq!(
+      rename(Some((reqwest::header::REFERER, format!("{own}/settings")))).await.0,
+      200,
+      "so is its own page named by the referer"
+    );
+    assert_eq!(rename(None).await.0, 200, "a request that names no page is left to its cookie");
+
+    assert_eq!(
+      outcome(
+        http
+          .get(at(base, "/me"))
+          .header(reqwest::header::ORIGIN, "https://evil.example")
+          .send()
+          .await
+          .expect("the read"),
+      )
+      .await
+      .0,
+      200,
+      "a read changes nothing, and is answered whichever page asks"
+    );
+  });
+}
+
+#[test]
+fn test_a_header_credential_is_not_held_to_the_page_it_came_from() {
+  runtime().block_on(async {
+    let (_mock, base, db) = serving().await;
+    let user = TestUser::create(&db).await.expect("an account");
+    let key = api_key(&db, user.model.id, false).await;
+
+    assert_eq!(
+      outcome(
+        caller()
+          .patch(at(base, "/me"))
+          .header(reqwest::header::AUTHORIZATION, format!("ApiKey {key}"))
+          .header(reqwest::header::ORIGIN, "https://evil.example")
+          .json(&json!({ "fullName": "renamed by key", "email": user.model.email }))
+          .send()
+          .await
+          .expect("the /me request"),
+      )
+      .await
+      .0,
+      200,
+      "another site's page cannot attach a visitor's credential header, so naming one is not refused"
+    );
+  });
+}
