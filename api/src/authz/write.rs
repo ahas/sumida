@@ -19,6 +19,8 @@
 //!   so a revocation cannot leave a second copy behind. A non-unique index in that position is how
 //!   a revoked grant keeps working.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use error::SumidaError;
 use sea_orm::prelude::DateTimeUtc;
 use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
@@ -205,6 +207,13 @@ pub enum SubjectScope {
   /// Every subject's grants on the object are replaced. The sharing screen that shows the whole
   /// grid and submits it whole.
   All,
+}
+
+/// One live service-tier grant a holder has, as `replace_service_grants` compares it.
+#[derive(FromQueryResult)]
+struct HeldServiceGrant {
+  namespace: String,
+  relation:  String,
 }
 
 #[derive(FromQueryResult)]
@@ -396,9 +405,11 @@ impl Authz {
   ///   delegation scope held by the same role survives a submit of the permission grid, without the
   ///   caller having to enumerate what to preserve. A delete keyed by subject alone would take the
   ///   object-tier rows with it.
-  /// * **Authority is `service:<namespace>#grant`**, checked for every namespace named, before
-  ///   anything is deleted. A check that only refuses wildcards is not enough: it lets a non-admin
-  ///   hand a role any concrete grant at all, including one they do not hold themselves.
+  /// * **Authority is `service:<namespace>#grant`**, checked before anything is deleted for every
+  ///   namespace whose grants the call changes — the ones it adds or alters and the ones it takes
+  ///   away. A check that only refuses wildcards is not enough: it lets a non-admin hand a role any
+  ///   concrete grant at all, including one they do not hold themselves; and a check of only the
+  ///   namespaces submitted lets an empty submission revoke grants the caller could never issue.
   /// * **`action: ["*"]` is expanded, not stored.** `*` is not a relation; on a `service` object it
   ///   stands for the four route-gate actions and nothing more.
   pub async fn replace_service_grants<C: ConnectionTrait>(
@@ -419,15 +430,46 @@ impl Authz {
       }
     }
 
-    // Every namespace, before anything is deleted — a caller who may not grant one of them must
-    // not get to clear the others on the way to being refused.
-    let mut checked: Vec<&str> = Vec::new();
+    // Every namespace whose grants this changes — the ones submitted and the ones it would take
+    // away — before anything is deleted. A caller who may not grant a namespace may not revoke it
+    // either, and must not get to clear the others on the way to being refused. A namespace sent
+    // back exactly as it stands changes nothing and asks nothing, so a form that submits the whole
+    // grid still works for a caller who may grant only part of it.
+    let mut submitted: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for write in &writes {
+      submitted.entry(write.resource_id.clone()).or_default().insert(write.relation.clone());
+    }
     for grant in grants {
-      if checked.contains(&grant.namespace.as_str()) {
-        continue;
+      submitted.entry(grant.namespace.clone()).or_default();
+    }
+
+    let mut stored: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for row in HeldServiceGrant::find_by_statement(Statement::from_sql_and_values(
+      db.get_database_backend(),
+      r#"
+      SELECT resource_id AS namespace, relation
+        FROM relation_tuples
+       WHERE resource_type = 'service'
+         AND subject_key = $1
+         AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+      "#,
+      [holder.key().into()],
+    ))
+    .all(db)
+    .await
+    .map_err(AuthzError::from)?
+    {
+      stored.entry(row.namespace).or_default().insert(row.relation);
+    }
+
+    let none = BTreeSet::new();
+    let touched: BTreeSet<&String> = submitted.keys().chain(stored.keys()).collect();
+    for namespace in touched {
+      let before = stored.get(namespace).unwrap_or(&none);
+      let after = submitted.get(namespace).unwrap_or(&none);
+      if before != after {
+        Self::try_check("service", namespace.as_str(), "grant", subject, db).await?;
       }
-      checked.push(&grant.namespace);
-      Self::try_check("service", grant.namespace.as_str(), "grant", subject, db).await?;
     }
 
     db.execute(Statement::from_sql_and_values(
