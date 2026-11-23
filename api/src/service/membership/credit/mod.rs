@@ -1011,7 +1011,8 @@ impl<S: SumidaState> CreditService<S> {
     owner_kind: OwnerKind,
     owner_id: Option<i32>,
   ) -> Result<WalletBalance, SumidaError> {
-    let (owner_kind, owner_id) = resolve_owner(&self.session, &owner_kind, owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(&self.session, &owner_kind, owner_id, self.state.db()).await?;
     self.authorize_use(&owner_kind, owner_id, self.state.db()).await?;
 
     let txn = self.state.db().begin().await?;
@@ -1043,7 +1044,8 @@ impl<S: SumidaState> CreditService<S> {
   }
 
   pub async fn grant(&self, data: GrantCredit) -> Result<GrantResult, SumidaError> {
-    let (owner_kind, owner_id) = resolve_owner(&self.session, &data.owner_kind, data.owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(&self.session, &data.owner_kind, data.owner_id, self.state.db()).await?;
     let expiry_at = data.expiry_at.or_else(|| {
       settings::get()
         .membership
@@ -1079,7 +1081,8 @@ impl<S: SumidaState> CreditService<S> {
   }
 
   pub async fn consume(&self, data: ConsumeCredit) -> Result<ConsumeResult, SumidaError> {
-    let (owner_kind, owner_id) = resolve_owner(&self.session, &data.owner_kind, data.owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(&self.session, &data.owner_kind, data.owner_id, self.state.db()).await?;
     let txn = self.state.db().begin().await?;
     self.authorize_use(&owner_kind, owner_id, &txn).await?;
     let cost = Cost {
@@ -1114,7 +1117,8 @@ impl<S: SumidaState> CreditService<S> {
   // ---- reservations (authorize → extend → capture / release) ----
 
   pub async fn reserve(&self, data: ReserveCredit) -> Result<ReservationResult, SumidaError> {
-    let (owner_kind, owner_id) = resolve_owner(&self.session, &data.owner_kind, data.owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(&self.session, &data.owner_kind, data.owner_id, self.state.db()).await?;
     let txn = self.state.db().begin().await?;
     self.authorize_use(&owner_kind, owner_id, &txn).await?;
     let req = HoldRequest {
@@ -1192,7 +1196,8 @@ impl<S: SumidaState> CreditService<S> {
     reference_code: Option<String>,
     idempotency_key: Option<String>,
   ) -> Result<ConsumeResult, SumidaError> {
-    let (owner_kind, owner_id) = resolve_owner(&self.session, &owner_kind, owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(&self.session, &owner_kind, owner_id, self.state.db()).await?;
     let txn = self.state.db().begin().await?;
     self.authorize_manage(&owner_kind, owner_id, &txn).await?;
 

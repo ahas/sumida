@@ -92,7 +92,8 @@ impl<S: SumidaState> PaymentService<S> {
     use entity::membership::membership_plans::Column as PlanCol;
 
     let session = self.session()?;
-    let (owner_kind, owner_id) = resolve_owner(session, &req.owner_kind, req.owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(session, &req.owner_kind, req.owner_id, self.state.db()).await?;
 
     let txn = self.state.db().begin().await?;
     self.authorize(&req.kind, &owner_kind, owner_id, &txn).await?;

@@ -71,7 +71,8 @@ impl<S: SumidaState> EntitlementService<S> {
     amount: Option<i64>,
     idempotency_key: Option<&str>,
   ) -> Result<EntitlementOutcome, SumidaError> {
-    let (owner_kind, owner_id) = resolve_owner(&self.session, &owner_kind, owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(&self.session, &owner_kind, owner_id, self.state.db()).await?;
     let credit = CreditService::new(self.state.clone(), self.session.clone());
 
     let txn = self.state.db().begin().await?;

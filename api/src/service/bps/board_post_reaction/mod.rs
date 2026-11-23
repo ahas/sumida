@@ -19,6 +19,8 @@ use sea_orm::{
 
 use self::dto::*;
 use crate::SumidaState;
+use crate::authz::Authz;
+use crate::authz::subject::SubjectSet;
 use crate::service::prelude::BoardPostService;
 use crate::util::filter::{ConditionQuery, listed};
 use crate::util::pagination::Pagination;
@@ -34,6 +36,13 @@ pub struct BoardPostReactionService<S: SumidaState> {
 impl<S: SumidaState> BoardPostReactionService<S> {
   pub fn new(state: S, session: UserSession) -> Self {
     Self { state, session }
+  }
+
+  /// Whether the caller is a platform administrator, asked of the rule
+  /// (`platform:root#superuser`) rather than read off the session: a request on a secured API key
+  /// carries its owner's `is_admin` in the session but none of the owner's authority.
+  async fn is_superuser<C: sea_orm::ConnectionTrait>(&self, db: &C) -> Result<bool, SumidaError> {
+    Ok(Authz::is_superuser(&SubjectSet::of(&self.session), db).await?)
   }
 
   /// Resolve the board that owns `post_id`, enforcing the caller's read access to the post first.
@@ -68,8 +77,9 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     &self,
     post: &entity::bps::board_posts::Model,
     visibility: &BoardPostRecordVisibility,
+    superuser: bool,
   ) -> Result<(), SumidaError> {
-    if self.session.profile.is_admin {
+    if superuser {
       return Ok(());
     }
     match visibility {
@@ -107,10 +117,11 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     // Reactions are always scoped to a single post so visibility can be enforced.
     let post_id = filter.post_id.ok_or_else(|| SumidaError::BadRequest("post_id is required".into()))?;
     let (post, board) = self.post_board(post_id, &txn).await?;
-    self.can_view_reactions(&post, &board.reaction_visibility)?;
+    let superuser = self.is_superuser(&txn).await?;
+    self.can_view_reactions(&post, &board.reaction_visibility, superuser)?;
 
-    let private_to_self = !self.session.profile.is_admin
-      && matches!(board.reaction_visibility, BoardPostRecordVisibility::Private);
+    let private_to_self =
+      !superuser && matches!(board.reaction_visibility, BoardPostRecordVisibility::Private);
 
     let mut query = ReactionEntity::find().filter(ReactionColumn::PostId.eq(post_id));
     if private_to_self {
@@ -147,10 +158,11 @@ impl<S: SumidaState> BoardPostReactionService<S> {
     };
 
     let (post, board) = self.post_board(reaction.post_id, &txn).await?;
-    self.can_view_reactions(&post, &board.reaction_visibility)?;
+    let superuser = self.is_superuser(&txn).await?;
+    self.can_view_reactions(&post, &board.reaction_visibility, superuser)?;
 
     // For `Private` boards a non-admin may only see their own reaction.
-    if !self.session.profile.is_admin
+    if !superuser
       && matches!(board.reaction_visibility, BoardPostRecordVisibility::Private)
       && reaction.user_id != Some(self.session.profile.id)
     {
@@ -260,7 +272,7 @@ impl<S: SumidaState> BoardPostReactionService<S> {
       .ok_or_else(|| SumidaError::NoData("BoardPostReaction".into(), id.to_string()))?;
 
     let is_owner = self.session.profile.is_authorized && reaction.user_id == Some(self.session.profile.id);
-    if !is_owner && !self.session.profile.is_admin {
+    if !is_owner && !self.is_superuser(txn).await? {
       return Err(SumidaError::NoAccessPermission);
     }
 

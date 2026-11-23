@@ -8,16 +8,18 @@
 //! - reactions: forged `userId` ignored, idempotent, owner-only mutation
 //! - file lifecycle: upload→pending, attach→active(refs), orphan reaper, inline-image auto-claim
 
+use api::authz::write::SubjectKey;
+use api::service::api_key::hash_api_key;
 use api::util::random::generate_url_safe_string;
 use chrono::{Duration, Utc};
-use e2e::ap_test_utils::{block_object, grant_object, grant_service};
+use e2e::ap_test_utils::{block_object, grant_object, grant_service, tuple};
 use e2e::prelude::*;
 use entity::bps::boards::{BoardPostContentVisibility, BoardPostRecordVisibility};
 use entity::fs::files::FileStatus;
 use entity::prelude::*;
 use reqwest::StatusCode;
 use sea_orm::ActiveValue::{Set, Unchanged};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -1516,5 +1518,81 @@ async fn scenario_inline_file_follows_the_post_read_gate() {
     status(&outsider_mock, open).await,
     StatusCode::FORBIDDEN,
     "outside the board's read scope"
+  );
+}
+
+/// A secured API key carries only what was granted to the key, so an administrator's secured key is
+/// held to a post's password like any reader, while the administrator — and an unsecured key, which
+/// is its owner — is not.
+#[tokio::test]
+async fn scenario_a_secured_administrator_key_is_held_to_the_password_gate() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  author.login(&mock.client).await;
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": board.id, "title": "locked", "content": "<p>secret</p>",
+      "contentType": "text/html", "kind": "article", "status": "published",
+      "contentVisibility": "public", "password": "s3cret"
+    }),
+  )
+  .await;
+  assert_eq!(resp.status(), StatusCode::CREATED);
+  let post_id = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+
+  let admin = TestUser::create_admin(&db).await.unwrap().model.id;
+  let issue = |secured: bool| {
+    let plaintext = format!("test-key-{}", Uuid::new_v4());
+    let db = db.clone();
+    async move {
+      entity::api_keys::ActiveModel {
+        key:        Set(hash_api_key(&plaintext)),
+        key_prefix: Set(Some(plaintext.chars().take(8).collect())),
+        user_id:    Set(admin),
+        expires_at: Set(None),
+        is_secured: Set(secured),
+        created_at: Set(Utc::now()),
+      }
+      .insert(&db)
+      .await
+      .expect("issue the key");
+      plaintext
+    }
+  };
+  let unsecured = issue(false).await;
+  let secured = issue(true).await;
+
+  // The key may read the board the way a reader is granted it, so only the password stands between
+  // it and the post.
+  let holder = SubjectKey::apikey(&hash_api_key(&secured));
+  for (resource_type, resource_id, relation) in [
+    ("service", "board_post".to_owned(), "read"),
+    ("service", "board".to_owned(), "read"),
+    ("board", board.id.to_string(), "viewer"),
+    ("board_group", board.group_id.unwrap().to_string(), "viewer"),
+  ] {
+    tuple(&db, resource_type, &resource_id, relation, holder.clone())
+      .await
+      .expect("the key's grant");
+  }
+
+  let read = |key: String| {
+    let request = reqwest::Client::new()
+      .get(format!("http://{}/board-posts/{post_id}", mock.server.addr))
+      .header(reqwest::header::AUTHORIZATION, format!("ApiKey {key}"))
+      .send();
+    async move { request.await.unwrap().status() }
+  };
+  assert_eq!(read(unsecured).await, StatusCode::OK, "an unsecured key is its administrator owner");
+  assert_eq!(
+    read(secured).await,
+    StatusCode::FORBIDDEN,
+    "a secured key is not an administrator because its owner is one"
   );
 }

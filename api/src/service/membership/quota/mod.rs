@@ -644,7 +644,8 @@ impl<S: SumidaState> QuotaService<S> {
   // ---- public API ----
 
   pub async fn reserve(&self, data: ReserveQuota) -> Result<QuotaReservationResult, SumidaError> {
-    let (owner_kind, owner_id) = resolve_owner(&self.session, &data.owner_kind, data.owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(&self.session, &data.owner_kind, data.owner_id, self.state.db()).await?;
     let txn = self.state.db().begin().await?;
     self.authorize_use(&owner_kind, owner_id, &txn).await?;
     let result = Self::reserve_in_txn(

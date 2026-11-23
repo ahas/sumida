@@ -61,7 +61,7 @@ pub fn parse_plain_text(
 
 pub fn with_conditional_post_columns(
   user_id: Option<i32>,
-  is_admin: bool,
+  superuser: bool,
   mut query: Select<BoardPosts>,
 ) -> Select<BoardPosts> {
   use BoardPostsColumn::{Reactions, Views};
@@ -90,7 +90,7 @@ pub fn with_conditional_post_columns(
     }
   }
 
-  if is_admin {
+  if superuser {
     query = query.column_as(Views, VIEWS_COL).column_as(Reactions, REACTIONS_COL)
   } else {
     // Non-owners don't see the real view count; default to 0 (the DTO `views` is non-nullable).
@@ -135,7 +135,7 @@ pub fn with_fts(
 pub fn check_post_visible(
   user_id: Option<i32>,
   post_user_id: Option<i32>,
-  is_admin: bool,
+  superuser: bool,
   board_content_visibility: BoardPostContentVisibility,
   post_content_visibility: BoardPostContentVisibility,
 ) -> Result<bool, SumidaError> {
@@ -147,7 +147,7 @@ pub fn check_post_visible(
     BoardPostContentVisibility::Public => Ok(true),
     BoardPostContentVisibility::MembersOnly => Ok(user_id.is_some()),
     BoardPostContentVisibility::Private => {
-      if is_admin {
+      if superuser {
         Ok(true)
       } else {
         let user_id = user_id.unwrap_or(-1);

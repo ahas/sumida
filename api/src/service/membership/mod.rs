@@ -43,27 +43,33 @@ pub fn owner_kind_str(kind: &OwnerKind) -> &'static str {
 }
 
 /// Resolve the concrete (owner_kind, owner_id) for a request.
-/// - personal: always the session user (clients cannot act for other users).
+/// - personal: the session user, unless a platform administrator names another account.
 /// - organization: the given org id, defaulting to the session user's org.
-pub fn resolve_owner(
+pub async fn resolve_owner<C: ConnectionTrait>(
   session: &UserSession,
   owner_kind: &OwnerKind,
   owner_id: Option<i32>,
-) -> (OwnerKind, i32) {
+  db: &C,
+) -> Result<(OwnerKind, i32), SumidaError> {
   match owner_kind {
-    // A normal user can only act for themselves; a system admin may target an
-    // explicit user (e.g. granting credits to someone). Org targeting is always
-    // explicit and gated separately by the org-scoped authorization checks.
+    // A normal user can only act for themselves; a platform administrator may target an explicit
+    // user (e.g. granting credits to someone). Administration is asked of the rule, never read off
+    // the session: a request on a secured API key carries its owner's `is_admin` but none of the
+    // owner's authority. Org targeting is always explicit and gated separately by the org-scoped
+    // authorization checks.
     OwnerKind::Personal => {
-      let id = if session.profile.is_admin {
-        owner_id.unwrap_or(session.profile.id)
-      } else {
-        session.profile.id
+      let id = match owner_id {
+        Some(id)
+          if id != session.profile.id && Authz::is_superuser(&SubjectSet::of(session), db).await? =>
+        {
+          id
+        }
+        _ => session.profile.id,
       };
-      (OwnerKind::Personal, id)
+      Ok((OwnerKind::Personal, id))
     }
     OwnerKind::Organization => {
-      (OwnerKind::Organization, owner_id.unwrap_or(session.profile.organization.id))
+      Ok((OwnerKind::Organization, owner_id.unwrap_or(session.profile.organization.id)))
     }
   }
 }

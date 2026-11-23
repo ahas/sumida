@@ -83,6 +83,13 @@ impl<S: SumidaState> BoardPostService<S> {
     SubjectSet::of(&self.session)
   }
 
+  /// 호출자가 플랫폼 관리자인가. 세션의 `is_admin` 이 아니라 규칙(`platform:root#superuser`)에
+  /// 묻는다 — 보안 API 키로 들어온 요청은 세션에 소유자의 `is_admin` 이 실려 있지만 소유자의
+  /// 권한은 갖지 않는다.
+  async fn is_superuser<C: ConnectionTrait>(&self, db: &C) -> Result<bool, SumidaError> {
+    Ok(Authz::is_superuser(&self.subject(), db).await?)
+  }
+
   fn default_query_with(query: Select<BoardPosts>) -> Select<BoardPosts> {
     use sea_orm::JoinType::LeftJoin;
 
@@ -149,7 +156,7 @@ impl<S: SumidaState> BoardPostService<S> {
     pagination: Pagination,
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     let db = self.state.db();
-    let mut query = self.get_list_query(filter, &conditions)?;
+    let mut query = self.get_list_query(filter, &conditions).await?;
     let count = query.clone().count(db).await?;
 
     query = self.apply_pagination(query, pagination);
@@ -162,16 +169,17 @@ impl<S: SumidaState> BoardPostService<S> {
   /// The list query: the read scope first, the flat parameters inside it, and the condition tree
   /// added last as one more conjunct. Every list path shares it, so what narrows one narrows all
   /// five and the count is taken from the same query.
-  pub fn get_list_query(
+  pub async fn get_list_query(
     &self,
     filter: BoardPostFilter,
     conditions: &ConditionQuery,
   ) -> Result<Select<BoardPosts>, SumidaError> {
+    let superuser = self.is_superuser(self.state.db()).await?;
     let search_text = filter.search.clone().unwrap_or_else(|| filter.text.clone().unwrap_or_default());
     let with_snippet = filter.with_snippet;
     let query = util::with_conditional_post_columns(
       self.session.profile.get_id(),
-      self.session.profile.is_admin,
+      superuser,
       self.select(BoardPosts::find())?,
     );
     let query = if with_snippet {
@@ -183,7 +191,7 @@ impl<S: SumidaState> BoardPostService<S> {
     let query = filter.apply(query);
 
     // Hide posts whose content the requester can't see (title + snippet) — admins exempt.
-    let query = if self.session.profile.is_admin {
+    let query = if superuser {
       query
     } else {
       query.filter(util::content_visible_filter(self.session.profile.get_id()))
@@ -206,7 +214,8 @@ impl<S: SumidaState> BoardPostService<S> {
   ) -> Result<List<BoardPostListItem>, SumidaError> {
     let db = self.state.db();
     let mut query = self
-      .get_list_query(filter, &conditions)?
+      .get_list_query(filter, &conditions)
+      .await?
       .filter(BoardPostsColumn::Kind.eq(kind.clone()));
 
     let count = query.clone().count(db).await?;
@@ -276,7 +285,7 @@ impl<S: SumidaState> BoardPostService<S> {
     // Per-board read permission + existence: the AP-filtered query yields None when access is denied.
     let post = util::with_conditional_post_columns(
       self.session.profile.get_id(),
-      self.session.profile.is_admin,
+      self.is_superuser(&txn).await?,
       self.select(BoardPosts::find())?.column_as(BoardPostsColumn::Content, "content"),
     )
     .filter(BoardPostsColumn::Id.eq(id))
@@ -316,7 +325,8 @@ impl<S: SumidaState> BoardPostService<S> {
     password: Option<&str>,
     txn: &C,
   ) -> Result<(), SumidaError> {
-    if !self.session.profile.is_admin && post.password.is_some() {
+    let superuser = self.is_superuser(txn).await?;
+    if !superuser && post.password.is_some() {
       let is_author = self.session.profile.is_authorized && post.user_id == Some(self.session.profile.id);
       if !is_author {
         let post_password = post.password.as_deref().unwrap_or_default();
@@ -336,7 +346,7 @@ impl<S: SumidaState> BoardPostService<S> {
     if !util::check_post_visible(
       user_id,
       post.user_id,
-      self.session.profile.is_admin,
+      superuser,
       board.content_visibility,
       post.content_visibility.clone(),
     )? {
@@ -351,7 +361,7 @@ impl<S: SumidaState> BoardPostService<S> {
 
     let board_post_query = util::with_conditional_post_columns(
       self.session.profile.get_id(),
-      self.session.profile.is_admin,
+      self.is_superuser(&txn).await?,
       self.select(BoardPosts::find_by_id(id))?.column_as(BoardPostsColumn::Content, "content"),
     );
 
@@ -431,7 +441,7 @@ impl<S: SumidaState> BoardPostService<S> {
       .await?
       .ok_or_else(|| SumidaError::NoData("Board".to_string(), post.board_id.to_string()))?;
 
-    self.check_viewer_visibility(&post, &board.viewer_visibility)?;
+    self.check_viewer_visibility(&post, &board.viewer_visibility, &txn).await?;
 
     let base = BoardPostViews::find()
       .filter(BoardPostViewsColumn::PostId.eq(post_id))
@@ -453,14 +463,15 @@ impl<S: SumidaState> BoardPostService<S> {
   }
 
   /// Who may see the viewer list, per the board's `viewer_visibility`.
-  fn check_viewer_visibility(
+  async fn check_viewer_visibility<C: ConnectionTrait>(
     &self,
     post: &BoardPostsModel,
     visibility: &entity::bps::boards::BoardPostRecordVisibility,
+    db: &C,
   ) -> Result<(), SumidaError> {
     use entity::bps::boards::BoardPostRecordVisibility::*;
 
-    if self.session.profile.is_admin {
+    if self.is_superuser(db).await? {
       return Ok(());
     }
     let ok = match visibility {
@@ -572,7 +583,7 @@ impl<S: SumidaState> BoardPostService<S> {
     if !util::check_post_visible(
       user_id,
       post.user_id,
-      self.session.profile.is_admin,
+      self.is_superuser(txn).await?,
       board.content_visibility,
       post.content_visibility.clone(),
     )? {
@@ -745,11 +756,12 @@ impl<S: SumidaState> BoardPostService<S> {
   ) -> Result<HashMap<i32, Vec<T>>, SumidaError> {
     let mut replies_by_parent: HashMap<i32, Vec<T>> = HashMap::new();
     let mut current_parent_ids = parent_ids.to_vec();
+    let superuser = self.is_superuser(db).await?;
 
     while !current_parent_ids.is_empty() {
       let replies = util::with_conditional_post_columns(
         self.session.profile.get_id(),
-        self.session.profile.is_admin,
+        superuser,
         query
           .clone()
           .filter(BoardPostsColumn::Kind.eq(reply_kind.clone()))

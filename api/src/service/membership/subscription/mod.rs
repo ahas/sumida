@@ -319,7 +319,8 @@ impl<S: SumidaState> SubscriptionService<S> {
   }
 
   pub async fn subscribe(&self, data: CreateSubscription) -> Result<SubscriptionCreated, SumidaError> {
-    let (owner_kind, owner_id) = resolve_owner(&self.session, &data.owner_kind, data.owner_id);
+    let (owner_kind, owner_id) =
+      resolve_owner(&self.session, &data.owner_kind, data.owner_id, self.state.db()).await?;
 
     // Auto-renew needs a verified billing key (checked before the transaction so the
     // PG round-trip isn't held inside it).
