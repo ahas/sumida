@@ -151,8 +151,9 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
   }
 
   /// Validate and **rotate** a refresh token: reject it unless it is a non-blacklisted `refresh`
-  /// token still present in the store for an enabled, non-banned account, then issue a new pair —
-  /// storing the new refresh `jti` and deleting the old one (so the presented token can't be reused).
+  /// token still present in the store for an enabled, non-banned account, then issue a new pair.
+  /// The presented token is taken out of the store before anything else is decided, so it is spent
+  /// even when the account turns out to be refused, and it can buy a pair only once.
   pub async fn refresh_token(&mut self, refresh_token: String) -> Result<TokenPair, SumidaError>
   where
     J: infra::jwt::JwtTokenStore,
@@ -170,9 +171,10 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
       return Err(SumidaError::InvalidJwt);
     }
 
-    // Get stored refresh token data
+    // Spend the stored refresh token. Taking it is one step, so of several requests presenting the
+    // same token at once exactly one gets it and buys a pair; the rest are refused here.
     let refresh_data =
-      self.jwt_store.get_refresh_token(&claims.jti).await?.ok_or(SumidaError::InvalidJwt)?;
+      self.jwt_store.take_refresh_token(&claims.jti).await?.ok_or(SumidaError::InvalidJwt)?;
 
     // Verify the account may still be let in — it exists, it is enabled, and no ban catches it.
     let db = self.state.db();
@@ -198,7 +200,6 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
     };
 
     self.jwt_store.store_refresh_token(&new_refresh_claims.jti, new_refresh_data).await?;
-    self.jwt_store.delete_refresh_token(&claims.jti).await?;
 
     Ok(new_token_pair)
   }

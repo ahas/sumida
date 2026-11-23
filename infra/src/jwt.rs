@@ -32,6 +32,16 @@ pub trait JwtTokenStore: Send + Sync {
     token_id: &str,
   ) -> impl Future<Output = Result<Option<RefreshTokenData>, SumidaError>> + Send;
   fn delete_refresh_token(&self, token_id: &str) -> impl Future<Output = Result<(), SumidaError>> + Send;
+  /// Removes a refresh token and answers what it held, in one step no other caller can come between.
+  ///
+  /// Rotation spends a refresh token on exactly one new pair, and that holds only if reading the
+  /// token and removing it are one operation: read first and remove after, and every request that
+  /// read it in between buys a pair of its own. Of any number of callers presenting the same token
+  /// at once, exactly one is answered with its data; every other one is answered `None`.
+  fn take_refresh_token(
+    &self,
+    token_id: &str,
+  ) -> impl Future<Output = Result<Option<RefreshTokenData>, SumidaError>> + Send;
   fn blacklist_token(
     &self,
     jti: &str,
@@ -98,6 +108,21 @@ cfg_if! {
           .await
           .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
         Ok(())
+      }
+
+      async fn take_refresh_token(&self, token_id: &str) -> Result<Option<RefreshTokenData>, SumidaError> {
+        // `GETDEL` reads and removes in one command, so two callers cannot both read the token.
+        let value: Option<String> = self
+          .pool
+          .getdel(format!("jwt:refresh:{token_id}"))
+          .await
+          .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+        match value {
+          Some(json) => {
+            Ok(Some(serde_json::from_str(&json).map_err(|e| SumidaError::Unsupported(e.to_string()))?))
+          }
+          None => Ok(None),
+        }
       }
 
       async fn blacklist_token(&self, jti: &str, expires_at: DateTime<Utc>) -> Result<(), SumidaError> {
@@ -230,6 +255,48 @@ cfg_if! {
           .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
 
         Ok(())
+      }
+
+      async fn take_refresh_token(&self, token_id: &str) -> Result<Option<RefreshTokenData>, SumidaError> {
+        // A delete that hands back the item it removed: of two callers deleting the same key, only
+        // the one that actually removed it gets the old item back.
+        let key = HashMap::from([
+          ("pk".to_string(), AttributeValue::S(format!("refresh#{}", token_id))),
+          ("sk".to_string(), AttributeValue::S("data".to_string())),
+        ]);
+
+        let removed = self.client
+          .delete_item()
+          .table_name(&self.table_name)
+          .set_key(Some(key))
+          .return_values(aws_sdk_dynamodb::types::ReturnValue::AllOld)
+          .send()
+          .await
+          .map_err(|e| SumidaError::Unsupported(e.to_string()))?;
+
+        let Some(item) = removed.attributes else {
+          return Ok(None);
+        };
+        let read = |name: &str| item.get(name).and_then(|v| v.as_n().ok()).and_then(|n| n.parse::<i64>().ok());
+        let user_id = read("user_id")
+          .and_then(|n| i32::try_from(n).ok())
+          .ok_or(SumidaError::Unsupported("Invalid user_id".to_string()))?;
+        let username = item.get("username")
+          .and_then(|v| v.as_s().ok())
+          .ok_or(SumidaError::Unsupported("Invalid username".to_string()))?;
+        let jti = item.get("jti")
+          .and_then(|v| v.as_s().ok())
+          .ok_or(SumidaError::Unsupported("Invalid jti".to_string()))?;
+        let expires_at = read("expires_at").ok_or(SumidaError::Unsupported("Invalid expires_at".to_string()))?;
+        let created_at = read("created_at").ok_or(SumidaError::Unsupported("Invalid created_at".to_string()))?;
+
+        Ok(Some(RefreshTokenData {
+          user_id,
+          username: username.clone(),
+          jti: jti.clone(),
+          expires_at: DateTime::from_timestamp(expires_at, 0).unwrap_or_default(),
+          created_at: DateTime::from_timestamp(created_at, 0).unwrap_or_default(),
+        }))
       }
 
       async fn blacklist_token(&self, jti: &str, expires_at: DateTime<Utc>) -> Result<(), SumidaError> {
