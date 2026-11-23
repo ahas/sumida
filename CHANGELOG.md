@@ -6,6 +6,25 @@ and this project adheres to semantic versioning at the workspace level.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
+A security release that breaks compatibility. Moving a consumer onto it:
+
+### Upgrading
+
+- `JwtTokenStore` has a new required method, `take_refresh_token`; a store of your own implements it (Redis
+  `GETDEL`, which needs Redis 6.2 or Valkey).
+- `infra::messenger::new_layer` takes the database connection.
+- `ConfirmRequest.payment_id` is an `Option<String>`; `CreateBoardPost.id`, `TsHeadlineExpr::delimiters` and the
+  `snippet_start_sel` / `snippet_stop_sel` query parameters are gone; `claim_file` / `claim_post_files` take the
+  uploader's user id.
+- A priced subscription is no longer started, renewed, reactivated or upgraded on an owner's plain request: take
+  the payment, or call `SubscriptionService::trusted` where your own code acts for the system.
+- `session.cookie.same_site` defaults to `lax` and an unknown value refuses startup; behind a proxy that rewrites
+  `Host`, list the public origin in `server.cors.allow_origins`, or cookie-authenticated writes answer `403`.
+- A client that changes its password or email through `PATCH /me` sends `currentPassword` (or an
+  `account-change` verification code).
+
 ### Security fixes
 
 - **A header credential no longer leaves a cookie session behind — read this before upgrading.**
