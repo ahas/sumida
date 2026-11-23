@@ -1,12 +1,10 @@
 use std::task::{Context, Poll};
 
 use axum::body::Body;
-use axum::extract::FromRequestParts;
 use axum::http::{Request, Response};
 use axum::response::IntoResponse;
 use error::SumidaError;
 use futures::future::BoxFuture;
-use infra::session::UserSession;
 use tower::{Layer, Service};
 
 use crate::SumidaState;
@@ -68,12 +66,14 @@ where
     Box::pin(async move {
       let (mut parts, body) = req.into_parts();
 
-      let session = match UserSession::from_request_parts(&mut parts, &()).await {
+      // The same admission every guarded route gets: a cookie is held to the account as it stands
+      // now — a password reset, a deactivation or a ban since it was issued refuses it — and a
+      // header credential is checked and established for this request alone. Without it, a stolen
+      // administrator's cookie would keep reaching these routes after the reset that was meant to
+      // put it out, for as long as the account kept its flag.
+      let session = match crate::layer::user_guard::admit(&mut parts, state.clone()).await {
         Ok(session) => session,
-        Err(_) => {
-          let error_response = SumidaError::NoCredentials.into_response();
-          return Ok(error_response);
-        }
+        Err(error) => return Ok(error.into_response()),
       };
 
       // Platform authority is decided by the rule, never by the session field.
