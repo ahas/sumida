@@ -11,7 +11,7 @@ use crate::controller::ApiController;
 #[cfg(feature = "openapi")]
 use crate::openapi::ME_TAG as TAG;
 #[cfg(feature = "openapi")]
-use crate::openapi::{EmptyObject, Unauthenticated, Unreadable, WrongBody};
+use crate::openapi::{EmptyObject, ErrorBody, Unauthenticated, Unreadable, WrongBody};
 use crate::service::grants::{ApForUser, from_service_grants};
 use crate::service::prelude::*;
 use crate::{SumidaState, user_guard};
@@ -37,6 +37,7 @@ pub fn update_example() -> serde_json::Value {
     "email": "someone@example.com",
     "fullName": "Someone",
     "phone": null,
+    "currentPassword": "the password the account has now",
   })
 }
 
@@ -97,6 +98,13 @@ async fn get_me<S: SumidaState>(session: UserSession, State(state): State<S>) ->
 /// `password` is hashed before it is stored and is never read back by any route. The account's
 /// role, organization, administrator flag and enabled flag are not reachable from here — they are
 /// somebody else's to change.
+///
+/// A new `password`, or an `email` other than the one on file, needs proof beyond the credential
+/// the request carries: `currentPassword`, or a `verificationCode` of kind `account-change`. A wrong
+/// current password counts towards the account's sign-in lockout as a wrong sign-in would. A key
+/// that carries only its own grants cannot make either change. A new password voids every session
+/// and token handed out before it; the cookie session that made the change is issued anew and stays
+/// signed in, and a bearer token has to be obtained again.
 #[cfg_attr(feature = "openapi", utoipa::path(
   patch,
   path = "",
@@ -114,6 +122,12 @@ async fn get_me<S: SumidaState>(session: UserSession, State(state): State<S>) ->
     Unreadable,
     WrongBody,
     Unauthenticated,
+    (
+      status = 403,
+      description = "A key that carries only its own grants asked to change the password or the email.",
+      body = ErrorBody,
+      content_type = "application/json",
+    ),
   ),
 ))]
 async fn update_me<S: SumidaState>(
