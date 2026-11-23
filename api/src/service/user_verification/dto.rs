@@ -16,8 +16,8 @@ pub struct SendUserVerification {
   /// asked for under one kind is no good under another. `password-change` is what
   /// `POST /users/change-password` reads.
   pub kind:    String,
-  /// The channel to send it over. `email` is the one a deployment can be built to carry; anything
-  /// else stores the code and sends nothing.
+  /// The channel to send it over. `email` is the only one, and only in a deployment built with
+  /// mail; a code asked for over anything else, or where there is no mail, is never made at all.
   pub method:  String,
 }
 

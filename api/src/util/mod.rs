@@ -5,6 +5,7 @@ pub mod file_lifecycle;
 pub mod file_validation;
 pub mod filter;
 pub mod storage;
+pub mod throttle;
 pub mod user;
 
 #[cfg(feature = "image")]

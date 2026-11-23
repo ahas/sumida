@@ -4,7 +4,7 @@ use axum::{Json, Router, routing};
 use super::ApiController;
 use crate::SumidaState;
 #[cfg(feature = "openapi")]
-use crate::openapi::{Unreadable, WrongBody};
+use crate::openapi::{ErrorBody, Unreadable, WrongBody};
 use crate::service::prelude::*;
 
 /// Where this controller's routes stand. The router nests here and the document appends here, so
@@ -31,7 +31,9 @@ impl<S: SumidaState> UserVerificationController<S> {
 /// Sends an account a six-digit code and stores it against the `kind` that was named.
 ///
 /// No credentials are needed to call this. The code is good for three minutes; while one is still
-/// good, asking again sends nothing, so a second request is not a second code.
+/// good, asking again sends nothing, so a second request is not a second code. Asking is limited per
+/// account and per address (`security.verification.issue_limit` per `window`), and past that the
+/// answer is `429`; it is counted for an account that does not exist just the same.
 ///
 /// **The answer says nothing about what happened.** An account that is not there, an account with
 /// no address to send to, and a code that was withheld because one is already out all answer
@@ -41,8 +43,8 @@ impl<S: SumidaState> UserVerificationController<S> {
 ///
 /// `kind` is what the code will be spent on and has to match at the far end;
 /// `POST /users/change-password` spends one of kind `password-change`. `method` names the channel:
-/// `email` is the one a deployment can be built to carry, and a deployment built without mail
-/// stores the code without sending anything.
+/// `email` is the only one. A code is stored only together with the mail that carries it, so asking
+/// over any other channel, or of a deployment built without mail, makes no code at all.
 #[cfg_attr(feature = "openapi", utoipa::path(
   post,
   path = "",
@@ -60,6 +62,13 @@ impl<S: SumidaState> UserVerificationController<S> {
     ),
     Unreadable,
     WrongBody,
+    (
+      status = 429,
+      description = "Too many codes were asked for this account, or from this address, in the \
+                     current window.",
+      body = ErrorBody,
+      content_type = "application/json",
+    ),
   ),
 ))]
 async fn send<S: SumidaState>(

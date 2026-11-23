@@ -3,7 +3,49 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize, Default)]
 pub struct SecuritySettings {
   #[serde(default)]
-  pub ban: BanSettings,
+  pub ban:          BanSettings,
+  #[serde(default)]
+  pub verification: VerificationSettings,
+}
+
+/// How hard a verification code may be leaned on.
+///
+/// A code is six digits, so what keeps it from being guessed is how few guesses anyone gets. Every
+/// limit here is counted in this process: a deployment running several instances behind one address
+/// gives each of them its own count, and these defaults are set low enough that the multiple still
+/// leaves a code out of reach.
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct VerificationSettings {
+  /// How many times one issued code may be presented. The presentation that reaches this number
+  /// spends the code whether it was right or not, so no code is compared more often than this and a
+  /// new one has to be asked for.
+  pub max_failed_attempts: u32,
+  /// Codes that may be asked for in one `window`, counted per account and, separately, per address.
+  pub issue_limit:         u32,
+  /// Codes that may be presented in one `window`, counted per account and, separately, per address.
+  pub attempt_limit:       u32,
+  /// The span the two limits above are counted over, as a duration (`"1h"`, `"30m"`).
+  pub window:              String,
+}
+
+impl Default for VerificationSettings {
+  fn default() -> Self {
+    Self {
+      max_failed_attempts: 5,
+      issue_limit:         5,
+      attempt_limit:       20,
+      window:              "1h".to_owned(),
+    }
+  }
+}
+
+impl VerificationSettings {
+  /// The counting window. A value that cannot be read as a span — or names no bound — is the default
+  /// hour rather than no window at all: a limit with no window would never let anyone in again.
+  pub fn window(&self) -> chrono::Duration {
+    parse_span("security.verification.window", &self.window).unwrap_or_else(|| chrono::Duration::hours(1))
+  }
 }
 
 #[derive(Debug, Deserialize)]

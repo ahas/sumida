@@ -385,7 +385,10 @@ async fn activate<S: SumidaState>(
 ///
 /// No credentials are needed: the code is the credential. Ask for one first with
 /// `POST /user-verifications` for kind `password-change`; it is six digits and good for three
-/// minutes, and it is spent whether or not the password change that follows succeeds.
+/// minutes, and it is spent whether or not the password change that follows succeeds. One code may
+/// be presented `security.verification.max_failed_attempts` times, and the presentation that
+/// reaches that number spends it, right or wrong. Presenting codes is also limited per account and
+/// per address (`attempt_limit` per `window`); past that the answer is `429`.
 ///
 /// The change voids every credential the account already handed out — sessions, access tokens —
 /// from the moment it takes effect. API keys are issued on their own terms and are not touched.
@@ -409,6 +412,13 @@ async fn activate<S: SumidaState>(
       status = 401,
       description = "There is no such account, or the code is wrong, spent or expired. The two are \
                      not told apart.",
+      body = ErrorBody,
+      content_type = "application/json",
+    ),
+    (
+      status = 429,
+      description = "Too many codes were presented for this account, or from this address, in the \
+                     current window.",
       body = ErrorBody,
       content_type = "application/json",
     ),
