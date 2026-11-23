@@ -141,7 +141,16 @@ impl<S: SumidaState> ApiKeyService<S> {
     // 발급된 키로 인증하면 세션이 키 소유자의 권한을 그대로 상속하므로(layer::user_guard::verify_api_key),
     // 타인 명의 발급을 허용하면 `api_key:create` 권한만으로 그 계정을 탈취할 수 있다.
     // 세션 사용자로 조용히 덮어쓰지 않고 거부해, 호출자가 잘못된 요청임을 알 수 있게 한다.
-    if !self.session.profile.is_admin && data.user_id != self.session.profile.id {
+    //
+    // 관리자 여부는 세션 필드가 아니라 규칙에 묻는다. 보안 키로 들어온 요청은 세션에 소유자의
+    // `is_admin` 이 실려 있지만 소유자의 권한은 갖지 않는다.
+    let db = self.state.db();
+    if data.user_id != self.session.profile.id && !Authz::is_superuser(&self.subject(), db).await? {
+      return Err(SumidaError::NoAccessPermission);
+    }
+    // 보안 키는 자기가 받은 것만 가진다. 그런 키가 비보안 키를 발급하면 소유자의 신원 전체로
+    // 펼쳐지는 키가 생기므로, 보안 키로 들어온 요청은 보안 키만 발급한다.
+    if self.session.profile.api_key.is_some() && !data.is_secured.0.unwrap_or_default() {
       return Err(SumidaError::NoAccessPermission);
     }
 

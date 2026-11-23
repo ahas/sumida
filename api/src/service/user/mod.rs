@@ -31,6 +31,7 @@ use super::prelude::*;
 use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
+use crate::authz::write::{SubjectKey, TupleFilter};
 use crate::service::auth::session::AuthSessionService;
 use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
@@ -56,6 +57,13 @@ impl<S: SumidaState> UserService<S> {
   /// user/role/organization 으로 펼쳐지지 않는다.
   pub(crate) fn subject(&self) -> SubjectSet {
     SubjectSet::of(&self.session)
+  }
+
+  /// 호출자가 플랫폼 관리자인가. 세션의 `is_admin` 이 아니라 규칙(`platform:root#superuser`)에
+  /// 묻는다 — 보안 API 키는 소유자의 관리자 플래그를 물려받지 않아야 하는데, 세션 필드는 키
+  /// 소유자의 것으로 채워져 있다.
+  async fn is_superuser<C: sea_orm::ConnectionTrait>(&self, db: &C) -> Result<bool, SumidaError> {
+    Ok(Authz::is_superuser(&self.subject(), db).await?)
   }
 
   pub(crate) fn default_query_with(query: Select<Users>) -> Select<Users> {
@@ -117,22 +125,34 @@ impl<S: SumidaState> UserService<S> {
     &self,
     data: CreateUser,
   ) -> Result<InsertResult<entity::users::ActiveModel>, SumidaError> {
+    let db = self.state.db();
     let password = data.password.clone();
+    let role_id = data.role_id;
 
     let mut active_model = data.into_active_model();
     active_model.password =
       Set(hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
 
     // A non-admin cannot control privilege-escalation fields (same policy as update()).
-    // role_id/organization_id are NOT NULL, so instead of locking them, force them to safe values:
     //   - is_admin: always false → blocks creating a backdoor admin via {isAdmin:true}
     //   - organization_id: the operator's own organization → blocks planting users into other organizations
-    if !self.session.profile.is_admin {
+    //   - role_id: a role is global, and its grants reach everyone in it, so the caller may hand out
+    //     only the role it holds itself or one it may grant (`role:<id>#grant`)
+    //   - id: chosen by the server. A deleted account's id may still be named by grants somebody
+    //     forgot, and an account opened under that id would hold them.
+    if !self.is_superuser(db).await? {
+      if matches!(active_model.id, Set(_)) {
+        return Err(SumidaError::NoAccessPermission);
+      }
+      if role_id != self.session.profile.role.id || self.session.profile.api_key.is_some() {
+        Authz::try_check("role", role_id, "grant", &self.subject(), db).await?;
+      }
+
       active_model.is_admin = Set(false);
       active_model.organization_id = Set(self.session.profile.organization.id);
     }
 
-    Ok(Users::insert(active_model).exec(self.state.db()).await?)
+    Ok(Users::insert(active_model).exec(db).await?)
   }
 
   pub async fn update(&self, user_id: i32, data: UpdateUser) -> Result<entity::users::Model, SumidaError> {
@@ -149,7 +169,7 @@ impl<S: SumidaState> UserService<S> {
     //
     // Changing one's own profile goes through the /me route (UpdateMe DTO). This route is the
     // operator-privilege channel for updating other people.
-    let allow_security_fields = if self.session.profile.is_admin {
+    let allow_security_fields = if self.is_superuser(&txn).await? {
       true
     } else {
       Authz::try_check(RESOURCE, user_id, "edit", &self.subject(), &txn).await?;
@@ -184,6 +204,22 @@ impl<S: SumidaState> UserService<S> {
     let txn = self.state.db().begin().await?;
     Authz::try_check(RESOURCE, user_id, "remove", &self.subject(), &txn).await?;
 
+    // 계정이 사라지면 그 계정 앞으로 남은 부여도, 그 계정의 키 앞으로 남은 부여도, 그 계정을
+    // 대상으로 한 부여도 함께 사라진다. `relation_tuples` 에는 사용자로 가는 외래키가 없어서
+    // 남겨 두면 같은 id 로 다시 열린 계정이 그것을 전부 물려받는다.
+    let keys: Vec<String> = ApiKeys::find()
+      .select_only()
+      .column(entity::api_keys::Column::Key)
+      .filter(entity::api_keys::Column::UserId.eq(user_id))
+      .into_tuple()
+      .all(&txn)
+      .await?;
+    for key in &keys {
+      Authz::revoke_all_of(&SubjectKey::apikey(key), &txn).await?;
+    }
+    Authz::revoke_all_of(&SubjectKey::user(user_id), &txn).await?;
+    Authz::revoke_unchecked(TupleFilter::object(RESOURCE, &user_id.to_string()), &txn).await?;
+
     let result = Users::delete_by_id(user_id).exec(&txn).await?;
     txn.commit().await?;
 
@@ -193,9 +229,17 @@ impl<S: SumidaState> UserService<S> {
   pub async fn invite(&self, user_id: i32) -> Result<(), SumidaError> {
     let txn = self.state.db().begin().await?;
 
+    // 초대는 그 사람에게 하는 일이라 `sumida_user:<id>#edit` 를 묻는다. 그리고 초대를 받아들이면
+    // 계정이 켜지므로, 꺼진 계정을 초대하는 것은 `is_enabled` 를 바꾸는 일 — update() 에서 플랫폼
+    // 관리자만 바꿀 수 있는 보안 필드다.
+    Authz::try_check(RESOURCE, user_id, "edit", &self.subject(), &txn).await?;
+
     let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
       return Err(SumidaError::InvalidAccount);
     };
+    if !user.is_enabled && !self.is_superuser(&txn).await? {
+      return Err(SumidaError::NoAccessPermission);
+    }
     // 이메일 없음 검증은 mail-form 여부와 무관하게 유지한다(초대는 이메일 전제).
     // `receiver` 는 mail-form 발송에서만 읽힌다.
     #[cfg_attr(not(feature = "mail-form"), allow(unused_variables))]
@@ -349,13 +393,15 @@ impl<S: SumidaState> UserService<S> {
   }
 
   pub async fn impersonate(&mut self, user_id: i32) -> Result<(), SumidaError> {
-    // Only admins may impersonate another user. The router's user_guard guarantees authentication, but
-    // authorization (admin) is enforced once more here, independent of layer ordering.
-    if !self.session.profile.is_admin {
+    // Only platform administrators may impersonate another user, and the answer comes from the rule:
+    // a secured key carries its owner's `is_admin` in the session but not the owner's authority.
+    // It also takes a cookie session to hold the result, so a request that authenticated with a
+    // header credential — which never mints one — has nothing to impersonate into.
+    let db = self.state.db();
+    if self.session.is_request_local().await || !self.is_superuser(db).await? {
       return Err(SumidaError::OnlyAdminAllowed);
     }
 
-    let db = self.state.db();
     let settings = &settings::get().session.cookie;
     let Some(user) = Users::find_by_id(user_id).one(db).await? else {
       return Err(SumidaError::InvalidAccount);
