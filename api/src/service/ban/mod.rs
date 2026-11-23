@@ -10,6 +10,7 @@ use sea_orm::sea_query::{Alias, Asterisk, Expr, SimpleExpr};
 use sea_orm::{
   ColumnTrait,
   Condition,
+  ConnectionTrait,
   DeleteResult,
   EntityTrait,
   InsertResult,
@@ -127,9 +128,51 @@ impl<S: SumidaState> BanService<S> {
     Ok(item)
   }
 
+  /// 처분이 겨누는 대상에 대한 권한.
+  ///
+  /// 계정을 겨누는 처분은 그 계정을 편집할 수 있는 사람(`sumida_user:<id>#edit`)이 쓴다 — 조직
+  /// 경계를 넘지 못한다. 계정을 겨누지 않는 처분은 그 환경으로 들어오는 모두를 막으므로 처분
+  /// 네임스페이스의 운영 등급(`service:ban#<operate>`)만 쓴다. 그리고 아무것도 겨누지 않는 처분 —
+  /// 계정도 주소도 비어 있는 행 — 은 모든 요청에 걸려 설치 전체를 잠그므로 누구도 쓰지 못한다.
+  async fn may_target<C: ConnectionTrait>(
+    &self,
+    user_id: Option<i32>,
+    ip_address: Option<&str>,
+    operate: &str,
+    db: &C,
+  ) -> Result<(), SumidaError> {
+    let names_an_address = ip_address.is_some_and(|ip| !ip.trim().is_empty() && ip.trim() != "*");
+    if user_id.is_none() && !names_an_address {
+      return Err(SumidaError::BadRequest(
+        "a ban must name an account or an address; one that names neither shuts everybody out".to_owned(),
+      ));
+    }
+
+    let subject = self.subject();
+    if Authz::check_object("service", "ban", operate, &subject, db).await? {
+      return Ok(());
+    }
+
+    match user_id {
+      Some(user_id) => Authz::try_check("sumida_user", user_id, "edit", &subject, db).await,
+      None => Err(SumidaError::NoAccessPermission),
+    }
+  }
+
+  /// 처분을 남긴 계정. 세션이 없으면(시스템이 쓰는 처분) 비운다.
+  fn author(&self) -> Option<i32> {
+    self.session.profile.get_id()
+  }
+
   pub async fn create(&self, data: CreateBan) -> Result<InsertResult<BansActiveModel>, SumidaError> {
-    let active_model = data.into_active_model();
-    let result = Bans::insert(active_model).exec(self.state.db()).await?;
+    let db = self.state.db();
+    let user_id: Option<i32> = data.user_id.clone().into();
+    let ip_address: Option<String> = data.ip_address.clone().into();
+    self.may_target(user_id, ip_address.as_deref(), "operate_create", db).await?;
+
+    let mut active_model = data.into_active_model();
+    active_model.created_by = Set(self.author());
+    let result = Bans::insert(active_model).exec(db).await?;
 
     Ok(result)
   }
@@ -139,9 +182,13 @@ impl<S: SumidaState> BanService<S> {
     data: BanSettings,
     user_id: i32,
   ) -> Result<InsertResult<BansActiveModel>, SumidaError> {
+    let db = self.state.db();
+    self.may_target(Some(user_id), None, "operate_create", db).await?;
+
     let mut active_model = data.into_active_model();
     active_model.user_id = Set(Some(user_id));
-    let result = Bans::insert(active_model).exec(self.state.db()).await?;
+    active_model.created_by = Set(self.author());
+    let result = Bans::insert(active_model).exec(db).await?;
 
     Ok(result)
   }
@@ -187,6 +234,21 @@ impl<S: SumidaState> BanService<S> {
 
     let mut active_model = data.into_active_model();
     active_model.id = Set(id);
+
+    // 지금 겨누는 대상에 대한 권한만으로는 부족하다 — 바꾼 뒤에 겨눌 대상에 대해서도 물어야, 내가
+    // 관리하는 계정의 처분을 남의 계정으로 돌려 세우지 못한다.
+    let Some(current) = Bans::find_by_id(id).one(&txn).await? else {
+      return Err(SumidaError::NoData("Ban".to_owned(), id.to_string()));
+    };
+    let user_id = match &active_model.user_id {
+      Set(user_id) => *user_id,
+      _ => current.user_id,
+    };
+    let ip_address = match &active_model.ip_address {
+      Set(ip_address) => ip_address.clone(),
+      _ => current.ip_address.clone(),
+    };
+    self.may_target(user_id, ip_address.as_deref(), "operate_update", &txn).await?;
 
     let result = Bans::update(active_model).exec(&txn).await?;
     txn.commit().await?;
