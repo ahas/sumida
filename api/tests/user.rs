@@ -49,31 +49,59 @@ async fn test_user_read_permissions_comprehensive() {
 
 #[tokio::test]
 async fn test_user_create_permissions_comprehensive() {
+  // Written out rather than through `PermissionTestSuite::test_create_permission`: an account is
+  // opened in a role, and a role is global — its grants reach everyone in it — so a creator who is
+  // not a platform administrator may name only a role it may grant. The creator here is made that
+  // role's admin; the suite's own creator is made inside the suite and could not be.
   let mock = Mock::new().await;
   let db = infra::db::connect().await;
-  let target_user = TestUser::create(&db).await.expect("Failed to create target user");
+  let role = TestRole::create(&db).await.expect("Failed to create the role");
 
-  let random_suffix = api::util::random::generate_url_safe_string(8).unwrap();
-  let crud_data = CrudTestData {
-    create_data: serde_json::json!({
-      "username": format!("newuser-{}@example.com", random_suffix),
+  let body = || {
+    serde_json::json!({
+      "username": format!("newuser-{}@example.com", api::util::random::generate_url_safe_string(8).unwrap()),
       "password": "password123",
       "fullName": "New User",
-      "organizationId": target_user.model.organization_id,
-      "roleId": target_user.model.role_id
-    }),
-    update_data: serde_json::json!({
-      "fullName": "Updated Name"
-    }),
+      "organizationId": 0,
+      "roleId": role.model.id,
+    })
   };
 
-  let config = PermissionTestConfig {
-    namespace: "user",
-    base_url:  "/users",
-  };
+  let creator = TestUser::create(&db).await.expect("Failed to create test user");
+  ap_test_utils::grant_service(&db, &creator, "user", vec!["create".to_string()])
+    .await
+    .expect("Failed to grant create permission");
+  ap_test_utils::tuple(
+    &db,
+    "role",
+    &role.model.id.to_string(),
+    "admin",
+    api::authz::write::SubjectKey::user(creator.model.id),
+  )
+  .await
+  .expect("Failed to make the creator the role's admin");
 
-  let test_suite = PermissionTestSuite::new(config, crud_data);
-  test_suite.test_create_permission(&mock).await;
+  creator.login(&mock.client).await;
+  let resp = mock
+    .client
+    .post("/users")
+    .json(&body())
+    .send()
+    .await
+    .expect("Failed to send POST request");
+  assert_eq!(resp.status(), reqwest::StatusCode::CREATED, "Should be able to create with permission");
+
+  let mock2 = Mock::new().await;
+  let outsider = TestUser::create(&db).await.expect("Failed to create test user");
+  outsider.login(&mock2.client).await;
+  let resp = mock2
+    .client
+    .post("/users")
+    .json(&body())
+    .send()
+    .await
+    .expect("Failed to send POST request");
+  assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN, "Should be forbidden without permission");
 }
 
 #[tokio::test]
