@@ -1,3 +1,5 @@
+**English** | [한국어](README.ko.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
+
 # SUMIDA
 
 **S**calable **U**tility **M**odules **I**ntegration for **D**ynamic **A**pplication
@@ -7,7 +9,7 @@ A comprehensive Rust web application framework built with Axum, designed for sca
 ## ✨ Features
 
 ### 🏗️ Core Architecture
-- **Modular Workspace**: Clean separation across 6 specialized crates
+- **Modular Workspace**: Five library crates behind a root `sumida` crate that re-exports them
 - **Layered Design**: Controller → Service → Repository pattern
 - **Type-Safe**: Comprehensive use of Rust's type system with SeaORM
 - **Production-Ready**: Built for both local development and AWS cloud deployment
@@ -43,7 +45,7 @@ A comprehensive Rust web application framework built with Axum, designed for sca
 - **Deployment Flexibility**: Local Redis + file storage OR AWS DynamoDB + S3
 - **Image Processing**: Built-in image handling and optimization
 - **Email Integration**: SMTP-based notifications and user verification
-- **Configuration Management**: Environment-based settings with AWS SSM support
+- **Configuration Management**: TOML settings overridden by `SUMIDA_*` environment variables, with AWS SSM support
 - **Monitoring**: Admin-only dashboard monitoring API with snapshots and SSE streaming at
   `/dashboard/monitoring` for live server status
 
@@ -63,10 +65,10 @@ git clone <repository-url>
 cd sumida
 ```
 
-2. **Set up environment**
+2. **Set up settings**
 ```bash
-cp .env.example .env
-# Edit .env with your configuration
+cp settings.example.toml settings.toml
+# Edit settings.toml; SUMIDA_* environment variables override it
 ```
 
 3. **Database setup**
@@ -277,22 +279,22 @@ object, so a capability cannot be granted by someone lacking the authority to gr
 
 ```mermaid
 graph TD
-  f_get["GET /fs/files<br/>(read)"] --> f_ctrl_list["FileController::list"]
+  f_get["GET /files<br/>(read)"] --> f_ctrl_list["FileController::list"]
   f_ctrl_list --> f_srv_list["FileService::list"]
   f_srv_list --> f_logic_list{{"filter + pagination + partial model"}}
   f_logic_list --> f_ret_list[["List<FileListItem>"]]
 
-  f_post["POST /fs/files<br/>(create/upload)"] --> f_ctrl_upload["FileController::upload"]
+  f_post["POST /files<br/>(create/upload)"] --> f_ctrl_upload["FileController::upload"]
   f_ctrl_upload --> f_srv_upload["FileService::upload"]
   f_srv_upload --> f_logic_upload{{"insert metadata +<br/>storage.store + status update"}}
   f_logic_upload --> f_ret_upload[["FileUploaded (id)"]]
 
-  f_download["GET /fs/files/{id}/download"] --> f_ctrl_download["FileController::download"]
+  f_download["GET /files/{id}/download"] --> f_ctrl_download["FileController::download"]
   f_ctrl_download --> f_srv_download["FileService::download"]
   f_srv_download --> f_logic_download{{"storage.download"}}
   f_logic_download --> f_ret_download[["Response<Body>"]]
 
-  f_delete["DELETE /fs/files/{id}<br/>(delete)"] --> f_ctrl_delete["FileController::delete"]
+  f_delete["DELETE /files/{id}<br/>(delete)"] --> f_ctrl_delete["FileController::delete"]
   f_ctrl_delete --> f_srv_delete["FileService::delete"]
   f_srv_delete --> f_logic_delete{{"txn + fetch file +<br/>optional storage.delete + delete row"}}
   f_logic_delete --> f_ret_delete[["FileDeleted"]]
@@ -442,39 +444,53 @@ graph TD
 
 ### Basic Integration
 
+`examples/basic` is the complete server; its core is:
+
 ```rust
+use std::net::SocketAddr;
+
 use axum::{Extension, Router, routing};
-use sumida::api::Sumida;
+use sea_orm::DatabaseConnection;
+use sumida::api::{Sumida, SumidaState};
 
 #[derive(Clone)]
-pub struct AppState;
+pub struct AppState {
+    db: DatabaseConnection,
+}
+
+impl SumidaState for AppState {
+    fn db(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     // Initialize infrastructure
-    sumida::infra::tracing::subscribe();
-    sumida::infra::db::establish_connection().await;
-    
-    let state = AppState;
     let settings = sumida::infra::settings::get();
-    
-    // Build application
+    sumida::infra::tracing::subscribe();
+    let state = AppState { db: sumida::infra::db::connect().await };
+
+    let (messenger_layer, messenger) = sumida::infra::messenger::new_layer();
+    let session_store = sumida::infra::session::new_store(&settings.session).await?;
+
+    // Build application; `&[]` declares no rule files beyond sumida's own
     let app = Router::new()
-        .merge(
-            Sumida::new()
-                .set_state(&state)
-                .router(),
-        )
-        .layer(sumida::infra::session::new_layer().await?)
-        .layer(sumida::infra::cors::new_layer())
+        .merge(Sumida::new(&[]).set_state(&state).router())
+        .layer(messenger_layer)
+        .layer(sumida::api::layer::session::new(session_store).await?)
+        .layer(sumida::api::layer::cors::new())
+        .layer(Extension(messenger))
         .layer(Extension(settings))
         .with_state(state)
-        .route("/", routing::get(health_check));
-    
+        .route("/", routing::get(health_check))
+        .layer(settings.session.ip_source.clone().into_extension())
+        .into_make_service_with_connect_info::<SocketAddr>();
+
     // Start server
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    axum::serve(listener, app.into_make_service()).await?;
-    
+    let listener = tokio::net::TcpListener::bind(&settings.server.host).await?;
+    axum::serve(listener, app).await?;
+
     Ok(())
 }
 
@@ -492,14 +508,17 @@ The framework provides comprehensive REST APIs:
 - **Organizations**: `/organizations/*` - Multi-tenant organization management
 - **Roles**: `/roles/*` - Role and permission management
 - **Boards**: `/boards/*` - Discussion forum management
-- **Posts**: `/posts/*` - Content creation and management
+- **Posts**: `/board-posts/*` - Content creation and management
 - **API Keys**: `/api-keys/*` - Service authentication
 
 ## 🧪 Testing
 
 ### Run Tests
 ```bash
-# Unit and integration tests
+# Integration tests, one test binary at a time (each one resets the test database)
+bash scripts/test/suite.sh
+
+# Unit tests
 cargo test
 
 # End-to-end tests
@@ -520,25 +539,44 @@ cargo tarpaulin --out Html
 
 ## 🔧 Configuration
 
-### Environment Variables
+### Settings
 
-Create a `.env` file based on your deployment:
+Settings are loaded with Figment: `settings.toml` (the path in `SUMIDA_SETTINGS`, default `./settings.toml`) is
+the base, and `SUMIDA_*` environment variables override it. In a variable name `__` nests and a single `_`
+becomes `-`, so `SUMIDA_DATABASE__URL` sets `database.url`. `settings.example.toml` lists every section.
 
 #### Local Development
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/sumida
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=your-secret-key
-SMTP_HOST=localhost
-SMTP_PORT=587
+```toml
+[server]
+host = "0.0.0.0:7997"
+stage = "dev"
+
+[database]
+url = "postgres://user:password@localhost:5432/sumida"
+
+[session.redis]
+url = "redis://localhost:6379/0"
+
+[jwt]
+secret = "REPLACE_WITH_JWT_SECRET"  # at least 32 bytes
+
+[smtp]
+server = "smtp.example.com"
 ```
 
 #### AWS Production
-```env
-DATABASE_URL=postgresql://user:password@rds-endpoint:5432/sumida
-AWS_DYNAMODB_TABLE=sumida-sessions
-AWS_S3_BUCKET=sumida-storage
-AWS_SSM_JWT_SECRET_PATH=/sumida/jwt-secret
+```toml
+[database]
+url = "postgres://user:password@rds-endpoint:5432/sumida"
+
+[session.dynamodb]
+table = "sumida-sessions"
+
+[storage.s3]
+bucket = "sumida-storage"
+
+[jwt]
+ssm_path = "/sumida/prod/jwt-secret"  # default: /sumida/{stage}/jwt-secret
 ```
 
 ### Feature Configuration
@@ -567,8 +605,8 @@ sumida = { path = ".", features = ["full-aws", "image"] }
 
 ### Local Development
 ```bash
-# Start dependencies
-docker-compose up -d postgres redis
+# Start PostgreSQL and Redis first, then apply the schema
+cargo run --bin migration
 
 # Run application
 cargo run -p basic
@@ -602,7 +640,7 @@ Recommended AWS services:
 ### Development Setup
 1. Install Rust toolchain and required dependencies
 2. Set up local PostgreSQL and Redis instances  
-3. Copy `.env.example` to `.env` and configure
+3. Copy `settings.example.toml` to `settings.toml` and configure
 4. Run database migrations: `cargo run --bin migration`
 5. Start development server: `cargo run -p basic`
 
@@ -630,6 +668,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Technical Metrics**: 201 Rust source files • PostgreSQL + SeaORM • Axum 0.8.4 • Production-ready architecture
+**Technical Metrics**: PostgreSQL + SeaORM • Axum 0.8.4 • Production-ready architecture
 
-For detailed API documentation, architecture decisions, and deployment guides, see the [CLAUDE.md](CLAUDE.md) file.
+For the policies, settings and rule language in detail, see the documents under [`docs/`](docs/) and [CLAUDE.md](CLAUDE.md).
