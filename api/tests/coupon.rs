@@ -879,3 +879,52 @@ async fn test_session_gated_descriptor_stands_where_its_list_stands() {
     assert!(body["limits"]["maxConditionNodes"].as_u64().is_some(), "{path}: {body}");
   }
 }
+
+// ---------------------------------------------------------------------------
+// Single use holds under concurrency: many checkouts fired at once with one single-use grant, or
+// with a once-per-owner coupon, discount exactly one purchase.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_coupon_concurrent_checkouts_redeem_once() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let am = admin_mock(&db).await;
+  let plan = create_sub_plan(&am.client, 1000).await;
+
+  let granted = format!("RACE-G-{}", rnd());
+  let gid = create_coupon(&am.client, json!({ "code": granted, "percentOff": 50, "requiresGrant": true }))
+    .await["id"]
+    .as_i64()
+    .unwrap();
+  let capped = format!("RACE-O-{}", rnd());
+  create_coupon(&am.client, json!({ "code": capped, "percentOff": 50, "maxRedemptionsPerOwner": 1 })).await;
+
+  let user = TestUser::create(&db).await.unwrap();
+  let m = Mock::new().await;
+  user.login(&m.client).await;
+  am.client
+    .post(&format!("/coupons/{gid}/grant"))
+    .json(&json!({ "ownerId": user.model.id }))
+    .send()
+    .await
+    .unwrap();
+
+  for code in [&granted, &capped] {
+    let body = json!({ "kind": "subscription", "planCode": plan, "couponCode": code });
+    let attempts = (0..8).map(|_| m.client.post("/payments/checkout").json(&body).send());
+    let statuses: Vec<StatusCode> = futures::future::join_all(attempts)
+      .await
+      .into_iter()
+      .map(|r| r.unwrap().status())
+      .collect();
+    let created = statuses.iter().filter(|s| **s == StatusCode::CREATED).count();
+    assert_eq!(
+      created, 1,
+      "coupon `{code}` discounted exactly one of the racing checkouts: {statuses:?}"
+    );
+    assert!(
+      statuses.iter().all(|s| *s == StatusCode::CREATED || *s == StatusCode::BAD_REQUEST),
+      "the losers are refused, not failed: {statuses:?}"
+    );
+  }
+}

@@ -7,6 +7,7 @@ use error::SumidaError;
 use infra::session::UserSession;
 use infra::settings;
 use sea_orm::ActiveValue::*;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
   ColumnTrait,
   Condition,
@@ -349,15 +350,23 @@ impl<S: SumidaState> CouponService<S> {
       if grant.redeemed_at.is_some() {
         return Err(SumidaError::BadRequest("coupon already redeemed by this owner".into()));
       }
-      CouponGrants::update(CouponGrantsActiveModel {
-        id: Unchanged(grant.id),
-        redeemed_at: Set(Some(Utc::now())),
-        ..Default::default()
-      })
-      .exec(txn)
-      .await?;
+      // Spent only while still unspent and unrevoked: of two checkouts racing on one grant, the
+      // second waits on the row and then finds nothing left to update.
+      let spent = CouponGrants::update_many()
+        .col_expr(CouponGrantsColumn::RedeemedAt, Expr::value(Utc::now()))
+        .filter(CouponGrantsColumn::Id.eq(grant.id))
+        .filter(CouponGrantsColumn::RedeemedAt.is_null())
+        .filter(CouponGrantsColumn::RevokedAt.is_null())
+        .exec(txn)
+        .await?;
+      if spent.rows_affected != 1 {
+        return Err(SumidaError::BadRequest("coupon already redeemed by this owner".into()));
+      }
       grant_id = Some(grant.id);
     } else if let Some(per_owner) = coupon.max_redemptions_per_owner {
+      // The coupon row is locked before counting, so redemptions of one coupon are counted one at a
+      // time and a concurrent redemption is seen once it commits.
+      Coupons::find_by_id(coupon.id).lock_exclusive().one(txn).await?;
       let used = CouponRedemptions::find()
         .filter(CouponRedemptionsColumn::CouponId.eq(coupon.id))
         .filter(CouponRedemptionsColumn::OwnerKind.eq(owner_kind.clone()))
