@@ -229,29 +229,15 @@ impl<S: SumidaState> FileService<S> {
         .await?
         .and_then(|bf| bf.post_id);
 
+      // An attached file is read exactly where its post is: the post's row scope, its password and
+      // its content visibility, through the post service's own gate.
       if let Some(post_id) = attached {
-        let post = BoardPosts::find_by_id(post_id)
-          .filter(entity::bps::board_posts::Column::DeletedAt.is_null())
-          .one(db)
-          .await?
-          .ok_or_else(|| SumidaError::NoData("BoardPost".into(), post_id.to_string()))?;
-        let board = Boards::find_by_id(post.board_id)
-          .one(db)
-          .await?
-          .ok_or_else(|| SumidaError::NoData("Board".into(), post.board_id.to_string()))?;
-        let user_id = if self.session.profile.is_authorized { Some(self.session.profile.id) } else { None };
-
-        return if crate::service::bps::board_post::util::check_post_visible(
-          user_id,
-          post.user_id,
-          self.session.profile.is_admin,
-          board.content_visibility,
-          post.content_visibility,
-        )? {
-          Ok(())
-        } else {
-          Err(SumidaError::NoAccessPermission)
-        };
+        return crate::service::bps::board_post::BoardPostService::new(
+          self.state.clone(),
+          self.session.clone(),
+        )
+        .guard_attachment_read(post_id, db)
+        .await;
       }
     }
 

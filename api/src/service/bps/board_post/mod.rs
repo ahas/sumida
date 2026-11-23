@@ -581,6 +581,25 @@ impl<S: SumidaState> BoardPostService<S> {
     Ok(())
   }
 
+  /// The gate a post's attached files are read through: the post must be one `get` would answer this
+  /// caller — the `board_post#view` row scope, the post password (which a file URL never carries, so
+  /// a protected post's files reach its author and administrators only) and the content visibility.
+  pub(crate) async fn guard_attachment_read<C: ConnectionTrait>(
+    &self,
+    post_id: i32,
+    txn: &C,
+  ) -> Result<(), SumidaError> {
+    let post = BoardPosts::find_by_id(post_id)
+      .filter(BoardPostsColumn::DeletedAt.is_null())
+      .one(txn)
+      .await?
+      .ok_or_else(|| SumidaError::NoData("BoardPost".to_string(), post_id.to_string()))?;
+    if self.select(BoardPosts::find_by_id(post_id))?.count(txn).await? == 0 {
+      return Err(SumidaError::NoAccessPermission);
+    }
+    self.guard_post_read(&post, None, txn).await
+  }
+
   /// Permission check for editing/deleting a post.
   ///
   /// 판정 전체가 `board_post#edit` 한 술어 안에 있다:

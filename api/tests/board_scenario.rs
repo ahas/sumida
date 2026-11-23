@@ -649,11 +649,13 @@ async fn scenario_inline_file_serving() {
   .await;
   assert_eq!(resp.status(), StatusCode::CREATED);
 
+  // A public post's file is read where the post is: by a reader of the board.
   let mock2 = Mock::new().await;
   let other = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &other, &board, &["read"]).await;
   other.login(&mock2.client).await;
   let resp = mock2.client.get(&format!("/files/{uuid}/inline")).send().await.unwrap();
-  assert_eq!(resp.status(), StatusCode::OK, "a public post's inline image is servable to others");
+  assert_eq!(resp.status(), StatusCode::OK, "a public post's inline image is servable to its readers");
 
   // a PRIVATE post's attachment is hidden from a non-author
   let priv_uuid = upload_board_file(&mock, board.id, "secret.png").await;
@@ -1452,4 +1454,67 @@ async fn scenario_comment_parent_must_share_the_board() {
   assert_eq!(resp.status(), StatusCode::CREATED, "a parent in the same board is fine");
   let id = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap() as i32;
   assert_ne!(id, chosen, "the client does not pick the row's id");
+}
+
+/// A post's attached file is read exactly where the post is: a password-protected post's file is its
+/// author's alone (a file URL carries no password), and a caller outside the board's read scope gets
+/// nothing even when the content is public.
+#[tokio::test]
+async fn scenario_inline_file_follows_the_post_read_gate() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, true).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  allow(&db, &author, "board_file", "service", &["create"]).await;
+  author.login(&mock.client).await;
+
+  let locked = upload_board_file(&mock, board.id, "locked.png").await;
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": board.id, "title": "locked", "password": "s3cret-pw",
+      "content": format!(r#"<img src="/files/{locked}/inline">"#),
+      "contentType": "text/html", "kind": "article", "status": "published", "contentVisibility": "public"
+    }),
+  )
+  .await;
+  assert_eq!(resp.status(), StatusCode::CREATED);
+  let open = upload_board_file(&mock, board.id, "open.png").await;
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": board.id, "title": "open", "content": format!(r#"<img src="/files/{open}/inline">"#),
+      "contentType": "text/html", "kind": "article", "status": "published", "contentVisibility": "public"
+    }),
+  )
+  .await;
+  assert_eq!(resp.status(), StatusCode::CREATED);
+
+  let reader_mock = Mock::new().await;
+  let reader = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &reader, &board, &["read"]).await;
+  reader.login(&reader_mock.client).await;
+  let outsider_mock = Mock::new().await;
+  let outsider = TestUser::create(&db).await.unwrap();
+  outsider.login(&outsider_mock.client).await;
+
+  let status = |m: &Mock, id: Uuid| {
+    let request = m.client.get(&format!("/files/{id}/inline")).send();
+    async move { request.await.unwrap().status() }
+  };
+  assert_eq!(
+    status(&mock, locked).await,
+    StatusCode::OK,
+    "the author reads their protected post's file"
+  );
+  assert_eq!(status(&reader_mock, locked).await, StatusCode::FORBIDDEN, "no password, no file");
+  assert_eq!(status(&reader_mock, open).await, StatusCode::OK, "a reader of the board reads it");
+  assert_eq!(
+    status(&outsider_mock, open).await,
+    StatusCode::FORBIDDEN,
+    "outside the board's read scope"
+  );
 }
