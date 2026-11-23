@@ -61,6 +61,17 @@ Nothing to grant for using them. The owner is the session user and the rule read
 the owner subscribes, reads the balance and the ledger, spends, holds, extends, captures and
 releases on their own wallet.
 
+**A priced period is bought, never asked for.** `POST /subscriptions` takes no payment, so it starts
+only a period that costs nothing — a free plan, a free trial, or a first period a coupon covers whole.
+Renewing or reactivating a priced subscription by hand, and an upgrade whose difference no stored
+billing key pays, are refused with 402 alike. An owner buys a priced period through checkout; the
+scheduler renews it by charging the stored billing key. A platform administrator may still do any of
+these by hand, and server code that settles the money itself uses the trusted entry point (§5).
+
+**Money out is not the owner's either.** `POST /payments/refund` is a platform administrator's alone,
+for a personal and an organization purchase alike: a refund of the whole amount after the period was
+used would be the period for free.
+
 **Putting credits into a wallet, or taking them back, is not the owner's.** Grants and refunds
 through the credit routes are refused to everybody but:
 
@@ -160,12 +171,33 @@ on that org, resolved through their `user:` / `role:` / `org:` identities).
 ## 5. Payment flow (PG)
 
 `POST /payments/checkout` → pending purchase (coupon + tax applied, total
-recorded with breakdown) → client pays at the PG → `POST /payments/confirm` (or
-the `Transaction.Paid` webhook) → server-side `verify` (PAID + amount match) →
-subscription activated / `plan.credit_amount` credits granted. Auto-renew,
-dunning, and a positive plan-change proration charge the stored `billing_key` via
-`charge_recurring` (a declined proration charge aborts the change). Refund
-reverses the entitlement and cancels at the PG. Webhooks are Standard-Webhooks
+recorded with breakdown) → client pays at the PG under the purchase code as its
+payment id → `POST /payments/confirm` (or the `Transaction.Paid` webhook) →
+server-side `verify` of that payment (PAID, amount and currency match) →
+subscription activated / `plan.credit_amount` credits granted.
+
+- **One payment settles one purchase.** The PG is always asked about the payment registered
+  under the purchase's own code; a `paymentId` naming any other payment is refused before
+  the PG is asked, and the purchase is left as it was.
+- **Only a pending purchase is settled.** A completed one answers as it is. A failed one —
+  declined, short-paid, or expired by the stale-purchase sweep, its coupons given back — and a
+  refunded one are never settled again. A payment the PG reports still under way (ready,
+  pending, a virtual account awaiting transfer) leaves the purchase pending. The purchase row
+  is locked while it is settled, so a confirm, the webhook and the sweep act on it one at a
+  time.
+- **Coupon use is single.** A single-use grant is spent by a conditional update, and the
+  per-owner cap is counted under a lock on the coupon, so checkouts racing on one coupon
+  discount one purchase.
+
+**The trusted entry point.** `SubscriptionService::trusted` builds the service for
+server code that has decided the money side itself (a product that bills a plan elsewhere):
+`subscribe`, `renew`, `reactivate` and `change_plan` through it start a priced period without a
+payment captured here, still authorized on the owner by the session. `SubscriptionService::new`
+is what the routes use. The trusted service is never handed a request's word.
+
+Auto-renew, dunning, and a positive plan-change proration charge the stored `billing_key` via
+`charge_recurring` (a declined proration charge aborts the change). Refund — a platform
+administrator's — reverses the entitlement and cancels at the PG. Webhooks are Standard-Webhooks
 signature-verified and idempotent (deduped by `webhook-id`).
 
 A free trial (`plan.trial_days`) is granted at most once per (owner, plan); a
@@ -283,10 +315,11 @@ What this domain can and cannot do today.
 ### ✅ Possible
 - **Catalog**: subscription & credit plans (personal/org scope), free trials,
   per-action quotas / credit costs, soft-delete (retire) plans.
-- **Subscriptions**: subscribe (free/manual or PG-paid), cancel (now/period-end),
-  manual renew, **auto-renew** (billing key), **grace + dunning** retries,
-  **reactivation**, **mid-period plan change with proration** (upgrade charges the
-  billing key; decline aborts).
+- **Subscriptions**: subscribe (free, PG-paid, or by an administrator), cancel
+  (now/period-end), manual renew (free plans, administrators), **auto-renew**
+  (billing key), **grace + dunning** retries, **reactivation** (free plans,
+  administrators), **mid-period plan change with proration** (upgrade charges the
+  billing key; decline aborts; no key refuses the upgrade).
 - **Trials**: free first period, **once per (owner, plan)** (re-subscribe is paid).
 - **Credits**: grant (with expiry, FIFO lots; admin- or org-manager-only), consume
   (idempotent), **reserve / extend / capture / release** (authorize-capture) at a fixed
@@ -297,7 +330,7 @@ What this domain can and cannot do today.
   **amount quota** (reserve / extend / capture / release, bounded overage);
   route-layer (`entitlement_guard!`) or in-handler (`require_action`).
 - **Payments (PortOne V2)**: checkout → confirm/webhook → verify → activate;
-  refund; recurring billing-key charge (auto-renew, dunning, proration); webhook
+  refund (administrators); recurring billing-key charge (auto-renew, dunning, proration); webhook
   signature verification + idempotency.
 - **Coupons & tax**: percent / fixed-amount coupons (currency-matched), global +
   Each coupon is exactly one reward — a **discount** (`percent_off`, currency-free),
