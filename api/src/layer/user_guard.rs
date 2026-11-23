@@ -2,6 +2,7 @@ use std::task::{Context, Poll};
 
 use axum::body::Body;
 use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Request, Response};
 use axum::response::IntoResponse;
 use chrono::Utc;
@@ -12,7 +13,6 @@ use infra::jwt::JwtTokenStore;
 use infra::session::UserSession;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use tower::{Layer, Service};
-use tower_sessions::Expiry;
 
 use crate::SumidaState;
 use crate::service::auth::helper;
@@ -72,24 +72,33 @@ where
     Box::pin(async move {
       let (mut parts, body) = req.into_parts();
 
-      let mut session = match UserSession::from_request_parts(&mut parts, &()).await {
-        Ok(session) => session,
-        Err(_) => {
-          let error_response = SumidaError::NoCredentials.into_response();
-          return Ok(error_response);
-        }
-      };
-
-      let req = Request::from_parts(parts, body);
-
-      if let Err(err) = verify(&mut session, state, req.headers()).await {
-        let error_response = err.into_response();
-        return Ok(error_response);
+      if let Err(err) = admit(&mut parts, state).await {
+        return Ok(err.into_response());
       }
 
-      inner.call(req).await
+      inner.call(Request::from_parts(parts, body)).await
     })
   }
+}
+
+/// Establishes who a request is, or the reason it is refused.
+///
+/// A header credential is checked and established for this request alone: its identity is handed to
+/// every later extractor through the request's extensions, and nothing of it reaches the cookie
+/// session. A request with no header credential is admitted on its cookie session, re-checked
+/// against the account as it stands now.
+pub async fn admit<S: SumidaState>(parts: &mut Parts, state: S) -> Result<UserSession, SumidaError> {
+  let mut session = UserSession::from_request_parts(parts, &())
+    .await
+    .map_err(|_| SumidaError::NoCredentials)?;
+
+  verify(&mut session, state, &parts.headers).await?;
+
+  if session.is_request_local().await {
+    parts.extensions.insert(session.principal());
+  }
+
+  Ok(session)
 }
 
 pub async fn verify_jwt<S: SumidaState>(
@@ -97,10 +106,8 @@ pub async fn verify_jwt<S: SumidaState>(
   state: S,
   token: &str,
 ) -> Result<(), SumidaError> {
-  let settings = infra::settings::get();
   // Allow only access tokens. Includes token_type validation.
   let claims = helper::verify_access_token(token).await?;
-  let expiry = settings.jwt.as_ref().ok_or(SumidaError::NoJwtSecret)?.expiry.access_token_expiry()?;
 
   // Parse the standard claim sub (a string) into user_id (i32).
   let user_id: i32 = claims.sub.parse().map_err(|_| SumidaError::InvalidJwt)?;
@@ -126,7 +133,8 @@ pub async fn verify_jwt<S: SumidaState>(
     return Err(SumidaError::InvalidJwt);
   }
 
-  session.authorize(user_id, &claims.username, Some(expiry), db).await?;
+  // The token is presented, and checked, again on every request; it authorizes this one alone.
+  session.authorize_request(user, None, db).await?;
 
   Ok(())
 }
@@ -154,18 +162,16 @@ pub async fn verify_api_key<S: SumidaState>(
   // of its own, issued and revoked on its own terms, so a password reset does not reach it.
   let user = session.admitted_account(api_key.user_id, db).await?;
 
-  session.authorize(user.id, &user.username, Some(Expiry::OnSessionEnd), db).await?;
-
-  // Key scope policy (intended design):
-  //   - is_secured=true : sets profile.api_key → who() evaluates only the `api:KEY` identifier,
-  //                       isolating permissions to the access_policy scope explicitly granted to the key.
-  //   - is_secured=false: does not set api_key → who() expands all of the owner's User/Role/Org/Admin
-  //                       identifiers, so the key inherits the owner's full permissions as-is.
-  // In short: an unsecured key = owner full access (for convenience), a secured key = scope-limited. Announce this distinction to downstream.
-  // Policies are stored under the hash identifier (`api:<hash>`), so put the hash into profile.api_key too.
-  if api_key.is_secured {
-    session.profile.api_key = Some(key_hash);
-  }
+  // Key scope policy:
+  //   - is_secured=true : profile.api_key carries the key's hash, so `SubjectSet::of` judges the
+  //                       request as `apikey:<hash>` alone — the grants given to the key and nothing
+  //                       of its owner's user, role, organization or administrator standing.
+  //   - is_secured=false: profile.api_key stays unset, so the request is judged as the owner.
+  // Grants are stored under the hash identifier, so the hash is what goes into the profile. It is
+  // part of the identity the request is established with, never added to it afterwards: a reader
+  // that ran in between would see the owner.
+  let secured = api_key.is_secured.then_some(key_hash);
+  session.authorize_request(user, secured, db).await?;
 
   Ok(())
 }

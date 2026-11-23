@@ -376,6 +376,17 @@ pub fn credentials_reset_since(user: &entity::users::Model, established_at: Date
   user.credentials_reset_at.is_some_and(|reset_at| established_at <= reset_at)
 }
 
+/// The identity a request established from a credential in its own `Authorization` header.
+///
+/// A bearer token or an API key is presented again on every request and is checked again on every
+/// request — that re-check is what lets a revoked key or a blacklisted token stop working at once.
+/// So what such a credential establishes belongs to that one request and to nothing that outlives
+/// it: it is never written into the cookie session, and the response never carries a cookie for
+/// it. The guard that checked the credential hands this to every later extractor of the same
+/// request through the request's extensions.
+#[derive(Clone, Debug)]
+pub struct RequestPrincipal(pub UserProfile);
+
 #[derive(Clone, Debug)]
 pub struct UserSession {
   pub inner:   Session,
@@ -388,6 +399,56 @@ impl UserSession {
   pub const USER_PROFILE_KEY: &'static str = "user.profile";
   pub const USER_ENV_KEY: &'static str = "user.env";
   pub const USER_STATE_KEY: &'static str = "user.state";
+  /// Marks a session that stands for one request only (see [`RequestPrincipal`]).
+  const REQUEST_LOCAL_KEY: &'static str = "request.local";
+
+  /// A session record that no cookie points at and no store keeps.
+  ///
+  /// Whatever is written to it — a profile, a cycled id — stays in this process for the rest of the
+  /// request and is never turned into a `Set-Cookie`, because the session layer only answers for
+  /// the record it handed the request itself.
+  async fn detached_record() -> Result<Session, anyhow::Error> {
+    let record = Session::new(None, std::sync::Arc::new(tower_sessions::MemoryStore::default()), None);
+    record.insert(Self::REQUEST_LOCAL_KEY, true).await?;
+    Ok(record)
+  }
+
+  /// Whether this session stands for one request only, established from a header credential.
+  pub async fn is_request_local(&self) -> bool {
+    self.inner.get::<bool>(Self::REQUEST_LOCAL_KEY).await.ok().flatten().unwrap_or(false)
+  }
+
+  /// Authorizes this request alone as `user`, from a credential the request carries itself.
+  ///
+  /// The cookie session the request may also carry is left exactly as it was: nothing is written to
+  /// it, its id is not cycled, and no cookie is issued. `api_key` is the hash of a **secured** key,
+  /// which is the whole identity of the request (see `SubjectSet::of`); it is set here, before the
+  /// profile is handed on, so no later reader of the request can see the owner without it.
+  pub async fn authorize_request<C: ConnectionTrait>(
+    &mut self,
+    user: entity::users::Model,
+    api_key: Option<String>,
+    db: &C,
+  ) -> Result<(), SumidaError> {
+    let mut profile = UserProfile {
+      id: user.id,
+      username: user.username.clone(),
+      is_authorized: true,
+      api_key,
+      ..Default::default()
+    };
+    profile.update(user, db).await?;
+
+    self.profile = profile;
+    self.inner = Self::detached_record().await?;
+
+    Ok(())
+  }
+
+  /// What this request established, for the extractors that run after the guard.
+  pub fn principal(&self) -> RequestPrincipal {
+    RequestPrincipal(self.profile.clone())
+  }
 
   pub async fn authorize<C: ConnectionTrait + TransactionTrait>(
     &mut self,
@@ -656,6 +717,19 @@ where
   type Rejection = SumidaError;
 
   async fn from_request_parts(req: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+    // A request whose guard established it from a header credential is that identity for the rest
+    // of its way, and the cookie session is not touched on its behalf.
+    if let Some(RequestPrincipal(profile)) = req.extensions.get::<RequestPrincipal>().cloned() {
+      let env = UserEnvironment::from_request_parts(req, state).await.unwrap_or_default();
+
+      return Ok(Self {
+        inner: Self::detached_record().await?,
+        profile,
+        env,
+        state: UserState::default(),
+      });
+    }
+
     let inner = Session::from_request_parts(req, state)
       .await
       .map_err(|err| SumidaError::InternalServerError(err.1.to_string()))?;
@@ -669,6 +743,14 @@ where
       env,
       state: user_state,
     };
+
+    // A request that carries its own credential is about to be established from it, for itself
+    // alone. Touching the cookie session on its way through would create a record — and a cookie —
+    // for every such request that arrived without one.
+    if req.headers.contains_key(axum::http::header::AUTHORIZATION) {
+      return Ok(session);
+    }
+
     session.profile.last_seen_at = Utc::now();
     // tower-sessions stores only the expiry "instant" in the record, while the "policy" (Expiry) is
     // reset every request to the layer default (here None=OnSessionEnd). If the save() below overwrites
