@@ -105,7 +105,8 @@ async fn confirm<S: SumidaState>(
 /// Give a purchase back.
 ///
 /// The charge is cancelled with the payment provider and what it granted is undone here.
-/// `cancelledAmount` is what the provider actually reversed.
+/// `cancelledAmount` is what the provider actually reversed. Paying money back out is a platform
+/// administrator's decision, never the buyer's: anyone else is refused.
 #[cfg_attr(feature = "openapi", utoipa::path(
   post,
   path = REFUND,

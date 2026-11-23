@@ -280,8 +280,8 @@ async fn test_payment_refund_subscription() {
     StatusCode::OK
   );
 
-  // Refund.
-  let rf = user_mock
+  // Refund, by a platform administrator.
+  let rf = admin_mock
     .client
     .post("/payments/refund")
     .json(&json!({ "purchaseCode": purchase_code, "reason": "customer request" }))
@@ -338,8 +338,8 @@ async fn test_payment_refund_credit_clawback() {
   let bal: Value = user_mock.client.get("/credits/balance").send().await.unwrap().json().await.unwrap();
   assert_eq!(bal["balance"].as_i64().unwrap(), 100);
 
-  // Refund → 100 units clawed back → balance 0.
-  let rf = user_mock
+  // Refund (an administrator's) → 100 units clawed back → balance 0.
+  let rf = admin_mock
     .client
     .post("/payments/refund")
     .json(&json!({ "purchaseCode": purchase_code }))
@@ -530,4 +530,49 @@ async fn test_payment_failed_purchase_is_not_settled_later() {
   assert_eq!(purchase_status(&db, &purchase_code).await, "Failed");
   let subs: Value = user_mock.client.get("/subscriptions").send().await.unwrap().json().await.unwrap();
   assert_eq!(subs["count"].as_u64().unwrap(), 0, "nothing activated");
+}
+
+// ---------------------------------------------------------------------------
+// The buyer cannot refund their own purchase: money out is an administrator's decision.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_payment_refund_refused_to_the_buyer() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+
+  let admin_mock = Mock::new().await;
+  let admin = TestUser::create_admin(&db).await.unwrap();
+  admin.login(&admin_mock.client).await;
+  let code = create_plan(
+    &admin_mock.client,
+    json!({
+      "code": format!("prb-{}", rnd()), "name": "Pro", "kind": "subscription", "scope": "personal",
+      "price": 1000, "durationDays": 30, "actions": [{ "action": "a" }],
+    }),
+  )
+  .await;
+
+  let user_mock = Mock::new().await;
+  let user = TestUser::create(&db).await.unwrap();
+  user.login(&user_mock.client).await;
+
+  let co = checkout(&user_mock.client, json!({ "kind": "subscription", "planCode": code })).await;
+  let purchase_code = co["purchaseCode"].as_str().unwrap().to_string();
+  assert_eq!(
+    confirm(&user_mock.client, &purchase_code, &purchase_code).await.status(),
+    StatusCode::OK
+  );
+
+  let rf = user_mock
+    .client
+    .post("/payments/refund")
+    .json(&json!({ "purchaseCode": purchase_code }))
+    .send()
+    .await
+    .unwrap();
+  assert_eq!(rf.status(), StatusCode::FORBIDDEN, "the buyer may not refund their own purchase");
+
+  assert_eq!(purchase_status(&db, &purchase_code).await, "Completed");
+  let subs: Value = user_mock.client.get("/subscriptions").send().await.unwrap().json().await.unwrap();
+  assert_eq!(subs["items"][0]["status"].as_str().unwrap(), "active", "the service was not taken back");
 }

@@ -245,14 +245,17 @@ impl<S: SumidaState> PaymentService<S> {
   ) -> Result<PaymentRefundResult, SumidaError> {
     use entity::membership::membership_purchases::Column;
 
-    let _session = self.session()?;
+    let session = self.session()?;
     let txn = self.state.db().begin().await?;
+    if !Authz::is_superuser(&SubjectSet::of(session), &txn).await? {
+      return Err(SumidaError::NoAccessPermission);
+    }
     let purchase = MembershipPurchases::find()
       .filter(Column::Code.eq(purchase_code.to_string()))
+      .lock_exclusive()
       .one(&txn)
       .await?
       .ok_or_else(|| SumidaError::PurchaseNotFound(purchase_code.to_string()))?;
-    self.authorize(&purchase.kind, &purchase.owner_kind, purchase.owner_id, &txn).await?;
 
     if purchase.status != PurchaseStatus::Completed {
       return Err(SumidaError::BadRequest("only completed purchases can be refunded".into()));
