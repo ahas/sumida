@@ -19,6 +19,11 @@ use serde_json::json;
 /// policy, so these are the built-in defaults, and the case says which of them it depends on.
 const ALLOWED_FAILURES: usize = 10;
 
+/// Held for the whole of each case. Both cases sign in from the same address, so a run one of them
+/// provokes bans the other's attempts, and the bans one of them clears are the other's too: run side
+/// by side, each would read the other's lockout as its own.
+static ONE_RUN_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn sign_in(http: &reqwest::Client, base: &str, username: &str, password: &str) -> (u16, String) {
   let resp = http
     .post(format!("{base}/auth/session"))
@@ -36,6 +41,7 @@ async fn sign_in(http: &reqwest::Client, base: &str, username: &str, password: &
 
 #[tokio::test]
 async fn test_a_run_of_wrong_passwords_locks_the_attempts_out() {
+  let _alone = ONE_RUN_AT_A_TIME.lock().await;
   let mock = Mock::new().await;
   let base = format!("http://{}", mock.server.addr);
   let db = infra::db::connect().await;
@@ -82,6 +88,7 @@ async fn test_a_password_set_anew_against_a_code_lifts_the_lockout_and_starts_th
   use chrono::{Duration, Utc};
   use sea_orm::{ActiveModelTrait, Set};
 
+  let _alone = ONE_RUN_AT_A_TIME.lock().await;
   let mock = Mock::new().await;
   let base = format!("http://{}", mock.server.addr);
   let db = infra::db::connect().await;
