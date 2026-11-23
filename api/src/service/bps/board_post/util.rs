@@ -240,10 +240,17 @@ fn uuid_from_url(url: &str) -> Option<Uuid> {
 }
 
 /// Attach the given files plus any referenced inline in `content` to `post_id`, enforcing the
-/// board's `max_file_count`. Pending claims are promoted; generic files get a fresh attached link.
+/// board's file policy and `max_file_count`. Pending claims are promoted; generic files get a fresh
+/// attached link.
+///
+/// Only `uploader`'s own unattached files are attached. An explicitly listed file someone else owns
+/// refuses the whole write; a file someone else owns that the content merely links to is left alone,
+/// since linking to a file is not taking it. A file newly attached is held to this board's size and
+/// type policy, whichever route it was uploaded through.
 pub async fn claim_post_files<C: ConnectionTrait>(
   board_id: i32,
   post_id: i32,
+  uploader: i32,
   explicit: Vec<Uuid>,
   content: Option<&str>,
   content_type: &BoardPostContentType,
@@ -252,7 +259,7 @@ pub async fn claim_post_files<C: ConnectionTrait>(
   let mut uuids = explicit;
   if let Some(content) = content {
     for uuid in extract_referenced_file_uuids(content, content_type) {
-      if !uuids.contains(&uuid) {
+      if !uuids.contains(&uuid) && file_lifecycle::is_uploaded_by(uuid, uploader, db).await? {
         uuids.push(uuid);
       }
     }
@@ -260,12 +267,17 @@ pub async fn claim_post_files<C: ConnectionTrait>(
   uuids.sort();
   uuids.dedup();
 
+  let config = FileValidator::from_board_id(board_id, db).await?.get_config().clone();
   for uuid in uuids {
-    file_lifecycle::claim_file(post_id, uuid, db).await?;
+    if let Some(file) = file_lifecycle::claim_file(post_id, uuid, uploader, db).await? {
+      let extension = std::path::Path::new(&file.original_name).extension().and_then(|ext| ext.to_str());
+      FileValidator::new(config.clone())
+        .validate_size(file.size.max(0) as usize)?
+        .validate_extension(extension)?;
+    }
   }
 
   // Enforce the board's max_file_count over the resulting attached set.
-  let config = FileValidator::from_board_id(board_id, db).await?.get_config().clone();
   if config.max_file_count != 0 {
     let total = BoardFiles::find().filter(BoardFilesColumn::PostId.eq(post_id)).count(db).await? as usize;
     if total > config.max_file_count {

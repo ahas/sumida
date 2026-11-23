@@ -513,6 +513,7 @@ impl<S: SumidaState> BoardPostService<S> {
     util::claim_post_files(
       board.id,
       post_id,
+      self.session.profile.id,
       attached_file_uuids.unwrap_or_default(),
       content_for_files.as_deref(),
       &content_type,
@@ -608,6 +609,7 @@ impl<S: SumidaState> BoardPostService<S> {
     util::claim_post_files(
       board.id,
       id,
+      self.session.profile.id,
       attached_file_uuids.unwrap_or_default(),
       parse_content.as_deref(),
       &content_type,

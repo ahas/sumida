@@ -1308,3 +1308,55 @@ async fn scenario_upload_type_is_the_servers_and_scripts_never_render_inline() {
   assert_eq!(resp.headers().get("content-disposition").unwrap(), "inline");
   assert_eq!(resp.headers().get("x-content-type-options").unwrap(), "nosniff");
 }
+
+/// Only the uploader's own unattached file attaches to a post. Naming someone else's file refuses
+/// the write; linking to it in the body leaves it where it was.
+#[tokio::test]
+async fn scenario_foreign_file_cannot_be_claimed() {
+  bootstrap::init_once().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, true).await;
+
+  let victim_mock = Mock::new().await;
+  let victim = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &victim, &board, &["read", "create"]).await;
+  allow(&db, &victim, "board_file", "service", &["create"]).await;
+  victim.login(&victim_mock.client).await;
+  let theirs = upload_board_file(&victim_mock, board.id, "private.png").await;
+
+  let mock = Mock::new().await;
+  let attacker = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &attacker, &board, &["read", "create"]).await;
+  attacker.login(&mock.client).await;
+
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": board.id, "title": "mine now", "content": "<p>x</p>",
+      "contentType": "text/html", "kind": "article", "status": "published",
+      "contentVisibility": "public", "attachedFileUuids": [theirs.to_string()]
+    }),
+  )
+  .await;
+  assert_eq!(
+    resp.status(),
+    StatusCode::FORBIDDEN,
+    "another user's file is not the poster's to attach"
+  );
+
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": board.id, "title": "linked", "content": format!(r#"<img src="/files/{theirs}/inline">"#),
+      "contentType": "text/html", "kind": "article", "status": "published", "contentVisibility": "public"
+    }),
+  )
+  .await;
+  assert_eq!(resp.status(), StatusCode::CREATED, "a link to a file is not a claim on it");
+
+  let bf = BoardFiles::find_by_id(theirs).one(&db).await.unwrap().unwrap();
+  assert_eq!(bf.post_id, None, "the victim's file is still unattached");
+  let f = Files::find_by_id(theirs).one(&db).await.unwrap().unwrap();
+  assert_eq!(f.refs, 0);
+}

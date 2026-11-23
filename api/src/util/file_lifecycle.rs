@@ -81,34 +81,44 @@ pub async fn register_pending_board_file<C: ConnectionTrait>(
   Ok(())
 }
 
-/// Attach `file_uuid` to `post_id`. Returns `true` when a new attachment was made.
-/// Skips uuids with no backing file (e.g. stale references parsed from post content).
+/// Attach `file_uuid` to `post_id` on behalf of `uploader`. Returns the file when a new attachment
+/// was made, `None` when there was nothing to do (no backing file — e.g. a stale reference parsed from
+/// post content — or already attached to this post).
+///
+/// Only the user who uploaded a file may attach it, and only while it is attached to no post: an
+/// attachment republishes the bytes under the post's visibility and hands them to the orphan reaper
+/// once detached, so a file someone else owns is refused with [`SumidaError::NoAccessPermission`].
 #[cfg(feature = "board")]
 pub async fn claim_file<C: ConnectionTrait>(
   post_id: i32,
   file_uuid: Uuid,
+  uploader: i32,
   db: &C,
-) -> Result<bool, SumidaError> {
-  if Files::find_by_id(file_uuid).one(db).await?.is_none() {
-    return Ok(false);
+) -> Result<Option<entity::fs::files::Model>, SumidaError> {
+  let Some(file) = Files::find_by_id(file_uuid).one(db).await? else {
+    return Ok(None);
+  };
+
+  let junction = BoardFiles::find_by_id(file_uuid).one(db).await?;
+  match junction.as_ref().and_then(|row| row.post_id) {
+    Some(pid) if pid == post_id => return Ok(None), // already attached to this post
+    Some(_) => return Err(SumidaError::FileReuseNotAllowed),
+    None => {}
+  }
+  if file.user_id != Some(uploader) {
+    return Err(SumidaError::NoAccessPermission);
   }
 
-  match BoardFiles::find_by_id(file_uuid).one(db).await? {
-    Some(row) => match row.post_id {
-      Some(pid) if pid == post_id => Ok(false), // already attached to this post
-      Some(_) => Err(SumidaError::FileReuseNotAllowed),
-      None => {
-        // pending claim → attach to this post
-        BoardFiles::update_many()
-          .col_expr(BoardFilesColumn::PostId, Expr::value(post_id))
-          .filter(BoardFilesColumn::FileUuid.eq(file_uuid))
-          .exec(db)
-          .await?;
-        add_refs(file_uuid, 1, db).await?;
-        promote_active(file_uuid, db).await?;
-        Ok(true)
-      }
-    },
+  match junction {
+    Some(_) => {
+      // pending claim → attach to this post
+      BoardFiles::update_many()
+        .col_expr(BoardFilesColumn::PostId, Expr::value(post_id))
+        .filter(BoardFilesColumn::FileUuid.eq(file_uuid))
+        .filter(BoardFilesColumn::PostId.is_null())
+        .exec(db)
+        .await?;
+    }
     None => {
       // generic file with no junction row yet → create an attached link
       BoardFiles::insert(entity::bps::board_files::ActiveModel {
@@ -117,11 +127,26 @@ pub async fn claim_file<C: ConnectionTrait>(
       })
       .exec(db)
       .await?;
-      add_refs(file_uuid, 1, db).await?;
-      promote_active(file_uuid, db).await?;
-      Ok(true)
     }
   }
+  add_refs(file_uuid, 1, db).await?;
+  promote_active(file_uuid, db).await?;
+  Ok(Some(file))
+}
+
+/// Whether `uploader` uploaded the file under `file_uuid`.
+#[cfg(feature = "board")]
+pub async fn is_uploaded_by<C: ConnectionTrait>(
+  file_uuid: Uuid,
+  uploader: i32,
+  db: &C,
+) -> Result<bool, SumidaError> {
+  Ok(
+    Files::find_by_id(file_uuid)
+      .one(db)
+      .await?
+      .is_some_and(|file| file.user_id == Some(uploader)),
+  )
 }
 
 /// Detach `file_uuid` from `post_id`. When the file's ref count hits 0 it is put back on the TTL.
