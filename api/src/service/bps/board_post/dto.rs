@@ -37,8 +37,6 @@ pub struct BoardPostFilter {
 
   // FTS
   pub with_snippet:          bool,
-  pub snippet_start_sel:     String,
-  pub snippet_stop_sel:      String,
   pub snippet_max_words:     usize,
   pub snippet_min_words:     usize,
   pub snippet_max_fragments: usize,
@@ -68,8 +66,6 @@ impl Default for BoardPostFilter {
       with_snippet:          false,
       snippet_offset:        0,
       snippet_length:        None,
-      snippet_start_sel:     "<mark>".into(),
-      snippet_stop_sel:      "</mark>".into(),
       snippet_max_fragments: 1,
       snippet_max_words:     20,
       snippet_min_words:     5,

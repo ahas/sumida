@@ -27,13 +27,26 @@ impl<'a> MarkdownContent<'a> {
   }
 }
 
+/// The marks a search snippet wraps its hits in. The server's alone: the snippet is HTML a client
+/// renders, so no caller chooses what goes into it.
+pub const SNIPPET_START_SEL: &str = "<mark>";
+pub const SNIPPET_STOP_SEL: &str = "</mark>";
+
+/// `column` as SQL text with the five HTML-significant characters escaped, so markup a post's plain
+/// text carries (entity-decoded from its body) comes out of a snippet as text, never as tags.
+pub fn html_escaped_sql(column: &str) -> String {
+  let mut sql = column.to_string();
+  for (from, to) in [("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"), ("\"", "&quot;"), ("''", "&#39;")] {
+    sql = format!("replace({sql}, '{from}', '{to}')");
+  }
+  sql
+}
+
 #[derive(Debug, Clone)]
 pub struct TsHeadlineExpr {
   config:        String,
   column:        String,
   keyword:       String,
-  start_sel:     String,
-  stop_sel:      String,
   start_offset:  usize,
   max_fragments: usize,
   max_length:    Option<usize>,
@@ -52,8 +65,6 @@ impl TsHeadlineExpr {
       config:        "simple".into(),
       column:        column.to_string(),
       keyword:       keyword.into(),
-      start_sel:     "<mark>".into(),
-      stop_sel:      "</mark>".into(),
       start_offset:  0,
       max_fragments: 1,
       max_length:    None,
@@ -66,11 +77,6 @@ impl TsHeadlineExpr {
 
   pub fn config(mut self, config: &str) -> Self {
     self.config = config.to_string();
-    self
-  }
-  pub fn delimiters(mut self, start: &str, stop: &str) -> Self {
-    self.start_sel = start.into();
-    self.stop_sel = stop.into();
     self
   }
   pub fn start_offset(mut self, n: usize) -> Self {
@@ -103,15 +109,13 @@ impl TsHeadlineExpr {
   }
 
   pub fn apply<E: EntityTrait>(self, mut query: Select<E>) -> Select<E> {
-    // Bind the entire ts_headline options string as a parameter ($2).
-    // start_sel/stop_sel are client-controlled values coming from query parameters, so
-    // interpolating them directly into the options literal allows SQL injection by escaping the literal with a single quote.
-    // (config is fixed to "simple", column is a ColumnTrait, and the rest are numbers, so they are safe.)
+    // The options string is bound as a parameter ($2). The marks are fixed and the rest are numbers;
+    // config is fixed to "simple" and column is a ColumnTrait.
     let options = format!(
       "StartSel={start}, StopSel={stop}, MaxWords={max_words}, MinWords={min_words}, \
        ShortWord={short_word}, MaxFragments={max_fragments}, HighlightAll={highlight_all}",
-      start = self.start_sel,
-      stop = self.stop_sel,
+      start = SNIPPET_START_SEL,
+      stop = SNIPPET_STOP_SEL,
       max_words = self.max_words,
       min_words = self.min_words,
       short_word = self.short_word,
@@ -119,10 +123,11 @@ impl TsHeadlineExpr {
       highlight_all = if self.highlight_all { "TRUE" } else { "FALSE" }
     );
 
+    // The document is headlined already escaped: the only markup in the result is the marks.
     let sql = format!(
-      "ts_headline('{config}', {column}, plainto_tsquery('{config}', $1), $2)",
+      "ts_headline('{config}', {document}, plainto_tsquery('{config}', $1), $2)",
       config = self.config,
-      column = self.column,
+      document = html_escaped_sql(&self.column),
     );
 
     query.query().join_lateral(
@@ -135,7 +140,7 @@ impl TsHeadlineExpr {
     );
 
     let highlighted_snippet = Expr::col((Alias::new("H"), "snippet"));
-    let pos = Func::cust("strpos").arg(highlighted_snippet.clone()).arg(self.start_sel);
+    let pos = Func::cust("strpos").arg(highlighted_snippet.clone()).arg(SNIPPET_START_SEL);
 
     if let Some(max_length) = self.max_length {
       query.query().expr_as(

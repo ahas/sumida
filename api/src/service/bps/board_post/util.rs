@@ -2,7 +2,7 @@ use entity::bps::board_posts::BoardPostContentType;
 use entity::bps::boards::BoardPostContentVisibility;
 use entity::prelude::*;
 use error::SumidaError;
-use sea_orm::sea_query::{Alias, Expr, Func};
+use sea_orm::sea_query::{Alias, Expr};
 use sea_orm::{
   ColumnTrait,
   ConnectionTrait,
@@ -111,7 +111,6 @@ pub fn with_fts(
   if !search_text.is_empty() {
     TsHeadlineExpr::new(BoardPostsColumn::Text, &search_text)
       .start_offset(filter.snippet_offset)
-      .delimiters(&filter.snippet_start_sel, &filter.snippet_stop_sel)
       .max_words(filter.snippet_max_words)
       .min_words(filter.snippet_min_words)
       .max_fragments(filter.snippet_max_fragments)
@@ -120,8 +119,12 @@ pub fn with_fts(
       .highlight_all(filter.snippet_highlight_all)
       .apply(query)
   } else if let Some(snippet_length) = filter.snippet_length {
+    // Cut first and escape after, so the cut never splits an entity.
     query.column_as(
-      Expr::expr(Func::cust("left").arg(Expr::col(Alias::new("text"))).arg(snippet_length as i32)),
+      Expr::cust_with_values(
+        crate::util::board::html_escaped_sql("left(\"board_posts\".\"text\", $1)"),
+        [snippet_length as i32],
+      ),
       "snippet",
     )
   } else {

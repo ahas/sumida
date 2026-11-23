@@ -1360,3 +1360,48 @@ async fn scenario_foreign_file_cannot_be_claimed() {
   let f = Files::find_by_id(theirs).one(&db).await.unwrap().unwrap();
   assert_eq!(f.refs, 0);
 }
+
+/// A search snippet is HTML a client renders: the post's own text comes out escaped and the only
+/// markup is the server's `<mark>`, whatever the query string asks for.
+#[tokio::test]
+async fn scenario_search_snippet_escapes_post_markup() {
+  let mock = Mock::new().await;
+  let db = infra::db::connect().await;
+  let board =
+    make_board(&db, BoardPostContentVisibility::Public, BoardPostRecordVisibility::Public, false).await;
+
+  let author = TestUser::create(&db).await.unwrap();
+  grant_post_perms(&db, &author, &board, &["read", "create"]).await;
+  author.login(&mock.client).await;
+
+  let marker = generate_url_safe_string(8).unwrap().to_lowercase().replace(['-', '_'], "x");
+  let title = format!("xss-{marker}");
+  let resp = create_post(
+    &mock,
+    json!({
+      "boardId": board.id, "title": title,
+      "content": format!("<p>&lt;img src=x onerror=alert(1)&gt; {marker}</p>"),
+      "contentType": "text/html", "kind": "article", "status": "published", "contentVisibility": "public"
+    }),
+  )
+  .await;
+  assert_eq!(resp.status(), StatusCode::CREATED);
+
+  for query in [
+    format!("with_snippet=true&search={marker}"),
+    format!("with_snippet=true&search={marker}&snippet_start_sel=%3Cimg%20src%3Dx%20onerror%3Dalert(2)%3E"),
+    format!("with_snippet=true&snippet_length=200&title={title}"),
+  ] {
+    let resp = mock.client.get(&format!("/board-posts?{query}")).send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "{query}");
+    let items = resp.json::<Value>().await.unwrap()["items"].as_array().cloned().unwrap_or_default();
+    let post = items.iter().find(|post| post["title"] == title.as_str()).expect("the post is listed");
+    let snippet = post["snippet"].as_str().unwrap_or_default();
+    let bare = snippet.replace("<mark>", "").replace("</mark>", "");
+    assert!(
+      !bare.contains('<') && !bare.contains('>'),
+      "no markup but the server's marks survives, from the post or the query: {snippet}"
+    );
+    assert!(snippet.contains("&gt;"), "the post's text is escaped, not dropped: {snippet}");
+  }
+}
