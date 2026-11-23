@@ -1,14 +1,22 @@
 use axum::extract::FromRequestParts;
+use axum::http::HeaderMap;
+use axum::http::header::{HOST, ORIGIN};
 use error::SumidaError;
+use sea_orm::DatabaseConnection;
 use socketioxide::extract::{SocketRef, State};
+use socketioxide::handler::ConnectHandler;
 use socketioxide::layer::SocketIoLayer;
 use socketioxide::{BroadcastError, SocketIo};
 use socketioxide_core::adapter::{Room, RoomParam};
 
-use crate::session::UserSession;
+use crate::session::{UserSession, admitted_account, credentials_reset_since};
+use crate::settings;
 
+/// What the socket handshake needs to admit a connection: the database the account is re-read from.
 #[derive(Clone, Debug)]
-pub struct SumidaMessengerState;
+pub struct SumidaMessengerState {
+  pub db: DatabaseConnection,
+}
 
 #[derive(Clone, Debug)]
 pub struct SumidaMessenger {
@@ -89,37 +97,92 @@ pub async fn get_session(
   UserSession::from_request_parts(&mut req_parts, state).await
 }
 
-pub async fn on_connect(socket: SocketRef, State(state): State<SumidaMessengerState>) {
-  let Some(session) = get_session(&socket, &state).await.ok() else {
-    tracing::error!("socket session failed");
-    socket.disconnect().ok();
-    return;
+/// Whether a handshake's `Origin` is one this server answers.
+///
+/// A browser names the page that opened a WebSocket in `Origin` on every handshake, and on every
+/// cross-site polling request, and CORS does not apply to a WebSocket upgrade — so this check is the
+/// only thing that keeps another site's page from opening a socket with the visitor's cookie. The
+/// origins allowed are `allowed` (the CORS settings' list) plus the server's own. A handshake with no
+/// `Origin` at all did not come from another site's page — a browser always sends one there — and is
+/// admitted on its credentials alone.
+pub fn origin_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
+  let Some(origin) = headers.get(ORIGIN) else {
+    return true;
+  };
+  let Ok(origin) = origin.to_str() else {
+    return false;
   };
 
-  if let Err(err) = session.verify() {
-    tracing::error!("socket session verifying failed: {}", err);
-    socket.disconnect().ok();
-    return;
+  if allowed.iter().any(|allowed| allowed != "*" && allowed == origin) {
+    return true;
   }
 
-  let user_data = session.profile;
-
-  socket.join([
-    format!("org:{}", user_data.organization.id),
-    format!("role:{}", user_data.role.id),
-    // user rooms are keyed by user_id. `messenger.user([id])` emit sends to `user:{id}`, so
-    // join must also use the id, not the username, for targeted notifications to arrive.
-    format!("user:{}", user_data.id),
-  ]);
-
-  if user_data.is_admin {
-    socket.join("admin");
-  }
+  // The server's own origin: the authority the page named is the one this request was sent to.
+  let authority = origin.split_once("://").map_or(origin, |(_, authority)| authority);
+  headers
+    .get(HOST)
+    .and_then(|host| host.to_str().ok())
+    .is_some_and(|host| host == authority)
 }
 
-pub fn new_layer() -> (SocketIoLayer, SumidaMessenger) {
+/// Admits a socket connection to `/user` and joins it to its rooms, or refuses it.
+///
+/// It runs before the connection is accepted, so a refusal reaches the client as a connection
+/// error. The handshake is held to what every HTTP request is held to: the cookie must be
+/// authorized, the account it names must still be enabled and not banned, and its credentials must
+/// not have been reset since the cookie was issued. The administrator room is decided from the
+/// account as it is now, never from the flag the cookie copied at sign-in, and never for a key that
+/// carries only its own grants.
+pub async fn admit(
+  socket: SocketRef,
+  State(state): State<SumidaMessengerState>,
+) -> Result<(), SumidaError> {
+  let allowed = settings::get()
+    .server
+    .cors
+    .as_ref()
+    .map_or(&[][..], |cors| cors.allow_origins.as_slice());
+  if !origin_allowed(&socket.req_parts().headers, allowed) {
+    return Err(SumidaError::NoAccessPermission);
+  }
+
+  let session = get_session(&socket, &state).await?;
+  session.verify()?;
+
+  let user = admitted_account(session.profile.id, &session.env, &state.db).await?;
+  if credentials_reset_since(&user, session.profile.first_seen_at) {
+    return Err(SumidaError::NoCredentials);
+  }
+
+  let profile = session.profile;
+  socket.join([
+    format!("org:{}", profile.organization.id),
+    format!("role:{}", profile.role.id),
+    // user rooms are keyed by user_id. `messenger.user([id])` emit sends to `user:{id}`, so
+    // join must also use the id, not the username, for targeted notifications to arrive.
+    format!("user:{}", profile.id),
+  ]);
+
+  if user.is_admin && profile.api_key.is_none() {
+    socket.join("admin");
+  }
+
+  Ok(())
+}
+
+/// The connection handler. Everything a connection needs was settled by [`admit`] before it was
+/// accepted.
+pub async fn on_connect(socket: SocketRef) {
+  tracing::debug!("socket connected: {}", socket.id);
+}
+
+/// The socket layer and the messenger that emits through it.
+///
+/// `db` is what each handshake re-reads its account from, so a connection is admitted on the same
+/// terms as an HTTP request.
+pub fn new_layer(db: DatabaseConnection) -> (SocketIoLayer, SumidaMessenger) {
   let (layer, io) = SocketIo::builder()
-    .with_state(SumidaMessengerState)
+    .with_state(SumidaMessengerState { db })
     // Enlarge the per-socket send buffer (default 128). This reduces emits (e.g. term:open)
     // being dropped as `InternalChannelFull` due to transient backpressure.
     .max_buffer_size(1024)
@@ -129,7 +192,51 @@ pub fn new_layer() -> (SocketIoLayer, SumidaMessenger) {
     .ping_timeout(std::time::Duration::from_secs(10))
     .build_layer();
 
-  io.ns("/user", on_connect);
+  io.ns("/user", on_connect.with(admit));
 
   (layer, SumidaMessenger::new(io))
+}
+
+#[cfg(test)]
+mod tests {
+  use axum::http::header::{HOST, ORIGIN};
+  use axum::http::{HeaderMap, HeaderValue};
+
+  use super::origin_allowed;
+
+  fn handshake(origin: Option<&str>, host: &str) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(HOST, HeaderValue::from_str(host).unwrap());
+    if let Some(origin) = origin {
+      headers.insert(ORIGIN, HeaderValue::from_str(origin).unwrap());
+    }
+    headers
+  }
+
+  #[test]
+  fn another_sites_page_is_refused() {
+    let allowed = vec!["https://app.example.com".to_owned()];
+
+    assert!(!origin_allowed(&handshake(Some("https://evil.example"), "api.example.com"), &allowed));
+  }
+
+  #[test]
+  fn a_listed_origin_and_the_servers_own_are_admitted() {
+    let allowed = vec!["https://app.example.com".to_owned()];
+
+    assert!(origin_allowed(&handshake(Some("https://app.example.com"), "api.example.com"), &allowed));
+    assert!(origin_allowed(&handshake(Some("https://api.example.com"), "api.example.com"), &allowed));
+  }
+
+  #[test]
+  fn a_wildcard_in_the_list_admits_nobody_by_itself() {
+    let allowed = vec!["*".to_owned()];
+
+    assert!(!origin_allowed(&handshake(Some("https://evil.example"), "api.example.com"), &allowed));
+  }
+
+  #[test]
+  fn a_handshake_with_no_origin_is_left_to_its_credentials() {
+    assert!(origin_allowed(&handshake(None, "api.example.com"), &[]));
+  }
 }

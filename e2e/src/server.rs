@@ -66,7 +66,7 @@ impl TestServer {
     let addr = listener.local_addr()?;
 
     let state = TestServerState { db };
-    let (messenger_layer, messenger) = infra::messenger::new_layer();
+    let (messenger_layer, messenger) = infra::messenger::new_layer(state.db.clone());
     let redis_store =
       Arc::new(Mutex::new(RedisSessionStore::new(settings.session.redis.as_ref().unwrap()).await?));
 

@@ -38,7 +38,7 @@ async fn main() -> Result<(), anyhow::Error> {
   // credit lots, and send expiring-soon / low-balance notices on a fixed cadence.
   sumida::api::service::membership::maintenance::spawn(state.clone(), std::time::Duration::from_secs(3600));
 
-  let (messenger_layer, messenger) = sumida::infra::messenger::new_layer();
+  let (messenger_layer, messenger) = sumida::infra::messenger::new_layer(state.db.clone());
   // Every AWS client sumida builds, the session store's among them, reads this one shared SDK
   // configuration, so it is loaded before any of them.
   #[cfg(feature = "full-aws")]
