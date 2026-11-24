@@ -1,4 +1,14 @@
 testbed = 0
 
+[test]
+# Every crate of the workspace. The suite runs one crate's test binaries one after another, so the integration
+# binaries, each of which wipes and migrates the test database as it starts, never run side by side
+# (`scripts/test/suite.sh` does the same by hand).
+languages = ["cargo"]
+
+# The integration tests' database: the suite hands its own PostgreSQL server in `BMO_TEST_POSTGRES`, and the
+# e2e harness makes and migrates its database there (`e2e/src/testbed.rs`), so no migrations are named.
+[test.database]
+
 [check]
 format_toolchain = "nightly"

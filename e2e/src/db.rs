@@ -8,9 +8,11 @@ pub struct TestDb;
 
 impl TestDb {
   pub async fn setup() -> Result<Self, anyhow::Error> {
+    // The test database is made before the pool connects to it, so a server that has never held it works.
+    Self::find_or_create().await?;
+
     let db = infra::db::connect().await;
 
-    Self::find_or_create().await?;
     Self::run_migration_fresh(&db).await?;
     Self::sync_vocabulary(&db).await?;
 
@@ -24,10 +26,14 @@ impl TestDb {
     let admin_url = std::env::var("DATABASE_ADMIN_URL").context("Missing env: DATABASE_ADMIN_URL")?;
     let test_url = settings.database.url.clone();
 
-    let db_name = test_url //
-      .split('/')
-      .next_back()
-      .ok_or_else(|| anyhow::anyhow!("Invalid DATABASE_URL: missing DB name"))?;
+    // The name is the address's path, read as an address: a query after it, such as a socket's `host`, is not
+    // part of it.
+    let test_address = url::Url::parse(&test_url).context("Invalid DATABASE_URL")?;
+    let db_name = test_address.path().trim_start_matches('/').to_owned();
+
+    if db_name.is_empty() {
+      anyhow::bail!("Invalid DATABASE_URL: missing DB name");
+    }
 
     // 1. Connect to admin DB
     let admin = Database::connect(&admin_url).await.context("Failed to connect to admin DB")?;

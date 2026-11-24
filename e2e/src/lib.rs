@@ -7,6 +7,7 @@ pub mod migration;
 pub mod mock;
 pub mod org_tree;
 pub mod server;
+pub mod testbed;
 pub mod user;
 
 pub mod prelude;

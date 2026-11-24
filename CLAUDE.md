@@ -287,6 +287,11 @@ room 자동 가입 규칙: 접속 사용자는 `org:N`, `user:N`, `admin`(관리
 다른 쪽이 그 테이블을 지우고, 매 실행마다 다른 테스트가 401·403·500 으로 떨어진다. 혼자 돌리면
 통과하므로 진짜 실패와 구분이 되지 않는다. `scripts/test/suite.sh` 가 대상을 하나씩 넘긴다.
 
+**BMO 테스트베드에서는** 스위트가 크레이트 하나의 테스트 바이너리를 하나씩 차례로 돌리므로 같은 조건이
+지켜진다. 테스트베드는 자기 PostgreSQL 서버를 `BMO_TEST_POSTGRES` 로만 넘기고, 하네스는 `.env.e2e` 가
+`DATABASE_ADMIN_URL` 을 주지 않았을 때 그 서버에 `sumida_test` 를 만들고 나머지 설정은
+`settings.e2e.example.toml` 에서 읽는다(`e2e/src/testbed.rs`). 세션 저장소는 `redis://127.0.0.1:6379/9`.
+
 ## 후속 작업
 
 미완 작업·기술 부채는 [`TASKS.md`](TASKS.md)에 기록한다. 새 작업 지시를 받기 전에 한 번 훑어보면 누락된 follow-up이 있는지 확인할 수 있다.
