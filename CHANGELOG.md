@@ -17,6 +17,8 @@ and this project adheres to semantic versioning at the workspace level.
   account is refused to anyone who is not a platform administrator, whatever they hold over its organization or
   the user namespace.
 - **A list of invitations shows the token only to a platform administrator.**
+- **Opening an account in a role whose members are platform administrators is a platform administrator's**,
+  whatever grant over that role the caller holds.
 - **A role's id is the server's** unless a platform administrator names it, and removing a role removes every
   grant on it.
 - **A request on a secured key cannot turn a key into an unsecured one.**

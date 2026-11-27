@@ -163,7 +163,8 @@ also ask about what they touch:
 
 - **Opening an account.** A caller who is not a platform administrator opens accounts in their own
   organization, never as administrators, never under an id of their choosing, and only in their own
-  role or one they may grant (`role:<id>#grant`).
+  role or one they may grant (`role:<id>#grant`) — and never in a role whose members are platform
+  administrators (`platform:root#admin@role:<id>#member`), since the account would be one.
 - **Administrators are a platform administrator's.** Whoever may edit an account can set its
   password and email, ban it or remove it, each of which takes it over or shuts it out. So editing,
   inviting, banning or removing an account that is an administrator is refused to anyone who is not a

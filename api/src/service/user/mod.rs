@@ -156,6 +156,12 @@ impl<S: SumidaState> UserService<S> {
       if role_id != self.session.profile.role.id || self.session.profile.api_key.is_some() {
         Authz::try_check("role", role_id, "grant", &self.subject(), db).await?;
       }
+      // A role whose members are platform administrators makes whoever is opened in it one, so
+      // opening an account in such a role is a platform administrator's, whatever grant over the
+      // role the caller holds.
+      if role_carries_platform_admin(role_id, db).await? {
+        return Err(SumidaError::NoAccessPermission);
+      }
 
       active_model.is_admin = Set(false);
       active_model.organization_id = Set(self.session.profile.organization.id);
@@ -466,4 +472,22 @@ pub(crate) async fn ensure_reachable<C: sea_orm::ConnectionTrait>(
     return Err(SumidaError::NoAccessPermission);
   }
   Ok(())
+}
+
+/// Whether the members of role `role_id` are platform administrators by a live grant.
+async fn role_carries_platform_admin<C: sea_orm::ConnectionTrait>(
+  role_id: i32,
+  db: &C,
+) -> Result<bool, SumidaError> {
+  use entity::relation_tuples::Column;
+
+  let found = entity::relation_tuples::Entity::find()
+    .filter(Column::ResourceType.eq("platform"))
+    .filter(Column::ResourceId.eq("root"))
+    .filter(Column::Relation.eq("admin"))
+    .filter(Column::SubjectKey.eq(format!("role:{role_id}#member")))
+    .filter(Condition::any().add(Column::ExpiresAt.is_null()).add(Column::ExpiresAt.gt(Utc::now())))
+    .count(db)
+    .await?;
+  Ok(found > 0)
 }

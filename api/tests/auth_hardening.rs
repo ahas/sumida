@@ -435,6 +435,64 @@ fn test_changing_what_an_account_may_do_puts_out_its_sessions() {
   });
 }
 
+#[test]
+fn test_a_role_grant_does_not_mint_a_platform_administrator() {
+  runtime().block_on(async {
+    let (_mock, base, db) = serving().await;
+    let manager = TestUser::create(&db).await.expect("a role administrator");
+    let holder = SubjectKey::user(manager.model.id);
+    tuple(&db, "service", "user", "create", holder.clone()).await.expect("the create gate");
+
+    let role = |name: String| entity::roles::ActiveModel {
+      name: Set(name),
+      created_at: Set(Utc::now()),
+      updated_at: Set(Utc::now()),
+      ..Default::default()
+    };
+    let plain = role(format!("plain-{}", Uuid::new_v4())).insert(&db).await.expect("a plain role");
+    let crowned = role(format!("crowned-{}", Uuid::new_v4())).insert(&db).await.expect("an admin role");
+    for id in [plain.id, crowned.id] {
+      tuple(&db, "role", &id.to_string(), "admin", holder.clone())
+        .await
+        .expect("administer the role");
+    }
+    tuple(
+      &db,
+      "platform",
+      "root",
+      "admin",
+      SubjectKey::userset("role", &crowned.id.to_string(), "member"),
+    )
+    .await
+    .expect("the role's members administer the platform");
+
+    let http = signed_in(base, &manager).await;
+    let open = |role_id: i32| {
+      http.post(at(base, "/users")).json(&json!({
+        "username": format!("opened-{}", Uuid::new_v4()),
+        "password": "an-opened-password",
+        "organizationId": manager.model.organization_id,
+        "roleId": role_id,
+      }))
+    };
+
+    assert_eq!(
+      outcome(open(crowned.id).send().await.expect("the open request")).await,
+      (403, "E1008".to_owned()),
+      "administering a role whose members are platform administrators does not let a caller make one"
+    );
+    let admitted = open(plain.id).send().await.expect("the open request");
+    assert!(admitted.status().is_success(), "while a role it administers is still its to fill");
+
+    let in_crowned = Users::find()
+      .filter(entity::users::Column::RoleId.eq(crowned.id))
+      .count(&db)
+      .await
+      .expect("count the role's members");
+    assert_eq!(in_crowned, 0, "no account was opened in the administrators' role");
+  });
+}
+
 // ─── /me ───────────────────────────────────────────────────────────────────────────────────────
 
 #[test]
