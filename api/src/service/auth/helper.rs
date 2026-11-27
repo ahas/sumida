@@ -16,6 +16,57 @@ pub fn verify_password(plain_password: &str, hashed_password: &str) -> bool {
   argon2.verify_password(plain_password.as_bytes(), &parsed_hash).is_ok()
 }
 
+/// Whether a stored hash was made with other parameters than new hashes use.
+///
+/// Verifying a hash costs what its own parameters say, so an account whose hash is heavier or lighter
+/// than the default answers a failed login in a different time than a missing account, whose dummy
+/// check costs the default; the difference tells which accounts exist. A hash that does not parse is
+/// left to the password check, which refuses it.
+pub fn needs_rehash(hashed_password: &str) -> bool {
+  let Ok(parsed) = PasswordHash::new(hashed_password) else {
+    return false;
+  };
+  let Ok(params) = argon2::Params::try_from(&parsed) else {
+    return true;
+  };
+  let default = argon2::Params::default();
+
+  parsed.algorithm != argon2::Algorithm::Argon2id.ident()
+    || params.m_cost() != default.m_cost()
+    || params.t_cost() != default.t_cost()
+    || params.p_cost() != default.p_cost()
+}
+
+/// After a password was verified, stores it again under the default parameters when its hash was
+/// made with others, so every account comes to cost what a missing one costs. Only the hash changes:
+/// the account's credentials are the same, so no session is revoked. A failure is logged and the
+/// sign-in goes on — the old hash still verifies.
+pub async fn rehash_if_needed<C: sea_orm::ConnectionTrait>(
+  db: &C,
+  user_id: i32,
+  stored_hash: &str,
+  plain_password: &str,
+) {
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+  if !needs_rehash(stored_hash) {
+    return;
+  }
+  let Ok(rehashed) = crate::util::user::hash_password(plain_password) else {
+    tracing::warn!("user {user_id}: the password could not be hashed again");
+    return;
+  };
+  if let Err(err) = entity::prelude::Users::update_many()
+    .col_expr(entity::users::Column::Password, Expr::value(rehashed))
+    .filter(entity::users::Column::Id.eq(user_id))
+    .exec(db)
+    .await
+  {
+    tracing::warn!("user {user_id}: the rehashed password was not stored: {err}");
+  }
+}
+
 /// Spends the same argon2 verification cost even for non-existent accounts, preventing
 /// timing-based user enumeration that would leak account existence via login response time differences.
 pub fn dummy_verify_password(plain_password: &str) {
@@ -218,4 +269,36 @@ pub async fn generate_token_pair(
     token_type: "Bearer".to_owned(),
     expires_in,
   })
+}
+
+#[cfg(test)]
+mod rehash_tests {
+  use argon2::password_hash::rand_core::OsRng;
+  use argon2::password_hash::{PasswordHasher, SaltString};
+  use argon2::{Algorithm, Argon2, Params, Version};
+
+  use super::needs_rehash;
+
+  fn hash_with(algorithm: Algorithm, params: Params) -> String {
+    Argon2::new(algorithm, Version::V0x13, params)
+      .hash_password(b"secret", &SaltString::generate(&mut OsRng))
+      .unwrap()
+      .to_string()
+  }
+
+  #[test]
+  fn a_default_hash_stays() {
+    assert!(!needs_rehash(&crate::util::user::hash_password("secret").unwrap()));
+  }
+
+  #[test]
+  fn a_heavier_or_lighter_hash_is_redone() {
+    assert!(needs_rehash(&hash_with(Algorithm::Argon2id, Params::new(65536, 3, 4, None).unwrap())));
+    assert!(needs_rehash(&hash_with(Algorithm::Argon2d, Params::new(32, 1, 4, None).unwrap())));
+  }
+
+  #[test]
+  fn a_hash_that_does_not_parse_is_left_to_the_password_check() {
+    assert!(!needs_rehash("not a hash"));
+  }
 }

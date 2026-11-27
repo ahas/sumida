@@ -57,6 +57,7 @@ impl<S: SumidaState> AuthSessionService<S> {
 
     // 4) Check the user password
     if super::helper::verify_password(&data.password, &user.password) {
+      super::helper::rehash_if_needed(db, user.id, &user.password, &data.password).await;
       self
         .session
         .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::Success, db)

@@ -29,6 +29,28 @@ sets a session cookie. A client that wants a cookie signs in with a password.
 A request that carries both a header credential and a cookie is the header credential's; the cookie
 session is left exactly as it was.
 
+**A header credential that does not stand is answered as no credential at all.** A malformed header,
+a scheme the server does not take, a key or token that does not verify, and a deployment with no
+token secret all answer `401` with the code a missing credential gets, so an anonymous caller cannot
+tell which schemes a deployment takes or how it is configured. Only an account that a valid credential
+names, and that may not come in (banned, disabled), is told why.
+
+**A failed sign-in costs the same whether the account exists or not.** A missing account still runs
+one password check against a hash made with the default parameters. An account whose stored hash was
+made with other parameters would answer in its own time, so a successful sign-in stores the password
+again under the default parameters, and every account comes to cost what a missing one costs. Only
+the hash changes, so no session is revoked.
+
+**A request the server cannot read is answered in the error envelope.** A body that does not parse or
+a wrong media type is refused before any handler, and the reader's own sentence names the language
+and the server's request types. A deployment that wraps its router in `layer::rejection::envelope`
+sends the same envelope as every other refusal instead, with the bad-request code, and logs the
+sentence. `layer::security_headers` adds the headers a browser reads for an API host: HSTS without
+`includeSubDomains`, `nosniff`, `DENY` framing and a cross-origin referrer policy.
+
+Signing out of a token pair takes an optional body: without one, only the access token in the header
+is revoked.
+
 ## 2. API keys
 
 An **unsecured** key is its owner: it is judged as the owner's user, role and organization, with

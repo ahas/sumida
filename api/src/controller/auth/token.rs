@@ -180,15 +180,15 @@ async fn refresh<S: SumidaState>(
 /// have expired anyway, so revocation takes effect on the next request rather than at the next
 /// expiry. The session this request arrives on is destroyed as well.
 ///
-/// A body is required even when it names no token; send `{}` to revoke only the access token.
-/// Presenting neither token is not an error, and revokes nothing.
+/// The body is optional: leaving it out, or sending `{}`, revokes only the access token. Presenting
+/// neither token is not an error, and revokes nothing.
 #[cfg_attr(feature = "openapi", utoipa::path(
   delete,
   path = "",
   context_path = MOUNT,
   tag = TAG,
   operation_id = "revoke_tokens",
-  request_body(content = LogoutRequest, example = revoke_example),
+  request_body(content = Option<LogoutRequest>, example = revoke_example),
   security((), ("bearer" = [])),
   responses(
     (status = 200, description = "Whatever was presented is revoked.", body = LoggedOut),
@@ -200,8 +200,11 @@ async fn logout<S: SumidaState>(
   session: UserSession,
   State(state): State<S>,
   headers: axum::http::HeaderMap,
-  Json(body): Json<LogoutRequest>,
+  body: Option<Json<LogoutRequest>>,
 ) -> Result<(StatusCode, Json<LoggedOut>), SumidaError> {
+  // A request without a body names no refresh token. A body with the wrong media type is still refused.
+  let refresh_token = body.and_then(|Json(body)| body.refresh_token);
+
   // Extract the current access token from Authorization: Bearer <access_token> and revoke it as well.
   let access_token =
     headers
@@ -217,7 +220,7 @@ async fn logout<S: SumidaState>(
 
   let jwt_store = create_jwt_store().await?;
   let mut service = AuthTokenService::new(state, session, jwt_store);
-  service.logout(body.refresh_token, access_token).await?;
+  service.logout(refresh_token, access_token).await?;
   Ok((
     StatusCode::OK,
     Json(LoggedOut {

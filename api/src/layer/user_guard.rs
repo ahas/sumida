@@ -228,22 +228,44 @@ pub async fn verify<S: SumidaState>(
     let pair = v.to_str().unwrap_or_default().split_whitespace().map(str::trim).collect::<Vec<&str>>();
 
     if pair.len() < 2 {
-      return Err(SumidaError::InvalidAuthorizationToken);
+      return Err(uniform_credential_refusal(SumidaError::InvalidAuthorizationToken));
     }
 
     let method = pair[0];
     let token = pair[1];
 
-    match method.to_uppercase().as_str() {
-      "BEARER" => verify_jwt(session, state, token).await?,
-      "APIKEY" => verify_api_key(session, state, token).await?,
-      _ => return Err(SumidaError::InvalidAuthorizationMethod(method.to_string())),
-    }
+    let verified = match method.to_uppercase().as_str() {
+      "BEARER" => verify_jwt(session, state, token).await,
+      "APIKEY" => verify_api_key(session, state, token).await,
+      _ => Err(SumidaError::InvalidAuthorizationMethod(method.to_string())),
+    };
+    verified.map_err(uniform_credential_refusal)?;
   } else {
     verify_session(session, state).await?;
   }
 
   Ok(true)
+}
+
+/// One answer for every credential that does not stand.
+///
+/// A malformed header, an unknown scheme, a key or token that does not verify, and a deployment
+/// with no token secret each had their own code, so an anonymous caller could map which schemes a
+/// deployment takes and how it is configured. They all answer as a missing credential does. An
+/// account that a valid credential names but that may not come in still says why: only the holder
+/// of that credential sees it.
+fn uniform_credential_refusal(error: SumidaError) -> SumidaError {
+  match error {
+    SumidaError::InvalidAuthorizationToken
+    | SumidaError::InvalidAuthorizationMethod(_)
+    | SumidaError::InvalidApiKey
+    | SumidaError::InvalidJwt
+    | SumidaError::NoJwtSecret => {
+      tracing::debug!("credential refused: {error}");
+      SumidaError::NoCredentials
+    }
+    other => other,
+  }
 }
 
 #[macro_export]

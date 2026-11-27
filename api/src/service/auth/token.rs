@@ -80,6 +80,7 @@ impl<S: SumidaState, J: JwtTokenStore> AuthTokenService<S, J> {
 
     // 4) Check the user password
     if helper::verify_password(&data.password, &user.password) {
+      helper::rehash_if_needed(db, user.id, &user.password, &data.password).await;
       self
         .session
         .write_log(Some(user.id), AccessMethod::Password, AccessResultCode::Success, db)

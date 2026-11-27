@@ -37,4 +37,6 @@ pub fn new() -> CorsLayer {
       Method::DELETE,
     ])
     .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::COOKIE])
+    // A browser may reuse a preflight's answer for ten minutes instead of asking before every call.
+    .max_age(std::time::Duration::from_secs(600))
 }

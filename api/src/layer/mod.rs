@@ -2,6 +2,8 @@ pub mod admin_guard;
 pub mod cors;
 #[cfg(feature = "membership")]
 pub mod entitlement_guard;
+pub mod rejection;
+pub mod security_headers;
 pub mod service_ap;
 pub mod session;
 pub mod user_guard;

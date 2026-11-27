@@ -252,7 +252,7 @@ fn test_an_authorization_header_with_no_token_is_refused() {
 
     assert_eq!(
       presenting(base, "Bearer").await,
-      (401, "E1015".to_owned()),
+      (401, "E1007".to_owned()),
       "a header that names a scheme and hands over nothing is malformed, not empty-handed"
     );
   });
@@ -265,8 +265,8 @@ fn test_an_unknown_authorization_method_is_refused() {
 
     assert_eq!(
       presenting(base, "Basic dXNlcjpwYXNzd29yZA==").await,
-      (501, "E1016".to_owned()),
-      "a scheme this server does not implement is answered as unimplemented, and never as admitted"
+      (401, "E1007".to_owned()),
+      "a scheme this server does not take is answered as no credential at all, never as admitted"
     );
   });
 }
@@ -283,7 +283,7 @@ fn test_a_token_signed_with_another_secret_is_refused() {
 
     assert_eq!(
       presenting(base, &format!("Bearer {forged}")).await,
-      (401, "E1011".to_owned()),
+      (401, "E1007".to_owned()),
       "a token that says all the right things but was signed by somebody else is refused — the \
        signature is the whole of what makes it this server's"
     );
@@ -301,7 +301,7 @@ fn test_an_expired_access_token_is_refused() {
 
     assert_eq!(
       presenting(base, &format!("Bearer {expired}")).await,
-      (401, "E1011".to_owned()),
+      (401, "E1007".to_owned()),
       "a token whose term has passed is refused, however properly it is signed"
     );
   });
@@ -316,7 +316,7 @@ fn test_a_refresh_token_is_not_an_access_token() {
 
     assert_eq!(
       presenting(base, &format!("Bearer {refresh}")).await,
-      (401, "E1011".to_owned()),
+      (401, "E1007".to_owned()),
       "the long-lived half of the pair authenticates nothing — it buys a new pair and that is all"
     );
   });
@@ -340,7 +340,7 @@ fn test_a_logged_out_access_token_is_refused() {
 
     assert_eq!(
       presenting(base, &format!("Bearer {access}")).await,
-      (401, "E1011".to_owned()),
+      (401, "E1007".to_owned()),
       "signing out revokes the token in hand — it has not expired, so nothing else would refuse it"
     );
   });
@@ -498,7 +498,7 @@ fn test_an_unknown_api_key_is_refused() {
 
     assert_eq!(
       presenting(base, "ApiKey no-such-key-was-ever-issued").await,
-      (401, "E1014".to_owned()),
+      (401, "E1007".to_owned()),
       "a key nobody issued is not a key"
     );
   });
@@ -513,7 +513,7 @@ fn test_an_expired_api_key_is_refused() {
 
     assert_eq!(
       presenting(base, &format!("ApiKey {key}")).await,
-      (401, "E1014".to_owned()),
+      (401, "E1007".to_owned()),
       "a key whose term has passed is refused — the row is still there, which is exactly why the \
        term has to be read"
     );
@@ -602,7 +602,7 @@ fn test_changing_the_password_voids_the_credentials_issued_before_it() {
 
     assert_eq!(
       presenting(base, &format!("Bearer {access}")).await,
-      (401, "E1011".to_owned()),
+      (401, "E1007".to_owned()),
       "the token issued before the change is void. A password is changed because what was handed out \
        before it may be in somebody else's hands, and that is precisely the token this is"
     );
@@ -641,6 +641,27 @@ fn test_changing_the_password_voids_the_credentials_issued_before_it() {
       200,
       "what the change voids is what came before it — the account itself is still an account, and \
        the new password still gets in"
+    );
+  });
+}
+
+/// Logging out needs no body: leaving it out revokes only what the header carries, here nothing,
+/// and is not refused for its missing media type.
+#[test]
+fn test_logging_out_without_a_body_is_not_refused() {
+  runtime().block_on(async {
+    let (_mock, base, _db) = serving().await;
+
+    let response = reqwest::Client::new()
+      .delete(format!("http://{base}/auth/token"))
+      .send()
+      .await
+      .expect("the request reaches the server");
+
+    assert_eq!(
+      response.status().as_u16(),
+      200,
+      "a body-less logout is answered, not refused for its media type"
     );
   });
 }
