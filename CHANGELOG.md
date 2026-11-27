@@ -6,6 +6,23 @@ and this project adheres to semantic versioning at the workspace level.
 
 ## [Unreleased]
 
+### Security fixes
+
+- **A secured API key no longer carries its owner's administrator flag in the request's profile.** Code that
+  reads the flag instead of asking the rule is no longer fooled by such a key.
+- **Changing what an account may do voids its sessions.** Another account changing its password, administrator
+  flag, role, organization or enabled state, and accepting an invitation, move the account's reset moment, so a
+  session established before can no longer act with what was taken away.
+- **Administrators are a platform administrator's.** Editing, inviting, banning or removing an administrator's
+  account is refused to anyone who is not a platform administrator, whatever they hold over its organization or
+  the user namespace.
+- **A list of invitations shows the token only to a platform administrator.**
+- **A role's id is the server's** unless a platform administrator names it, and removing a role removes every
+  grant on it.
+- **A request on a secured key cannot turn a key into an unsecured one.**
+- **The sign-in lockout counts what it bans.** With `security.ban.target` `ip`, the run is every wrong password
+  from the address across all accounts; an address's run ends at the last ban written on it.
+
 ## [0.3.0] - 2026-11-23
 
 A security release that breaks compatibility. Moving a consumer onto it:

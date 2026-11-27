@@ -149,6 +149,11 @@ impl<S: SumidaState> BanService<S> {
     }
 
     let subject = self.subject();
+    if let Some(user_id) = user_id
+      && let Some(user) = entity::users::Entity::find_by_id(user_id).one(db).await?
+    {
+      crate::service::user::ensure_reachable(&subject, &user, db).await?;
+    }
     if Authz::check_object("service", "ban", operate, &subject, db).await? {
       return Ok(());
     }

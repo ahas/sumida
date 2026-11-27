@@ -205,6 +205,11 @@ impl<S: SumidaState> ApiKeyService<S> {
     let txn = self.state.db().begin().await?;
 
     Authz::try_check(RESOURCE, key, "edit", &self.subject(), &txn).await?;
+    // Unsecuring a key makes it its owner, with everything the owner holds. A request on a secured
+    // key cannot do that, just as it cannot issue an unsecured key.
+    if data.is_secured.0 == Some(false) && self.session.profile.api_key.is_some() {
+      return Err(SumidaError::NoAccessPermission);
+    }
 
     let user_aps = if data.is_secured.0.unwrap_or_default() { data.access_policies.clone() } else { None };
 

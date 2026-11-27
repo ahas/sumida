@@ -50,7 +50,10 @@ about the owner's.
 Impersonation hands back a cookie session, so it is refused to a request that came in on a header
 credential.
 
-A secured key can issue only secured keys, and cannot change its owner's password or email.
+A secured key can issue only secured keys, cannot turn a key it may edit into an unsecured one, and
+cannot change its owner's password or email. The profile a secured key's request carries never holds
+its owner's administrator flag, so a reader that looks at that flag instead of asking the rule is not
+fooled by the key either.
 
 ## 3. The session cookie
 
@@ -62,7 +65,27 @@ deployment whose pages are served from another site; such a deployment has to pr
 state-changing routes itself. Any other value is refused at startup.
 
 A password reset (by a verification code or through `/me`) moves the account's reset moment, which
-voids every session and token established up to it.
+voids every session and token established up to it. So does accepting an invitation, and so does
+another account changing this one's password, administrator flag, role, organization or enabled state:
+a session carries the role, organization and flag it was established with, so one left standing would
+go on acting with what was just taken away.
+
+### The sign-in lockout
+
+A wrong password is written to the access log, and once the unbroken run of wrong passwords reaches
+`security.ban.max_failed_attempts` a ban is written. What is counted is what is banned: with
+`security.ban.target` `ip`, the run is every wrong password from the request's address, whichever
+account each named, and the address is banned; with `account`, the run is that account's wrong
+passwords from anywhere, and the account is banned. Counting one and banning the other would let a
+guesser spread guesses so that no run ever reached the limit. A run ends at a sign-in that succeeds
+from the same address, or of the same account; an address's run also ends at the last ban written on
+that address, so once a ban is lifted the failures that earned it are not counted again. A gap wider
+than `security.ban.failure_reset_after` ends a run as well.
+
+The address is the one the deployment's `session.ip_source` names. Behind a proxy it must be the
+header that proxy sets, and the server must not be reachable around the proxy: whoever reaches it
+directly writes that header themselves, and with it both escapes the count and gets any address they
+name banned.
 
 ### Requests from another site's page
 
@@ -141,11 +164,19 @@ also ask about what they touch:
 - **Opening an account.** A caller who is not a platform administrator opens accounts in their own
   organization, never as administrators, never under an id of their choosing, and only in their own
   role or one they may grant (`role:<id>#grant`).
+- **Administrators are a platform administrator's.** Whoever may edit an account can set its
+  password and email, ban it or remove it, each of which takes it over or shuts it out. So editing,
+  inviting, banning or removing an account that is an administrator is refused to anyone who is not a
+  platform administrator, whatever they hold over the account's organization or the user namespace.
 - **Removing an account** removes every grant held by it, by its keys, and on it. The tuple table has
   no foreign key to accounts, so grants left behind would pass to whoever later held the same id.
   Removing an organization does the same for its member set and the grants on it.
 - **Inviting** needs `sumida_user:<id>#edit` on the invitee, and inviting a disabled account — which
-  the invitation would enable — is a platform administrator's.
+  the invitation would enable — is a platform administrator's. An invitation's token sets the
+  account's password, so a list of invitations shows the token to a platform administrator alone.
+- **Roles.** A role's id is chosen by the server unless a platform administrator names it, and
+  removing a role removes every grant held by its members as members and every grant on it, so a
+  role opened later under the same id comes with none of them.
 - **Bans.** A ban that names an account is written by whoever may edit that account; a ban that names
   only an address needs the ban namespace's operator tier; a ban that names neither is refused for
   everyone, because it would catch every request. Changing a ban asks the same about what it will

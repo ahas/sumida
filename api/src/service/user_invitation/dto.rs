@@ -67,8 +67,10 @@ impl FilterSchema for UserInvitationFilter {
 pub struct UserInvitationListItem {
   /// The account the invitation was issued for.
   pub user_id: i32,
-  /// The token. It is what is presented to `POST /users/activate`.
-  pub uuid:    Uuid,
+  /// The token, which is what is presented to `POST /users/activate` and sets the account's
+  /// password. Only a platform administrator is answered with it; anyone else reads `null`, since
+  /// reading an account is not taking it over.
+  pub uuid:    Option<Uuid>,
 
   /// When it stops working. 30 days from when it was issued.
   pub expires_at: DateTimeUtc,

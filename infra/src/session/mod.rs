@@ -438,6 +438,12 @@ impl UserSession {
       ..Default::default()
     };
     profile.update(user, db).await?;
+    // A secured key is only itself and never its owner's platform authority (see `SubjectSet::of`), so
+    // the profile it hands on does not carry the owner's administrator flag either. A reader that
+    // still reads the flag rather than asking the rule is then not fooled by such a key.
+    if profile.api_key.is_some() {
+      profile.is_admin = false;
+    }
 
     self.profile = profile;
     self.inner = Self::detached_record().await?;
@@ -622,7 +628,13 @@ impl UserSession {
     // drives hardest.
     let reset_after =
       settings::security::parse_span("security.ban.failure_reset_after", &settings.failure_reset_after);
-    let failures = recent_password_failures(user_id, allowed, db).await?;
+    // What is counted is what is banned: with an address as the target, the failures from that
+    // address across every account; with an account, that account's failures from anywhere. Counting
+    // one and banning the other lets a guesser spread guesses so that no count ever reaches the limit.
+    let failures = match settings.target.as_str() {
+      "ip" => recent_password_failures_from(&self.env.ip_address, allowed, db).await?,
+      _ => recent_password_failures(user_id, allowed, db).await?,
+    };
 
     if u64::from(failure_streak(&failures, reset_after)) < allowed {
       return Ok(false);
@@ -831,6 +843,54 @@ async fn recent_password_failures<C: ConnectionTrait>(
     .filter(AccessLogsColumn::Code.eq(AccessResultCode::PasswordMismatch));
 
   if let Some(since) = last_password_success(user_id, db).await? {
+    query = query.filter(AccessLogsColumn::CreatedAt.gt(since));
+  }
+
+  query
+    .order_by_desc(AccessLogsColumn::CreatedAt)
+    .limit(limit)
+    .into_tuple::<DateTimeUtc>()
+    .all(db)
+    .await
+}
+
+/// The newest password failures made from `ip_address`, whichever account they named, back to the
+/// last password sign-in that succeeded from that address or the last ban written on it, whichever
+/// is later. A ban ends the run it was written for: once it is lifted, the failures that earned it
+/// have been paid for.
+async fn recent_password_failures_from<C: ConnectionTrait>(
+  ip_address: &str,
+  limit: u64,
+  db: &C,
+) -> Result<Vec<DateTimeUtc>, DbErr> {
+  let signed_in: Option<DateTimeUtc> = AccessLogs::find()
+    .select_only()
+    .column(AccessLogsColumn::CreatedAt)
+    .filter(AccessLogsColumn::IpAddress.eq(ip_address))
+    .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
+    .filter(AccessLogsColumn::Code.eq(AccessResultCode::Success))
+    .order_by_desc(AccessLogsColumn::CreatedAt)
+    .into_tuple::<DateTimeUtc>()
+    .one(db)
+    .await?;
+  let banned: Option<DateTimeUtc> = Bans::find()
+    .select_only()
+    .column(entity::bans::Column::CreatedAt)
+    .filter(entity::bans::Column::IpAddress.eq(ip_address))
+    .order_by_desc(entity::bans::Column::CreatedAt)
+    .into_tuple::<DateTimeUtc>()
+    .one(db)
+    .await?;
+  let signed_in = signed_in.max(banned);
+
+  let mut query = AccessLogs::find()
+    .select_only()
+    .column(AccessLogsColumn::CreatedAt)
+    .filter(AccessLogsColumn::IpAddress.eq(ip_address))
+    .filter(AccessLogsColumn::Method.eq(AccessMethod::Password))
+    .filter(AccessLogsColumn::Code.eq(AccessResultCode::PasswordMismatch));
+
+  if let Some(since) = signed_in {
     query = query.filter(AccessLogsColumn::CreatedAt.gt(since));
   }
 

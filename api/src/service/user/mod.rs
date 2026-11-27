@@ -66,6 +66,15 @@ impl<S: SumidaState> UserService<S> {
     Ok(Authz::is_superuser(&self.subject(), db).await?)
   }
 
+  /// Refuses `user`, an administrator, to a caller who is not a platform administrator.
+  async fn ensure_reachable<C: sea_orm::ConnectionTrait>(
+    &self,
+    user: &entity::users::Model,
+    db: &C,
+  ) -> Result<(), SumidaError> {
+    ensure_reachable(&self.subject(), user, db).await
+  }
+
   pub(crate) fn default_query_with(query: Select<Users>) -> Select<Users> {
     let org_alias = Alias::new("org");
     let role_alias = Alias::new("role");
@@ -175,6 +184,10 @@ impl<S: SumidaState> UserService<S> {
       Authz::try_check(RESOURCE, user_id, "edit", &self.subject(), &txn).await?;
       false
     };
+    let Some(before) = Users::find_by_id(user_id).one(&txn).await? else {
+      return Err(SumidaError::InvalidAccount);
+    };
+    self.ensure_reachable(&before, &txn).await?;
 
     let Optional(password) = data.password.clone();
 
@@ -194,6 +207,19 @@ impl<S: SumidaState> UserService<S> {
       model.is_enabled = NotSet;
     }
 
+    // A new password, or a change to what the account may do — its administrator flag, role,
+    // organization or whether it is enabled — voids every session and token established before it.
+    // A session carries the role, organization and flag it was established with, so one left
+    // standing would go on acting with what was just taken away.
+    let disowned = matches!(model.password, Set(_))
+      || matches!(model.is_admin, Set(v) if v != before.is_admin)
+      || matches!(model.is_enabled, Set(v) if v != before.is_enabled)
+      || matches!(model.role_id, Set(v) if v != before.role_id)
+      || matches!(model.organization_id, Set(v) if v != before.organization_id);
+    if disowned {
+      model.credentials_reset_at = Set(Some(Utc::now()));
+    }
+
     let result = Users::update(model).exec(&txn).await?;
     txn.commit().await?;
 
@@ -203,6 +229,9 @@ impl<S: SumidaState> UserService<S> {
   pub async fn delete(&self, user_id: i32) -> Result<DeleteResult, SumidaError> {
     let txn = self.state.db().begin().await?;
     Authz::try_check(RESOURCE, user_id, "remove", &self.subject(), &txn).await?;
+    if let Some(user) = Users::find_by_id(user_id).one(&txn).await? {
+      self.ensure_reachable(&user, &txn).await?;
+    }
 
     // 계정이 사라지면 그 계정 앞으로 남은 부여도, 그 계정의 키 앞으로 남은 부여도, 그 계정을
     // 대상으로 한 부여도 함께 사라진다. `relation_tuples` 에는 사용자로 가는 외래키가 없어서
@@ -237,6 +266,9 @@ impl<S: SumidaState> UserService<S> {
     let Some(user) = Users::find_by_id(user_id).one(&txn).await? else {
       return Err(SumidaError::InvalidAccount);
     };
+    // Accepting an invitation sets the account's password, so inviting an administrator is taking
+    // that account over unless the inviter is one too.
+    self.ensure_reachable(&user, &txn).await?;
     if !user.is_enabled && !self.is_superuser(&txn).await? {
       return Err(SumidaError::NoAccessPermission);
     }
@@ -313,6 +345,8 @@ impl<S: SumidaState> UserService<S> {
     active_model.is_enabled = Set(true);
     active_model.password =
       Set(hash_password(password).map_err(|e| SumidaError::Unsupported(e.to_string()))?);
+    // The password is set anew, so whatever was established under the old one is void.
+    active_model.credentials_reset_at = Set(Some(Utc::now()));
 
     Users::update(active_model).exec(&txn).await?;
     UserInvitations::delete_by_id(*uuid).exec(&txn).await?;
@@ -414,4 +448,22 @@ impl<S: SumidaState> UserService<S> {
 
     Ok(())
   }
+}
+
+/// Refuses `user` to `subject` when `user` is an administrator and `subject` is not a platform
+/// administrator.
+///
+/// Whoever may edit an account can set its password, its email and its enabled state, ban it or
+/// remove it — each of which takes the account over or shuts it out. A grant over an organization's
+/// accounts, or the user namespace's operator tier, is meant for the accounts it reaches, never for an
+/// administrator who happens to sit among them.
+pub(crate) async fn ensure_reachable<C: sea_orm::ConnectionTrait>(
+  subject: &SubjectSet,
+  user: &entity::users::Model,
+  db: &C,
+) -> Result<(), SumidaError> {
+  if user.is_admin && !Authz::is_superuser(subject, db).await? {
+    return Err(SumidaError::NoAccessPermission);
+  }
+  Ok(())
 }

@@ -91,7 +91,12 @@ impl<S: SumidaState> UserInvitationService<S> {
     query = pagination.order_by_schema::<UserInvitationFilter, _>(query);
     query = pagination.paginate(query);
 
-    let items = query.into_model::<UserInvitationListItem>().all(db).await?;
+    let mut items = query.into_model::<UserInvitationListItem>().all(db).await?;
+    if !Authz::is_superuser(&self.subject(), db).await? {
+      for item in &mut items {
+        item.uuid = None;
+      }
+    }
 
     Ok((items, count))
   }

@@ -19,7 +19,7 @@ use self::dto::*;
 use crate::SumidaState;
 use crate::authz::Authz;
 use crate::authz::subject::SubjectSet;
-use crate::authz::write::SubjectKey;
+use crate::authz::write::{SubjectKey, TupleFilter};
 use crate::service::grants::{from_service_grants, to_service_grants};
 use crate::util::filter::ConditionQuery;
 use crate::util::pagination::Pagination;
@@ -105,7 +105,13 @@ impl<S: SumidaState> RoleService<S> {
     // `service:<namespace>#grant` 로 이뤄진다. 와일드카드만 거절하는 검사로는 부족하다 —
     // 자기가 갖지도 않은 구체적 권한을 역할에 달아 주는 것이 그대로 통과한다.
     let grants = to_service_grants(&data.access_policies)?;
-    let result = Roles::insert(data.into_active_model()).exec(&txn).await?;
+    let model = data.into_active_model();
+    // An id is the server's to choose unless a platform administrator names it: grants on a removed
+    // role's id would pass to a role opened under it.
+    if matches!(model.id, Set(_)) && !Authz::is_superuser(&self.subject(), &txn).await? {
+      return Err(SumidaError::NoAccessPermission);
+    }
+    let result = Roles::insert(model).exec(&txn).await?;
     Authz::replace_service_grants(&Self::holder(result.last_insert_id), &grants, &self.subject(), &txn)
       .await?;
     txn.commit().await?;
@@ -138,6 +144,9 @@ impl<S: SumidaState> RoleService<S> {
     // 역할이 사라지면 그 역할 앞으로 남은 부여도 전부 사라진다. 객체마다 `#grant` 를 다시
     // 묻지 않는 것은 의도된 것이다 — 그러면 최상위 관리자 말고는 역할을 지울 수 없다.
     Authz::revoke_all_of(&Self::holder(id), &txn).await?;
+    // And every grant on it, for the same reason: a role opened later under the same id would
+    // otherwise come with them.
+    Authz::revoke_unchecked(TupleFilter::object(RESOURCE, &id.to_string()), &txn).await?;
     let result = Roles::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
 

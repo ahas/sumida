@@ -363,6 +363,78 @@ fn test_a_secured_key_cannot_reach_its_owners_administrative_power() {
   });
 }
 
+#[test]
+fn test_an_account_manager_cannot_take_over_an_administrator() {
+  runtime().block_on(async {
+    let (_mock, base, db) = serving().await;
+    let admin = TestUser::create_admin(&db).await.expect("an administrator");
+    let managed = TestUser::create(&db).await.expect("an account the manager reaches");
+    let manager = TestUser::create(&db).await.expect("a user manager");
+    let holder = SubjectKey::user(manager.model.id);
+    tuple(&db, "service", "user", "update", holder.clone()).await.expect("the update gate");
+    tuple(&db, "service", "user", "op_update", holder).await.expect("every account's edit");
+    let http = signed_in(base, &manager).await;
+
+    assert_eq!(
+      outcome(
+        http
+          .patch(at(base, &format!("/users/{}", admin.model.id)))
+          .json(&json!({ "password": "taken-over" }))
+          .send()
+          .await
+          .expect("the update request"),
+      )
+      .await,
+      (403, "E1008".to_owned()),
+      "editing every account does not reach an administrator's password"
+    );
+    let resp = http
+      .patch(at(base, &format!("/users/{}", managed.model.id)))
+      .json(&json!({ "fullName": "renamed" }))
+      .send()
+      .await
+      .expect("the update request");
+    assert_eq!(resp.status().as_u16(), 200, "while the accounts it is meant for are still reached");
+
+    let reread = Users::find_by_id(admin.model.id).one(&db).await.unwrap().unwrap();
+    assert_eq!(reread.password, admin.model.password, "the administrator's password stands");
+  });
+}
+
+#[test]
+fn test_changing_what_an_account_may_do_puts_out_its_sessions() {
+  runtime().block_on(async {
+    let (_mock, base, db) = serving().await;
+    let admin = TestUser::create_admin(&db).await.expect("an administrator");
+    let changed = TestUser::create(&db).await.expect("the account that is changed");
+    let untouched = TestUser::create(&db).await.expect("an account left as it is");
+    let changed_http = signed_in(base, &changed).await;
+    let untouched_http = signed_in(base, &untouched).await;
+    let admin_http = signed_in(base, &admin).await;
+
+    assert_eq!(changed_http.get(at(base, "/me")).send().await.unwrap().status().as_u16(), 200);
+
+    let resp = admin_http
+      .patch(at(base, &format!("/users/{}", changed.model.id)))
+      .json(&json!({ "isAdmin": true }))
+      .send()
+      .await
+      .expect("the update request");
+    assert_eq!(resp.status().as_u16(), 200, "an administrator may promote an account");
+
+    assert_eq!(
+      outcome(changed_http.get(at(base, "/me")).send().await.unwrap()).await,
+      (401, "E1007".to_owned()),
+      "the session established before the change carries what the account was, so it is void"
+    );
+    assert_eq!(
+      untouched_http.get(at(base, "/me")).send().await.unwrap().status().as_u16(),
+      200,
+      "and only that account's sessions are"
+    );
+  });
+}
+
 // ─── /me ───────────────────────────────────────────────────────────────────────────────────────
 
 #[test]

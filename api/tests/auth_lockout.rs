@@ -140,3 +140,44 @@ async fn test_a_password_set_anew_against_a_code_lifts_the_lockout_and_starts_th
 
   Bans::delete_many().exec(&db).await.expect("leave no lockout behind");
 }
+
+#[tokio::test]
+async fn test_guesses_spread_over_accounts_still_lock_the_address_out() {
+  let _alone = ONE_RUN_AT_A_TIME.lock().await;
+  let mock = Mock::new().await;
+  let base = format!("http://{}", mock.server.addr);
+  let db = infra::db::connect().await;
+  Bans::delete_many().exec(&db).await.expect("start with no lockout");
+  let first = TestUser::create(&db).await.expect("one account");
+  let second = TestUser::create(&db).await.expect("another account");
+  let http = reqwest::Client::builder().cookie_store(true).build().expect("an http client");
+
+  // Fewer guesses than the limit at each account, but more than the limit from the one address. The
+  // address is what the default policy bans, so it is the address whose guesses are counted.
+  let half = ALLOWED_FAILURES / 2 + 1;
+  for _ in 0..half {
+    sign_in(&http, &base, &first.model.username, "not-the-password").await;
+  }
+  for _ in 0..half - 1 {
+    sign_in(&http, &base, &second.model.username, "not-the-password").await;
+  }
+
+  assert_eq!(
+    sign_in(&http, &base, &second.model.username, &second.password).await,
+    (401, "E1002".to_owned()),
+    "spreading the guesses over two accounts does not keep the address under the limit"
+  );
+
+  // Lifted the way the service lifts a ban: the row stays, marked lifted.
+  Bans::update_many()
+    .col_expr(entity::bans::Column::LiftedAt, sea_orm::sea_query::Expr::value(chrono::Utc::now()))
+    .exec(&db)
+    .await
+    .expect("lift the lockout");
+  assert_eq!(
+    sign_in(&http, &base, &first.model.username, "not-the-password").await,
+    (401, "E1000".to_owned()),
+    "once the ban is lifted the guesses that earned it are not counted again"
+  );
+  assert_eq!(sign_in(&http, &base, &second.model.username, &second.password).await.0, 200);
+}
