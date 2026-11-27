@@ -359,8 +359,11 @@ async fn test_amount_check_uses_quota_then_credit() {
 // ---------------------------------------------------------------------------
 // A quota hold past its expiry stops counting at once and cannot be spent; the
 // scheduler releases it and records the release.
+// The release sweep frees every expired hold in the database, so it queues with every other case
+// that runs it: one running beside this case would release the hold before it is checked.
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_expired_quota_hold_released() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;

@@ -551,8 +551,8 @@ fn test_changing_the_password_through_me_takes_the_current_one() {
           .unwrap()
       )
       .await,
-      (401, "E1011".to_owned()),
-      "and a token handed out before the change is void, as after any reset"
+      (401, "E1007".to_owned()),
+      "and a token handed out before the change is void, as after any reset, refused as no credential"
     );
   });
 }

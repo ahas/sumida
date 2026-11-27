@@ -310,8 +310,11 @@ async fn test_reservation_list() {
 
 // ---------------------------------------------------------------------------
 // The maintenance job auto-releases reservations past their expiry.
+// The release sweep frees every expired hold in the database, so it queues with every other case
+// that runs it: one running beside this case would release the hold before it is checked.
 // ---------------------------------------------------------------------------
 #[tokio::test]
+#[serial_test::serial(membership_sweep)]
 async fn test_expired_reservation_auto_released() {
   bootstrap::init_once().await;
   let db = infra::db::connect().await;

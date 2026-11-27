@@ -18,8 +18,11 @@ use tower_http::set_header::SetResponseHeaderLayer;
 
 type Set = SetResponseHeaderLayer<HeaderValue>;
 
+/// The four header layers, one per header, stacked in the order `new` adds them.
+pub type SecurityHeaders = ServiceBuilder<Stack<Set, Stack<Set, Stack<Set, Stack<Set, Identity>>>>>;
+
 /// The layer that adds the headers to every response that does not already carry them.
-pub fn new() -> ServiceBuilder<Stack<Set, Stack<Set, Stack<Set, Stack<Set, Identity>>>>> {
+pub fn new() -> SecurityHeaders {
   ServiceBuilder::new()
     .layer(SetResponseHeaderLayer::if_not_present(
       STRICT_TRANSPORT_SECURITY,
